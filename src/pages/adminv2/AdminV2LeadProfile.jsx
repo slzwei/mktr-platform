@@ -122,9 +122,36 @@ function heroFor(draw, rewards, diagnostic) {
   return { big: 'No outcome recorded', tail: '', tone: 'quiet', meta: null };
 }
 
+// Post-acceptance truth (wa-delivery-truth): a receipt's base ✓ means the
+// provider ACCEPTED the message — only the joined status inbox can prove
+// delivered/read, or surface Meta's silent drops (131049 = the per-user
+// marketing frequency cap that ate real boost receipts).
+function deliverySuffix(r) {
+  if (!r) return null;
+  if (!r.ok) return { ok: false, text: '✗ failed' };
+  const st = r.delivery?.status;
+  if (st === 'failed') {
+    const why = String(r.delivery?.errorCode) === '131049'
+      ? 'Meta marketing limit'
+      : (r.delivery?.errorTitle || null);
+    return { ok: false, text: `✗ not delivered${why ? ` — ${why}` : ''}` };
+  }
+  if (st === 'read') return { ok: true, text: '✓✓ read' };
+  if (st === 'delivered') return { ok: true, text: '✓✓ delivered' };
+  if (st === 'sent') return { ok: true, text: '✓ sent' };
+  return { ok: true, text: '✓' }; // accepted; nothing further heard (emails, legacy rows)
+}
+
 function receiptBits(delivery) {
   if (!delivery) return [];
-  const bit = (r, label) => (r ? { ok: r.ok, label: `${label}${r.ok ? '' : ' failed'}` } : null);
+  const bit = (r, label) => {
+    if (!r) return null;
+    if (!r.ok) return { ok: false, label: `${label} failed` };
+    const st = r.delivery?.status;
+    if (st === 'failed') return { ok: false, label: `${label} not delivered` };
+    if (st === 'read' || st === 'delivered') return { ok: true, label: `${label} ${st}` };
+    return { ok: true, label };
+  };
   return [bit(delivery.email, 'pass emailed'), bit(delivery.whatsapp, 'WhatsApp')].filter(Boolean);
 }
 
@@ -171,7 +198,9 @@ function buildHistory(p, journey) {
     if (e.redeemedAt) push(e.redeemedAt, 'Voucher redeemed ✓', { detail: ` — ${title}`, family: 'reward', tag });
     for (const ch of ['email', 'whatsapp']) {
       const r = e.delivery?.[ch];
-      if (r?.at) push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} ${r.ok ? '✓' : '✗ failed'}`, { family: 'delivery', quiet: true, tag });
+      if (!r?.at) continue;
+      const s = deliverySuffix(r);
+      push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} ${s.text}`, { family: 'delivery', quiet: true, tag });
     }
   }
   for (const b of journey?.broadcasts?.recent || []) {

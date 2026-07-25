@@ -395,7 +395,8 @@ export const {
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
   AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression,
-  SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient
+  SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient,
+  WaMessageStatus
 } = models;
 
 export { sequelize };

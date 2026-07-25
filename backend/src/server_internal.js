@@ -108,14 +108,17 @@ export const init = async (app) => {
         ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200
         : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000;
     },
-    // Exempt server-to-server webhooks under /api/integrations/lyfe/ and
-    // /api/external/ — they are HMAC-authenticated (not IP-based), and a
-    // Supabase pg_net burst or a reconciliation backfill must not be throttled
-    // by the public IP limiter.
+    // Exempt server-to-server webhooks under /api/integrations/lyfe/,
+    // /api/external/ and /api/whatsapp/ — they are HMAC-authenticated (not
+    // IP-based), and a Supabase pg_net burst, a reconciliation backfill or a
+    // Meta status-callback burst must not be throttled by the public IP
+    // limiter. The WhatsApp route rejects unsigned traffic with a cheap HMAC
+    // check before doing any work.
     skip: (req) =>
       !isProd ||
       req.originalUrl.startsWith('/api/integrations/lyfe/') ||
-      req.originalUrl.startsWith('/api/external/'),
+      req.originalUrl.startsWith('/api/external/') ||
+      req.originalUrl.startsWith('/api/whatsapp/'),
     message: 'Too many requests from this IP, please try again later.',
   });
   // Ensure we decode JWT (if present) before limiter so skip() can see admin
@@ -150,6 +153,7 @@ export const init = async (app) => {
   //   - /api/retell/         — Retell AI call webhooks (HMAC-signed)
   //   - /api/integrations/lyfe/ — Lyfe→MKTR push (notify_mktr_user_change trigger; HMAC since 2026-05-12)
   //   - /api/external/       — MKTR Leads buyer app → lead outcomes (HMAC, body-only)
+  //   - /api/whatsapp/       — Meta status/inbound webhook (X-Hub-Signature-256 over raw bytes)
   app.use(
     express.json({
       limit: '1mb',
@@ -157,7 +161,8 @@ export const init = async (app) => {
         if (
           req.originalUrl.startsWith('/api/retell/') ||
           req.originalUrl.startsWith('/api/integrations/lyfe/') ||
-          req.originalUrl.startsWith('/api/external/')
+          req.originalUrl.startsWith('/api/external/') ||
+          req.originalUrl.startsWith('/api/whatsapp/')
         ) {
           req.rawBody = buf;
         }

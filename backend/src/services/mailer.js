@@ -71,8 +71,18 @@ export async function sendEmail({ to, subject, html, text, context, from, attach
     // logs (docs/redeem-ops/MKTR_INTEGRATION.md §2).
     // `headers` (optional, nodemailer passthrough) carries List-Unsubscribe /
     // List-Unsubscribe-Post on consumer emails (PR B).
-    await transporter.sendMail({ from: resolvedFrom, to, subject, html, text, ...(attachments ? { attachments } : {}), ...(headers ? { headers } : {}) });
-    return { success: true };
+    const info = await transporter.sendMail({ from: resolvedFrom, to, subject, html, text, ...(attachments ? { attachments } : {}), ...(headers ? { headers } : {}) });
+    // Provider correlation id (wa-delivery-truth §C): SES answers
+    // "250 Ok <ses-message-id>" — that id is what SES event notifications key
+    // on, so it must survive here or delivery/bounce can never be tied back.
+    // Non-SES SMTP hosts get whatever their 250 line carries, labeled 'smtp'.
+    const isSes = /\.amazonaws\.com$/i.test(process.env.EMAIL_HOST || '');
+    const providerMessageId = (typeof info?.response === 'string' && info.response.match(/^250 Ok (\S+)/i)?.[1])
+      || info?.messageId || null;
+    return {
+      success: true,
+      ...(providerMessageId ? { providerMessageId, provider: isSes ? 'ses' : 'smtp' } : {}),
+    };
   } catch (err) {
     // Surface SES/SMTP rejection details — Nodemailer attaches `code`,
     // `responseCode`, and `response` (the full SMTP message). Without

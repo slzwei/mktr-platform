@@ -94,20 +94,45 @@ export function makeLeadProfileService(overrides = {}) {
   async function deliveryReceipts(entitlementIds) {
     const map = new Map();
     if (!entitlementIds.length) return map;
+    // COALESCE inside DISTINCT ON so legacy channel-less rows group WITH email
+    // (not as a separate NULL group that JS then collapses over email), and
+    // id DESC as a deterministic tie-break for same-timestamp receipts. The
+    // LEFT JOIN pulls post-acceptance truth (Meta status inbox, keyed by the
+    // receipt's wamid) — null delivery means "accepted, nothing further heard",
+    // which is exactly what legacy rows and emails show today.
     const [rows] = await d.sequelize.query(
-      `SELECT DISTINCT ON ("entitlementId", metadata->>'channel')
-              "entitlementId", type, "createdAt",
-              metadata->>'channel' AS channel, metadata->>'kind' AS kind
-         FROM redemption_events
-        WHERE "entitlementId" IN (:ids) AND type IN ('notified', 'notify_failed')
-        ORDER BY "entitlementId", metadata->>'channel', "createdAt" DESC`,
+      `SELECT DISTINCT ON (re."entitlementId", COALESCE(re.metadata->>'channel', 'email'))
+              re."entitlementId", re.type, re."createdAt",
+              COALESCE(re.metadata->>'channel', 'email') AS channel,
+              re.metadata->>'kind' AS kind,
+              re.metadata->>'error' AS error,
+              s.status AS delivery_status, s."occurredAt" AS delivery_at,
+              s."errorCode" AS delivery_error_code, s."errorTitle" AS delivery_error_title
+         FROM redemption_events re
+         LEFT JOIN wa_message_statuses s ON s.wamid = re.metadata->>'messageId'
+        WHERE re."entitlementId" IN (:ids) AND re.type IN ('notified', 'notify_failed')
+        ORDER BY re."entitlementId", COALESCE(re.metadata->>'channel', 'email'),
+                 re."createdAt" DESC, re.id DESC`,
       { replacements: { ids: entitlementIds } }
     );
     for (const r of rows) {
       const key = String(r.entitlementId);
       if (!map.has(key)) map.set(key, { email: null, whatsapp: null });
       const channel = r.channel === 'whatsapp' ? 'whatsapp' : 'email';
-      map.get(key)[channel] = { kind: r.kind || null, at: r.createdAt, ok: r.type === 'notified' };
+      map.get(key)[channel] = {
+        kind: r.kind || null,
+        at: r.createdAt,
+        ok: r.type === 'notified',
+        ...(r.error ? { error: r.error } : {}),
+        delivery: r.delivery_status
+          ? {
+              status: r.delivery_status,
+              at: r.delivery_at,
+              errorCode: r.delivery_error_code,
+              errorTitle: r.delivery_error_title,
+            }
+          : null,
+      };
     }
     return map;
   }

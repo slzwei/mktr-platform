@@ -515,6 +515,10 @@ export function makeRetellScreeningService(overrides = {}) {
       });
       await patchWaCallback(prospect.id, {
         sent: result?.sent === true,
+        // wamid keys the wa_message_statuses inbox (wa-delivery-truth) — this
+        // send writes no entitlement receipt, so the id here is the ONLY
+        // handle for tying a later delivered/failed verdict to the invite.
+        ...(result?.messageId ? { messageId: result.messageId } : {}),
         ...(result?.skipped ? { skipped: result.skipped } : {}),
         ...(result?.error ? { error: String(result.error).slice(0, 200) } : {}),
       });

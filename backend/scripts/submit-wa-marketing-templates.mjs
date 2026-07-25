@@ -20,6 +20,9 @@
  *   --text-only      submit/consider only the text-header set
  *   --images-only    submit/consider only the image-header set
  *   --callback-only  submit/consider only draw_callback_optin
+ *   --utility-only   submit/consider only the UTILITY receipt pack
+ *                    (draw_boost_receipt_v2 + reward_voucher_v2 — the
+ *                    frequency-cap-exempt twins; docs/plans/wa-delivery-truth.md)
  *   --token-stdin    read the token from stdin instead of WHATSAPP_TOKEN, so it
  *                    never lands in the command line or shell history:
  *                      pbpaste | node …/submit-wa-marketing-templates.mjs --token-stdin
@@ -253,6 +256,48 @@ export const IMAGE_TEMPLATES = TEMPLATES.map((t) => {
   };
 });
 
+// UTILITY receipts (2026-07-26) — transactional twins of two MARKETING
+// templates whose sends Meta silently drops under the per-user marketing
+// frequency cap (error 131049; docs/plans/wa-delivery-truth.md). Bodies are
+// byte-identical to the APPROVED originals — the register already reads as a
+// receipt; only the category (and with it the cap exemption) changes. Category
+// is immutable post-creation, hence the _v2 names. allow_category_change:
+// false — if Meta's classifier disagrees we want a visible INCORRECT_CATEGORY
+// rejection (editable on the REJECTED shell + resubmittable), never a silent
+// flip back to MARKETING that would quietly reinstate the cap.
+export const UTILITY_TEMPLATES = [
+  {
+    name: 'draw_boost_receipt_v2',
+    language: LANGUAGE,
+    category: 'UTILITY',
+    allow_category_change: false,
+    components: [
+      { type: 'HEADER', format: 'IMAGE', example: { header_handle: [HANDLE_PLACEHOLDER] } },
+      {
+        type: 'BODY',
+        text:
+          'Hi {{1}}, your completed review has been recorded — your entry to the {{2}} now holds {{3}} chances instead of one.\n\nNothing else to do — winners are contacted directly after the draw. We never ask you to pay to release a prize.',
+        example: { body_text: [['Shawn', 'iPhone 17 Pro Lucky Draw', '10']] },
+      },
+    ],
+  },
+  {
+    name: 'reward_voucher_v2',
+    language: LANGUAGE,
+    category: 'UTILITY',
+    allow_category_change: false,
+    components: [
+      { type: 'HEADER', format: 'IMAGE', example: { header_handle: [HANDLE_PLACEHOLDER] } },
+      {
+        type: 'BODY',
+        text:
+          "Hi {{1}}, Your {{2}} is activated. \n\nPresent the above QR to the merchant: https://redeem.sg/r/{{3}} \n\nIt's valid until {{4}}. Thank you!",
+        example: { body_text: [['Sarah', 'S$10 FairPrice voucher', 'a1b2c3d4e5f6', '17 Aug 2026']] },
+      },
+    ],
+  },
+];
+
 async function graphGet(path_, token) {
   const res = await fetch(`${BASE}${path_}`, { headers: { Authorization: `Bearer ${token}` } });
   const json = await res.json().catch(() => ({}));
@@ -446,13 +491,14 @@ function printStatusTable(existing, templates) {
 }
 
 function selectedSets() {
-  const only = ['--text-only', '--images-only', '--callback-only'].filter((f) => process.argv.includes(f));
+  const only = ['--text-only', '--images-only', '--callback-only', '--utility-only'].filter((f) => process.argv.includes(f));
   if (only.length > 1) throw new Error(`${only.join(' and ')} are mutually exclusive`);
   const all = only.length === 0;
   return {
     text: all || only[0] === '--text-only' ? TEMPLATES : [],
     callback: all || only[0] === '--callback-only' ? CALLBACK_TEMPLATES : [],
     image: all || only[0] === '--images-only' ? IMAGE_TEMPLATES : [],
+    utility: all || only[0] === '--utility-only' ? UTILITY_TEMPLATES : [],
   };
 }
 
@@ -487,8 +533,8 @@ async function postTemplate(wabaId, token, template) {
 }
 
 async function main() {
-  const { text, callback, image } = selectedSets();
-  const considered = [...text, ...callback, ...image];
+  const { text, callback, image, utility } = selectedSets();
+  const considered = [...text, ...callback, ...image, ...utility];
 
   if (process.argv.includes('--dry')) {
     console.log(JSON.stringify(considered, null, 2));
@@ -564,14 +610,17 @@ async function main() {
   await submitSet(text);
   await submitSet(callback);
 
-  if (image.length) {
-    const missing = image.filter((t) => !have.has(t.name));
+  // Image-header sets share one sample upload: the _img marketing twins and
+  // the UTILITY receipt pack both need a handle-bearing example.
+  const imageSets = [...image, ...utility];
+  if (imageSets.length) {
+    const missing = imageSets.filter((t) => !have.has(t.name));
     if (!missing.length) {
-      image.forEach((t) => console.log(`  ${t.name} already on the WABA — skipped (idempotent)`));
+      imageSets.forEach((t) => console.log(`  ${t.name} already on the WABA — skipped (idempotent)`));
     } else {
       try {
         const handle = await uploadSampleHandle(token, samplePathArg());
-        console.log('  sample image uploaded for the _img review examples');
+        console.log('  sample image uploaded for the image-header review examples');
         await submitSet(missing.map((t) => withHandle(t, handle)));
       } catch (err) {
         failed += missing.length;

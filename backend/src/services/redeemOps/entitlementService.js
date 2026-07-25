@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import {
   RewardEntitlement, RedemptionEvent, Redemption, Activation, ActivationIssuanceSkip, RewardOffer,
-  PartnerOrganisation, Prospect, User, Consumer, Campaign, sequelize,
+  PartnerOrganisation, Prospect, User, Consumer, Campaign, WaMessageStatus, sequelize,
 } from '../../models/index.js';
 import { phoneVerificationIsCurrent } from '../consumerService.js';
 import { AppError } from '../../middleware/errorHandler.js';
@@ -64,7 +64,7 @@ export async function flushDeliveries() {
 export function makeEntitlementService(overrides = {}) {
   const d = {
     RewardEntitlement, RedemptionEvent, Redemption, Activation, ActivationIssuanceSkip, RewardOffer,
-    PartnerOrganisation, Prospect, User, Consumer, Campaign, sequelize, logger,
+    PartnerOrganisation, Prospect, User, Consumer, Campaign, WaMessageStatus, sequelize, logger,
     inventory: makeInventoryService(),
     audit: makeRedeemOpsAuditService(),
     notifyUnlock: null, // injected by entitlementWiring (voucher email) — null-safe
@@ -218,6 +218,13 @@ export function makeEntitlementService(overrides = {}) {
           kind,
           channel,
           to: r.to || null, // already masked by the sender
+          // Provider correlation ids (docs/plans/wa-delivery-truth.md):
+          // messageId (wamid) keys the wa_message_statuses read-time join;
+          // providerMessageId is the SMTP/SES id for the future SES-events
+          // leg. Both are scrubbed by PDPA erasure.
+          ...(r.messageId ? { messageId: r.messageId } : {}),
+          ...(r.templateName ? { templateName: r.templateName } : {}),
+          ...(r.providerMessageId ? { providerMessageId: r.providerMessageId, provider: r.provider || null } : {}),
           ...(r.error ? { error: String(r.error).slice(0, 200) } : {}),
         },
       });
@@ -690,15 +697,25 @@ export function makeEntitlementService(overrides = {}) {
     const entitlement = await d.RewardEntitlement.findByPk(id);
     if (!entitlement) throw new AppError('Entitlement not found', 404);
 
-    const kind = entitlement.status === 'eligible' ? 'pass'
+    let kind = entitlement.status === 'eligible' ? 'pass'
       : entitlement.status === 'issued' ? 'voucher' : null;
     if (!kind) throw new AppError(`Entitlement is ${entitlement.status}`, 409);
     // Draw rails (PR-4/CX22): a recorded session holds NO voucher — rotating
     // tokenHash and mailing partner-redemption copy would mint the credential
-    // CX22 forbids. Re-sending the ENTRY PASS (eligible) stays fine.
-    const resendDrawCtx = await d.drawLink.drawContextForEntitlement(entitlement).catch(() => null);
-    if (kind === 'voucher' && resendDrawCtx) {
-      throw new AppError('This is a recorded lucky-draw session — there is no voucher to resend', 409);
+    // CX22 forbids. Its resend is the informational ×N BOOST RECEIPT: no
+    // token, no rotation, same audit shape (wa-delivery-truth — the capped
+    // 131049 receipt needed exactly this recovery). Classification fails
+    // CLOSED: a draw-lookup error on an issued row must retry later, never
+    // fall through to minting a voucher for what might be a draw session.
+    const resendDrawCtx = await d.drawLink.drawContextForEntitlement(entitlement).catch((err) => {
+      if (kind === 'voucher') {
+        throw new AppError(`Draw classification failed (${err?.message || 'lookup error'}) — retry shortly`, 503);
+      }
+      return null;
+    });
+    if (kind === 'voucher' && resendDrawCtx) kind = 'boost_receipt';
+    if (kind === 'boost_receipt' && channel === 'link') {
+      throw new AppError('A recorded draw session has no credential to share — resend the receipt by email or WhatsApp', 409);
     }
     if (entitlement.expiresAt && new Date(entitlement.expiresAt) <= new Date()) {
       throw new AppError('Reward has expired — nothing to resend', 409);
@@ -728,7 +745,7 @@ export function makeEntitlementService(overrides = {}) {
       order: [['createdAt', 'DESC']],
       limit: 10,
     });
-    const resendAction = kind === 'pass' ? 'resend_pass' : 'resend_voucher';
+    const resendAction = kind === 'pass' ? 'resend_pass' : kind === 'boost_receipt' ? 'resend_boost' : 'resend_voucher';
     const clash = recent.some((e) => {
       const m = e.metadata || {};
       if (e.type === 'manual_override') return m.action === resendAction || (m.action === 'auto_resend' && m.kind === kind);
@@ -738,21 +755,25 @@ export function makeEntitlementService(overrides = {}) {
       throw new AppError('A delivery for this reward was attempted less than a minute ago — wait and retry', 429);
     }
 
-    const fresh = mintToken();
-    const fields = kind === 'pass'
-      ? { presentationTokenHash: fresh.hash }
-      : { tokenHash: fresh.hash, tokenHint: tokenHintOf(fresh.raw) };
+    // boost_receipt carries NO credential — nothing to mint or rotate; the
+    // audit trail still gets its manual_override + audit rows.
+    const fresh = kind === 'boost_receipt' ? null : mintToken();
     await d.sequelize.transaction(async (t) => {
-      const [count] = await d.RewardEntitlement.update(fields, {
-        where: {
-          id,
-          status: entitlement.status, // conditional — unlock/redeem/cancel races lose here
-          [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: d.sequelize.literal('NOW()') } }],
-        },
-        transaction: t,
-      });
-      if (count === 0) {
-        throw new AppError('Reward state changed (unlocked, redeemed or expired) — refresh and retry', 409);
+      if (fresh) {
+        const fields = kind === 'pass'
+          ? { presentationTokenHash: fresh.hash }
+          : { tokenHash: fresh.hash, tokenHint: tokenHintOf(fresh.raw) };
+        const [count] = await d.RewardEntitlement.update(fields, {
+          where: {
+            id,
+            status: entitlement.status, // conditional — unlock/redeem/cancel races lose here
+            [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: d.sequelize.literal('NOW()') } }],
+          },
+          transaction: t,
+        });
+        if (count === 0) {
+          throw new AppError('Reward state changed (unlocked, redeemed or expired) — refresh and retry', 409);
+        }
       }
       await writeEvent(t, {
         entitlementId: id, type: 'manual_override', actorType: 'staff', actorUserId: user.id,
@@ -780,10 +801,12 @@ export function makeEntitlementService(overrides = {}) {
       });
       return { entitlement, kind, channel, emailQueued: false, ...bundle };
     }
+    // boost_receipt rides the same call: fresh is null so both tokens stay
+    // null, and queueDelivery's kind switch selects {entitlement, drawCtx}.
     const emailQueued = queueDelivery({
       entitlement, prospect, kind,
-      presentationToken: kind === 'pass' ? fresh.raw : null,
-      voucherToken: kind === 'voucher' ? fresh.raw : null,
+      presentationToken: kind === 'pass' && fresh ? fresh.raw : null,
+      voucherToken: kind === 'voucher' && fresh ? fresh.raw : null,
       drawCtx: resendDrawCtx,
       channels: [wantWa ? 'whatsapp' : null, wantEmail ? 'email' : null].filter(Boolean),
     });
@@ -1064,6 +1087,29 @@ export function makeEntitlementService(overrides = {}) {
       const key = `${e.entitlementId}:${e.metadata?.channel || 'email'}`;
       if (!latestReceipt.has(key)) latestReceipt.set(key, e); // DESC → first is latest
     }
+    // Post-acceptance truth (wa-delivery-truth): join the Meta status inbox by
+    // wamid so the console can distinguish accepted from delivered/failed.
+    const wamids = [...new Set(
+      [...latestReceipt.values()].map((e) => e.metadata?.messageId).filter(Boolean)
+    )];
+    const statusByWamid = new Map();
+    if (wamids.length) {
+      for (const s of await d.WaMessageStatus.findAll({ where: { wamid: { [Op.in]: wamids } } })) {
+        statusByWamid.set(s.wamid, s);
+      }
+    }
+    const receiptView = (e) => {
+      if (!e) return null;
+      const s = e.metadata?.messageId ? statusByWamid.get(e.metadata.messageId) : null;
+      return {
+        kind: e.metadata?.kind || null,
+        at: e.createdAt,
+        ok: e.type === 'notified',
+        delivery: s
+          ? { status: s.status, at: s.occurredAt, errorCode: s.errorCode, errorTitle: s.errorTitle }
+          : null,
+      };
+    };
 
     // Draw-linkage per activation (PR-4) — one lookup per distinct activation,
     // so the console can voice draw rows ("Session ×N") and offer Undo.
@@ -1087,11 +1133,9 @@ export function makeEntitlementService(overrides = {}) {
       // for transactional, 3sites) stays authoritative. Flag off ⇒ false
       // everywhere, so the console never offers a channel that can't fire.
       j.whatsappDeliverable = waEnabled() && Boolean(waRecipient(j.prospect?.phone));
-      const em = latestReceipt.get(`${j.id}:email`);
-      const wa = latestReceipt.get(`${j.id}:whatsapp`);
       j.delivery = {
-        email: em ? { kind: em.metadata?.kind || null, at: em.createdAt, ok: em.type === 'notified' } : null,
-        whatsapp: wa ? { kind: wa.metadata?.kind || null, at: wa.createdAt, ok: wa.type === 'notified' } : null,
+        email: receiptView(latestReceipt.get(`${j.id}:email`)),
+        whatsapp: receiptView(latestReceipt.get(`${j.id}:whatsapp`)),
       };
       if (j.prospect) {
         if (j.prospect.phone) j.prospect.phone = `••••${String(j.prospect.phone).slice(-4)}`;

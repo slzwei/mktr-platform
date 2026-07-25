@@ -103,11 +103,18 @@ export function makeFulfilmentNotify(overrides = {}) {
     return { offer, activation, rewardName, partnerName };
   }
 
-  /** Wraps sendEmail into the normalized result — resolves, never throws. */
+  /** Wraps sendEmail into the normalized result — resolves, never throws.
+   * providerMessageId/provider ride through to the receipt (wa-delivery-truth
+   * §C: the SES id is the only handle a future bounce/delivery event has). */
   async function deliver(mail, to) {
     try {
       const r = await d.sendEmail(mail);
-      if (r?.success === true) return { sent: true, to: maskEmail(to) };
+      if (r?.success === true) {
+        return {
+          sent: true, to: maskEmail(to),
+          ...(r.providerMessageId ? { providerMessageId: r.providerMessageId, provider: r.provider || null } : {}),
+        };
+      }
       return { sent: false, to: maskEmail(to), error: r?.message || 'mailer not configured' };
     } catch (err) {
       return { sent: false, to: maskEmail(to), error: err?.message || 'send failed' };
@@ -152,7 +159,12 @@ export function makeFulfilmentNotify(overrides = {}) {
           { ...plain, campaign },
           { drawPass: { png: qrPng, link, deadlineLong: boostDeadlineLong(drawCtx.boostClosesAt) } }
         );
-        if (r?.success === true) return { sent: true, to: maskEmail(prospect.email) };
+        if (r?.success === true) {
+          return {
+            sent: true, to: maskEmail(prospect.email),
+            ...(r.providerMessageId ? { providerMessageId: r.providerMessageId, provider: r.provider || null } : {}),
+          };
+        }
         return { sent: false, to: maskEmail(prospect.email), error: r?.message || 'mailer not configured' };
       } catch (err) {
         return { sent: false, to: maskEmail(prospect.email), error: err?.message || 'send failed' };
