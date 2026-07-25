@@ -241,7 +241,7 @@ describe('getProspectDrawStatus — open draws (provisional preview)', () => {
       .toMatchObject({ chances: 10, boosted: true });
   });
 
-  it('agent_button: approved boosts, undecided flags boostReviewPending, rejected does neither', async () => {
+  it('agent_button (veto model): counts by default and when approved; only a rejection strikes it', async () => {
     const base = {
       draws: [drawRow('d1', 'camp-1', 'open')],
       entitlements: [{ id: 'ent-1', activationId: 'act-1', prospectId: 'p1', issuedVia: 'hook' }],
@@ -249,28 +249,27 @@ describe('getProspectDrawStatus — open draws (provisional preview)', () => {
     };
     const p = prospect('p1', 'camp-1', '+6591110001');
 
+    const unreviewed = buildDeps(base);
+    expect((await unreviewed.svc.getProspectDrawStatus([p])).get('p1'))
+      .toMatchObject({ chances: 10, boosted: true, boostVia: 'agent_button' });
+
     const approved = buildDeps({ ...base, reviews: [{ drawId: 'd1', entitlementId: 'ent-1', decision: 'approved' }] });
     expect((await approved.svc.getProspectDrawStatus([p])).get('p1'))
-      .toMatchObject({ chances: 10, boosted: true, boostVia: 'agent_button', boostReviewPending: false });
-
-    const undecided = buildDeps(base);
-    expect((await undecided.svc.getProspectDrawStatus([p])).get('p1'))
-      .toMatchObject({ chances: 1, boosted: false, boostReviewPending: true });
+      .toMatchObject({ chances: 10, boosted: true, boostVia: 'agent_button' });
 
     const rejected = buildDeps({ ...base, reviews: [{ drawId: 'd1', entitlementId: 'ent-1', decision: 'rejected' }] });
     expect((await rejected.svc.getProspectDrawStatus([p])).get('p1'))
-      .toMatchObject({ chances: 1, boosted: false, boostReviewPending: false });
+      .toMatchObject({ chances: 1, boosted: false });
   });
 
-  it('a manually-ISSUED entitlement never boosts, even with an approved review', async () => {
+  it('a manually-ISSUED entitlement never boosts, even under the veto model', async () => {
     const { svc } = buildDeps({
       draws: [drawRow('d1', 'camp-1', 'open')],
       entitlements: [{ id: 'ent-1', activationId: 'act-1', prospectId: 'p1', issuedVia: 'manual' }],
       events: [unlockEvent('ev-1', 'ent-1', 'manual')],
-      reviews: [{ drawId: 'd1', entitlementId: 'ent-1', decision: 'approved' }],
     });
     const map = await svc.getProspectDrawStatus([prospect('p1', 'camp-1', '+6591110001')]);
-    expect(map.get('p1')).toMatchObject({ chances: 1, boosted: false, boostReviewPending: false });
+    expect(map.get('p1')).toMatchObject({ chances: 1, boosted: false });
   });
 
   it('an unlock at/after the boost cutoff is out of window', async () => {

@@ -54,7 +54,7 @@ const PROFILE = {
         draw: {
           drawId: 'd1', drawStatus: 'open', state: 'provisional_in', provisional: true,
           chances: 10, multiplier: 10, boosted: true, boostVia: 'agent_scan',
-          boostedAt: '2026-07-21T01:12:00Z', boostReviewPending: false,
+          boostedAt: '2026-07-21T01:12:00Z',
           closesAt: '2026-10-30T16:00:00Z', boostClosesAt: null, notEligibleReason: null,
           outcome: null, drawHistory: [],
         },
