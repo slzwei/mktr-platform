@@ -1,8 +1,23 @@
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { getConsumerJourney } from '../services/consumerService.js';
+import { getConsumerJourney, listConsumers as listConsumersSvc } from '../services/consumerService.js';
 import { eraseConsumer as eraseConsumerSvc } from '../services/erasureService.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * People directory list (admin-people-directory §4.1). Route-gated to admin.
+ * Param strictness lives in the service (single source): non-numeric
+ * page/limit fall back, unknown sorts fall back, q is capped and LIKE-escaped.
+ */
+export const listConsumers = asyncHandler(async (req, res) => {
+  const data = await listConsumersSvc({
+    q: typeof req.query.q === 'string' ? req.query.q : '',
+    page: req.query.page,
+    limit: req.query.limit,
+    sort: typeof req.query.sort === 'string' ? req.query.sort : undefined,
+  });
+  res.json({ success: true, data });
+});
 
 /**
  * One person's cross-campaign journey (consumer spine). Route-gated to admin —
