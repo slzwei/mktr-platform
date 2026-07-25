@@ -44,6 +44,11 @@ import {
   getConsumerJourney,
 } from './consumerService.js';
 import { recordCaptureConsentEventsTx, canMarketTo } from './consentService.js';
+// Lead Profile page composer (admin-only, ?include=profile — plan §4). Leaf
+// imports only (models + sibling services); no cycle back into this module.
+import {
+  enrichJourneyProfile, getSignupProfile, getSessionContext, getLyfeDelivery,
+} from './leadProfileService.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 
@@ -197,6 +202,10 @@ const defaultDeps = {
   resolveConsumerForCaptureTx,
   recomputeConsumersByPhone,
   getConsumerJourney,
+  enrichJourneyProfile,
+  getSignupProfile,
+  getSessionContext,
+  getLyfeDelivery,
   recordCaptureConsentEventsTx,
   canMarketTo,
   onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
@@ -1375,8 +1384,15 @@ export function makeProspectService(overrides = {}) {
 
   /**
    * Get a single prospect by ID, scoped to user access.
+   *
+   * `include: 'profile'` (Lead Profile page, plan §4) is ADMIN-ONLY and
+   * opt-in: non-admins and callers that don't ask get a byte-identical
+   * payload to before the option existed — the flag simply never reaches the
+   * enrichment branch for them.
    */
-  async function getProspect(id, user) {
+  async function getProspect(id, user, { include = '' } = {}) {
+    const wantProfile = user?.role === 'admin'
+      && String(include).split(',').map((s) => s.trim()).includes('profile');
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = { id, ...scopeFilter };
 
@@ -1399,6 +1415,13 @@ export function makeProspectService(overrides = {}) {
           association: 'commissions',
           attributes: ['id', 'type', 'amount', 'status', 'earnedDate'],
         },
+        // Named external buyer — profile mode only (the association exists but
+        // was never loaded; keep the classic payload byte-identical). Name and
+        // agency ONLY: never phone/email/balance on an admin lead view.
+        ...(wantProfile ? [{
+          association: 'externalAgent',
+          attributes: ['id', 'fullName', 'agency'],
+        }] : []),
         {
           association: 'activities',
           // Newest-first, so the Activity Timeline UI (which renders this array
@@ -1434,16 +1457,33 @@ export function makeProspectService(overrides = {}) {
     // view, and the timeline degrades to ProspectActivity-only on a Supabase miss).
     if (user?.role === 'admin') {
       const wantTimeline = !!process.env.SUPABASE_LEAD_ACTIVITIES_URL;
-      const [repeatSignup, timelineFetch, consumerJourney] = await Promise.all([
+      const [repeatSignup, timelineFetch, consumerJourney, session, lyfeDelivery, signupProfile] = await Promise.all([
         repeatSignupDetail(d.sequelize, { phone: prospect.phone, email: prospect.email }).catch(() => null),
         wantTimeline
           ? fetchLeadActivitiesFromSupabase(prospect.id).catch(() => ({ rows: [], ok: false }))
           : Promise.resolve(null),
         // Consumer spine: the person's cross-campaign journey (signups +
         // rewards) for the admin drawer's Person card. Resilient like its
-        // siblings — a miss never breaks the detail view.
+        // siblings — a miss never breaks the detail view. Profile mode
+        // (Lead Profile page) enriches the same journey in place: per-signup
+        // draw standing + scoped consent + reward diagnostics, entitlement
+        // presentation extras, suppressions, broadcast history.
         prospect.consumerId
-          ? d.getConsumerJourney(prospect.consumerId).catch(() => null)
+          ? d.getConsumerJourney(prospect.consumerId, wantProfile ? { includeRaw: true } : undefined)
+            .then((j) => (wantProfile && j ? d.enrichJourneyProfile(j) : j))
+            .catch(() => null)
+          : Promise.resolve(null),
+        // Profile-only extras (each resilient, each bounded — plan §4 B6/B7).
+        wantProfile
+          ? d.getSessionContext(prospect.sessionId).catch(() => null)
+          : Promise.resolve(null),
+        wantProfile
+          ? d.getLyfeDelivery(prospect.id).catch(() => null)
+          : Promise.resolve(null),
+        // B4: a consumer-less lead (Retell, pre-spine, unverified) still gets
+        // its OWN campaign's draw/reward standing.
+        wantProfile && !prospect.consumerId
+          ? d.getSignupProfile(prospect).catch(() => null)
           : Promise.resolve(null),
       ]);
       if (repeatSignup) prospect.setDataValue('repeatSignup', repeatSignup);
@@ -1454,6 +1494,9 @@ export function makeProspectService(overrides = {}) {
           mergeProspectTimeline(prospect.activities || [], timelineFetch.rows, { ok: timelineFetch.ok }),
         );
       }
+      if (session) prospect.setDataValue('session', session);
+      if (lyfeDelivery) prospect.setDataValue('lyfeDelivery', lyfeDelivery);
+      if (signupProfile) prospect.setDataValue('signupProfile', signupProfile);
     }
 
     return prospect;

@@ -397,8 +397,13 @@ export function makeConsumerService(overrides = {}) {
    * consumer doesn't exist. Deliberately returns DERIVED fields only — no raw
    * sourceMetadata (agents/admins get PII-heavy metadata elsewhere; this
    * endpoint aggregates cross-campaign and stays lean).
+   *
+   * `includeRaw` (Lead Profile page only): attaches the raw signup rows as
+   * `_rawSignups` for leadProfileService.enrichJourneyProfile, which consumes
+   * and strips them — the underscore key never reaches a response. Without it
+   * the payload is byte-identical to before the option existed.
    */
-  async function getConsumerJourney(consumerId) {
+  async function getConsumerJourney(consumerId, { includeRaw = false } = {}) {
     const consumer = await d.Consumer.findByPk(consumerId);
     if (!consumer) return null;
 
@@ -408,6 +413,9 @@ export function makeConsumerService(overrides = {}) {
         attributes: [
           'id', 'firstName', 'lastName', 'phone', 'campaignId', 'leadStatus', 'leadSource',
           'createdAt', 'conversionDate', 'quarantinedAt', 'quarantineReason', 'sourceMetadata',
+          // consentMetadata carries the pinned draw-terms acceptance the draw
+          // eligibility preview reads — profile mode only.
+          ...(includeRaw ? ['consentMetadata'] : []),
         ],
         include: [{ association: 'campaign', attributes: ['id', 'name', 'status'] }],
         order: [['createdAt', 'DESC'], ['id', 'DESC']],
@@ -428,7 +436,7 @@ export function makeConsumerService(overrides = {}) {
       ? await d.DrawEntry.count({ where: { prospectId: signups.map((s) => s.id) } })
       : 0;
 
-    return {
+    const result = {
       consumer: {
         id: consumer.id,
         phone: consumer.phone,
@@ -467,6 +475,8 @@ export function makeConsumerService(overrides = {}) {
       })),
       drawEntries,
     };
+    if (includeRaw) result._rawSignups = signups;
+    return result;
   }
 
   return {

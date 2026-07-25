@@ -94,7 +94,11 @@ export const createProspect = asyncHandler(async (req, res) => {
 });
 
 export const getProspect = asyncHandler(async (req, res) => {
-  const prospect = await prospectService.getProspect(req.params.id, req.user);
+  // ?include=profile → Lead Profile enrichments; admin-gated inside the
+  // service (non-admins get the classic payload whatever they send).
+  const prospect = await prospectService.getProspect(req.params.id, req.user, {
+    include: req.query.include,
+  });
 
   res.json({
     success: true,

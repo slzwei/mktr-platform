@@ -42,6 +42,9 @@ const EmailBroadcastRecipient = sequelize.define('EmailBroadcastRecipient', {
     // Mirrored on the model (sync({force:true}) test boot — Cohort.js lesson).
     { unique: true, fields: ['broadcastId', 'consumerId'], name: 'uq_ebr_broadcast_consumer' },
     { fields: ['broadcastId', 'status'], name: 'idx_ebr_broadcast_status' },
+    // Person-first history for the Lead Profile page (migration 089) — the
+    // broadcastId-leading indexes above can't serve a consumer lookup.
+    { fields: ['consumerId', 'createdAt'], name: 'idx_ebr_consumer_created' },
   ]
 });
 
