@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Submit the cohort-push MARKETING template pack to the Redeem WABA
- * (tracker item "watemplates"; pack doc: docs/plans/wa-marketing-template-pack.md).
+ * Submit the MARKETING template packs to the Redeem WABA — the cohort-push pack
+ * (tracker item "watemplates"; pack doc: docs/plans/wa-marketing-template-pack.md)
+ * plus the screening-callback opt-in (docs/plans/retell-screening-calls.md).
  *
  * The Cloud API creds live ONLY on Render (mktr-backend-jo6r → Environment tab),
  * so run this with the token pasted inline — it is never printed — or from the
@@ -10,13 +11,23 @@
  *   WHATSAPP_TOKEN=…  node backend/scripts/submit-wa-marketing-templates.mjs
  *
  * Modes:
- *   (default)      idempotent submit of all 6 templates (3 text-header + 3
- *                  image-header variants) — reads existing templates first,
- *                  POSTs only the missing ones, then prints a status table
- *   --status       read-only status poll (use while waiting on Meta review)
- *   --dry          print the exact JSON payloads, no network, no token needed
- *   --text-only    submit/consider only the text-header set
- *   --images-only  submit/consider only the image-header set
+ *   (default)        idempotent submit of all 7 templates (3 text-header + 3
+ *                    image-header variants + the screening callback) — reads
+ *                    existing templates first, POSTs only the missing ones,
+ *                    then prints a status table
+ *   --status         read-only status poll (use while waiting on Meta review)
+ *   --dry            print the exact JSON payloads, no network, no token needed
+ *   --text-only      submit/consider only the text-header set
+ *   --images-only    submit/consider only the image-header set
+ *   --callback-only  submit/consider only draw_callback_optin
+ *   --token-stdin    read the token from stdin instead of WHATSAPP_TOKEN, so it
+ *                    never lands in the command line or shell history:
+ *                      pbpaste | node …/submit-wa-marketing-templates.mjs --token-stdin
+ *   --whoami         print the token's app/type/scopes and the WABAs reachable
+ *                    from it — first stop when WABA resolution fails
+ *   --business <id>  resolve the WABA through this Business (system-user tokens
+ *                    carry a business id, not a WABA id)
+ *   --waba <id>      skip resolution entirely
  *   --sample <p>   sample image for the image-header review examples
  *                  (default: backend/scripts/assets/wa-marketing-sample.png)
  *
@@ -153,6 +164,52 @@ export const TEMPLATES = [
   },
 ];
 
+/**
+ * Screening-callback opt-in (2026-07-25) — the WhatsApp leg of the AI screening
+ * gate: when the call could not reach a verdict (no answer, or "call me back
+ * later"), messaging beats a third dial. The URL button is the consent: tapping
+ * it is the person ASKING to be called, which is the only thing that makes the
+ * ring-back welcome rather than pestering.
+ *
+ * Copy contract: the boost is earned when the consultant RECORDS the completed
+ * session (src/lib/drawCopy.js DRAW_RECORD_PHRASE) and ×N is the TOTAL, not N
+ * extra — the same promise the campaign page, the Vault pass and the boost
+ * receipt make. Do not reword to "N more chances" here; that is the phone
+ * script's register, and the two must not drift into different promises.
+ *
+ * NOT SENDABLE YET: the `/callback` landing page and its consent-capture
+ * endpoint do not exist, and whatsappService must call this one with
+ * purpose:'marketing' (its sends are transactional today). Approval first,
+ * wiring second.
+ */
+export const CALLBACK_TEMPLATES = [
+  {
+    name: 'draw_callback_optin',
+    language: LANGUAGE,
+    category: 'MARKETING',
+    allow_category_change: true,
+    components: [
+      { type: 'HEADER', format: 'TEXT', text: 'About your lucky draw entry' },
+      {
+        type: 'BODY',
+        text:
+          "Hi {{1}}, it's the Redeem draw team about the {{2}} — sorry we missed you on the phone!\n\nYour entry is in with 1 chance. Meet one of our licensed financial consultants for a short, no-obligation session, and when your consultant records your completed session, your 1 entry becomes {{3}} — that's ×{{3}} chances at {{4}}.\n\nTap below and we'll ring you to arrange it, at a time that suits you.",
+        example: {
+          body_text: [['Shawn', 'iPhone 17 Pro Lucky Draw', '10', 'an iPhone 17 Pro']],
+        },
+      },
+      { type: 'FOOTER', text: FOOTER },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          cta('Yes, call me', 'callback?t=8f3c1d9a2b&utm_source=wa_screening'),
+          STOP_BUTTON,
+        ],
+      },
+    ],
+  },
+];
+
 // Image-header twins: footer/buttons unchanged, the text header becomes an
 // IMAGE header whose content is a send-time parameter ({link} or {id}), and
 // the body opens with a bold headline line — the text header carried the
@@ -210,21 +267,64 @@ async function inspectToken(token) {
   return debugTokenCache;
 }
 
-/**
- * WABA id: env override → debug_token granular scopes. With several WABAs on
- * the token, WHATSAPP_PHONE_NUMBER_ID picks the one that owns our sender.
- */
-async function resolveWabaId(token) {
-  if (process.env.WHATSAPP_WABA_ID) return process.env.WHATSAPP_WABA_ID;
-  const dbg = await inspectToken(token);
-  const scopes = dbg?.data?.granular_scopes || [];
-  const ids = [
+function argValue(flag) {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : null;
+}
+
+function targetIdsFor(dbg, scopeNames) {
+  return [
     ...new Set(
-      scopes
-        .filter((s) => ['whatsapp_business_management', 'whatsapp_business_messaging'].includes(s.scope))
+      (dbg?.data?.granular_scopes || [])
+        .filter((s) => scopeNames.includes(s.scope))
         .flatMap((s) => s.target_ids || []),
     ),
   ];
+}
+
+/** WABAs a Business owns or is a client of (needs business_management). */
+async function wabasOfBusiness(businessId, token) {
+  const edges = ['owned_whatsapp_business_accounts', 'client_whatsapp_business_accounts'];
+  const found = [];
+  for (const edge of edges) {
+    const json = await graphGet(`/${businessId}/${edge}?fields=id,name&limit=50`, token).catch(() => null);
+    for (const w of json?.data || []) found.push(w);
+  }
+  return found;
+}
+
+/**
+ * The Redeem sender WABA. An asset id, not a secret — the same value persisted
+ * on Render as WHATSAPP_WABA_ID (docs/plans/draw-boost-rail-auto-provision.md).
+ * Needed as a local fallback because the prod system-user token's granular
+ * scopes carry NO target ids (verified 2026-07-25 via --whoami), so nothing can
+ * be enumerated from the token alone. The end-of-run sanity check (reward_pass /
+ * reward_voucher present) still proves every submission landed on this WABA.
+ */
+const REDEEM_WABA_ID = '1912683432731970';
+
+/**
+ * WABA id: env/flag override → debug_token granular scopes → the Business's
+ * owned/client WABAs → the known Redeem WABA. With several candidates,
+ * WHATSAPP_PHONE_NUMBER_ID picks the one that owns our sender.
+ */
+async function resolveWabaId(token) {
+  const override = process.env.WHATSAPP_WABA_ID || argValue('--waba');
+  if (override) return override;
+
+  const dbg = await inspectToken(token);
+  let ids = targetIdsFor(dbg, ['whatsapp_business_management', 'whatsapp_business_messaging']);
+
+  if (ids.length === 0) {
+    const businessIds = [argValue('--business'), ...targetIdsFor(dbg, ['business_management'])].filter(Boolean);
+    const wabas = [];
+    for (const bizId of [...new Set(businessIds)]) {
+      for (const w of await wabasOfBusiness(bizId, token)) wabas.push(w);
+    }
+    if (wabas.length) console.log(`  WABAs via business: ${wabas.map((w) => `${w.name || '?'} (${w.id})`).join(', ')}`);
+    ids = [...new Set(wabas.map((w) => w.id))];
+  }
+
   if (ids.length === 1) return ids[0];
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   if (ids.length > 1 && phoneId) {
@@ -233,11 +333,37 @@ async function resolveWabaId(token) {
       if (phones?.data?.some((p) => p.id === phoneId)) return id;
     }
   }
-  throw new Error(
-    ids.length
-      ? `Token spans ${ids.length} WABAs (${ids.join(', ')}) — set WHATSAPP_WABA_ID or WHATSAPP_PHONE_NUMBER_ID.`
-      : 'Could not auto-resolve the WABA from the token — set WHATSAPP_WABA_ID (WhatsApp Manager URL shows it as asset_id).',
-  );
+  if (ids.length > 1) {
+    throw new Error(`Token spans ${ids.length} WABAs (${ids.join(', ')}) — pass --waba <id> or set WHATSAPP_PHONE_NUMBER_ID.`);
+  }
+  // Nothing enumerable from the token — fall back to the known Redeem WABA,
+  // but PROVE it first (a token for some other WABA must fail loudly here,
+  // not submit templates into the wrong account).
+  const probe = await graphGet(`/${REDEEM_WABA_ID}?fields=id,name`, token).catch((err) => {
+    throw new Error(
+      `Could not auto-resolve the WABA, and the token cannot read the known Redeem WABA ${REDEEM_WABA_ID} `
+        + `(${err?.message || err}) — pass --waba <id> (WhatsApp Manager URL shows it as asset_id), or run --whoami.`,
+    );
+  });
+  console.log(`  WABA auto-resolution found nothing on the token — using the known Redeem WABA "${probe.name || '?'}" (${probe.id})`);
+  return probe.id;
+}
+
+/** Token diagnostic: what identity/scopes/assets does this token actually carry? */
+async function whoami(token) {
+  const dbg = await inspectToken(token);
+  const d = dbg?.data || {};
+  console.log(`app_id       ${d.app_id || '—'}`);
+  console.log(`type         ${d.type || '—'}${d.expires_at ? ` (expires ${new Date(d.expires_at * 1000).toISOString()})` : ' (no expiry)'}`);
+  console.log(`scopes       ${(d.scopes || []).join(', ') || '—'}`);
+  for (const s of d.granular_scopes || []) {
+    console.log(`  ${s.scope.padEnd(32)} ${(s.target_ids || []).join(', ') || '(no target ids)'}`);
+  }
+  const businessIds = [argValue('--business'), ...targetIdsFor(dbg, ['business_management'])].filter(Boolean);
+  for (const bizId of [...new Set(businessIds)]) {
+    const wabas = await wabasOfBusiness(bizId, token);
+    console.log(`business ${bizId} → ${wabas.length ? wabas.map((w) => `${w.name || '?'} (${w.id})`).join(', ') : 'no WABAs visible'}`);
+  }
 }
 
 /**
@@ -316,18 +442,30 @@ function printStatusTable(existing, templates) {
 }
 
 function selectedSets() {
-  const textOnly = process.argv.includes('--text-only');
-  const imagesOnly = process.argv.includes('--images-only');
-  if (textOnly && imagesOnly) throw new Error('--text-only and --images-only are mutually exclusive');
+  const only = ['--text-only', '--images-only', '--callback-only'].filter((f) => process.argv.includes(f));
+  if (only.length > 1) throw new Error(`${only.join(' and ')} are mutually exclusive`);
+  const all = only.length === 0;
   return {
-    text: !imagesOnly ? TEMPLATES : [],
-    image: !textOnly ? IMAGE_TEMPLATES : [],
+    text: all || only[0] === '--text-only' ? TEMPLATES : [],
+    callback: all || only[0] === '--callback-only' ? CALLBACK_TEMPLATES : [],
+    image: all || only[0] === '--images-only' ? IMAGE_TEMPLATES : [],
   };
 }
 
 function samplePathArg() {
   const i = process.argv.indexOf('--sample');
   return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : DEFAULT_SAMPLE;
+}
+
+/**
+ * Token via stdin (`--token-stdin`), so the secret never appears in the command
+ * line, the shell history, or a placeholder the caller has to hand-substitute:
+ *   pbpaste | node backend/scripts/submit-wa-marketing-templates.mjs --token-stdin
+ */
+async function readStdinToken() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8').trim();
 }
 
 async function postTemplate(wabaId, token, template) {
@@ -345,15 +483,17 @@ async function postTemplate(wabaId, token, template) {
 }
 
 async function main() {
-  const { text, image } = selectedSets();
-  const considered = [...text, ...image];
+  const { text, callback, image } = selectedSets();
+  const considered = [...text, ...callback, ...image];
 
   if (process.argv.includes('--dry')) {
     console.log(JSON.stringify(considered, null, 2));
     return;
   }
 
-  const token = process.env.WHATSAPP_TOKEN;
+  const token = process.argv.includes('--token-stdin')
+    ? await readStdinToken()
+    : process.env.WHATSAPP_TOKEN;
   if (!token) {
     console.error(
       'WHATSAPP_TOKEN not set. Copy it from Render → mktr-backend-jo6r → Environment → WHATSAPP_TOKEN, then:\n' +
@@ -363,8 +503,33 @@ async function main() {
     );
     process.exit(1);
   }
+  // Pasting the command with its "…" placeholder intact otherwise dies deep in
+  // fetch with "Cannot convert argument to a ByteString" — a header-encoding
+  // error that says nothing about the actual mistake.
+  if (!/^[\x21-\x7e]+$/.test(token)) {
+    console.error(
+      'WHATSAPP_TOKEN is not a usable token — it must be the raw value from Render, not the "…" placeholder.\n' +
+        '  WHATSAPP_TOKEN=EAAG…the-real-token node backend/scripts/submit-wa-marketing-templates.mjs --callback-only',
+    );
+    process.exit(1);
+  }
 
-  const wabaId = await resolveWabaId(token);
+  if (process.argv.includes('--whoami')) {
+    await whoami(token);
+    return;
+  }
+
+  // Resolution failure prints the token diagnostic itself: re-running with
+  // --whoami would mean copying another command, and on macOS that clobbers the
+  // very clipboard the token was piped from.
+  let wabaId;
+  try {
+    wabaId = await resolveWabaId(token);
+  } catch (err) {
+    console.error(`${err?.message || err}\n\nWhat this token actually carries:`);
+    await whoami(token).catch((e) => console.error(`  (diagnostic failed: ${e?.message || e})`));
+    process.exit(1);
+  }
   console.log(`WABA ${wabaId} (Graph ${VERSION})`);
   let existing = await fetchExisting(wabaId, token);
 
@@ -393,6 +558,7 @@ async function main() {
   };
 
   await submitSet(text);
+  await submitSet(callback);
 
   if (image.length) {
     const missing = image.filter((t) => !have.has(t.name));

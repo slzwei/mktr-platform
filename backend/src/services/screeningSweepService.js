@@ -1,4 +1,4 @@
-import { Op } from 'sequelize';
+import { Op, literal } from 'sequelize';
 import { sequelize, Prospect, Campaign } from '../models/index.js';
 import { screeningConfig, makeScreeningGate } from './screeningGate.js';
 import { makeRetellScreeningService } from './retellScreeningService.js';
@@ -27,6 +27,14 @@ import { logger } from '../utils/logger.js';
 
 const JOB_LOCK_KEY = 'screening_sweep';
 const MAX_PER_RUN = 100;
+
+/**
+ * A lead that asked us to ring back at a stated time (retellScreeningService).
+ * COALESCE is load-bearing: without it the key's absence yields NULL, and the
+ * TTL predicate below (`NOT (… AND …)`) would evaluate to NULL — silently
+ * sparing every ordinary lead that happens to have a future retry scheduled.
+ */
+const CALLBACK_GRANTED_SQL = `COALESCE("screeningMetadata"->>'callbackGranted', 'false') = 'true'`;
 
 let running = false;
 
@@ -98,7 +106,12 @@ async function processPass(d, cfg) {
 
   // ── 3. TTL: no lead holds longer than maxHoldHours. Verdict-less rows hit
   //       the unreachable policy; qualified rows were job 1's (and stay so).
+  //       A lead we PROMISED to ring back at a stated time is spared until that
+  //       call has fired — releasing it unscreened would break the promise the
+  //       agent made on the phone. Bounded by a hard 2× hold ceiling, which is
+  //       also what callbackRetryAt clamps the promised time to.
   const ttlCutoff = new Date(now.getTime() - cfg.maxHoldHours * 60 * 60 * 1000);
+  const callbackGraceHours = Math.max(1, Math.floor(cfg.maxHoldHours * 2));
   const expired = await d.Prospect.findAll({
     where: {
       quarantineReason: 'screening_pending',
@@ -106,6 +119,12 @@ async function processPass(d, cfg) {
       screeningVerdict: null,
       quarantinedAt: { [Op.lt]: ttlCutoff },
       id: { [Op.notIn]: [...touched].length ? [...touched] : ['00000000-0000-0000-0000-000000000000'] },
+      [Op.and]: [
+        literal(`NOT (${CALLBACK_GRANTED_SQL}
+                      AND "screeningNextAttemptAt" IS NOT NULL
+                      AND "screeningNextAttemptAt" > NOW()
+                      AND "quarantinedAt" > NOW() - INTERVAL '${callbackGraceHours} hours')`),
+      ],
     },
     limit: MAX_PER_RUN,
   });
@@ -150,14 +169,21 @@ async function processPass(d, cfg) {
   // ── 5. Due retries LAST. startScreeningAttempt re-runs every dial guard
   //       (stamp, DNC, consent, window, budget, concurrency).
   if (cfg.configured && !cfg.dryRun) {
+    // The attempt cap mirrors resolveAttemptFailure: maxAttempts, plus the one
+    // bonus dial a stated callback earns. Without the OR the promised call
+    // would be scheduled and then never picked up.
+    const maxAttempts = Math.max(1, Math.floor(cfg.maxAttempts));
     const due = await d.Prospect.findAll({
       where: {
         quarantineReason: 'screening_pending',
         screeningActiveCallId: null,
         screeningVerdict: null,
         screeningNextAttemptAt: { [Op.lte]: now },
-        screeningAttemptCount: { [Op.lt]: cfg.maxAttempts },
         id: { [Op.notIn]: [...touched].length ? [...touched] : ['00000000-0000-0000-0000-000000000000'] },
+        [Op.and]: [
+          literal(`("screeningAttemptCount" < ${maxAttempts}
+                    OR (${CALLBACK_GRANTED_SQL} AND "screeningAttemptCount" < ${maxAttempts + 1}))`),
+        ],
       },
       order: [['screeningNextAttemptAt', 'ASC']],
       limit: Math.min(MAX_PER_RUN, cfg.maxConcurrent * 2),

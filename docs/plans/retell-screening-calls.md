@@ -611,6 +611,71 @@ stays (additive).
 
 ---
 
+## §16.5 Callback handling — script v9 (2026-07-25, post-soak)
+
+The opener asks "is now a good time?", so "call me later" is the single most
+likely first-turn answer. v8 treated it as a HARD-NO ESCAPE (hang up, no
+rebuttal, no time captured), and the backend then redialled on the blind
+`retryMinutes × 2^(n−1)` ladder regardless of what the person had asked for.
+Worse, a verdict-less call wrote NO evidence: `verdictDetail` is only written by
+the qualified/not-qualified transitions (§9.1, §9.3), so the reason, summary and
+transcript were discarded and the drawer showed nothing but an attempt count and
+an audio file.
+
+Now:
+
+1. **Script v9** (agent `agent_4ea24f4a01e44f5c7ad14f3638` v9, LLM v9). Timing
+   is split out of the hard-no escape: ONE light "three quick yes-or-no
+   questions, thirty seconds" attempt, then — if they still can't — "later today
+   or tomorrow?", acknowledge, end. Never negotiates a clock time. Driving / in a
+   meeting / annoyed / firm no / wrong person still escape immediately.
+2. **New analysis field** `callback_window ∈ {none, later_today, tomorrow,
+   this_week}`, alongside `qualified: 'incomplete'` (which already covers a call
+   that never reached all three checks).
+3. **`callbackRetryAt(cfg, window, {now, quarantinedAt})`** maps it onto an
+   instant: +3h / +12h / +60h, clamped into the call window (so "tomorrow" lands
+   at the next open) and never past `quarantinedAt + 2 × maxHoldHours`.
+4. **One bonus attempt per lead.** `resolveAttemptFailure` takes `retryAt`; when
+   present it replaces the backoff and — first time only — writes
+   `screeningMetadata.callbackGranted`, lifting that lead's cap to
+   `maxAttempts + 1`. Someone who answers and asks for a ring-back has not
+   burned a reach; someone who keeps deferring still runs out. The grant rides
+   the fenced clear, so a replayed webhook cannot grant twice.
+5. **TTL respects the promise** (sweep job 3): a granted lead whose
+   `screeningNextAttemptAt` is still in the future is skipped, bounded by the
+   same 2× hold ceiling. Job 5's attempt cap carries the matching `+1`.
+6. **Evidence.** A verdict-less attempt now stores `outcome` (`no_verdict` /
+   `unanswered` / `qualified` / `not_qualified`) plus reason, summary, sentiment,
+   transcript and the raw checks — but only when no verdict transition will
+   capture them, so a 20k transcript is never duplicated. The drawer prints a
+   per-attempt line and, for a granted callback, the promised time.
+
+Not covered: nothing schedules the ring-back outside the 10:00–20:00 window, and
+a "next week" request is still clamped to the hold ceiling — past that, TTL
+releases the lead unscreened by policy (D1). WhatsApp fallback is §16.6.
+
+## §16.6 WhatsApp callback opt-in (submitted for review 2026-07-25)
+
+**Submitted 2026-07-25, template id 1587973386015533, status PENDING** (WABA
+1912683432731970 — resolved via the script's hardcoded Redeem-WABA fallback; the
+prod system-user token's granular scopes carry no target ids, so nothing is
+enumerable from the token alone).
+
+Template `draw_callback_optin` (MARKETING, `allow_category_change`) — the
+messaging leg for leads a dial cannot finish. URL button "Yes, call me" carries
+the consent: the tap is the person asking to be called, which is what makes the
+ring-back welcome. Copy follows the ×N-is-the-TOTAL contract and
+`DRAW_RECORD_PHRASE`, not the phone script's "N more chances" register.
+Definition + submitter: `backend/scripts/submit-wa-marketing-templates.mjs`
+(`--callback-only`).
+
+**Unbuilt before it can send:** the `/callback?t=…` landing page and its
+consent-capture endpoint (tap ⇒ record consent ⇒ schedule the next attempt), and
+a `purpose:'marketing'` send path in `whatsappService` — its sends are
+transactional today, so a marketing unsubscribe would not block this one.
+
+---
+
 ## §17 Open decisions
 
 - **D1 Unreachable default** — **`release` unscreened** (no-answer ≠ bad lead). |

@@ -252,6 +252,11 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
                 {verdictDetail.reason && <div className="av2-kv"><span>reason</span><span>{verdictDetail.reason}</span></div>}
                 {verdictDetail.sentiment && <div className="av2-kv"><span>sentiment</span><span>{verdictDetail.sentiment}</span></div>}
                 <div className="av2-kv"><span>attempts</span><span>{p.screeningAttemptCount || attempts.length || 0}</span></div>
+                {/* A time Sarah promised on the phone — the one screening date
+                    an operator must not silently miss. */}
+                {sm.callbackGranted && p.screeningNextAttemptAt && (
+                  <div className="av2-kv"><span>callback</span><span>{fmtDateTime(p.screeningNextAttemptAt)}</span></div>
+                )}
                 {hasCost && (
                   <div className="av2-kv">
                     <span>call cost</span>
@@ -299,6 +304,22 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
                       })}
                     </div>
                   </details>
+                )}
+                {/* Attempts that produced no verdict write no verdictDetail, so
+                    the block above says nothing about them. Their own evidence
+                    is the only record of WHY — e.g. a requested callback. */}
+                {attempts.some((a) => a.outcome === 'no_verdict' || a.outcome === 'unanswered') && (
+                  <div style={{ marginTop: 8, display: 'grid', gap: 3 }}>
+                    {attempts.map((a, i) => (
+                      (a.outcome === 'no_verdict' || a.outcome === 'unanswered') ? (
+                        <div key={a.token || i} style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.45 }}>
+                          Attempt {i + 1} — {a.outcome === 'unanswered'
+                            ? String(a.disconnectionReason || 'no answer').replace(/_/g, ' ')
+                            : a.reason || 'no verdict'}
+                        </div>
+                      ) : null
+                    ))}
+                  </div>
                 )}
                 {attempts.some((a) => a.recordingUrl) && (
                   <div style={{ marginTop: 6, display: 'grid', gap: 10 }}>
