@@ -256,18 +256,31 @@ export const IMAGE_TEMPLATES = TEMPLATES.map((t) => {
   };
 });
 
-// UTILITY receipts (2026-07-26) — transactional twins of two MARKETING
-// templates whose sends Meta silently drops under the per-user marketing
-// frequency cap (error 131049; docs/plans/wa-delivery-truth.md). Bodies are
-// byte-identical to the APPROVED originals — the register already reads as a
-// receipt; only the category (and with it the cap exemption) changes. Category
-// is immutable post-creation, hence the _v2 names. allow_category_change:
-// false — if Meta's classifier disagrees we want a visible INCORRECT_CATEGORY
-// rejection (editable on the REJECTED shell + resubmittable), never a silent
-// flip back to MARKETING that would quietly reinstate the cap.
+// UTILITY receipts — transactional twins of two MARKETING templates whose
+// sends Meta silently drops under the per-user marketing frequency cap
+// (error 131049; docs/plans/wa-delivery-truth.md).
+//
+// ROUND 1 (2026-07-26, names burned): draw_boost_receipt_v2 /
+// reward_voucher_v2 carried the approved originals' bodies verbatim with
+// category UTILITY and allow_category_change: false. Meta APPROVED both but
+// silently recategorized them to MARKETING at review — the flag no longer
+// forces an INCORRECT_CATEGORY rejection (2026 behavior: approve-and-flip).
+// Those shells stay on the WABA; do not send with them (same cap as the
+// originals) and do not delete them (30-day name block).
+//
+// ROUND 2 (below): same facts in record-keeping register. The classifier
+// difference between our UTILITY approvals (draw_pass_receipt, draw_entry_pass
+// — both carry an ACTION: "show this pass, they will scan it") and the flipped
+// round-1 pair (pure congratulation) is the promotional scent of celebration
+// copy. So: "this is your record / keep this message" and "ready to use — show
+// the QR at the counter" (Meta's own canonical utility example). Param COUNT
+// AND ORDER are identical to what whatsappService already sends
+// (boost: name, draw name, multiplier · voucher: name, reward, token, expiry)
+// — approval needs only the WHATSAPP_TEMPLATE_DRAW_BOOST /
+// WHATSAPP_TEMPLATE_VOUCHER env flip, zero code change.
 export const UTILITY_TEMPLATES = [
   {
-    name: 'draw_boost_receipt_v2',
+    name: 'draw_session_receipt',
     language: LANGUAGE,
     category: 'UTILITY',
     allow_category_change: false,
@@ -276,13 +289,13 @@ export const UTILITY_TEMPLATES = [
       {
         type: 'BODY',
         text:
-          'Hi {{1}}, your completed review has been recorded — your entry to the {{2}} now holds {{3}} chances instead of one.\n\nNothing else to do — winners are contacted directly after the draw. We never ask you to pay to release a prize.',
+          'Hi {{1}}, this is your record for the consultation session you completed.\n\nCampaign: {{2}}\nEntry total after this session: ×{{3}}\n\nKeep this message for your records. No further action is needed, and we will never ask you for payment.',
         example: { body_text: [['Shawn', 'iPhone 17 Pro Lucky Draw', '10']] },
       },
     ],
   },
   {
-    name: 'reward_voucher_v2',
+    name: 'voucher_delivery',
     language: LANGUAGE,
     category: 'UTILITY',
     allow_category_change: false,
@@ -291,7 +304,7 @@ export const UTILITY_TEMPLATES = [
       {
         type: 'BODY',
         text:
-          "Hi {{1}}, Your {{2}} is activated. \n\nPresent the above QR to the merchant: https://redeem.sg/r/{{3}} \n\nIt's valid until {{4}}. Thank you!",
+          'Hi {{1}}, your {{2}} is ready to use.\n\nShow the QR above at the counter, or open: https://redeem.sg/r/{{3}}\n\nValid until {{4}}. Thank you.',
         example: { body_text: [['Sarah', 'S$10 FairPrice voucher', 'a1b2c3d4e5f6', '17 Aug 2026']] },
       },
     ],
