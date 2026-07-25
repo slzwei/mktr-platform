@@ -68,7 +68,7 @@ export default function RedeemWinners() {
             Every lucky draw we run ends here — the prize, the draw date, and the person who took
             it home. If your number was drawn, this is where you’ll see it.
           </p>
-          <div className="rh-rule">🔒 We contact winners directly — and never ask for payment to release a prize.</div>
+          <div className="rh-rule">🔒 Winners are contacted directly.</div>
         </div>
       </header>
 

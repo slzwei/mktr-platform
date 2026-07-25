@@ -63,8 +63,10 @@ describe('open states', () => {
     expect(document.querySelector(`[data-campaign-page-template="${id}"]`)).toBeTruthy();
     // Headline from the doc renders somewhere in the page chrome.
     expect(screen.getAllByText('Win a 4D3N Tokyo getaway for two').length).toBeGreaterThanOrEqual(1);
-    // Draw chrome: the anti-scam brand line is draw-only.
-    expect(screen.getAllByText(/never ask for payment to release a prize/).length).toBeGreaterThanOrEqual(1);
+    // The payment-integrity line is T&C-only (2026-07-25) — never page chrome
+    // unless an operator opts in via content.drawCopy.scamLine.
+    expect(screen.queryByText(/never ask for payment/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Masked results at/).length).toBeGreaterThanOrEqual(1);
     // The reused production funnel mounts (adminRichDoc has no SG/PR gate, so
     // the form's phone field renders directly).
     expect(screen.getAllByPlaceholderText('9123 4567').length).toBeGreaterThanOrEqual(1);

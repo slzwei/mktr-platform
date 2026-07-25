@@ -234,7 +234,7 @@ export default function RewardClaim() {
             </div>
             <div className="mt-5 space-y-1 text-center">
               <p className="text-xs text-[#8B8477]">
-                Nothing else to do — winners are contacted directly after the draw. We never ask you to pay to release a prize.
+                Nothing else to do — winners are contacted directly after the draw.
               </p>
               <p className="font-mono text-[10px] tracking-[0.12em] text-[#8B8477]">POWERED BY MKTR</p>
             </div>

@@ -210,8 +210,7 @@ export function makeFulfilmentNotify(overrides = {}) {
         <p>Your consultant has recorded your completed review — your entry to
         <strong>${escapeHtml(drawName)}</strong> now holds <strong>${m} chances</strong> instead of one.</p>
         ${cardPng ? '<p style="text-align:center;margin:20px 0"><img src="cid:boost-card" width="320" height="320" style="max-width:100%" alt="Boost unlocked"/></p>' : ''}
-        <p style="color:#6b7280;font-size:12px">Nothing else to do — winners are contacted directly after the draw.
-        We never ask you to pay to release a prize.</p>
+        <p style="color:#6b7280;font-size:12px">Nothing else to do — winners are contacted directly after the draw.</p>
       </div>`;
     return deliver({
       to: prospect.email,

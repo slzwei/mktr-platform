@@ -91,7 +91,7 @@ export default function ScreeningCallback() {
         </div>
         <div className="bg-white rounded-2xl border border-[#E6E0D1] shadow-sm p-6">{children}</div>
         <p className="mt-4 text-center text-[11px] leading-relaxed text-[#6B6558]">
-          Your draw entry stands either way. We never ask for payment to release a prize.
+          Your draw entry stands either way.
         </p>
       </div>
     </div>
@@ -132,7 +132,7 @@ export default function ScreeningCallback() {
       <>
         <h1 className="text-xl font-bold">You&apos;re all set{ctx?.firstName ? `, ${ctx.firstName}` : ''}</h1>
         <p className="mt-2 text-sm leading-relaxed text-[#4A4640]">
-          This one&apos;s already been handled — our team will be in touch if anything else is needed. Good luck for the draw!
+          Nothing more needed here. Good luck for the draw!
         </p>
       </>
     );
@@ -188,9 +188,9 @@ export default function ScreeningCallback() {
         {ctx?.firstName ? `Hi ${ctx.firstName} — ` : ''}sorry we missed you
       </h1>
       <p className="mt-2 text-sm leading-relaxed text-[#4A4640]">
-        Pick a time and Sarah from the draw team will give you a quick ring about the{' '}
+        Pick a time and Sarah from the draw team will call about the{' '}
         <span className="font-semibold text-[#1B1A17]">{ctx?.drawName || 'lucky draw'}</span> — three yes-or-no
-        questions, under two minutes, and it&apos;s the first step to turning your 1 entry into{' '}
+        questions, first step to turning your 1 entry into{' '}
         <span className="font-semibold text-[#C89B3C]">×{ctx?.multiplier || 10} chances</span>.
       </p>
       <div className="mt-5 grid gap-2">
@@ -208,8 +208,8 @@ export default function ScreeningCallback() {
         ))}
       </div>
       <p className="mt-4 text-[11px] leading-relaxed text-[#6B6558]">
-        By picking a time you&apos;re agreeing to a call from the Redeem draw team (MKTR Pte. Ltd.) on this number
-        about your draw entry. Calls happen between 10am and 8pm Singapore time.
+        By picking a time you&apos;re agreeing to a call from the Redeem draw team (MKTR Pte. Ltd.) about your
+        entry — 10am–8pm Singapore time.
       </p>
     </>
   );

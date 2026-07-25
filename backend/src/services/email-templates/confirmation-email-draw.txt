@@ -10,7 +10,7 @@ RIGHT NOW: 1x    AFTER YOUR REVIEW: {{multiplier}}x
 Want {{multiplier}}x the chances? Complete your complimentary financial review session — when your consultant records it, your entry is multiplied.
 {{passText}}{{standingText}}
 
-If you win, we contact you directly after the draw — and we never ask for payment to release a prize.
+If you win, we contact you directly after the draw.
 
 ------------------------------------------------------------
 
