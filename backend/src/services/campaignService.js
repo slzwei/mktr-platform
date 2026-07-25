@@ -4,6 +4,7 @@ import { Campaign, QrTag, Prospect, Commission, Device, CampaignMediaItem, Campa
 import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../utils/logger.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
@@ -36,6 +37,28 @@ async function ensureRail(args) {
   if (_ensureDrawBoostRail) return _ensureDrawBoostRail(args);
   const mod = await import('./redeemOps/drawBoostProvisioningService.js');
   return mod.ensureDrawBoostRail(args);
+}
+/**
+ * Draw-RECORD ensure hook — the engine row chances/freeze/seal run on, born
+ * at the same arming moments as the rail so no operator ever runs the CLI
+ * create step by hand. BEST-EFFORT unlike the rail: a missing record loses
+ * nothing (evidence accrues independently; the boot reconciler retries), so
+ * this never throws and never blocks a save or launch. Same lazy-import +
+ * test-seam shape as ensureRail.
+ */
+let _ensureDrawRecord = null;
+export function setEnsureDrawRecord(fn) {
+  _ensureDrawRecord = typeof fn === 'function' ? fn : null;
+}
+async function ensureRecord(args) {
+  try {
+    if (_ensureDrawRecord) return await _ensureDrawRecord(args);
+    const mod = await import('./luckyDrawService.js');
+    return await mod.ensureDrawRecord(args);
+  } catch (err) {
+    logger.warn('[Campaign] draw-record ensure failed (reconciler will retry)', { error: err?.message });
+    return { created: false, reason: 'failed' };
+  }
 }
 /** Write the ensured activationId into the doc's stored luckyDraw (both doc
  * versions keep `luckyDraw` top-level — loss-ledger L5). No-op on null. */
@@ -559,6 +582,9 @@ export async function createCampaign(body, user) {
       }
     }
     await campaign.update({ design_config: withTerms });
+    // Born-active draw gets its engine record too — after the doc (stamped
+    // rail + pinned terms) is stored. Best-effort; the reconciler retries.
+    if (campaignData.is_active) await ensureRecord({ campaignId: campaign.id, user });
   }
 
   // Write agent assignments to join table
@@ -695,12 +721,14 @@ export async function updateCampaign(id, body, req) {
   // transitions ONLY — inactive→active with a draw, or the draw turning on
   // under an active campaign. Routine saves of a live draw campaign never
   // re-enter (a transient rail 422 must not block unrelated edits — CX16).
+  let armedDraw = false;
   {
     const nextDoc = updateData.design_config !== undefined ? updateData.design_config : campaign.design_config;
     const becomingActive = willBeActive && campaign.is_active !== true;
     const drawTurningOn =
       willBeActive && drawEnabledIn(nextDoc) && !drawEnabledIn(campaign.design_config);
     const arming = (becomingActive && drawEnabledIn(nextDoc)) || drawTurningOn;
+    armedDraw = arming;
 
     // Promise-consistency gate (PR-3/CX16): arming transitions AND active
     // saves that MODIFY a compared fact (ages, terms, material draw fields).
@@ -753,6 +781,9 @@ export async function updateCampaign(id, body, req) {
 
   try {
     await campaign.update(updateData);
+    // Draw record rides the arming moment, AFTER the doc (with its stamped
+    // rail + pinned terms) is stored — best-effort; the reconciler retries.
+    if (armedDraw) await ensureRecord({ campaignId: campaign.id, user: req.user });
   } catch (err) {
     if (err?.name === 'SequelizeUniqueConstraintError') {
       throw new AppError('That marketplace slug is already taken by another campaign.', 409);
@@ -900,6 +931,11 @@ export async function setCampaignLaunchState(id, state, req) {
     ...(stampedDoc ? { design_config: stampedDoc } : {}),
     ...(isActive && !campaign.firstActivatedAt ? { firstActivatedAt: new Date() } : {}),
   });
+  // The engine record is born with the launch (best-effort — a record hiccup
+  // must never un-launch a campaign; the boot reconciler retries).
+  if (isActive && drawEnabledIn(campaign.design_config)) {
+    await ensureRecord({ campaignId: campaign.id, user: req.user });
+  }
   invalidateMarketplaceCache();
   invalidateFeaturedDropsCache();
 
