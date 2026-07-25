@@ -654,25 +654,43 @@ Not covered: nothing schedules the ring-back outside the 10:00–20:00 window, a
 a "next week" request is still clamped to the hold ceiling — past that, TTL
 releases the lead unscreened by policy (D1). WhatsApp fallback is §16.6.
 
-## §16.6 WhatsApp callback opt-in (submitted for review 2026-07-25)
+## §16.6 WhatsApp callback opt-in (BUILT 2026-07-25; template APPROVED same day)
 
-**Submitted 2026-07-25, template id 1587973386015533, status PENDING** (WABA
-1912683432731970 — resolved via the script's hardcoded Redeem-WABA fallback; the
-prod system-user token's granular scopes carry no target ids, so nothing is
-enumerable from the token alone).
+Template `draw_callback_optin` (MARKETING, id 1587973386015533, WABA
+1912683432731970) — the messaging leg for leads a dial cannot finish. The URL
+button's tap IS the consent: the person asking to be called is what makes the
+ring-back welcome. Copy follows the ×N-is-the-TOTAL contract, not the phone
+script's "N more chances" register. Definition + submitter:
+`backend/scripts/submit-wa-marketing-templates.mjs` (`--callback-only`).
 
-Template `draw_callback_optin` (MARKETING, `allow_category_change`) — the
-messaging leg for leads a dial cannot finish. URL button "Yes, call me" carries
-the consent: the tap is the person asking to be called, which is what makes the
-ring-back welcome. Copy follows the ×N-is-the-TOTAL contract and
-`DRAW_RECORD_PHRASE`, not the phone script's "N more chances" register.
-Definition + submitter: `backend/scripts/submit-wa-marketing-templates.mjs`
-(`--callback-only`).
+The full loop, all shipped:
 
-**Unbuilt before it can send:** the `/callback?t=…` landing page and its
-consent-capture endpoint (tap ⇒ record consent ⇒ schedule the next attempt), and
-a `purpose:'marketing'` send path in `whatsappService` — its sends are
-transactional today, so a marketing unsubscribe would not block this one.
+1. **Trigger** (`retellScreeningService.maybeSendWaCallbackInvite`, fired
+   fire-and-forget from `resolveAttemptFailure`): at most ONE invite per lead
+   (fenced `screeningMetadata.waCallback` claim), when the lead is still held
+   with attempts left and either a connected call ended verdict-less with NO
+   voice-booked callback, or the 2nd dial went unanswered (one dial before the
+   release policy would take the row away). Guards before the claim: draw
+   campaign only (the template speaks draw language), campaign active,
+   `canMarketTo` — and `sendTemplate` re-checks `purpose:'marketing'`
+   (full canMarketTo, fail-closed) at send time; a marketing unsubscribe
+   blocks it while transactional sends stay untouched.
+2. **Token**: `wcb_<32hex>` minted per invite, stored in `idempotency_keys`
+   (scope `screening:wa_callback`, key `wacb:<token>` → `{prospectId}`),
+   expiring at the same 2×maxHoldHours ceiling the TTL sweep grants a promise.
+3. **Page**: `redeem.sg/callback?t=<token>` (`src/pages/ScreeningCallback.jsx`,
+   Vault-pass palette). GET `/api/screening-callback/:token` returns first
+   name + draw context only; states ready / in_flight / done / invalid.
+4. **The tap**: POST with `window ∈ {asap(+10m), later_today, tomorrow}` →
+   `applyWaCallbackRequest`: fenced schedule write (`screeningNextAttemptAt` =
+   `callbackRetryAt`, window-clamped + ceiling-capped) + the SAME
+   `callbackGranted` bonus flag as the phone path (one bonus per lead total;
+   re-taps only move the time) + a ProspectActivity consent record with the
+   chosen window. The existing sweep then dials — every dial guard re-runs, so
+   a tap can never bypass window/DNC/consent/budget/concurrency.
+5. **Evidence**: drawer shows "wa invite <sent-at> · tapped (<window>)" and the
+   scheduled callback time. Route is public + rate-limited (60/15min,
+   reward-claim parity) and outside the redeem-host blocklist.
 
 ---
 
