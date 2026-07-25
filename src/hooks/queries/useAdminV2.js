@@ -5,17 +5,27 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchOverview, fetchAttention, fetchSeries, fetchFunnel,
-  fetchProspects, fetchProspectDetail, fetchCampaignsList, fetchAgentOptions,
+  fetchProspects, fetchProspectDetail, fetchProspectProfile, fetchCampaignsList, fetchAgentOptions,
   fetchAgentsRoster, fetchCampaignSummary, fetchWallets, fetchWalletLedger, fetchAgentGroups,
 } from '@/api/adminV2';
 
 const STALE_MS = 30_000;
 
-/** Full prospect detail for the drawer — includes the consumer-spine journey. */
+/** Full prospect detail — includes the consumer-spine journey. */
 export function useProspectDetail(id) {
   return useQuery({
     queryKey: ['adminV2', 'prospectDetail', id],
     queryFn: () => fetchProspectDetail(id),
+    staleTime: STALE_MS,
+    enabled: !!id,
+  });
+}
+
+/** Lead Profile page — detail + the ?include=profile enrichments. */
+export function useProspectProfile(id) {
+  return useQuery({
+    queryKey: ['adminV2', 'prospectProfile', id],
+    queryFn: () => fetchProspectProfile(id),
     staleTime: STALE_MS,
     enabled: !!id,
   });

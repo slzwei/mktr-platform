@@ -127,13 +127,13 @@ export default function AdminV2CampaignDetail() {
             <EmptyState title="No leads yet" hint="Submissions land here as they arrive." />
           ) : (
             recent.map((p) => (
-              <div key={p.id} className="av2-qrow" style={{ cursor: 'default' }}>
+              <Link key={p.id} to={`/admin/leads/${p.id}`} className="av2-qrow" style={{ textDecoration: 'none', color: 'inherit' }}>
                 <span style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>{p.firstName} {p.lastName}</span>
                 {p.quarantinedAt
                   ? <Chip tone="hold" glyph="◆">{heldLabel(p).short}</Chip>
                   : <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>}
                 <span className="av2-mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', width: 70, textAlign: 'right' }} title={fmtDateTime(p.createdAt)}>{fmtRelative(p.createdAt)}</span>
-              </div>
+              </Link>
             ))
           )}
         </Card>
