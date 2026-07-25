@@ -413,11 +413,17 @@ export function makeConsumerService(overrides = {}) {
         attributes: [
           'id', 'firstName', 'lastName', 'phone', 'campaignId', 'leadStatus', 'leadSource',
           'createdAt', 'conversionDate', 'quarantinedAt', 'quarantineReason', 'sourceMetadata',
+          'externalAgentId',
           // consentMetadata carries the pinned draw-terms acceptance the draw
           // eligibility preview reads — profile mode only.
           ...(includeRaw ? ['consentMetadata'] : []),
         ],
-        include: [{ association: 'campaign', attributes: ['id', 'name', 'status'] }],
+        include: [
+          { association: 'campaign', attributes: ['id', 'name', 'status'] },
+          // Per-signup routing for the Lead Profile page (design handoff: the
+          // campaign row's AGENT segment + the assign menu's sub-line).
+          { association: 'assignedAgent', attributes: ['id', 'firstName', 'lastName'] },
+        ],
         order: [['createdAt', 'DESC'], ['id', 'DESC']],
       }),
       d.RewardEntitlement.findAll({
@@ -461,6 +467,10 @@ export function makeConsumerService(overrides = {}) {
         held: !!s.quarantinedAt,
         heldReason: s.quarantineReason || null,
         verified: phoneVerificationIsCurrent(s),
+        agentName: s.assignedAgent
+          ? `${s.assignedAgent.firstName || ''} ${s.assignedAgent.lastName || ''}`.trim() || null
+          : null,
+        externalBuyer: Boolean(s.externalAgentId),
       })),
       entitlements: entitlements.map((e) => ({
         id: e.id,

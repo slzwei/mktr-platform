@@ -1,9 +1,11 @@
 /**
- * Lead Profile page — person-first rail (name-per-signup + variant flag),
- * draw voice vs reward voice per campaign, re-anchor navigation, the
- * consumer-less (B4) fallback, the erased banner, and history scope.
+ * Lead Profile (master-detail redesign) — drill-in lands with the outcome hero,
+ * the profile view tells the person story (name-per-signup + variant flag,
+ * compact status chips, day-grouped history), the two views are URL-addressable,
+ * and the command bar's two-step assign wires to bulkAssign for the picked
+ * signup. Plus the consumer-less (Retell) and erased states.
  */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -11,83 +13,86 @@ import AdminV2LeadProfile from '../AdminV2LeadProfile';
 
 vi.mock('@/api/adminV2', () => ({
   fetchProspectProfile: vi.fn(),
-  fetchAgentOptions: vi.fn(async () => []),
-  bulkAssign: vi.fn(),
+  fetchAgentOptions: vi.fn(async () => [{ id: 'agent-1', name: 'Marcus Wong' }]),
+  bulkAssign: vi.fn(async () => ({ data: { affectedCount: 1 } })),
   bulkReturnToHeld: vi.fn(),
   bulkDelete: vi.fn(),
 }));
 
-import { fetchProspectProfile } from '@/api/adminV2';
+import { fetchProspectProfile, bulkAssign } from '@/api/adminV2';
 
 const PROFILE = {
   id: 'p1',
-  firstName: 'Shawn', lastName: 'Lee', phone: '+6591234567', email: 's@x.com',
+  firstName: 'Shawn', lastName: 'Lee', phone: '+6591234567', email: 'shawn@x.com',
   leadStatus: 'new', quarantinedAt: null, quarantineReason: null,
   priority: null, score: null, leadSource: 'qr_code',
-  createdAt: '2026-07-20T02:00:00Z',
-  sourceMetadata: { utm: { utm_source: 'fb' }, phoneVerifiedAt: '2026-07-20T02:00:00Z' },
-  consentMetadata: {},
-  campaign: { id: 'camp-1', name: 'Tokyo Lucky Draw', status: 'active' },
+  createdAt: '2026-07-20T06:05:00Z',
+  sourceMetadata: { utm: { utm_source: 'fb', utm_medium: 'cpc', utm_campaign: 'aug-tokyo' }, phoneVerifiedAt: '2026-07-20T06:06:00Z' },
+  consentMetadata: { drawTerms: { termsVersionId: 'abcd1234-0000' } },
+  demographics: { dateOfBirth: '1988-03-12' },
+  campaign: { id: 'camp-1', name: 'Tokyo Getaway Lucky Draw', status: 'active' },
   assignedAgent: null, externalAgent: null, externalAgentId: null, qrTag: null,
   commissions: [],
-  activities: [{ id: 'a1', type: 'created', description: 'Lead captured', createdAt: '2026-07-20T02:00:00Z' }],
-  session: null, lyfeDelivery: null, signupProfile: null,
+  activities: [{ id: 'a1', type: 'created', description: 'Lead captured', createdAt: '2026-07-20T06:05:00Z' }],
+  session: { startedAt: '2026-07-20T06:02:00Z', landingPath: '/c/tokyo', utm: {}, steps: [{ type: 'page_view', at: '2026-07-20T06:02:00Z', path: '/c/tokyo' }], visitCount: 1 },
+  lyfeDelivery: [{ eventType: 'lead.created', status: 'success', attempts: 1, lastAttemptAt: '2026-07-20T06:06:00Z', responseCode: 200, reason: null, at: '2026-07-20T06:06:00Z' }],
+  signupProfile: null,
+  screeningVerdict: 'qualified',
+  screeningMetadata: { verdictDetail: { reason: 'Agreed to meet a consultant', sentiment: 'Positive' }, attempts: {} },
+  screeningAttemptCount: 2,
   consumer: {
     consumer: {
       id: 'con-1', phone: '+6591234567', firstName: 'Shawn', lastName: 'Lee',
-      signupCount: 2, verifiedSignupCount: 2, firstSeenAt: '2026-05-01T02:00:00Z', erasedAt: null,
+      signupCount: 2, verifiedSignupCount: 2, firstSeenAt: '2026-05-01T08:40:00Z', erasedAt: null,
     },
     signups: [
       {
         prospectId: 'p1', firstName: 'Shawn', lastName: 'Lee',
-        campaign: { id: 'camp-1', name: 'Tokyo Lucky Draw', status: 'active' },
-        leadStatus: 'new', leadSource: 'qr_code', createdAt: '2026-07-20T02:00:00Z',
-        held: false, verified: true,
+        campaign: { id: 'camp-1', name: 'Tokyo Getaway Lucky Draw', status: 'active' },
+        leadStatus: 'new', leadSource: 'qr_code', createdAt: '2026-07-20T06:05:00Z',
+        held: false, verified: true, agentName: null, externalBuyer: false,
         draw: {
           drawId: 'd1', drawStatus: 'open', state: 'provisional_in', provisional: true,
           chances: 10, multiplier: 10, boosted: true, boostVia: 'agent_scan',
-          boostedAt: '2026-07-21T02:00:00Z', boostReviewPending: false,
+          boostedAt: '2026-07-21T01:12:00Z', boostReviewPending: false,
           closesAt: '2026-10-30T16:00:00Z', boostClosesAt: null, notEligibleReason: null,
           outcome: null, drawHistory: [],
         },
-        consent: { contact: { granted: true, version: '2026-07-21-agree-all-v1', scope: 'campaign' } },
+        consent: { contact: { granted: true, version: '2026-07-21-agree-all-v1', scope: 'global', occurredAt: '2026-07-21T02:00:00Z' } },
         rewardDiagnostic: null,
       },
       {
         prospectId: 'p2', firstName: 'Shawn', lastName: 'Tan',
-        campaign: { id: 'camp-2', name: 'NTUC Trial', status: 'active' },
-        leadStatus: 'won', leadSource: 'website', createdAt: '2026-05-01T02:00:00Z',
-        held: false, verified: true, draw: null,
-        consent: { contact: { granted: false } }, rewardDiagnostic: null,
+        campaign: { id: 'camp-2', name: 'NTUC Trial Reward', status: 'active' },
+        leadStatus: 'won', leadSource: 'website', createdAt: '2026-05-01T08:40:00Z',
+        held: false, verified: true, agentName: null, externalBuyer: true,
+        draw: null, consent: { contact: { granted: false } }, rewardDiagnostic: null,
       },
     ],
     entitlements: [{
       id: 'ent-1', status: 'redeemed', state: 'redeemed',
-      createdAt: '2026-05-01T03:00:00Z', unlockedAt: '2026-05-02T03:00:00Z', expiresAt: null,
-      rewardTitle: '1-for-1 latte', campaignName: 'NTUC Trial', campaignId: 'camp-2',
-      redeemedAt: '2026-05-03T03:00:00Z', unlockedVia: 'agent_scan', tokenHint: '9876',
+      createdAt: '2026-05-01T09:00:00Z', unlockedAt: '2026-05-02T02:00:00Z', expiresAt: null,
+      rewardTitle: '1-for-1 latte', campaignName: 'NTUC Trial Reward', campaignId: 'camp-2',
+      redeemedAt: '2026-05-03T03:26:00Z', unlockedVia: 'agent_scan', tokenHint: '9876',
       drawLinked: false,
-      delivery: { email: { ok: true, kind: 'voucher', at: '2026-05-02T03:05:00Z' }, whatsapp: null },
+      delivery: { email: { ok: true, kind: 'voucher', at: '2026-05-02T02:00:00Z' }, whatsapp: null },
     }],
     drawEntries: 1,
     suppressions: [],
-    broadcasts: {
-      counts: { sent: 1 },
-      recent: [{ broadcastId: 'b1', subject: 'Promo', status: 'sent', reason: null, sentAt: '2026-06-01T02:00:00Z', at: '2026-06-01T02:00:00Z' }],
-    },
+    broadcasts: { counts: { sent: 1 }, recent: [] },
   },
 };
 
 function Loc() {
   const location = useLocation();
-  return <div data-testid="loc">{location.pathname}</div>;
+  return <div data-testid="loc">{location.pathname}{location.search}</div>;
 }
 
-function setup(id = 'p1') {
+function setup(initial = '/admin/leads/p1') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/admin/leads/${id}`]}>
+      <MemoryRouter initialEntries={[initial]}>
         <Routes>
           <Route path="/admin/leads/:prospectId" element={<><AdminV2LeadProfile /><Loc /></>} />
           <Route path="/AdminProspects" element={<div>LIST</div>} />
@@ -102,75 +107,119 @@ beforeEach(() => {
   fetchProspectProfile.mockResolvedValue(JSON.parse(JSON.stringify(PROFILE)));
 });
 
-describe('AdminV2LeadProfile', () => {
-  it('renders the person header and asks for the profile enrichment', async () => {
+describe('AdminV2LeadProfile — drill-in (default landing)', () => {
+  it('lands on the campaign drill-in with the outcome hero as the loudest fact', async () => {
     setup();
-    expect(await screen.findByRole('heading', { name: 'Shawn Lee' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Tokyo Getaway Lucky Draw' })).toBeInTheDocument();
     expect(fetchProspectProfile).toHaveBeenCalledWith('p1');
-    expect(screen.getByText(/2 SIGNUPS \(2 VERIFIED\)/)).toBeInTheDocument();
+    expect(screen.getByText('On track for ×10')).toBeInTheDocument();
+    expect(screen.getByText(/consultant scan recorded/)).toBeInTheDocument();
+    expect(screen.getByText(/CLOSES 30 OCT/)).toBeInTheDocument();
+    // Command bar identity + back-to-profile affordance.
+    expect(screen.getByText('SHAWN LEE · +65 9123 4567')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Shawn Lee — profile/ })).toBeInTheDocument();
   });
 
-  it('tells each campaign story: name used, draw voice, reward voice', async () => {
+  it('shows signup facts and Lyfe delivery in the detail card', async () => {
     setup();
-    await screen.findAllByText('Tokyo Lucky Draw');
-    // Name-per-signup with the variant flagged (Shawn Tan ≠ canonical Shawn Lee).
-    expect(screen.getByText('Shawn Tan')).toBeInTheDocument();
+    await screen.findByText('Signup detail');
+    expect(screen.getByText(/QR code → \/c\/tokyo/)).toBeInTheDocument();
+    expect(screen.getByText(/fb \/ cpc \/ aug-tokyo/)).toBeInTheDocument();
+    expect(screen.getByText('unassigned')).toBeInTheDocument();
+    expect(screen.getByText(/delivered/)).toBeInTheDocument();
+    expect(screen.getByText('“Agreed to meet a consultant”')).toBeInTheDocument();
+  });
+
+  it('back button opens the person profile view (URL-addressable)', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /Shawn Lee — profile/ }));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/admin/leads/p1?view=profile');
+    expect(await screen.findByRole('heading', { name: 'Shawn Lee' })).toBeInTheDocument();
+  });
+
+  it('drill-in assign is one step and targets THIS lead', async () => {
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Assign this lead ▾' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Marcus Wong/ }));
+    await waitFor(() => expect(bulkAssign).toHaveBeenCalledWith(['p1'], 'agent-1'));
+  });
+});
+
+describe('AdminV2LeadProfile — person profile view', () => {
+  it('tells the person story: identity, per-signup names, compact status chips', async () => {
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByRole('heading', { name: 'Shawn Lee' })).toBeInTheDocument();
+    expect(screen.getByText(/2 signups \(2 verified\)/)).toBeInTheDocument();
+    // Name used per signup (mono meta line) + the variant flag.
+    expect(screen.getByText(/AS SHAWN TAN/)).toBeInTheDocument();
     expect(screen.getByText('name variant')).toBeInTheDocument();
-    // Draw voice — provisional, never asserted.
-    expect(screen.getByText(/On track for ×10 — consultant scan recorded/)).toBeInTheDocument();
-    // Reward voice on the other campaign + delivery receipt microline
-    // (history rows repeat the reward name, so match all).
-    expect(screen.getAllByText(/Redeemed ✓/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/1-for-1 latte/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/pass emailed ✓/)).toBeInTheDocument();
+    // Compact outcome chips — no outcome machinery on rows.
+    expect(screen.getByText(/open · closes 30 Oct/)).toBeInTheDocument();
+    expect(screen.getByText('✓ redeemed')).toBeInTheDocument();
+    expect(screen.queryByText('On track for ×10')).not.toBeInTheDocument();
+    // Agent segment: unassigned is warn-voiced; external buyer named as such.
+    expect(screen.getByText('AGENT: UNASSIGNED')).toBeInTheDocument();
+    expect(screen.getByText('AGENT: EXTERNAL BUYER')).toBeInTheDocument();
   });
 
-  it('re-anchors to another signup by navigating to its URL', async () => {
-    setup();
-    const cards = await screen.findAllByText('NTUC Trial');
-    fireEvent.click(cards[0]); // the rail card (history captions repeat the name)
+  it('campaign rows drill in by navigating to that signup URL', async () => {
+    setup('/admin/leads/p1?view=profile');
+    fireEvent.click(await screen.findByText('NTUC Trial Reward'));
     expect(screen.getByTestId('loc')).toHaveTextContent('/admin/leads/p2');
   });
 
-  it('shows the ledger-backed consent and marketing touches', async () => {
-    setup();
-    await screen.findByText('Consent & reachability');
-    expect(screen.getByText(/yes · 2026-07-21-agree-all-v1/)).toBeInTheDocument();
-    expect(screen.getByText('1 sent')).toBeInTheDocument();
+  it('history is day-grouped, person-wide, with no scope filter', async () => {
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('History');
+    expect(screen.getByText(/Signed up as Shawn Tan/)).toBeInTheDocument();
+    expect(screen.getByText(/Voucher redeemed ✓/)).toBeInTheDocument();
+    expect(screen.getByText('MON 20 JUL')).toBeInTheDocument(); // SGT day header
+    expect(screen.queryByRole('button', { name: 'This signup' })).not.toBeInTheDocument();
   });
 
-  it('falls back to the signup profile for consumer-less (Retell) leads', async () => {
+  it('profile assign is two-step: pick the campaign, then the agent', async () => {
+    setup('/admin/leads/p1?view=profile');
+    fireEvent.click(await screen.findByRole('button', { name: 'Assign to agent ▾' }));
+    expect(screen.getByText("Which campaign's lead?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: /NTUC Trial Reward/ }));
+    expect(screen.getByText(/Assign NTUC Trial Reward lead to/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: /Marcus Wong/ }));
+    await waitFor(() => expect(bulkAssign).toHaveBeenCalledWith(['p2'], 'agent-1'));
+  });
+
+  it('consent card reads the ledger with scope tags', async () => {
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Consent & reachability');
+    expect(screen.getByText('· global')).toBeInTheDocument();
+    expect(screen.getByText(/1 sent/)).toBeInTheDocument();
+  });
+});
+
+describe('AdminV2LeadProfile — states', () => {
+  it('consumer-less Retell lead: banner, single signup, voice-call card', async () => {
     fetchProspectProfile.mockResolvedValue({
       ...JSON.parse(JSON.stringify(PROFILE)),
       consumer: null,
       leadSource: 'call_bot',
+      screeningVerdict: null, screeningMetadata: null, screeningAttemptCount: 0,
       sourceMetadata: { sentiment: 'Positive', fromNumber: '+6562773210', durationMs: 61000 },
       signupProfile: { draw: null, entitlements: [], rewardDiagnostic: 'no_active_activation' },
     });
     setup();
     await screen.findByText(/Retell voice lead/);
-    expect(screen.getByText('No reward attached to this campaign')).toBeInTheDocument();
+    expect(screen.getByText('No reward')).toBeInTheDocument();
     expect(screen.getByText('Voice call')).toBeInTheDocument();
     expect(screen.getByText('Positive')).toBeInTheDocument();
   });
 
-  it('flags erased people and drops their draw claims', async () => {
+  it('erased person: banner and the honest draw hero', async () => {
     const erased = JSON.parse(JSON.stringify(PROFILE));
-    erased.consumer.consumer.erasedAt = '2026-07-01T02:00:00Z';
+    erased.consumer.consumer.erasedAt = '2026-07-12T02:00:00Z';
     erased.consumer.signups[0].draw = { state: 'erased_draw_unavailable' };
     fetchProspectProfile.mockResolvedValue(erased);
     setup();
     await screen.findByText(/This person was erased/);
-    expect(screen.getByText(/Draw record unavailable \(erased\)/)).toBeInTheDocument();
-  });
-
-  it('filters history by scope', async () => {
-    setup();
-    await screen.findByText('History');
-    // Person-scope events include the second signup.
-    expect(screen.getByText(/Signed up as Shawn Tan/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'This signup' }));
-    expect(screen.queryByText(/Signed up as Shawn Tan/)).not.toBeInTheDocument();
-    expect(screen.getByText('Lead captured')).toBeInTheDocument();
+    expect(screen.getByText('⊘ Draw record unavailable')).toBeInTheDocument();
+    expect(screen.getByText('ERASED')).toBeInTheDocument();
   });
 });
