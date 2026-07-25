@@ -479,11 +479,15 @@ export function makeErasureService(overrides = {}) {
           { replacements: { eids }, transaction: t }
         );
         report.redemptions = rowCount(rMeta);
+        // messageId/providerMessageId are provider correlation ids
+        // (wa-delivery-truth): dropping them here also unlinks the person's
+        // wa_message_statuses rows from any receipt — a late Meta callback
+        // can then never re-attach delivery detail to an erased person.
         const [, reMeta] = await d.sequelize.query(
           `UPDATE redemption_events
-              SET metadata = (metadata - 'to' - 'reason' - 'error')
+              SET metadata = (metadata - 'to' - 'reason' - 'error' - 'messageId' - 'providerMessageId')
             WHERE "entitlementId" IN (:eids) AND metadata IS NOT NULL
-              AND (metadata ? 'to' OR metadata ? 'reason' OR metadata ? 'error')`,
+              AND (metadata ?| array['to', 'reason', 'error', 'messageId', 'providerMessageId'])`,
           { replacements: { eids }, transaction: t }
         );
         report.redemptionEvents = rowCount(reMeta);
@@ -501,6 +505,19 @@ export function makeErasureService(overrides = {}) {
           { replacements: { auditEntityIds }, transaction: t }
         );
         report.auditReasons = rowCount(arMeta);
+      }
+
+      // 11b. WhatsApp status inbox (wa-delivery-truth): recipientHash shares
+      // consumers.phoneHash's recipe, so one keyed DELETE removes the person's
+      // delivery telemetry — including screening-callback sends, which have
+      // statuses but no entitlement receipt. Runs outside the eids guard for
+      // exactly that reason. Pure telemetry, so deletion (not scrubbing).
+      if (consumer.phoneHash) {
+        const [, wmsMeta] = await d.sequelize.query(
+          'DELETE FROM wa_message_statuses WHERE "recipientHash" = :ph',
+          { replacements: { ph: consumer.phoneHash }, transaction: t }
+        );
+        report.waMessageStatuses = rowCount(wmsMeta);
       }
 
       // 12. Draw entries (prospect join + phoneHash fallback — draw_entries

@@ -40,12 +40,29 @@ function parseRewardQr(raw) {
   return null;
 }
 
+const RECEIPT_NOUNS = { voucher: 'Voucher', boost_receipt: 'Boost receipt', pass: 'Pass' };
+
 /** Per-row delivery truth from the receipts the backend now records. */
 function deliveryStatus(e) {
+  // Post-acceptance drop (wa-delivery-truth status inbox): the provider
+  // ACCEPTED the send — the old ✓ — but Meta later reported failure (e.g.
+  // 131049, the per-user marketing frequency cap). That verdict outranks the
+  // happy email line: staff must see it to resend.
+  const wa = e.delivery?.whatsapp;
+  if (wa?.ok && wa.delivery?.status === 'failed') {
+    const noun = RECEIPT_NOUNS[wa.kind] || 'Pass';
+    const why = String(wa.delivery.errorCode) === '131049'
+      ? 'Meta marketing limit'
+      : (wa.delivery.errorTitle || 'reported failed');
+    return { text: `${noun} WhatsApp not delivered — ${why}`, tone: 'warn' };
+  }
   const em = e.delivery?.email;
   if (em) {
-    const noun = em.kind === 'voucher' ? 'Voucher' : 'Pass';
+    const noun = RECEIPT_NOUNS[em.kind] || 'Pass';
     if (em.ok) {
+      if (em.delivery?.status === 'failed') {
+        return { text: `${noun} email not delivered — ${em.delivery.errorTitle || 'provider reported failure'}`, tone: 'warn' };
+      }
       const at = new Date(em.at).toLocaleString('en-SG', {
         day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
       });
@@ -260,7 +277,10 @@ export default function RedemptionsPage() {
         redeemed: g.open.filter((e) => e.status === 'redeemed').length,
         closed: g.closed.length,
       },
-      deliveryIssues: g.open.filter((e) => e.delivery?.email && !e.delivery.email.ok).length,
+      deliveryIssues: g.open.filter((e) =>
+        (e.delivery?.email && (!e.delivery.email.ok || e.delivery.email.delivery?.status === 'failed'))
+        || (e.delivery?.whatsapp && (!e.delivery.whatsapp.ok || e.delivery.whatsapp.delivery?.status === 'failed'))
+      ).length,
       // Same condition as the old per-row badge: undeliverable NOW, regardless
       // of receipts — an email cleared after a send must keep warning.
       noEmail: g.open.filter(

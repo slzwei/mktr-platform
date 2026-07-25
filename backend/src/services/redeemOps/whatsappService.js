@@ -283,11 +283,23 @@ export function makeWhatsappService(overrides = {}) {
           const err = await res.json();
           detail = err?.error ? `${err.error.code || res.status}: ${err.error.message || ''}` : detail;
         } catch { /* non-JSON error body — keep the status */ }
-        return { sent: false, to: maskPhone(prospect.phone), error: `Meta API: ${detail}` };
+        return { sent: false, to: maskPhone(prospect.phone), templateName, error: `Meta API: ${detail}` };
       }
-      return { sent: true, to: maskPhone(prospect.phone) };
+      // The wamid keys the delivery-truth join (wa_message_statuses) — a 2xx
+      // without one is still a successful send ("accepted, untrackable"), so
+      // the parse must never throw a delivered message into the failed path.
+      let messageId = null;
+      try {
+        const json = await res.json();
+        messageId = json?.messages?.[0]?.id || null;
+      } catch { /* accepted, untrackable */ }
+      if (!messageId) d.logger.warn('redeem_ops.whatsapp.no_wamid', { template: templateName });
+      return {
+        sent: true, to: maskPhone(prospect.phone), templateName,
+        ...(messageId ? { messageId } : {}),
+      };
     } catch (err) {
-      return { sent: false, to: maskPhone(prospect.phone), error: err?.message || 'send failed' };
+      return { sent: false, to: maskPhone(prospect.phone), templateName, error: err?.message || 'send failed' };
     }
   }
 

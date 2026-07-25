@@ -188,7 +188,7 @@ describe('QR-header send sequence (default: header ON)', () => {
     const card = cardRecorder();
     const svc = makeSvc({ fetch, qr, card });
     const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok-raw' });
-    expect(r).toEqual({ sent: true, to: '••••4567' });
+    expect(r).toEqual({ sent: true, to: '••••4567', templateName: 'reward_pass' });
     expect(card.calls.length).toBe(1);
     expect(card.calls[0]).toMatchObject({
       state: 'pass',
@@ -261,7 +261,7 @@ describe('QR-header send sequence (default: header ON)', () => {
     const card = async () => { throw new Error('resvg exploded'); };
     const svc = makeSvc({ fetch, qr, card });
     const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok-raw' });
-    expect(r).toEqual({ sent: true, to: '••••4567' });
+    expect(r).toEqual({ sent: true, to: '••••4567', templateName: 'reward_pass' });
     expect(qr.contents).toEqual(['https://redeem.sg/r/ptok-raw']); // bare QR took over
     expect(fetch.calls.length).toBe(2); // upload + send still happened
   });

@@ -224,3 +224,33 @@ describe('AdminV2LeadProfile — states', () => {
     expect(screen.getByText('ERASED')).toBeInTheDocument();
   });
 });
+
+describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
+  it('renders post-acceptance states: 131049 as Meta marketing limit, delivered as ✓✓', async () => {
+    const profile = JSON.parse(JSON.stringify(PROFILE));
+    profile.consumer.entitlements[0].delivery = {
+      email: { ok: true, kind: 'boost_receipt', at: '2026-05-02T02:00:00Z', delivery: null },
+      whatsapp: {
+        ok: true, kind: 'boost_receipt', at: '2026-05-02T02:00:05Z',
+        delivery: { status: 'failed', errorCode: '131049', errorTitle: 'This message was not delivered to maintain healthy ecosystem engagement.', at: '2026-05-02T02:00:09Z' },
+      },
+    };
+    fetchProspectProfile.mockResolvedValue(profile);
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByText(/boost receipt WhatsApp ✗ not delivered — Meta marketing limit/)).toBeInTheDocument();
+    // Email has no provider verdict → the honest bare ✓ (accepted).
+    expect(screen.getByText(/boost receipt emailed ✓$/)).toBeInTheDocument();
+
+    const delivered = JSON.parse(JSON.stringify(PROFILE));
+    delivered.consumer.entitlements[0].delivery = {
+      email: null,
+      whatsapp: {
+        ok: true, kind: 'pass', at: '2026-05-02T02:00:05Z',
+        delivery: { status: 'delivered', errorCode: null, errorTitle: null, at: '2026-05-02T02:00:09Z' },
+      },
+    };
+    fetchProspectProfile.mockResolvedValue(delivered);
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByText(/pass WhatsApp ✓✓ delivered/)).toBeInTheDocument();
+  });
+});
