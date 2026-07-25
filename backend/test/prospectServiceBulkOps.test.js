@@ -62,6 +62,10 @@ function buildDeps(overrides = {}) {
     sequelize,
     buildProspectWhere: jest.fn().mockResolvedValue({}),
     deductLeadCredit: jest.fn().mockResolvedValue(),
+    // deleteProspect cancels live entitlements inside its transaction — the
+    // default dep lazy-imports the REAL service, which would run a real model
+    // query against this harness's fake transaction and kill the process.
+    cancelLiveEntitlementsForProspectTx: jest.fn().mockResolvedValue(0),
     dispatchEvent: jest.fn().mockResolvedValue(),
     persistEventDeliveries: jest.fn().mockResolvedValue([{ delivery: {}, subscriber: {} }]),
     flushDeliveries: jest.fn(),
