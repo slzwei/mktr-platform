@@ -95,6 +95,35 @@ export function nextRetryAt(cfg, attemptCount, now = new Date()) {
 }
 
 /**
+ * `callback_window` (Retell post-call analysis, script v9) → how long to wait
+ * before ringing back. "tomorrow" is deliberately +12h rather than +24h: the
+ * window clamp then lands it at the NEXT morning's open however late the first
+ * call ran, which is what the person meant.
+ */
+const CALLBACK_DELAY_MINUTES = {
+  later_today: 3 * 60,
+  tomorrow: 12 * 60,
+  this_week: 60 * 60,
+};
+
+/**
+ * The instant we promised to call back, or null when no callback was asked for.
+ * Clamped into the call window, and never scheduled past the point the TTL
+ * sweep may release the lead unscreened (the same 2× hold the sweep grants a
+ * promised callback) — a promise we cannot keep is worse than an earlier call.
+ */
+export function callbackRetryAt(cfg, rawWindow, { now = new Date(), quarantinedAt = null } = {}) {
+  const minutes = CALLBACK_DELAY_MINUTES[String(rawWindow || '').trim().toLowerCase()];
+  if (!minutes) return null;
+  let at = new Date(now.getTime() + minutes * 60 * 1000);
+  if (quarantinedAt) {
+    const ceiling = new Date(new Date(quarantinedAt).getTime() + 2 * cfg.maxHoldHours * 60 * 60 * 1000);
+    if (at > ceiling) at = ceiling;
+  }
+  return inCallWindow(cfg, at) ? at : nextWindowOpen(cfg, at);
+}
+
+/**
  * Additional draw chances the consultant meet-up earns, from the campaign's
  * stored luckyDraw.multiplier (mirrors normalizeLuckyDraw's default-10 /
  * clamp-2..100 without importing the draw graph). Non-draw campaigns fall
@@ -355,25 +384,41 @@ export function makeRetellScreeningService(overrides = {}) {
   /**
    * Resolve a failed/unanswered attempt: fenced clear of the active id, then
    * retry-or-policy. `activeId` is the CURRENT sentinel or bound call id.
+   *
+   * `retryAt` (a callback the person asked for) replaces the blind exponential
+   * backoff AND buys ONE bonus attempt per lead: they picked up and asked us to
+   * ring back, which is not a failed reach. The grant rides the same fenced
+   * statement that clears the active id, so a replayed webhook can never grant
+   * twice, and a lead that keeps deferring still runs out at maxAttempts + 1.
    */
-  async function resolveAttemptFailure(prospect, activeId, { cfg = screeningConfig(), kind = 'no_answer' } = {}) {
+  async function resolveAttemptFailure(prospect, activeId, { cfg = screeningConfig(), kind = 'no_answer', retryAt = null } = {}) {
+    const granting = !!retryAt && prospect.screeningMetadata?.callbackGranted !== true;
     const [rows] = await d.sequelize.query(
       `UPDATE prospects
-          SET "screeningActiveCallId" = NULL, "updatedAt" = NOW()
+          SET "screeningActiveCallId" = NULL,
+              "screeningMetadata" = COALESCE("screeningMetadata", '{}'::jsonb) || :metaPatch::jsonb,
+              "updatedAt" = NOW()
         WHERE id = :id AND "screeningActiveCallId" = :activeId
         RETURNING "screeningAttemptCount"`,
-      { replacements: { id: prospect.id, activeId } }
+      {
+        replacements: {
+          id: prospect.id,
+          activeId,
+          metaPatch: JSON.stringify(granting ? { callbackGranted: true } : {}),
+        },
+      }
     );
     if (!Array.isArray(rows) || rows.length === 0) return { outcome: 'stale' };
     const attempts = rows[0].screeningAttemptCount ?? prospect.screeningAttemptCount ?? 0;
 
     await prospect.reload().catch(() => {});
-    if (attempts >= cfg.maxAttempts) {
+    const granted = granting || prospect.screeningMetadata?.callbackGranted === true;
+    if (attempts >= cfg.maxAttempts + (granted ? 1 : 0)) {
       const policy = await d.gate.applyUnreachablePolicy(prospect, { cfg });
       return { outcome: 'exhausted', kind, policy };
     }
-    await deferAttempt(prospect, nextRetryAt(cfg, attempts));
-    return { outcome: 'retry_scheduled', kind, attempts };
+    await deferAttempt(prospect, retryAt || nextRetryAt(cfg, attempts));
+    return { outcome: 'retry_scheduled', kind, attempts, ...(retryAt ? { callbackAt: retryAt.toISOString() } : {}) };
   }
 
   /**
@@ -391,6 +436,29 @@ export function makeRetellScreeningService(overrides = {}) {
     const disconnection = call.disconnection_reason || null;
     const unanswered = UNANSWERED_REASONS.has(disconnection) || call.in_voicemail === true;
     const analysis = call.call_analysis || null;
+    const checks = analysis?.custom_analysis_data || null;
+    const rawQualified = checks?.qualified;
+    const hasVerdict = rawQualified === true || rawQualified === 'true'
+      || rawQualified === false || rawQualified === 'false';
+    const detail = analysis
+      ? {
+          reason: checks?.qualification_reason || null,
+          interestLevel: checks?.interest_level || null,
+          summary: analysis.call_summary || null,
+          sentiment: analysis.user_sentiment || null,
+          recordingUrl: call.recording_url || null,
+          // Verbatim turn-by-turn script Retell returns ("Agent: …\nUser: …").
+          // Capped so a pathologically long call can't bloat the jsonb row; the
+          // recording remains the unabridged source of truth. Admin-only surface.
+          transcript: typeof call.transcript === 'string' ? call.transcript.slice(0, 20000) : null,
+          // Full per-check evidence (sg_pr / age_in_range / meet_consultant …) —
+          // small object; lets the admin drawer show WHICH check failed.
+          checks,
+        }
+      : null;
+    const attemptOutcome = unanswered ? 'unanswered'
+      : hasVerdict ? (rawQualified === true || rawQualified === 'true' ? 'qualified' : 'not_qualified')
+        : analysis ? 'no_verdict' : null;
 
     if (token) {
       // Per-call economics + provenance, all straight off the Retell call
@@ -417,6 +485,21 @@ export function makeRetellScreeningService(overrides = {}) {
         ...(Number.isInteger(call.agent_version) ? { agentVersion: call.agent_version } : {}),
         ...(analysis && typeof analysis.in_voicemail === 'boolean' ? { inVoicemail: analysis.in_voicemail } : {}),
         ...(analysis && typeof analysis.call_successful === 'boolean' ? { callSuccessful: analysis.call_successful } : {}),
+        ...(attemptOutcome ? { outcome: attemptOutcome } : {}),
+        // A connected call that produced NO verdict (hung up early, wrong
+        // person, "call me back later") never reaches a verdict transition, so
+        // this patch is the only place its evidence can land. Verdict-bearing
+        // calls skip it — verdictDetail already carries the same fields, and
+        // duplicating a 20k transcript per attempt bloats the row for nothing.
+        ...(detail && !hasVerdict
+          ? {
+              reason: detail.reason,
+              summary: detail.summary,
+              sentiment: detail.sentiment,
+              transcript: detail.transcript,
+              checks: detail.checks,
+            }
+          : {}),
       });
     }
 
@@ -430,30 +513,20 @@ export function makeRetellScreeningService(overrides = {}) {
     }
 
     if (analysis) {
-      const rawQualified = analysis.custom_analysis_data?.qualified;
-      const detail = {
-        reason: analysis.custom_analysis_data?.qualification_reason || null,
-        interestLevel: analysis.custom_analysis_data?.interest_level || null,
-        summary: analysis.call_summary || null,
-        sentiment: analysis.user_sentiment || null,
-        recordingUrl: call.recording_url || null,
-        // Verbatim turn-by-turn script Retell returns ("Agent: …\nUser: …").
-        // Capped so a pathologically long call can't bloat the jsonb row; the
-        // recording remains the unabridged source of truth. Admin-only surface.
-        transcript: typeof call.transcript === 'string' ? call.transcript.slice(0, 20000) : null,
-        // Full per-check evidence (sg_pr / age_in_range / meet_consultant …) —
-        // small object; lets the admin drawer show WHICH check failed.
-        checks: analysis.custom_analysis_data || null,
-      };
       if (rawQualified === true || rawQualified === 'true') {
         return d.gate.applyQualifiedVerdict(prospect, { callId, detail });
       }
       if (rawQualified === false || rawQualified === 'false') {
         return d.gate.markScreeningFailed(prospect, { callId, detail });
       }
-      // Analysis arrived without our schema field — a connected call with no
-      // usable verdict. Never guessed from sentiment (plan §8.4).
-      return resolveAttemptFailure(prospect, callId, { cfg, kind: 'no_verdict' });
+      // Connected, but no usable verdict — hung up early, wrong person, or
+      // asked us to ring back. Never guessed from sentiment (plan §8.4). When
+      // they named a better time, that time replaces the blind backoff.
+      return resolveAttemptFailure(prospect, callId, {
+        cfg,
+        kind: 'no_verdict',
+        retryAt: callbackRetryAt(cfg, checks?.callback_window, { quarantinedAt: prospect.quarantinedAt || null }),
+      });
     }
 
     if (finalIfNoAnalysis) {

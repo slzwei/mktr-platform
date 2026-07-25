@@ -7,11 +7,13 @@
  */
 import { createHash } from 'crypto';
 import { jest } from '@jest/globals';
+import { Op } from 'sequelize';
 import {
   makeRetellScreeningService,
   inCallWindow,
   nextWindowOpen,
   nextRetryAt,
+  callbackRetryAt,
   drawExtraChances,
   UNANSWERED_REASONS,
 } from '../../src/services/retellScreeningService.js';
@@ -141,6 +143,37 @@ describe('call-window helpers', () => {
     expect(first.toISOString()).toBe('2026-07-23T05:00:00.000Z'); // +2h, in window
     const second = nextRetryAt({ ...cfgWin, retryMinutes: 120 }, 2, base); // +4h → 15:00 SGT ok
     expect(second.toISOString()).toBe('2026-07-23T07:00:00.000Z');
+  });
+});
+
+describe('callbackRetryAt', () => {
+  const cfgWin = { ...CFG, callWindow: '10:00-20:00' };
+  const noon = new Date('2026-07-23T04:00:00Z'); // 12:00 SGT
+
+  it('maps the stated window onto a real instant, clamped into the call window', () => {
+    // later today → +3h → 15:00 SGT, inside the window.
+    expect(callbackRetryAt(cfgWin, 'later_today', { now: noon }).toISOString()).toBe('2026-07-23T07:00:00.000Z');
+    // tomorrow → +12h lands at 00:00 SGT (shut) → next open, 10:00 SGT.
+    expect(callbackRetryAt(cfgWin, 'tomorrow', { now: noon }).toISOString()).toBe('2026-07-24T02:00:00.000Z');
+    // this week → +60h → 00:00 SGT on the 26th (shut) → 10:00 SGT that day.
+    expect(callbackRetryAt(cfgWin, 'this_week', { now: noon }).toISOString()).toBe('2026-07-26T02:00:00.000Z');
+  });
+
+  it('never schedules past the hold ceiling the TTL sweep grants a promise', () => {
+    // Captured at 11:00 SGT; 2 × 24h hold ⇒ nothing may be promised beyond the
+    // 25th 11:00 SGT, so "this week" collapses onto that day's window.
+    const at = callbackRetryAt(cfgWin, 'this_week', { now: noon, quarantinedAt: new Date('2026-07-23T03:00:00Z') });
+    expect(at.toISOString()).toBe('2026-07-25T03:00:00.000Z'); // 11:00 SGT, still inside the window
+  });
+
+  it('no callback asked for (or an unknown value) → null, so the blind backoff stands', () => {
+    for (const v of [undefined, null, '', 'none', 'unspecified', 'next_year']) {
+      expect(callbackRetryAt(cfgWin, v, { now: noon })).toBeNull();
+    }
+  });
+
+  it('is case- and whitespace-tolerant (the analysis model is not a schema)', () => {
+    expect(callbackRetryAt(cfgWin, ' Later_Today ', { now: noon }).toISOString()).toBe('2026-07-23T07:00:00.000Z');
   });
 });
 
@@ -430,6 +463,90 @@ describe('applyCallOutcome', () => {
     expect(depsMissing.gate.applyQualifiedVerdict).not.toHaveBeenCalled();
   });
 
+  it('a verdict-less call keeps its evidence on the attempt (the only record it gets)', async () => {
+    const seq = fakeSequelize([[[{ id: 'p' }]], [[{ screeningAttemptCount: 1 }]], [[{ id: 'p' }]]]);
+    const svc = makeRetellScreeningService(dialerDeps(seq));
+    await svc.applyCallOutcome(
+      pendingProspect({ screeningActiveCallId: 'call_1', screeningAttemptCount: 1 }),
+      call({
+        call_analysis: {
+          custom_analysis_data: { qualified: 'incomplete', qualification_reason: 'Asked to be called back', sg_pr: 'unanswered' },
+          call_summary: 'Could not talk',
+          user_sentiment: 'Neutral',
+        },
+        transcript: 'Agent: Is now a good time?\nUser: Call me later',
+      }),
+      { cfg: CFG }
+    );
+    const patch = JSON.parse(seq.calls.find((c) => String(c.sql).includes('{attempts,')).opts.replacements.patch);
+    expect(patch).toMatchObject({
+      outcome: 'no_verdict',
+      reason: 'Asked to be called back',
+      summary: 'Could not talk',
+      sentiment: 'Neutral',
+      transcript: 'Agent: Is now a good time?\nUser: Call me later',
+      checks: { qualified: 'incomplete', sg_pr: 'unanswered' },
+    });
+  });
+
+  it('a verdict-bearing call does NOT duplicate the transcript onto the attempt', async () => {
+    const seq = fakeSequelize([[[{ id: 'p' }]]]);
+    const svc = makeRetellScreeningService(dialerDeps(seq));
+    await svc.applyCallOutcome(pendingProspect({ screeningActiveCallId: 'call_1' }), call({
+      call_analysis: { custom_analysis_data: { qualified: true, qualification_reason: 'All three yes' } },
+      transcript: 'Agent: Hi\nUser: Yes',
+    }), { cfg: CFG });
+    const patch = JSON.parse(seq.calls.find((c) => String(c.sql).includes('{attempts,')).opts.replacements.patch);
+    expect(patch.outcome).toBe('qualified');
+    expect(patch.transcript).toBeUndefined();   // verdictDetail carries it
+    expect(patch.checks).toBeUndefined();
+  });
+
+  it('a stated callback replaces the blind backoff and grants one bonus attempt', async () => {
+    const seq = fakeSequelize([[[{ id: 'p' }]], [[{ screeningAttemptCount: 1 }]], [[{ id: 'p' }]]]);
+    const svc = makeRetellScreeningService(dialerDeps(seq));
+    const before = Date.now();
+    const out = await svc.applyCallOutcome(
+      pendingProspect({ screeningActiveCallId: 'call_1', screeningAttemptCount: 1 }),
+      call({ call_analysis: { custom_analysis_data: { qualified: 'incomplete', callback_window: 'later_today' } } }),
+      { cfg: CFG }
+    );
+    expect(out).toMatchObject({ outcome: 'retry_scheduled', kind: 'no_verdict' });
+    // ~3h out, not the 2h first-step backoff.
+    const at = new Date(out.callbackAt).getTime();
+    expect(at - before).toBeGreaterThan(2.9 * 60 * 60 * 1000);
+    expect(at - before).toBeLessThan(3.1 * 60 * 60 * 1000);
+    // The grant rides the fenced clear, and the deferral uses the promised time.
+    const clear = seq.calls.find((c) => String(c.sql).includes('SET "screeningActiveCallId" = NULL'));
+    expect(JSON.parse(clear.opts.replacements.metaPatch)).toEqual({ callbackGranted: true });
+    const defer = seq.calls.find((c) => String(c.sql).includes('"screeningNextAttemptAt" = :at'));
+    expect(new Date(defer.opts.replacements.at).toISOString()).toBe(out.callbackAt);
+  });
+
+  it('the bonus is one per lead: a granted lead survives attempt 3 but not attempt 4', async () => {
+    const granted = () => pendingProspect({
+      screeningActiveCallId: 'call_1',
+      screeningMetadata: { intendedAgentId: 'a1', alreadyCharged: false, attempts: {}, callbackGranted: true },
+    });
+    const cb = call({ call_analysis: { custom_analysis_data: { qualified: 'incomplete', callback_window: 'tomorrow' } } });
+
+    const seqThird = fakeSequelize([[[{ id: 'p' }]], [[{ screeningAttemptCount: 3 }]], [[{ id: 'p' }]]]);
+    const depsThird = dialerDeps(seqThird);
+    const third = await makeRetellScreeningService(depsThird)
+      .applyCallOutcome(granted(), cb, { cfg: CFG }); // maxAttempts 3 + granted bonus
+    expect(third.outcome).toBe('retry_scheduled');
+    expect(depsThird.gate.applyUnreachablePolicy).not.toHaveBeenCalled();
+    // Already granted ⇒ the fenced clear must not re-write the grant.
+    expect(JSON.parse(seqThird.calls.find((c) => String(c.sql).includes('SET "screeningActiveCallId" = NULL')).opts.replacements.metaPatch)).toEqual({});
+
+    const seqFourth = fakeSequelize([[[{ id: 'p' }]], [[{ screeningAttemptCount: 4 }]]]);
+    const depsFourth = dialerDeps(seqFourth);
+    const fourth = await makeRetellScreeningService(depsFourth)
+      .applyCallOutcome(granted(), cb, { cfg: CFG });
+    expect(fourth.outcome).toBe('exhausted');
+    expect(depsFourth.gate.applyUnreachablePolicy).toHaveBeenCalled();
+  });
+
   it('connected call_ended without analysis waits for call_analyzed (unless final)', async () => {
     const deps = dialerDeps(fakeSequelize([[[{ id: 'p' }]]]));
     const svc = makeRetellScreeningService(deps);
@@ -564,6 +681,25 @@ describe('screeningSweepService', () => {
     const out = await runScreeningSweep(deps);
     expect(out.ttl).toBe(1);
     expect(deps.gate.applyUnreachablePolicy).toHaveBeenCalledWith(old, expect.objectContaining({ via: 'screening_ttl' }));
+  });
+
+  it('spares a promised callback from the TTL and lets it take its bonus dial', async () => {
+    const deps = sweepDeps({});
+    await runScreeningSweep(deps);
+    const [ttlQuery, dueQuery] = [deps.Prospect.findAll.mock.calls[2][0], deps.Prospect.findAll.mock.calls[4][0]];
+    // TTL skips a granted lead whose promised time has not arrived, bounded by
+    // a hard 2× hold ceiling.
+    const ttlSql = String(ttlQuery.where[Op.and][0].val);
+    // COALESCE is not cosmetic: a bare `->>' = 'true'` is NULL when the key is
+    // absent, which makes NOT(…) NULL and spares ordinary leads from the TTL.
+    expect(ttlSql).toContain(`COALESCE("screeningMetadata"->>'callbackGranted', 'false') = 'true'`);
+    expect(ttlSql).toContain('"screeningNextAttemptAt" > NOW()');
+    expect(ttlSql).toContain(`INTERVAL '48 hours'`); // 2 × maxHoldHours
+    // The due-retry cap mirrors resolveAttemptFailure: 3, or 4 once granted.
+    const dueSql = String(dueQuery.where[Op.and][0].val);
+    expect(dueSql).toContain('"screeningAttemptCount" < 3');
+    expect(dueSql).toContain('"screeningAttemptCount" < 4');
+    expect(dueQuery.where.screeningAttemptCount).toBeUndefined(); // superseded by the literal
   });
 
   it('drain mode (feature off, backlog present) releases pending rows unscreened', async () => {
