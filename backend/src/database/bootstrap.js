@@ -76,6 +76,15 @@ export async function bootstrapDatabase() {
     await sweepStaleBroadcasts();
   });
 
+  // Draw-record reconciler: every ACTIVE draw campaign with an open entry
+  // window gets its engine record ensured (creation still runs through
+  // createDraw's fail-closed validation). Heals campaigns launched before
+  // auto-creation existed — the manual run-lucky-draw.js create step is gone.
+  await safeRun('Draw record reconciler', async () => {
+    const { sweepDrawRecords } = await import('../services/luckyDrawService.js');
+    await sweepDrawRecords();
+  });
+
   // Poll for stale webhook retries every 60 seconds (skip in test mode)
   if (process.env.NODE_ENV !== 'test') {
     setInterval(async () => {
@@ -104,6 +113,18 @@ export async function bootstrapDatabase() {
     setInterval(async () => {
       const { reconcileSuppressionPropagation } = await import('../services/suppressionPropagationService.js');
       await reconcileSuppressionPropagation();
+    }, 3_600_000);
+
+    // Draw-record backstop every 60 minutes: a launch whose record ensure
+    // failed transiently, or a draw enabled by a path that skipped the hook,
+    // self-heals within the hour (sweepDrawRecords never throws internally).
+    setInterval(async () => {
+      try {
+        const { sweepDrawRecords } = await import('../services/luckyDrawService.js');
+        await sweepDrawRecords();
+      } catch (err) {
+        logger.warn('[LuckyDraw] record sweep failed', { error: err?.message });
+      }
     }, 3_600_000);
 
     // Purge expired idempotency keys every hour

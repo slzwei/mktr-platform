@@ -10,6 +10,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
+import { getSystemAgentId } from './systemAgent.js';
 
 /**
  * Lucky-draw lifecycle (docs/plans/lucky-draw-10x.md §4.2–§4.3).
@@ -129,6 +130,7 @@ export function makeLuckyDrawService(overrides = {}) {
     Campaign, Prospect, Activation, RewardEntitlement, RedemptionEvent,
     DrawTermsVersion,
     sequelize, logger,
+    getSystemAgentId,
     now: () => new Date(),
     mintSeed: () => crypto.randomBytes(32).toString('hex'),
     ...overrides,
@@ -1053,9 +1055,86 @@ export function makeLuckyDrawService(overrides = {}) {
     return out;
   }
 
+  /**
+   * Seamless draw-record ensure — the record used to be a manual CLI step
+   * (run-lucky-draw.js create) that every launched draw campaign needed an
+   * operator to remember; forgetting it left "Draw configured — no draw
+   * record yet" on every lead. Called from the SAME campaignService choke
+   * points that arm the boost rail, plus the boot/interval reconciler below.
+   *
+   * BEST-EFFORT by design, unlike the rail ensure: a missing record loses
+   * nothing (entry evidence and boost events accrue independently and count
+   * retroactively at freeze/seal), so record trouble must never block a
+   * launch — it logs, campaign readiness keeps complaining, and the
+   * reconciler retries. Fairness validation is NOT duplicated here: creation
+   * goes through createDraw, which fail-closes on multi-prize, missing
+   * closesAt, and rail conflicts. Never throws.
+   */
+  async function ensureDrawRecord({ campaignId, user = null } = {}) {
+    if (String(process.env.DRAW_RECORD_AUTOCREATE_ENABLED ?? 'true').toLowerCase() === 'false') {
+      return { created: false, reason: 'disabled' };
+    }
+    if (!campaignId) return { created: false, reason: 'no_campaign' };
+    const live = { [Op.in]: ['open', 'frozen', 'sealed', 'drawn'] };
+    try {
+      const existing = await d.Draw.findOne({ where: { campaignId, status: live } });
+      if (existing) return { created: false, reason: 'exists', drawId: existing.id };
+      const actorId = user?.id || await d.getSystemAgentId();
+      const draw = await createDraw({ campaignId }, { id: actorId });
+      d.logger.info('lucky_draw.record_auto_created', { drawId: draw.id, campaignId, actorId });
+      return { created: true, drawId: draw.id };
+    } catch (err) {
+      // Concurrent ensure lost the uq_draws_live_campaign race — adopt the winner.
+      if (err?.statusCode === 409 || /already has a live draw/i.test(err?.message || '')) {
+        const winner = await d.Draw.findOne({ where: { campaignId, status: live } }).catch(() => null);
+        return { created: false, reason: 'exists', drawId: winner?.id || null };
+      }
+      d.logger.warn('lucky_draw.record_auto_create_failed', { campaignId, error: err?.message });
+      return { created: false, reason: 'failed', error: err?.message };
+    }
+  }
+
+  /**
+   * Reconciler: every ACTIVE draw campaign whose configured entry window is
+   * still open gets its record ensured. Heals campaigns launched before
+   * auto-creation existed and any launch whose ensure failed transiently.
+   * Campaigns whose configured closesAt already passed are left to the CLI —
+   * minting a record for an already-closed window is an operator decision.
+   */
+  async function sweepDrawRecords() {
+    const campaigns = await d.Campaign.findAll({
+      where: { is_active: true },
+      attributes: ['id', 'design_config'],
+    });
+    const results = { checked: 0, created: 0, failed: 0 };
+    const nowMs = d.now().getTime();
+    for (const c of campaigns) {
+      const ld = c.design_config?.luckyDraw;
+      if (ld?.enabled !== true) continue;
+      const closesAtMs = ld.closesAt ? sgtDayEndExclusiveMs(ld.closesAt) : null;
+      if (!Number.isFinite(closesAtMs) || closesAtMs <= nowMs) continue;
+      results.checked += 1;
+      const r = await ensureDrawRecord({ campaignId: c.id });
+      if (r.created) results.created += 1;
+      else if (r.reason === 'failed') results.failed += 1;
+    }
+    if (results.created > 0 || results.failed > 0) {
+      d.logger.info('lucky_draw.record_sweep', results);
+    }
+    return results;
+  }
+
   return {
     createDraw, freezeDraw, listPendingBoostReviews, reviewBoost, sealDraw,
     runDrawAttempt, recordAttemptOutcome, markPublished, voidDraw,
     verifyDraw, getDrawState, getProspectDrawStatus,
+    ensureDrawRecord, sweepDrawRecords,
   };
 }
+
+// Default instance for the launch hooks (campaignService) and the bootstrap
+// reconciler — construction is deps-only, no I/O. The CLI keeps building its
+// own instance; tests inject overrides via makeLuckyDrawService.
+const _default = makeLuckyDrawService();
+export const ensureDrawRecord = (args) => _default.ensureDrawRecord(args);
+export const sweepDrawRecords = () => _default.sweepDrawRecords();
