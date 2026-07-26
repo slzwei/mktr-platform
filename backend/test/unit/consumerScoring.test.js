@@ -210,16 +210,125 @@ describe('coverage headroom is a penalty, and only a COMPLETE list may penalize'
   })
 })
 
+describe('age is a curve over the current SGT year (§13.2)', () => {
+  test('a band inside the peak scores the full component', () => {
+    // 1985-1989 at 2026 ⇒ ages 37-41, all inside the 35-44 peak segment.
+    const r = score({ 'identity.birth_year_band': fact({ v: '1985-1989' }) })
+    const age = r.breakdown.components.age
+    expect(age.state).toBe('assessed')
+    expect(age.points).toBeCloseTo(10, 5)
+    expect(age.note).toMatch(/age 37-41 in 2026/)
+  })
+
+  test('a band straddling a boundary weights each segment by its share of the band', () => {
+    // 1995-1999 at 2026 ⇒ ages 27-31: three years in 25-29 (0.55), two in
+    // 30-34 (0.80) ⇒ (3×0.55 + 2×0.80)/5 = 0.65. A range match would have
+    // scored all five years identically with a cliff at 30.
+    const r = score({ 'identity.birth_year_band': fact({ v: '1995-1999' }) })
+    expect(r.breakdown.components.age.points).toBeCloseTo(6.5, 5)
+  })
+
+  test('the curve is defined over AGE — the same band scores differently as years pass', () => {
+    // A band-keyed table would freeze this and silently rot one band every
+    // five years; evaluating (SGT year − birth year) against `now` cannot.
+    const band = { 'identity.birth_year_band': fact({ v: '2000-2004' }) }
+    const at2026 = score(band)
+    const at2036 = scoreConsumer({ facts: band, telemetry: fullTelemetry, now: Date.UTC(2036, 6, 26, 9, 0, 0) })
+    // 2026: ages 22-26 ⇒ (3×0.25 + 2×0.55)/5 = 0.37.
+    // 2036: ages 32-36 ⇒ (3×0.80 + 2×1.00)/5 = 0.88.
+    expect(at2026.breakdown.components.age.points).toBeCloseTo(3.7, 5)
+    expect(at2036.breakdown.components.age.points).toBeCloseTo(8.8, 5)
+  })
+
+  test('the year rolls at SGT midnight, not UTC', () => {
+    // 2026-12-31 16:30 UTC is already 2027-01-01 00:30 SGT.
+    const band = { 'identity.birth_year_band': fact({ v: '2000-2004' }) }
+    const beforeSgt = scoreConsumer({ facts: band, telemetry: fullTelemetry, now: Date.UTC(2026, 11, 31, 15, 30) })
+    const afterSgt = scoreConsumer({ facts: band, telemetry: fullTelemetry, now: Date.UTC(2026, 11, 31, 16, 30) })
+    expect(beforeSgt.breakdown.components.age.note).toMatch(/in 2026/)
+    expect(afterSgt.breakdown.components.age.note).toMatch(/in 2027/)
+    // Ages 23-27 in 2027 ⇒ (2×0.25 + 3×0.55)/5 = 0.43, vs 0.37 in 2026.
+    expect(beforeSgt.breakdown.components.age.points).toBeCloseTo(3.7, 5)
+    expect(afterSgt.breakdown.components.age.points).toBeCloseTo(4.3, 5)
+  })
+
+  test('the default shape: low under 25, peak 35-44, easing after 50', () => {
+    const at = (b) => score({ 'identity.birth_year_band': fact({ v: b }) }).breakdown.components.age.points
+    const young = at('2005-2009') // ages 17-21 ⇒ 2.5
+    const rising = at('1995-1999') // ages 27-31 ⇒ 6.5
+    const peak = at('1985-1989') // ages 37-41 ⇒ 10
+    const easing = at('1975-1979') // ages 47-51 ⇒ 7
+    const older = at('1960-1964') // ages 62-66 ⇒ 3
+    expect(young).toBeLessThan(rising)
+    expect(rising).toBeLessThan(peak)
+    expect(peak).toBeGreaterThan(easing)
+    expect(easing).toBeGreaterThan(older)
+  })
+
+  test('age alone unlocks Buy — thin, low, and honest about it', () => {
+    const r = score({ 'identity.birth_year_band': fact({ v: '1985-1989' }) })
+    // The best-covered signal in the ledger must produce a number…
+    expect(r.buyScore).toBe(14) // 10 of raw 70
+    // …but even peak age stays low absent real evidence, and the breakdown
+    // still says how thin this is.
+    expect(r.breakdown.completeness).toEqual({ assessed: 3, total: 8 })
+    expect(r.breakdown.components.age.basisObservationIds).toContain('obs-1')
+  })
+
+  test('age is a prior — known family + income dominate it', () => {
+    const r = score({
+      'identity.birth_year_band': fact({ v: '1985-1989' }), // 10
+      'family.children_count_band': fact({ v: '2' }), // 0.85 × 20 = 17
+      'finance.annual_income_band': fact({ v: '80-120k' }), // 0.60 × 15 = 9
+    })
+    const c = r.breakdown.components
+    expect(c.family_gap.points + c.capacity.points).toBeGreaterThan(2 * c.age.points)
+  })
+
+  test('no band ⇒ unknown, never a fabricated middle-aged default', () => {
+    const r = score({})
+    expect(r.breakdown.components.age.state).toBe('unknown')
+    expect(r.buyScore).toBeNull()
+  })
+
+  test('a low-confidence band is ignored', () => {
+    const r = score({ 'identity.birth_year_band': fact({ v: '1985-1989' }, { confidence: 0.2 }) })
+    expect(r.breakdown.components.age.state).toBe('unknown')
+  })
+
+  test('curve values from config are clamped into 0..1', () => {
+    const wild = { ...DEFAULT_SCORING_CONFIG, ageCurve: [{ upTo: null, value: 3 }] }
+    const r = score({ 'identity.birth_year_band': fact({ v: '1985-1989' }) }, fullTelemetry, wild)
+    expect(r.breakdown.components.age.points).toBeCloseTo(10, 5) // 1.0 × 10, never 3 × 10
+  })
+
+  test('the curve is config, not code — a replacement row takes effect without a deploy', () => {
+    const flat = { ...DEFAULT_SCORING_CONFIG, ageCurve: [{ upTo: null, value: 0.5 }] }
+    const r = score({ 'identity.birth_year_band': fact({ v: '1985-1989' }) }, fullTelemetry, flat)
+    expect(r.breakdown.components.age.points).toBeCloseTo(5, 5)
+  })
+
+  test('a curve with no open tail leaves out-of-range ages unknown, not zero', () => {
+    const capped = { ...DEFAULT_SCORING_CONFIG, ageCurve: [{ upTo: 44, value: 1 }] }
+    // 1960-1964 at 2026 ⇒ ages 62-66, beyond every segment.
+    const r = score({ 'identity.birth_year_band': fact({ v: '1960-1964' }) }, fullTelemetry, capped)
+    expect(r.breakdown.components.age.state).toBe('unknown')
+    expect(r.breakdown.components.age.note).toMatch(/no usable age curve/)
+  })
+})
+
 describe('arithmetic discipline', () => {
   test('rounds exactly once — sub-scores derive from unrounded points', () => {
     const r = score({
       'finance.annual_income_band': fact({ v: '80-120k' }),
       'family.children_count_band': fact({ v: '1' }),
     })
-    // capacity = 0.60 × 15 = 9 ; family = 0.60 × 20 = 12 ⇒ 21/60 = 35%
+    // capacity = 0.60 × 15 = 9 ; family = 0.60 × 20 = 12 ⇒ 21/70 = 30%
+    // (raw max is 70 since v3 added age — unknown age dilutes, same as
+    // unknown market_fit always has on the Meet side).
     expect(r.breakdown.components.capacity.points).toBeCloseTo(9, 5)
     expect(r.breakdown.components.family_gap.points).toBeCloseTo(12, 5)
-    expect(r.buyScore).toBe(35)
+    expect(r.buyScore).toBe(30)
   })
 
   test('scores stay inside 0..100', () => {
@@ -311,8 +420,8 @@ describe('breakdown is explainable', () => {
 
   test('completeness counts what we actually know', () => {
     const r = score({ 'finance.annual_income_band': fact({ v: '40-80k' }) })
-    // engagement + contactability + capacity assessed of 7 components.
-    expect(r.breakdown.completeness).toEqual({ assessed: 3, total: 7 })
+    // engagement + contactability + capacity assessed of 8 components.
+    expect(r.breakdown.completeness).toEqual({ assessed: 3, total: 8 })
   })
 })
 
@@ -341,6 +450,15 @@ describe('the first real consumer through the pipe', () => {
   test('market fit stays unknown until a language question is asked', () => {
     // Her campaign enabled annual_income + children only — no language.
     expect(score(shavon).breakdown.components.market_fit.state).toBe('unknown')
+  })
+
+  test('her band contributes as a prior — the v3 gain over scoring it zero', () => {
+    const r = score(shavon)
+    const age = r.breakdown.components.age
+    expect(age.state).toBe('assessed')
+    // 1995-1999 at 2026 ⇒ ages 27-31 straddling 25-29/30-34 ⇒ 0.65 × 10.
+    expect(age.points).toBeCloseTo(6.5, 5)
+    expect(age.basisObservationIds).toContain('obs-birth')
   })
 })
 
