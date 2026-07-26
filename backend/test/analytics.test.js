@@ -114,33 +114,41 @@ describe('POST /api/analytics/referrals', () => {
     expect(res.body.success).toBe(true)
   })
 
-  it('returns 400 when campaignId is missing', async () => {
+  // e1fd8d7 made this endpoint deliberately LENIENT: the "Referred by" badge
+  // must work for a fresh referee with no session cookie, and a public beacon
+  // never leaks validation shape — bad/missing input degrades to a 200 with a
+  // null referrerName instead of 400/404.
+  it('degrades to 200 with a null name when campaignId is missing', async () => {
     const res = await request(app)
       .post('/api/analytics/referrals')
       .set('Origin', 'http://localhost:5173')
       .set('x-session-id', 'test-sid-ref-nocamp')
       .send({})
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.referrerName ?? null).toBeNull()
   })
 
-  it('returns 404 for non-existent campaignId', async () => {
+  it('degrades to 200 with a null name for a non-existent campaignId', async () => {
     const res = await request(app)
       .post('/api/analytics/referrals')
       .set('Origin', 'http://localhost:5173')
       .set('x-session-id', 'test-sid-ref-bad')
       .send({ campaignId: '00000000-0000-0000-0000-000000000000' })
 
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(200)
+    expect(res.body.data.referrerName ?? null).toBeNull()
   })
 
-  it('returns 400 when session id is missing', async () => {
+  it('works without a session — the fresh-referee case the badge exists for', async () => {
     const res = await request(app)
       .post('/api/analytics/referrals')
       .set('Origin', 'http://localhost:5173')
       .send({ campaignId: campaign.id })
 
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
   })
 
   it('returns 403 for disallowed origin', async () => {

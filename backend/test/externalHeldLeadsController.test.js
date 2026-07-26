@@ -134,7 +134,9 @@ describe('externalHeldLeadsController.assignHeldLead', () => {
     const res = makeRes();
     await assignHeldLead(req, res);
 
-    expect(releaseMock).toHaveBeenCalledWith('p1', 'app-agent-1', { idempotencyKey: 'k1', actorUserId: null });
+    // batch: null = no bulk context on a single release (6ccae00 echoes an
+    // optional batch object into the delivery webhook; malformed/absent → null).
+    expect(releaseMock).toHaveBeenCalledWith('p1', 'app-agent-1', { idempotencyKey: 'k1', actorUserId: null, batch: null });
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ success: true, status: 'assigned', leadId: 'p1' });
   });
