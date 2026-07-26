@@ -50,6 +50,29 @@ import { applyLuckyDrawPolicy } from './luckyDraw.js';
 import { applyMarketplacePolicy, normalizeMarketplaceContent } from './marketplaceContent.js';
 import { normalizeCustomerHostChoice } from './customerHost.js';
 import { validateFact } from './factTaxonomy.js';
+import { PROFILE_QUESTION_IDS, MAX_PROFILE_QUESTIONS } from './profileQuestionLibrary.js';
+
+/**
+ * Enrichment profile-questions subtree (studio-profile-questions §3):
+ * unknown ids dropped, order preserved, deduped, capped; enabled only with
+ * ≥1 valid id. Sanitize-never-reject, like everything else in this clamp.
+ * profileQuestions is a V2_TOP_KEY, so the unknown-passthrough below can
+ * never overwrite this sanitized value with raw input (Codex PR0 R1 #7).
+ */
+function clampProfileQuestions(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { enabled: false, questionIds: [] };
+  }
+  const seen = new Set();
+  const questionIds = [];
+  for (const id of Array.isArray(raw.questionIds) ? raw.questionIds : []) {
+    if (typeof id !== 'string' || seen.has(id) || !PROFILE_QUESTION_IDS.includes(id)) continue;
+    seen.add(id);
+    questionIds.push(id);
+    if (questionIds.length >= MAX_PROFILE_QUESTIONS) break;
+  }
+  return { enabled: raw.enabled === true && questionIds.length > 0, questionIds };
+}
 
 /**
  * Enrichment factKey save-gate (consumer-profile-enrichment plan §5): a quiz
@@ -59,8 +82,15 @@ import { validateFact } from './factTaxonomy.js';
  * at map time, so nothing invalid can reach the ledger through either door.
  */
 function clampQuizFactKeys(quiz) {
-  if (!quiz || typeof quiz !== 'object' || !Array.isArray(quiz.questions)) return quiz;
-  for (const q of quiz.questions) {
+  if (!quiz || typeof quiz !== 'object') return quiz;
+  // Real Studio quizzes nest questions in steps[] (quizScoringService);
+  // accept the legacy flat questions[] too — Codex PR0 R1 #3.
+  const questionLists = [];
+  if (Array.isArray(quiz.steps)) {
+    for (const s of quiz.steps) if (Array.isArray(s?.questions)) questionLists.push(s.questions);
+  }
+  if (Array.isArray(quiz.questions)) questionLists.push(quiz.questions);
+  for (const q of questionLists.flat()) {
     if (!q || typeof q !== 'object' || q.factKey === undefined) continue;
     const values = q.factValues && typeof q.factValues === 'object' && !Array.isArray(q.factValues)
       ? Object.values(q.factValues)
@@ -455,6 +485,12 @@ export function clampDesignConfigV2(incoming, storedConfig, role) {
     ? (isPlainObject(dc.ai) ? clone(dc.ai) : undefined)
     : getStoredAi(storedConfig);
   if (ai !== undefined) out.ai = ai;
+
+  // Enrichment profile questions — explicit sanitize (absent stays absent:
+  // upgrade preservation for docs that never touched the feature).
+  if (dc.profileQuestions !== undefined) {
+    out.profileQuestions = clampProfileQuestions(dc.profileQuestions);
+  }
 
   // Derived legacy mirror — ALWAYS from the clamped host, never from incoming.
   out.customerHost = host;

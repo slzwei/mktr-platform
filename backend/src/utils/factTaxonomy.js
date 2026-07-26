@@ -20,7 +20,7 @@
  * the directly-scored market-fit signal).
  */
 
-export const TAXONOMY_VERSION = 'v1';
+export const TAXONOMY_VERSION = 'v2'; // v2: + family.children_count_band (PR 0)
 
 // Explicitness rank for resolveCurrentFacts (§3.4) — higher wins.
 export const SOURCE_RANK = {
@@ -148,6 +148,12 @@ export const FACT_KEYS = {
     },
   },
   'family.parents_alive': { collection: false, validate: boolShape() },
+  // Form answers can state a COUNT but never invent ages — the band lives
+  // beside the detailed family.children array (transcript-fed). Resolution
+  // precedence: a fresh complete children array outranks the band; the band
+  // entails a LOWER BOUND when '3_plus' (never an exact count) — parent plan
+  // §6.4 dependants rule. (studio-profile-questions §4, Codex R1 #8.)
+  'family.children_count_band': { collection: false, validate: enumShape(['0', '1', '2', '3_plus']) },
   'household.pets': { collection: 'strings', validate: vocabListShape(PETS, 8) },
   'assets.car_owner': { collection: false, validate: boolShape() },
   'assets.property': { collection: false, validate: enumShape(PROPERTY) },

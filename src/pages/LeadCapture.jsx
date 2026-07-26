@@ -324,6 +324,9 @@ export default function LeadCapture() {
         // dncConsent); omitting it here stranded consented DNC-registered leads
         // in the held state until 2026-07-17.
         consent_dnc: formData.consent_dnc,
+        // Enrichment profile answers (canonical option ids) — undefined when
+        // none answered, dropped by JSON.stringify like consent_dnc above.
+        profileAnswers: formData.profileAnswers,
         leadSource: isReferral ? 'referral' : qrTag?.id ? 'qr_code' : 'website',
         campaignId: campaign?.id,
         qrTagId: qrTag?.id,

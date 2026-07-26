@@ -11,7 +11,7 @@ import {
  */
 describe('factTaxonomy', () => {
   test('exports a stable version and ranked sources', () => {
-    expect(TAXONOMY_VERSION).toBe('v1');
+    expect(TAXONOMY_VERSION).toBe('v2'); // v2: + family.children_count_band (PR 0)
     expect(SOURCE_RANK.manual).toBeGreaterThan(SOURCE_RANK.form);
     expect(SOURCE_RANK.form).toBeGreaterThan(SOURCE_RANK.quiz);
     expect(SOURCE_RANK.quiz).toBeGreaterThan(SOURCE_RANK.screening_transcript);
@@ -26,6 +26,7 @@ describe('factTaxonomy', () => {
     'family.marital_status': { v: 'divorced' },
     'family.children': { v: [{ birth_year_band: '2015-2019', gender: 'male' }], complete: true },
     'family.parents_alive': { v: true },
+    'family.children_count_band': { v: '3_plus' },
     'household.pets': { v: ['dog'], complete: false },
     'assets.car_owner': { v: false },
     'assets.property': { v: 'hdb' },
@@ -71,6 +72,8 @@ describe('factTaxonomy', () => {
     ['career.job_title', { v: 'x'.repeat(81) }],
     ['finance.annual_income_band', { v: '90k' }],
     ['finance.retirement_age_band', { v: '62' }],
+    ['family.children_count_band', { v: 3 }],
+    ['family.children_count_band', { v: '3+' }],
     ['life_event.recent', { v: 'won_lottery' }],
     ['life_event.recent', { v: 'divorce', when: 'last year' }],
     ['interests.tags', { v: ['cars', 'crypto-moonshots'] }],

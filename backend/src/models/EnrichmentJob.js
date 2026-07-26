@@ -71,7 +71,13 @@ const EnrichmentJob = sequelize.define('EnrichmentJob', {
       unique: true,
       fields: ['kind', 'subjectProspectId', 'sourceRevisionId', 'pipelineVersion'],
       name: 'uq_ejobs_map',
-      where: { kind: 'map', status: { [Op.in]: ['pending', 'leased', 'done'] } }
+      where: { kind: 'map', sourceArtifactId: null, status: { [Op.in]: ['pending', 'leased', 'done'] } }
+    },
+    {
+      unique: true,
+      fields: ['kind', 'subjectProspectId', 'sourceArtifactId', 'sourceRevisionId', 'pipelineVersion'],
+      name: 'uq_ejobs_map_artifact',
+      where: { kind: 'map', sourceArtifactId: { [Op.ne]: null }, status: { [Op.in]: ['pending', 'leased', 'done'] } }
     },
     {
       unique: true,

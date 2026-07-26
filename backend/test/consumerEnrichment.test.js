@@ -251,6 +251,154 @@ describe('erasure cascade (§9)', () => {
   })
 })
 
+describe('profile questions PR 0 (studio-profile-questions §5)', () => {
+  let pqCampaign
+  const V2_PQ = {
+    version: 2,
+    template: { id: 'express' },
+    profileQuestions: { enabled: true, questionIds: ['language', 'pets', 'children'] },
+  }
+
+  beforeAll(async () => {
+    pqCampaign = await createTestCampaign(admin.id, {
+      name: `PQ IT ${Date.now()}`,
+      design_config: V2_PQ,
+    })
+  })
+
+  afterEach(() => {
+    delete process.env.ENRICHMENT_MAP_ARTIFACT_JOBS
+  })
+
+  it('flag OFF (deploy window): answers persist as evidence; legacy job carries NO profile facts', async () => {
+    const prospect = await capture({
+      campaignId: pqCampaign.id,
+      profileAnswers: { language: 'zh', pets: ['dog', 'cat'] },
+    })
+    expect(prospect.sourceMetadata.profileAnswers).toEqual({ language: 'zh', pets: ['dog', 'cat'] })
+
+    const jobs = await EnrichmentJob.findAll({ where: { kind: 'map', subjectProspectId: prospect.id } })
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0].sourceArtifactId).toBeNull() // legacy shape
+    const artifacts = (jobs[0].payload.facts || []).map((f) => f.artifact)
+    expect(artifacts).not.toContain('profile')
+
+    await drainAndQuiesce(prospect.id)
+    // Post-flip remap re-derives profile facts from the durable answers.
+    process.env.ENRICHMENT_MAP_ARTIFACT_JOBS = 'true'
+    const { getProfileQuestion, resolveAnswer } = await import('../src/utils/profileQuestionLibrary.js')
+    const profileFacts = Object.entries(prospect.sourceMetadata.profileAnswers)
+      .map(([qid, provided]) => ({ key: getProfileQuestion(qid).factKey, value: resolveAnswer(qid, provided) }))
+    const { buildFactSnapshot, enqueueMapJobsTx } = await import('../src/services/factMapperService.js')
+    await sequelize.transaction(async (t) => {
+      await enqueueMapJobsTx(t, {
+        prospectId: prospect.id,
+        formRevision: 1,
+        snapshot: buildFactSnapshot({ profileFacts }),
+      })
+    })
+    await drainAndQuiesce(prospect.id)
+    const obs = await ConsumerObservation.findAll({
+      where: { sourceProspectId: prospect.id, sourceArtifactId: `profile:${prospect.id}`, supersededAt: null },
+    })
+    expect(obs.map((o) => o.key).sort()).toEqual(['household.pets', 'identity.preferred_language'])
+    expect(obs.find((o) => o.key === 'household.pets').value).toEqual({ v: ['cat', 'dog'], complete: true })
+  })
+
+  it('flag ON: artifact-scoped capture → profile observations; demographics edit leaves them UNTOUCHED (the #281 regression)', async () => {
+    process.env.ENRICHMENT_MAP_ARTIFACT_JOBS = 'true'
+    const prospect = await capture({
+      campaignId: pqCampaign.id,
+      profileAnswers: { language: 'en', children: 'two' },
+    })
+    const jobs = await EnrichmentJob.findAll({ where: { kind: 'map', subjectProspectId: prospect.id } })
+    expect(jobs.every((j) => j.sourceArtifactId !== null)).toBe(true)
+    expect(jobs.map((j) => j.sourceArtifactId).sort()).toEqual([
+      `form:${prospect.id}`, `profile:${prospect.id}`,
+    ])
+
+    await drainAndQuiesce(prospect.id)
+    const before = await ConsumerObservation.findAll({
+      where: { sourceProspectId: prospect.id, sourceArtifactId: `profile:${prospect.id}`, supersededAt: null },
+    })
+    expect(before.map((o) => o.key).sort()).toEqual(['family.children_count_band', 'identity.preferred_language'])
+
+    // The regression that motivated v1.1: a staff demographics edit must
+    // supersede ONLY the form artifact.
+    const service = makeProspectService()
+    await service.updateProspect(prospect.id, { demographics: { dateOfBirth: '1990-05-05', age: 36 } }, admin)
+    await drainAndQuiesce(prospect.id)
+
+    const profileAfter = await ConsumerObservation.findAll({
+      where: { sourceProspectId: prospect.id, sourceArtifactId: `profile:${prospect.id}`, supersededAt: null },
+    })
+    expect(profileAfter).toHaveLength(2) // untouched
+    const formActive = await ConsumerObservation.findAll({
+      where: { sourceProspectId: prospect.id, sourceArtifactId: `form:${prospect.id}`, supersededAt: null },
+    })
+    expect(formActive).toHaveLength(1)
+    expect(formActive[0].value).toEqual({ v: '1990-1994' })
+  })
+
+  it('ineligible campaigns ignore answers entirely (disabled subtree / not v2)', async () => {
+    const plain = await createTestCampaign(admin.id, { name: `PQ plain ${Date.now()}` })
+    const p1 = await capture({ campaignId: plain.id, profileAnswers: { language: 'zh' } })
+    expect(p1.sourceMetadata?.profileAnswers).toBeUndefined()
+
+    const disabled = await createTestCampaign(admin.id, {
+      name: `PQ disabled ${Date.now()}`,
+      design_config: { version: 2, template: { id: 'express' }, profileQuestions: { enabled: false, questionIds: ['language'] } },
+    })
+    const p2 = await capture({ campaignId: disabled.id, profileAnswers: { language: 'zh' } })
+    expect(p2.sourceMetadata?.profileAnswers).toBeUndefined()
+  })
+
+  it('invalid answers dropped per-question; valid siblings survive; none-exclusivity enforced', async () => {
+    const prospect = await capture({
+      campaignId: pqCampaign.id,
+      profileAnswers: { language: 'zh', pets: ['none', 'dog'], children: 'seventeen' },
+    })
+    expect(prospect.sourceMetadata.profileAnswers).toEqual({ language: 'zh' })
+  })
+
+  it('legacy combined job (form+quiz) splits per artifact — never single-artifact-activated', async () => {
+    const prospect = await capture()
+    await drainAndQuiesce(prospect.id)
+    // Hand-insert a legacy combined job (as an old writer would have):
+    // form + quiz facts in one payload. Revision 2 — capture's own rev-1
+    // legacy job is done and owns the rev-1 slot in the legacy unique.
+    await Prospect.update({ enrichmentRevision: 2 }, { where: { id: prospect.id } })
+    const { MAPPER_PIPELINE_VERSION: PV } = await import('../src/services/factMapperService.js')
+    const { randomUUID } = await import('crypto')
+    await sequelize.query(
+      `INSERT INTO enrichment_jobs
+         (id, kind, "subjectProspectId", "sourceRevisionId", "sourceContentHash",
+          payload, "taxonomyVersion", "pipelineVersion", status, attempts, "createdAt", "updatedAt")
+       VALUES (:id, 'map', :pid, 2, 'legacyhash', :payload::jsonb, 'v2', :pv, 'pending', 0, now(), now())`,
+      {
+        replacements: {
+          id: randomUUID(),
+          pid: prospect.id,
+          payload: JSON.stringify({
+            facts: [
+              { key: 'identity.birth_year_band', value: { v: '1985-1989' }, artifact: 'form' },
+              { key: 'assets.car_owner', value: { v: true }, artifact: 'quiz' },
+            ],
+          }),
+          pv: PV,
+        },
+      }
+    )
+    await drainAndQuiesce(prospect.id)
+    const quizObs = await ConsumerObservation.findAll({
+      where: { sourceProspectId: prospect.id, sourceArtifactId: `quiz:${prospect.id}`, supersededAt: null },
+    })
+    expect(quizObs).toHaveLength(1)
+    expect(quizObs[0].key).toBe('assets.car_owner')
+    expect(quizObs[0].source).toBe('quiz')
+  })
+})
+
 describe('relink bumps (§6.3)', () => {
   it('recomputeConsumersByPhone dirties both sides when a prospect moves', async () => {
     const prospect = await capture()
