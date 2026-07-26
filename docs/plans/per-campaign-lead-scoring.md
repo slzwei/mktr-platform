@@ -1,6 +1,6 @@
 # Per-campaign lead scoring — the admin describes the ideal lead, the score moves as things happen
 
-**Status:** v1 SCOPE — not reviewed, not approved, not built.
+**Status:** v2 SCOPE — isolation rule RESOLVED (Shawn, 2026-07-26), PR A specced to buildable detail (§10). Not Codex-reviewed, not built.
 **Author:** Claude, 2026-07-26, from Shawn's model:
 
 > "The admin, when creating campaigns, will say the ideal lead profile. The AI
@@ -178,31 +178,147 @@ waiting for the nightly.
 
 ## 7. Phasing
 
-1. **Events move the score** — screening outcome + WhatsApp read, against
-   today's single global config. Smallest change, needs no AI and no brief, and
-   it is the part an agent feels immediately: engaged leads rise in the queue.
-2. **Age curve + DOB backfill** — the biggest single accuracy win available,
-   independent of everything else.
-3. **Score moves to the lead** — `prospects.score`, per-campaign configs,
-   objective-level inheritance. The structural change.
-4. **AI authoring** — admin writes a description, AI proposes a config, admin
-   reviews it in plain language before it goes live.
-5. **Email opens** — tracking pixel, then wire in as an event.
+**Revised after Shawn's isolation decision (§8.1).** The original plan put
+"events move the score" first, against today's per-PERSON score. That is
+impossible: with one score per person, a screening refusal moves the number
+every campaign sees — precisely the cross-campaign bleed the isolation rule
+forbids. **Event scoring and the move to per-lead are one piece of work.**
 
-Steps 1 and 2 are useful on their own and do not depend on 3–5.
+1. **PR A — the lead score, with events** (§10). `prospects.score` +
+   breakdown, scored from person facts + that lead's OWN events, under the
+   campaign's config (falling back to today's global one). Isolation holds by
+   construction: a lead can only see its own campaign's evidence.
+2. **PR B — age curve + DOB backfill** (§5.3). The biggest single accuracy win
+   available, and fully independent of A.
+3. **PR C — per-campaign configs + objective inheritance** (§5.4).
+4. **PR D — AI authoring** (§5.2). Admin writes a description, AI proposes a
+   config, admin reviews it in plain language before it goes live.
+5. **PR E — email opens.** Tracking pixel first, then wire in as an event.
 
-## 8. Open questions
+A and B are independent of each other and of C–E.
 
-1. **Does a screening refusal on campaign A affect the person's score on
-   campaign B?** Argument for: it is real evidence about the human. Against: a
-   recruitment refusal says nothing about their insurance propensity.
-   Recommendation: **no cross-campaign event bleed in v1** — keep it simple,
-   revisit with data.
+## 8. Questions
+
+1. **RESOLVED (Shawn, 2026-07-26): NO cross-campaign event bleed.** A
+   screening refusal on a recruitment campaign must not drag the person's
+   insurance score down — the refusal is evidence about *that pitch*, not
+   about the human's propensity to buy. Consequence: §7 re-phased, since this
+   is unachievable while one score serves every campaign.
 2. **Should the admin see the AI's config as rules or as prose?** Prose is
    readable; rules are precise. Probably prose with the numbers shown.
 3. **Person-level score: keep as summary or retire?** (§4)
 4. **Recruitment as a campaign objective** — `campaign-brief.md` §4.1 is missing
    it and needs updating regardless of this plan.
+
+## 10. PR A in detail — the lead score with events
+
+### 10.1 The shape
+
+```
+leadScore = clamp(0, 100,  base + Σ eventAdjustments)
+
+base   = person facts scored under the campaign's config  (today's engine, unchanged)
+events = this lead's OWN evidence, decayed, bounded to ±EVENT_BAND
+```
+
+`base` reuses `consumerScoring.js` untouched — facts in, component points out.
+Only the wrapper is new.
+
+### 10.2 Storage
+
+| Column | Note |
+|---|---|
+| `prospects.score` | INTEGER 0–100, **already exists, dead since inception** — reuse |
+| `prospects.scoreBreakdown` | NEW JSONB — components + event entries, same shape PR 3's panel already renders |
+| `prospects.scoredConfigVersion` / `scoringAlgorithmVersion` / `scoreInputHash` / `scoreComputedAt` | NEW — same stamping contract as `consumer_profiles`, so unscoreable leads exit the re-score loop |
+
+`consumer_profiles.meetScore`/`buyScore` stay as the person-grain summary
+(§4 option a). PR 3's People columns keep working unchanged.
+
+### 10.3 Event sourcing — and how isolation is enforced
+
+**The isolation rule is enforced by the QUERY, not by a filter applied
+afterwards.** Each event is fetched already scoped to the lead:
+
+| Event | Source | Scoping |
+|---|---|---|
+| Screening qualified / not_qualified | `prospects.screeningVerdict` | **Same row as the lead.** Inherently isolated |
+| Agreed to meet, sentiment | `prospects.screeningMetadata.verdictDetail` | Same row |
+| WhatsApp read | `wa_message_statuses.status='read'` | Joined via `redemption_events.metadata.messageId = wamid` → entitlement → activation → **campaignId**, matched to the lead's campaign |
+
+That WhatsApp join already exists — `leadProfileService.deliveryReceipts()`
+uses exactly this path today. Nothing new to invent.
+
+**A read receipt on the person's phone from a different campaign is invisible
+to this lead.** Not scored down, not scored up — never fetched.
+
+### 10.4 Event weights (config, per campaign later)
+
+```
+events: {
+  band: 25,                    // total events may move the score at most ±25
+  halfLifeDays: 45,
+  weights: {
+    screening_qualified:    +12,
+    screening_agreed_meet:  +10,
+    screening_positive:      +5,
+    screening_neutral:        0,
+    screening_not_qualified: -12,
+    whatsapp_read:           +4,
+    whatsapp_unread_7d:      -2,   // delivered, never opened, a week gone
+  }
+}
+```
+
+**Bounded on purpose.** An unbounded event layer makes the facts decorative —
+one read receipt should not outrank knowing someone's income and family.
+Evidence adjusts a prior; it does not replace it.
+
+**Decay** for the same reason life events decay: a read three months ago is
+not evidence of interest today.
+
+### 10.5 Recompute triggers
+
+- **Immediate** on screening verdict write — the highest-value event, and an
+  agent watching a lead should see it move within seconds, not overnight.
+- **On WhatsApp status webhook** — cheap; the hash gate makes a no-op free.
+- **Nightly sweep** — catch-all for decay (an event's contribution shrinks with
+  time even when nothing happens) and for anything the live paths missed.
+
+Decay means a lead's score changes with no input event, so the hash must
+include a **decay epoch** (e.g. the SGT date) or the gate will suppress the
+recompute. Cheap, and easy to get wrong.
+
+### 10.6 Surfacing
+
+The breakdown gains an events section, rendered by the same PR 3 panel:
+
+```
+BASE (facts)                     46
+EVENTS                          +14
+  screening: agreed to meet     +10   24 Jul
+  screening: positive            +5   24 Jul
+  WhatsApp read                  +4   25 Jul
+  decay                          −5
+                                 ──
+                                 60
+```
+
+The point is an agent reading *"78 → 40 because they refused the screening
+call on 24 Jul"* — the number moving is only useful if the reason moves with it.
+
+### 10.7 Tests that must exist
+
+- A screening refusal on campaign A leaves the same person's campaign-B lead
+  **byte-identical** (§8.1 — the isolation rule, as an executable assertion).
+- Events cannot push a score outside 0–100, nor beyond ±band.
+- A qualified screening raises the score; a refusal lowers it; neutral moves
+  nothing.
+- Decay: the same event scores lower a month later, with no other change.
+- The hash gate re-scores across a decay-epoch boundary and no-ops within one.
+- A lead with no events scores exactly its base — the event layer is inert
+  until there is evidence.
+- Erased consumers: no lead score, no breakdown, consistent with §9 erasure.
 
 ## 9. Out of scope
 
