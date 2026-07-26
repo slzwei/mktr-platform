@@ -653,3 +653,34 @@ describe('CampaignSignupForm — profile questions block (studio-profile-questio
     expect(none).toHaveAttribute('aria-pressed', 'false');
   });
 });
+
+describe('CampaignSignupForm — profile question controls (required + showZh)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('hides the inline Chinese when showZh is false', () => {
+    renderForm({ profileQuestions: { enabled: true, questionIds: ['language'], requiredIds: [], showZh: false } });
+    const block = document.querySelector('[data-se="profileQuestions"]');
+    expect(block.textContent).toContain('Which language do you prefer?');
+    expect(block.textContent).not.toContain('您偏好哪种语言');
+  });
+
+  it('shows the Chinese by default (showZh omitted)', () => {
+    renderForm({ profileQuestions: { enabled: true, questionIds: ['language'] } });
+    expect(document.querySelector('[data-se="profileQuestions"]').textContent).toContain('您偏好哪种语言');
+  });
+
+  it('required questions get an asterisk and the header drops "Optional"', () => {
+    renderForm({ profileQuestions: { enabled: true, questionIds: ['language', 'pets'], requiredIds: ['language'], showZh: true } });
+    const block = document.querySelector('[data-se="profileQuestions"]');
+    expect(block.textContent).toContain('*');
+    expect(block.textContent).toContain('Helps us serve you better');
+    expect(block.textContent).not.toContain('Optional — helps us serve you better');
+  });
+
+  it('all-optional keeps the Optional header and no asterisk', () => {
+    renderForm({ profileQuestions: { enabled: true, questionIds: ['language'], requiredIds: [] } });
+    const block = document.querySelector('[data-se="profileQuestions"]');
+    expect(block.textContent).toContain('Optional — helps us serve you better');
+    expect(block.textContent).not.toContain('*');
+  });
+});

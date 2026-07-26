@@ -312,6 +312,19 @@ export default function CampaignSignupForm({
       setError('Last drawn salary is required.');
       return;
     }
+
+    // Required profile questions (owner control, 2026-07-26): client-side
+    // gate only — the server keeps its drop-not-fail policy as the net.
+    for (const requiredId of profileQuestions?.requiredIds || []) {
+      const q = getProfileQuestion(requiredId);
+      if (!q) continue;
+      const answer = profileAnswers[requiredId];
+      const answered = q.multi ? Array.isArray(answer) && answer.length > 0 : Boolean(answer);
+      if (!answered) {
+        setError(`Please answer: ${q.prompt}`);
+        return;
+      }
+    }
     if (!consentAll) {
       setError(CONSENT_BLOCK_HELPER);
       return;
@@ -950,11 +963,14 @@ export default function CampaignSignupForm({
               fontSize: 12, color: TOKENS.muted, marginBottom: 10,
               fontFamily: 'Albert Sans, system-ui, sans-serif',
             }}>
-              Optional — helps us serve you better
+              {(profileQuestions.requiredIds || []).length === 0
+                ? 'Optional — helps us serve you better'
+                : 'Helps us serve you better'}
             </div>
             {profileQuestions.questionIds.map((qid) => {
               const q = getProfileQuestion(qid);
               if (!q) return null;
+              const isRequired = (profileQuestions.requiredIds || []).includes(q.id);
               const current = profileAnswers[q.id];
               const isSelected = (optId) => (q.multi
                 ? Array.isArray(current) && current.includes(optId)
@@ -982,7 +998,11 @@ export default function CampaignSignupForm({
                     fontSize: 13.5, fontWeight: 600, color: TOKENS.body, marginBottom: 8,
                     fontFamily: 'Albert Sans, system-ui, sans-serif',
                   }}>
-                    {q.prompt}{q.promptZh ? <span style={{ fontWeight: 400, color: TOKENS.muted }}> · {q.promptZh}</span> : null}
+                    {q.prompt}
+                    {q.promptZh && profileQuestions.showZh !== false
+                      ? <span style={{ fontWeight: 400, color: TOKENS.muted }}> · {q.promptZh}</span>
+                      : null}
+                    {isRequired ? <span aria-hidden="true" style={{ color: themeColor || TOKENS.body }}> *</span> : null}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {q.options.map((opt) => {

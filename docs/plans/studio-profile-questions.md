@@ -19,9 +19,18 @@ on the signup funnel as **optional, structured choices** (never free
 text); answers flow through capture into map-job snapshots and land as
 `consumer_observations` with `form`-grade provenance. No AI anywhere.
 
-Product rules (owner decisions): fixed library only (§2), everything
-skippable, per-campaign selection is Shawn's conversion-vs-data call — the
-AI "Fill everything" flow NEVER enables questions on its own.
+Product rules (owner decisions): fixed library only (§2); per-campaign
+selection is Shawn's conversion-vs-data call — the AI "Fill everything"
+flow NEVER enables questions on its own.
+
+**Owner revision (2026-07-26, post-launch):** questions are skippable BY
+DEFAULT, with two per-campaign controls added the same day: (1)
+`requiredIds ⊆ questionIds` — required questions get an asterisk and the
+funnel blocks submit until answered (CLIENT-side gate only; the server
+keeps its drop-not-fail policy as the net); (2) `showZh` (default true) —
+explicit false renders English-only prompts. Both clamp-sanitized,
+leaf-picked into the public payload, and edited via the Studio card
+(per-question Required toggle + a "Show Chinese text" master toggle).
 
 ## 2. Question library v1 — twins with server-side answer resolution
 

@@ -115,7 +115,12 @@ function buildPublicDesignConfigV2(dc) {
   const pq = dc.profileQuestions;
   if (pq && typeof pq === 'object' && pq.enabled === true
     && Array.isArray(pq.questionIds) && pq.questionIds.length) {
-    out.profileQuestions = { enabled: true, questionIds: [...pq.questionIds] };
+    out.profileQuestions = {
+      enabled: true,
+      questionIds: [...pq.questionIds],
+      requiredIds: Array.isArray(pq.requiredIds) ? [...pq.requiredIds] : [],
+      showZh: pq.showZh !== false,
+    };
   }
   // media WITHOUT the internal legacy shadow (v1-URL bookkeeping for downgrade).
   const media = pick(dc.content?.media, ['kind', 'src', 'alt']);

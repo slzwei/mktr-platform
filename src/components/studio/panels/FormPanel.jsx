@@ -203,22 +203,59 @@ export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) 
             };
           })}
         />
-        {doc.profileQuestions?.enabled === true && PROFILE_QUESTION_LIBRARY.map((q) => (
+        {doc.profileQuestions?.enabled === true && (
           <ToggleRow
-            key={q.id}
-            id={`studio-pq-${q.id}`}
-            label={q.prompt}
-            hint={q.promptZh}
-            checked={(doc.profileQuestions?.questionIds || []).includes(q.id)}
+            id="studio-pq-showzh"
+            label="Show Chinese text"
+            hint="Off = English-only prompts on the funnel"
+            checked={doc.profileQuestions?.showZh !== false}
             onChange={(v) => mut((d) => {
-              const cur = d.profileQuestions || { enabled: true, questionIds: [] };
-              const set = new Set(cur.questionIds || []);
-              if (v) set.add(q.id); else set.delete(q.id);
-              // Canonical library order, deduped — mirrors the clamp.
-              d.profileQuestions = { ...cur, questionIds: PROFILE_QUESTION_IDS.filter((id) => set.has(id)) };
+              d.profileQuestions = { ...(d.profileQuestions || { enabled: true, questionIds: [] }), showZh: v === true };
             })}
           />
-        ))}
+        )}
+        {doc.profileQuestions?.enabled === true && PROFILE_QUESTION_LIBRARY.map((q) => {
+          const asked = (doc.profileQuestions?.questionIds || []).includes(q.id);
+          return (
+            <div key={q.id}>
+              <ToggleRow
+                id={`studio-pq-${q.id}`}
+                label={q.prompt}
+                hint={q.promptZh}
+                checked={asked}
+                onChange={(v) => mut((d) => {
+                  const cur = d.profileQuestions || { enabled: true, questionIds: [] };
+                  const set = new Set(cur.questionIds || []);
+                  if (v) set.add(q.id); else set.delete(q.id);
+                  // Canonical library order, deduped — mirrors the clamp,
+                  // which also drops a requiredId whose question is unasked.
+                  const questionIds = PROFILE_QUESTION_IDS.filter((id) => set.has(id));
+                  const requiredIds = (cur.requiredIds || []).filter((id) => questionIds.includes(id));
+                  d.profileQuestions = { ...cur, questionIds, requiredIds };
+                })}
+              />
+              {asked && (
+                <div style={{ paddingLeft: 16 }}>
+                  <ToggleRow
+                    id={`studio-pq-${q.id}-required`}
+                    label="Required"
+                    hint="Signup blocked until answered (this campaign only)"
+                    checked={(doc.profileQuestions?.requiredIds || []).includes(q.id)}
+                    onChange={(v) => mut((d) => {
+                      const cur = d.profileQuestions || { enabled: true, questionIds: [] };
+                      const set = new Set(cur.requiredIds || []);
+                      if (v) set.add(q.id); else set.delete(q.id);
+                      d.profileQuestions = {
+                        ...cur,
+                        requiredIds: PROFILE_QUESTION_IDS.filter((id) => set.has(id) && (cur.questionIds || []).includes(id)),
+                      };
+                    })}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </PanelSection>
 
       <PanelSection title="ELIGIBILITY GATES">

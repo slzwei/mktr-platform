@@ -61,7 +61,12 @@ export function deriveFunnelProps(adapted, { onSubmit, previewMode = false, prev
     // nothing.
     profileQuestions: isV2Doc && doc.profileQuestions?.enabled === true
       && Array.isArray(doc.profileQuestions?.questionIds) && doc.profileQuestions.questionIds.length
-      ? { enabled: true, questionIds: doc.profileQuestions.questionIds }
+      ? {
+        enabled: true,
+        questionIds: doc.profileQuestions.questionIds,
+        requiredIds: Array.isArray(doc.profileQuestions.requiredIds) ? doc.profileQuestions.requiredIds : [],
+        showZh: doc.profileQuestions.showZh !== false,
+      }
       : undefined,
   };
 }
