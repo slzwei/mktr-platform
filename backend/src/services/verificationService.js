@@ -68,7 +68,14 @@ const maskPhone = (phone) => {
   return s.length < 7 ? '***' : `${s.slice(0, 3)}****${s.slice(-4)}`;
 };
 
-// Helper to send WhatsApp via Meta Graph API
+// Helper to send WhatsApp via Meta Graph API.
+//
+// This send deliberately writes NO wa_message_sends ownership row
+// (per-campaign-lead-scoring.md §5): the OTP is what gates capture, so no lead
+// exists yet to own it, and it goes out on the separate META_WA_* sender whose
+// statuses the webhook skips as unmatchedForeign anyway
+// (waWebhookService.js:137,145-148). Full reasoning and the send-path
+// inventory: redeemOps/waMessageOwnership.js.
 const sendWhatsAppOtpMeta = async (phone, code) => {
   const phoneId = process.env.META_WA_PHONE_NUMBER_ID;
   const accessToken = process.env.META_WA_ACCESS_TOKEN;

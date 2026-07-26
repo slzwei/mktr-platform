@@ -558,6 +558,26 @@ export function makeErasureService(overrides = {}) {
         report.waMessageStatuses = rowCount(wmsMeta);
       }
 
+      // 11c. WhatsApp send-time ownership (migration 096,
+      // per-campaign-lead-scoring.md §5). The twin of 11b: that table says what
+      // happened to a wamid, this one says which lead it was for. Deleted, not
+      // scrubbed — every column is about the person (which lead, which
+      // campaign, when they were messaged), so there is no non-personal
+      // skeleton worth keeping. Keyed on BOTH arms because consumerId is a
+      // send-time snapshot that pre-spine sends never carried, while the
+      // prospect arm catches those: an ownership row surviving its status row
+      // would leave a dangling "we messaged this lead on this date".
+      {
+        const sendsWhere = pids.length
+          ? '"consumerId" = :consumerId OR "prospectId" IN (:pids)'
+          : '"consumerId" = :consumerId';
+        const [, wsMeta] = await d.sequelize.query(
+          `DELETE FROM wa_message_sends WHERE ${sendsWhere}`,
+          { replacements: { consumerId, ...(pids.length ? { pids } : {}) }, transaction: t }
+        );
+        report.waMessageSends = rowCount(wsMeta);
+      }
+
       // 12. Draw entries (prospect join + phoneHash fallback — draw_entries
       // has no consumerId until tracker "drawlink"): unpickable + snapshot
       // scrubbed. phoneHash is NOT NULL ⇒ the all-zeros sentinel. Boost-review

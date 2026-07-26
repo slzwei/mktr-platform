@@ -415,7 +415,7 @@ export const {
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
   AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression,
   SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient,
-  WaMessageStatus, ConsumerObservation, ConsumerProfile, EnrichmentJob,
+  WaMessageStatus, WaMessageSend, ConsumerObservation, ConsumerProfile, EnrichmentJob,
   EnrichmentScoringConfig, EnrichmentSweepRun
 } = models;
 

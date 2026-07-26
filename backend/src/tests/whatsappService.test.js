@@ -65,10 +65,27 @@ function enableWithCreds() {
   process.env.WHATSAPP_PHONE_NUMBER_ID = '555000111';
 }
 
-function makeSvc({ fetch, qr = qrRecorder(), card = cardRecorder(), RewardOffer = offerFake, isSendBlocked } = {}) {
+/**
+ * DI fake for the send-time ownership writer (§5 of
+ * per-campaign-lead-scoring.md). Injected by default so this suite stays
+ * DB-free — the real writer opens a connection, and a DB-less jest run burns
+ * two minutes on connection retries rather than failing cleanly.
+ */
+function ownershipRecorder() {
+  const calls = [];
+  const fn = async (args) => { calls.push(args); return true; };
+  fn.calls = calls;
+  return fn;
+}
+
+function makeSvc({
+  fetch, qr = qrRecorder(), card = cardRecorder(), RewardOffer = offerFake,
+  isSendBlocked, recordWaSend = ownershipRecorder(),
+} = {}) {
   // Inject a no-op sleep so graphFetch's backoff doesn't slow tests.
   return makeWhatsappService({
     RewardOffer, fetch, QRCode: qr, renderQrCard: card, logger: silentLogger, sleep: async () => {},
+    recordWaSend,
     ...(isSendBlocked ? { isSendBlocked } : {}),
   });
 }
@@ -485,5 +502,119 @@ describe('sendDrawCallbackOptinWhatsApp — screening callback opt-in (§16.6)',
     expect(await paramAt({ prize: 'The Grand Bundle' })).toBe('The Grand Bundle');
     expect(await paramAt({ prize: null })).toBe('the grand prize');
     expect(await paramAt({ prize: 'https://evil.example' })).toBe('the grand prize');
+  });
+});
+
+describe('send-time ownership — wa_message_sends stamping (§5)', () => {
+  // A persisted lead: ownership needs an id, and carries the campaign/consumer
+  // it had AT SEND as a snapshot.
+  const lead = {
+    ...consented, id: 'p-1', campaignId: 'c-1', consumerId: 'u-1',
+  };
+  const sentWithWamid = { ok: true, json: async () => ({ messages: [{ id: 'wamid.ABC' }] }) };
+  // Header OFF throughout: it costs an extra /media round-trip that has
+  // nothing to do with ownership, and the header shape is covered above. With
+  // it off every sender makes exactly one call, so one scripted response fits
+  // all five.
+  const enableNoHeader = () => { enableWithCreds(); process.env.WHATSAPP_QR_HEADER = 'false'; };
+  const drawCtx = {
+    drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10, prize: 'iPhone 17 Pro',
+    drawOn: '2026-10-30', passTheme: 'vault', boostClosesAt: '2026-10-29T15:59:59.999Z',
+  };
+
+  /** Every sender, with the kind it must stamp. */
+  const senders = [
+    ['pass', (svc) => svc.sendReservationWhatsApp({ entitlement, prospect: lead, presentationToken: 'ptok' })],
+    ['draw_pass', (svc) => svc.sendReservationWhatsApp({ entitlement, prospect: lead, presentationToken: 'ptok', drawCtx })],
+    ['voucher', (svc) => svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'vtok' })],
+    ['boost_receipt', (svc) => svc.sendBoostReceiptWhatsApp({ prospect: lead, drawCtx })],
+    ['screening_callback', (svc) => svc.sendDrawCallbackOptinWhatsApp({
+      prospect: lead, drawName: 'D', multiplier: 10, prize: 'p', token: 'wcb_x',
+    })],
+  ];
+
+  it.each(senders)('%s stamps the lead, campaign and consumer of the send', async (kind, send) => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    const svc = makeSvc({
+      fetch: scriptedFetch([sentWithWamid]),
+      recordWaSend,
+      isSendBlocked: async () => false,
+    });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(recordWaSend.calls.length).toBe(1);
+    expect(recordWaSend.calls[0]).toMatchObject({ wamid: 'wamid.ABC', kind });
+    // The snapshot is taken off the prospect handed to the sender — never
+    // re-derived from the entitlement or activation (§5's whole point).
+    expect(recordWaSend.calls[0].prospect).toBe(lead);
+  });
+
+  it('a 2xx with no wamid owns nothing — there is no key to own', async () => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    // sendOk resolves {} — "accepted, untrackable".
+    const svc = makeSvc({ fetch: scriptedFetch([sendOk]), recordWaSend, isSendBlocked: async () => false });
+    const r = await svc.sendDrawCallbackOptinWhatsApp({
+      prospect: lead, drawName: 'D', multiplier: 10, prize: 'p', token: 'wcb_x',
+    });
+    expect(r.sent).toBe(true);
+    expect(recordWaSend.calls.length).toBe(0);
+  });
+
+  it('a rejected send owns nothing', async () => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    const svc = makeSvc({
+      fetch: scriptedFetch([{ ok: false, status: 400, json: async () => ({ error: { code: 132001 } }) }]),
+      recordWaSend,
+      isSendBlocked: async () => false,
+    });
+    const r = await svc.sendDrawCallbackOptinWhatsApp({
+      prospect: lead, drawName: 'D', multiplier: 10, prize: 'p', token: 'wcb_x',
+    });
+    expect(r.sent).toBe(false);
+    expect(recordWaSend.calls.length).toBe(0);
+  });
+
+  it('gated sends (flag off, suppressed) own nothing', async () => {
+    const recordWaSend = ownershipRecorder();
+    // Flag off — no creds enabled.
+    let svc = makeSvc({ fetch: scriptedFetch([sentWithWamid]), recordWaSend });
+    expect((await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' })).skipped).toBe('disabled');
+
+    enableNoHeader();
+    svc = makeSvc({ fetch: scriptedFetch([sentWithWamid]), recordWaSend, isSendBlocked: async () => true });
+    expect((await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' })).skipped).toBe('suppressed');
+    expect(recordWaSend.calls.length).toBe(0);
+  });
+
+  it('a resend is a SECOND owned message, not an overwrite — each send has its own wamid', async () => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    const wamids = ['wamid.FIRST', 'wamid.SECOND'];
+    let n = 0;
+    const fetch = async () => ({ ok: true, json: async () => ({ messages: [{ id: wamids[n++] }] }) });
+    fetch.calls = [];
+    const svc = makeSvc({ fetch, recordWaSend, isSendBlocked: async () => false });
+    await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' });
+    await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' });
+    expect(recordWaSend.calls.map((c) => c.wamid)).toEqual(wamids);
+  });
+
+  it('an ownership write failure loses scoreability, never the message', async () => {
+    enableNoHeader();
+    const svc = makeSvc({
+      fetch: scriptedFetch([sentWithWamid]),
+      // The real writer swallows its own errors; this proves the send still
+      // reports the truth if a future one doesn't. Reporting sent:false here
+      // would mislabel the receipt for a message the recipient already has,
+      // and invite a duplicate resend.
+      recordWaSend: async () => { throw new Error('db down'); },
+      isSendBlocked: async () => false,
+    });
+    const r = await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' });
+    expect(r).toMatchObject({ sent: true, messageId: 'wamid.ABC' });
+    expect(r.error).toBeUndefined();
   });
 });
