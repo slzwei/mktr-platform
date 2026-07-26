@@ -4,6 +4,7 @@ import { logger } from '../../utils/logger.js';
 import { renderQrCardPng } from './qrCardRenderer.js';
 import { isSendBlocked } from '../consentService.js';
 import { boostDeadlineLong } from './drawLink.js';
+import { recordWaSend } from './waMessageOwnership.js';
 
 /**
  * Consumer WhatsApp delivery for reward credentials (trial-reward PR E,
@@ -130,7 +131,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export function makeWhatsappService(overrides = {}) {
   const d = {
     RewardOffer, logger, QRCode, renderQrCard: renderQrCardPng,
-    fetch: (...args) => fetch(...args), sleep, isSendBlocked, ...overrides,
+    fetch: (...args) => fetch(...args), sleep, isSendBlocked, recordWaSend, ...overrides,
   };
 
   /**
@@ -209,8 +210,17 @@ export function makeWhatsappService(overrides = {}) {
     return json.id;
   }
 
-  /** One template send. Resolves normalized result, never throws. */
-  async function sendTemplate({ prospect, templateName, params, qrContent, card, purpose = 'transactional', urlButtonParam = null }) {
+  /**
+   * One template send. Resolves normalized result, never throws.
+   *
+   * `kind` is this send's OWNERSHIP label (§5 of
+   * docs/plans/per-campaign-lead-scoring.md). Every sender below passes one,
+   * and a 2xx carrying a wamid stamps `wa_message_sends` before resolving —
+   * this is the single choke point all four templates funnel through, which is
+   * why one call site here covers every rail. See waMessageOwnership.js for
+   * the full send-path inventory and the resend / failed-send contract.
+   */
+  async function sendTemplate({ prospect, templateName, params, qrContent, card, purpose = 'transactional', urlButtonParam = null, kind = null }) {
     if (!waEnabled()) return { sent: false, skipped: 'disabled' };
     // Capability inline (not via canWhatsAppProspect) so each send costs ONE
     // ledger read and the receipt codes stay distinct: 'no_whatsapp' = phone
@@ -308,6 +318,27 @@ export function makeWhatsappService(overrides = {}) {
         messageId = json?.messages?.[0]?.id || null;
       } catch { /* accepted, untrackable */ }
       if (!messageId) d.logger.warn('redeem_ops.whatsapp.no_wamid', { template: templateName });
+      // Ownership BEFORE resolving, so a caller that acts on the result (the
+      // screening callback patches its receipt straight after,
+      // retellScreeningService.js:521-529) can never observe a sent message
+      // whose owner is still unwritten.
+      //
+      // Its own try/catch, deliberately NOT the enclosing one: the message is
+      // already out of the building by this line, and letting a bookkeeping
+      // failure fall into the catch below would resolve `sent: false` for a
+      // message the recipient has. That mislabels the receipt and invites a
+      // duplicate resend — a far worse outcome than an unscoreable read. The
+      // real writer swallows its own errors already; this is the fence that
+      // holds if a future one doesn't.
+      if (messageId && kind) {
+        try {
+          await d.recordWaSend({ wamid: messageId, prospect, kind });
+        } catch (err) {
+          d.logger.error('redeem_ops.whatsapp.ownership_threw', {
+            template: templateName, wamid: messageId, error: err?.message,
+          });
+        }
+      }
       return {
         sent: true, to: maskPhone(prospect.phone), templateName,
         ...(messageId ? { messageId } : {}),
@@ -328,6 +359,7 @@ export function makeWhatsappService(overrides = {}) {
       return sendTemplate({
         prospect,
         templateName: process.env.WHATSAPP_TEMPLATE_DRAW_PASS || 'draw_entry_pass',
+        kind: 'draw_pass',
         qrContent: passLink,
         card: {
           state: 'pass', rewardName, partnerName, expiresAt: entitlement.expiresAt,
@@ -353,6 +385,7 @@ export function makeWhatsappService(overrides = {}) {
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_PASS || 'reward_pass',
+      kind: 'pass',
       qrContent: passLink,
       card: { state: 'pass', rewardName, partnerName, expiresAt: entitlement.expiresAt },
       params: [
@@ -372,6 +405,7 @@ export function makeWhatsappService(overrides = {}) {
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_VOUCHER || 'reward_voucher',
+      kind: 'voucher',
       qrContent: voucherToken,
       card: {
         state: 'voucher', rewardName, partnerName, expiresAt: entitlement.expiresAt,
@@ -412,6 +446,7 @@ export function makeWhatsappService(overrides = {}) {
     return sendTemplate({
       prospect,
       templateName,
+      kind: 'boost_receipt',
       card: {
         state: 'boost',
         rewardName: drawName,
@@ -448,6 +483,7 @@ export function makeWhatsappService(overrides = {}) {
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_DRAW_CALLBACK || 'draw_callback_optin',
+      kind: 'screening_callback',
       purpose: 'marketing',
       urlButtonParam: `callback?t=${encodeURIComponent(token)}&utm_source=wa_screening`,
       params: [
