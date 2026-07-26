@@ -261,11 +261,32 @@ describe('QR-header send sequence (default: header ON)', () => {
     // comes BEFORE the draw name. Reversing these renders "*iPhone 17 Pro Lucky
     // Draw chances* for the 10", which is what two recipients actually got on
     // 2026-07-26: the template was reworded to win the UTILITY category and the
-    // caller kept the MARKETING original's order. Positional params, no remap —
-    // so the name on the line above and this array are one decision.
+    // caller kept the MARKETING original's order.
     expect(send.body.template.components[1].parameters.map((p) => p.text)).toEqual([
       'Sarah', '10', 'iPhone 17 Pro Lucky Draw',
     ]);
+  });
+
+  // Meta approval and the Render env flip are two manual steps that cannot land
+  // at the same instant, so BOTH orders have to be correct while the rails are
+  // mid-migration — that is the whole reason the order is keyed by name.
+  it.each([
+    ['draw_boost_receipt', ['Sarah', 'iPhone 17 Pro Lucky Draw', '10']],   // legacy: draw name {{2}}
+    ['draw_session_receipt', ['Sarah', 'iPhone 17 Pro Lucky Draw', '10']], // "Campaign: {{2}} / ×{{3}}"
+    ['draw_boost_receipt_v2', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']],
+    ['draw_boost_receipt_v9', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']], // unknown → newer order
+  ])('boost receipt: %s gets the param order its body asks for', async (name, expected) => {
+    enableWithCreds();
+    process.env.WHATSAPP_TEMPLATE_DRAW_BOOST = name;
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch, card: cardRecorder() });
+    await svc.sendBoostReceiptWhatsApp({
+      prospect: consented,
+      drawCtx: { drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10 },
+    });
+    const send = fetch.calls[1];
+    expect(send.body.template.name).toBe(name);
+    expect(send.body.template.components[1].parameters.map((p) => p.text)).toEqual(expected);
   });
 
   it('WHATSAPP_CLAIM_ORIGIN overrides the pass-QR host (and the card wordmark follows)', async () => {
