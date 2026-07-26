@@ -12,9 +12,10 @@
  * component math is grouped two ways:
  *
  *   MEET = engagement 15 + contactability 10 + market fit 15  (raw 40) ×2.5
- *   BUY  = life events 25 + family gap 20 + capacity 15
- *          + coverage headroom −10..0                         (raw 60) /60
+ *   BUY  = life events 25 + family gap 20 + capacity 15 + age 10
+ *          + coverage headroom −10..0                         (raw 70) /70
  *   consumerScore = clamp(0, Σ all components, 100)  ← stored default sort
+ *                   (raw ceiling is 110 since v3 — the clamp absorbs it)
  *
  * WEIGHTS LIVE IN CONFIG, RULES LIVE IN CODE. `configJson` carries
  * per-component `maxPoints`, the `groups` map, `targetSegments`, and the
@@ -56,8 +57,14 @@ import { MIN_LLM_CONFIDENCE } from './factTaxonomy.js';
  * capability-vs-response contract (per-campaign-lead-scoring.md §3.2/§16 B1)
  * says responses must not move the person-grain score. Migration 094 appends
  * the config row that makes every stored score recompute under this version.
+ *
+ * v3: the age component (per-campaign-lead-scoring.md §13.2 / PR B). A CURVE
+ * over age — not a band match — fed by identity.birth_year_band, weighted low
+ * (10 vs family_gap's 20) because age is a prior: once income and children
+ * are actually known they should dominate. Migration 095 appends the config
+ * row (curve + weight + grouping) that makes every stored score recompute.
  */
-export const SCORING_ALGORITHM_VERSION = 'score/v2';
+export const SCORING_ALGORITHM_VERSION = 'score/v3';
 
 /** SGT is UTC+8 year-round (no DST) — the one offset this file needs. */
 const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -75,7 +82,7 @@ export const DEFAULT_SCORING_CONFIG = {
   // Grouping is data, not code (§7.1b) — regrouping is a config insert.
   groups: {
     meet: ['engagement', 'contactability', 'market_fit'],
-    buy: ['life_events', 'family_gap', 'capacity', 'coverage_headroom'],
+    buy: ['life_events', 'family_gap', 'capacity', 'age', 'coverage_headroom'],
   },
   components: {
     engagement: { maxPoints: 15 },
@@ -84,9 +91,31 @@ export const DEFAULT_SCORING_CONFIG = {
     life_events: { maxPoints: 25 },
     family_gap: { maxPoints: 20 },
     capacity: { maxPoints: 15 },
+    // Deliberately LOW: age is a prior, not evidence. When income/children
+    // are actually known those components (15/20) must dominate it.
+    age: { maxPoints: 10 },
     // Negative max: a penalty component. Range −10..0.
     coverage_headroom: { maxPoints: -10 },
   },
+  /**
+   * The age curve (§13.2) — piecewise-constant over AGE IN YEARS, evaluated
+   * against the current SGT year. Defined over age, NEVER over birth-year
+   * band strings: a band-keyed table silently rots one band every five years
+   * as the population ages through it. Each segment applies to ages up to
+   * and including `upTo`; the final `upTo: null` segment is the open tail.
+   * Values are fractions in 0..1 of the component's maxPoints. Shape (owner
+   * tunes via a config row, not a deploy): under 25 low, rising through
+   * 25-29, peaking 35-44, easing off after 50.
+   */
+  ageCurve: [
+    { upTo: 24, value: 0.25 },
+    { upTo: 29, value: 0.55 },
+    { upTo: 34, value: 0.8 },
+    { upTo: 44, value: 1 },
+    { upTo: 49, value: 0.8 },
+    { upTo: 59, value: 0.55 },
+    { upTo: null, value: 0.3 },
+  ],
   // Which market we're currently selling into. Retargeting = one new row.
   targetSegments: [{ language: 'zh', ethnicity: 'chinese', weight: 1 }],
   decay: {
@@ -98,7 +127,7 @@ export const DEFAULT_SCORING_CONFIG = {
 
 /** Components whose evidence is FACTS (vs behavioral telemetry). */
 export const FACT_COMPONENTS = new Set([
-  'market_fit', 'life_events', 'family_gap', 'capacity', 'coverage_headroom',
+  'market_fit', 'life_events', 'family_gap', 'capacity', 'age', 'coverage_headroom',
 ]);
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -356,6 +385,76 @@ function scoreCapacity(facts, cfg) {
   return assessed(clamp(fraction, 0, 1), basis, notes.join(', '));
 }
 
+/** Calendar year at `now` in SGT — the year ages are evaluated against. */
+function sgtYear(now) {
+  return new Date(now + SGT_OFFSET_MS).getUTCFullYear();
+}
+
+/**
+ * Piecewise-constant curve lookup. Segments are scanned in order; the first
+ * with `age <= upTo` (or the `upTo: null` open tail) wins. Values are
+ * clamped into 0..1 — the fraction contract belongs to the engine, and a
+ * mis-authored config row must not leak a >1 fraction into points. Returns
+ * null when no segment covers the age (a curve authored without a tail).
+ */
+function curveValueAt(curve, age) {
+  for (const seg of curve) {
+    if (seg == null) continue;
+    const upTo = seg.upTo;
+    if (upTo === null || upTo === undefined || age <= Number(upTo)) {
+      const v = Number(seg.value);
+      return Number.isFinite(v) ? clamp(v, 0, 1) : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Age — a PRIOR on life stage, from identity.birth_year_band (the ledger
+ * never stores exact ages — they go stale; bands don't). A curve, not a
+ * range match: a range scores everyone inside it identically and puts a
+ * cliff at the boundary.
+ *
+ * The band spans 5 birth years and the curve is segmented over AGE, so a
+ * band can straddle a segment boundary. Overlap rule (§13.2): every birth
+ * year in the band contributes equally (1/5th), so each curve segment is
+ * weighted by the fraction of the band's years that fall inside it. Ages
+ * are (SGT year − birth year) — band-granularity data doesn't support
+ * birthday precision, and evaluating against `now` is what keeps the curve
+ * from rotting as the population ages through fixed bands.
+ */
+function scoreAge(facts, cfg, now) {
+  const min = cfg.minFactConfidence;
+  const band = factOf(facts, 'identity.birth_year_band', min);
+  if (!band) return unknown('no birth-year band on record');
+
+  const m = /^(\d{4})-(\d{4})$/.exec(String(band.value?.v || ''));
+  if (!m) return unknown('unparseable birth-year band');
+  const start = Number(m[1]);
+  const end = Number(m[2]);
+  // Ledger bands are taxonomy-validated to exactly 5 years; tolerate any
+  // sane span, but refuse to iterate a corrupt one.
+  if (end < start || end - start > 100) return unknown('unparseable birth-year band');
+
+  const curve = Array.isArray(cfg.ageCurve) ? cfg.ageCurve : [];
+  const year = sgtYear(now);
+  const values = [];
+  for (let y = start; y <= end; y += 1) {
+    // Future birth years (a not-yet-complete band edge) clamp to age 0 and
+    // take the curve's youngest segment rather than inventing negative ages.
+    const v = curveValueAt(curve, Math.max(0, year - y));
+    if (v !== null) values.push(v);
+  }
+  if (!values.length) return unknown('no usable age curve configured');
+
+  const fraction = clamp(values.reduce((s, v) => s + v, 0) / values.length, 0, 1);
+  return assessed(
+    fraction,
+    [band.observationId].filter(Boolean),
+    `born ${band.value.v} — age ${Math.max(0, year - end)}-${Math.max(0, year - start)} in ${year}`
+  );
+}
+
 /**
  * Coverage headroom — a PENALTY (−10..0). Someone already carrying life +
  * health + CI has little room left; someone explicitly carrying nothing has
@@ -393,6 +492,7 @@ const RULES = {
   life_events: (facts, telemetry, cfg, now) => scoreLifeEvents(facts, cfg, now),
   family_gap: (facts, telemetry, cfg) => scoreFamilyGap(facts, cfg),
   capacity: (facts, telemetry, cfg) => scoreCapacity(facts, cfg),
+  age: (facts, telemetry, cfg, now) => scoreAge(facts, cfg, now),
   coverage_headroom: (facts, telemetry, cfg) => scoreCoverageHeadroom(facts, cfg),
 };
 
@@ -405,6 +505,12 @@ export function normalizeConfig(configJson) {
     groups: { ...DEFAULT_SCORING_CONFIG.groups, ...(c.groups || {}) },
     components: { ...DEFAULT_SCORING_CONFIG.components, ...(c.components || {}) },
     decay: { ...DEFAULT_SCORING_CONFIG.decay, ...(c.decay || {}) },
+    // Top-level like decay/targetSegments, NOT inside components.age: the
+    // shallow components merge would let a later `{age:{maxPoints}}`
+    // recalibration row silently drop a curve nested there.
+    ageCurve: Array.isArray(c.ageCurve) && c.ageCurve.length
+      ? c.ageCurve
+      : DEFAULT_SCORING_CONFIG.ageCurve,
     targetSegments: Array.isArray(c.targetSegments) ? c.targetSegments : DEFAULT_SCORING_CONFIG.targetSegments,
     minFactConfidence: typeof c.minFactConfidence === 'number'
       ? c.minFactConfidence
