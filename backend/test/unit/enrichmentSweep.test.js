@@ -21,12 +21,36 @@ function population(all) {
   }
 }
 
-function harness({ stale = [], all = [], rowBudget = 500, timeBudgetMs = 60_000, cursor = null, scoreImpl } = {}) {
+/** A fake stale query that stops returning an id once it has been scored. */
+function staleQuery(remaining) {
+  return async ({ afterId = null, limit = 200 }) => {
+    const list = [...remaining].sort()
+    const start = afterId === null ? 0 : list.findIndex((x) => x > afterId)
+    if (start === -1) return []
+    return list.slice(start, start + limit)
+  }
+}
+
+/**
+ * EVERY grain's deps are injected, including the LEAD ones
+ * (per-campaign-lead-scoring.md §10). This suite is deliberately DB-free, and
+ * an un-injected finder falls through to the real query — which passes on a
+ * developer machine that happens to have Postgres up and dies in CI, where
+ * the unit step has no database. Leaving lead deps out is exactly how that
+ * happened once.
+ */
+function harness({
+  stale = [], all = [], staleLeads = [], allLeads = [],
+  rowBudget = 500, timeBudgetMs = 60_000, cursor = null, scoreImpl, scoreLeadImpl,
+} = {}) {
   const scored = []
+  const scoredLeads = []
   // Stale ids clear once scored — the real query stops returning them.
   const remainingStale = new Set(stale)
+  const remainingStaleLeads = new Set(staleLeads)
   return {
     scored,
+    scoredLeads,
     run: () => sweepConsumers({
       runId: null,
       ownerToken: 't',
@@ -35,17 +59,20 @@ function harness({ stale = [], all = [], rowBudget = 500, timeBudgetMs = 60_000,
       timeBudgetMs,
       deps: {
         getActiveScoringConfig: async () => ({ version: 1, config: { algorithmVersion: 'score/v1' } }),
-        findStaleConsumerIds: async ({ afterId = null, limit = 200 }) => {
-          const list = [...remainingStale].sort()
-          const start = afterId === null ? 0 : list.findIndex((x) => x > afterId)
-          if (start === -1) return []
-          return list.slice(start, start + limit)
-        },
+        findStaleConsumerIds: staleQuery(remainingStale),
         findConsumerIdsAfter: population(all),
         scoreOneConsumer: async (id) => {
           scored.push(id)
           if (scoreImpl) return scoreImpl(id)
           remainingStale.delete(id)
+          return { status: 'scored' }
+        },
+        findStaleLeadIds: staleQuery(remainingStaleLeads),
+        findLeadIdsAfter: population(allLeads),
+        scoreOneLead: async (id) => {
+          scoredLeads.push(id)
+          if (scoreLeadImpl) return scoreLeadImpl(id)
+          remainingStaleLeads.delete(id)
           return { status: 'scored' }
         },
         heartbeat: async () => true,
@@ -147,5 +174,71 @@ describe('SGT date fence', () => {
   test('rolls at SGT midnight, not UTC midnight', () => {
     expect(sgtDateString(Date.UTC(2026, 6, 26, 16, 30))).toBe('2026-07-27')
     expect(sgtDateString(Date.UTC(2026, 6, 26, 15, 30))).toBe('2026-07-26')
+  })
+})
+
+/**
+ * The lead grain (per-campaign-lead-scoring.md §6/§10). Same phase engine,
+ * its own population and its own cursor.
+ */
+describe('lead phases run beside the consumer ones', () => {
+  test('both grains are swept, stale-first, each from its own cursor', async () => {
+    const h = harness({
+      stale: ['c0001'], all: ids(3),
+      staleLeads: ['p0002'], allLeads: ids(4, 'p'),
+    })
+    const { stats, cursor } = await h.run()
+
+    expect(h.scored).toContain('c0001')
+    expect(h.scoredLeads).toContain('p0002')
+    expect(stats.consumerStaleScored).toBe(1)
+    expect(stats.leadStaleScored).toBe(1)
+    // Each grain keeps its OWN cursor — a run that only had room for one must
+    // not advance the other past rows it never looked at.
+    expect(cursor).toEqual({ lastConsumerId: null, lastProspectId: null })
+    expect(stats.stoppedBy).toBe('exhausted')
+  })
+
+  test('a lead population larger than the budget leaves a resumable cursor', async () => {
+    const h = harness({ allLeads: ids(50, 'p'), rowBudget: 10 })
+    const { cursor, stats } = await h.run()
+    expect(h.scoredLeads.length).toBeGreaterThan(0)
+    expect(cursor.lastProspectId).not.toBeNull()
+    expect(stats.stoppedBy).toBe('row_budget')
+  })
+
+  test('leads dirtied while nothing else is stale still get scored', async () => {
+    // The dirty marker is what puts an event-driven move into the stale-FIRST
+    // phase rather than leaving it to the rotation.
+    const h = harness({ staleLeads: ['p0007'], allLeads: [] })
+    await h.run()
+    expect(h.scoredLeads).toEqual(['p0007'])
+  })
+})
+
+describe('the rotation reservation is two-dimensional (§6)', () => {
+  test('a stale backlog bigger than the budget still leaves the rotation room', async () => {
+    // 500 stale leads against a 100-row budget. A row-only reserve would be
+    // spent entirely on the stale phase and the rotation would starve — the
+    // failure mode Codex round 3b found. The stale phases stop ADMITTING at
+    // 80%, so the last 20% belongs to the rotation.
+    const h = harness({
+      staleLeads: ids(500, 'p'),
+      all: ids(50),
+      rowBudget: 100,
+    })
+    const { stats } = await h.run()
+
+    expect(stats.leadStaleScored).toBeLessThanOrEqual(80)
+    expect(stats.rotationScored).toBeGreaterThan(0)
+    expect(stats.rowsUsed).toBeLessThanOrEqual(100)
+  })
+
+  test('a stale phase that fills its reserved slice does not end the night', async () => {
+    const h = harness({ stale: ids(500), allLeads: ids(20, 'p'), rowBudget: 100 })
+    const { stats } = await h.run()
+    // Consumers ate their 80%; the leads' rotation still ran.
+    expect(h.scoredLeads.length).toBeGreaterThan(0)
+    expect(stats.stoppedBy).not.toBe('no_work')
   })
 })
