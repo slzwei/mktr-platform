@@ -274,6 +274,7 @@ describe('QR-header send sequence (default: header ON)', () => {
     ['draw_boost_receipt', ['Sarah', 'iPhone 17 Pro Lucky Draw', '10']],   // legacy: draw name {{2}}
     ['draw_session_receipt', ['Sarah', 'iPhone 17 Pro Lucky Draw', '10']], // "Campaign: {{2}} / ×{{3}}"
     ['draw_boost_receipt_v2', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']],
+    ['draw_boost_receipt_v3', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']], // pending v3: "You now have ×{{2}} chances for the {{3}}"
     ['draw_boost_receipt_v9', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']], // unknown → newer order
   ])('boost receipt: %s gets the param order its body asks for', async (name, expected) => {
     enableWithCreds();

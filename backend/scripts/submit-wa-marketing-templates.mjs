@@ -16,6 +16,12 @@
  *                    existing templates first, POSTs only the missing ones,
  *                    then prints a status table
  *   --status         read-only status poll (use while waiting on Meta review)
+ *   --all            read-only: EVERY template on the WABA with its category,
+ *                    status and language — including ones this script never
+ *                    submitted. Category is the field that decides whether a
+ *                    send survives the marketing frequency cap (131049), and
+ *                    Meta recategorises silently, so it is a thing to re-read
+ *                    before every env flip, never a thing to remember.
  *   --dry            print the exact JSON payloads, no network, no token needed
  *   --text-only      submit/consider only the text-header set
  *   --images-only    submit/consider only the image-header set
@@ -309,6 +315,42 @@ export const UTILITY_TEMPLATES = [
       },
     ],
   },
+  // ROUND 3 (2026-07-26). Round 2 above was ALSO approve-and-flipped to
+  // MARKETING — 4 for 4, so record-keeping register did not save it either.
+  // What actually won UTILITY was Shawn's category APPEAL on the round-1 pair
+  // in WhatsApp Manager: draw_boost_receipt_v2 and reward_voucher_v2 are
+  // UTILITY + APPROVED, and prod points at them. Appeal the category; do not
+  // expect copy to steer the classifier.
+  //
+  // So this is a NEW NAME, not an edit of the live one. Editing an approved
+  // template resubmits it and re-runs the classifier over a category that cost
+  // an appeal to win — under a fresh name, a bad verdict costs nothing and
+  // draw_boost_receipt_v2 keeps sending throughout.
+  //
+  // Copy is Shawn's (2026-07-26), and it REORDERS the variables: {{2}} is now
+  // the chances count and {{3}} the draw name, the way the sentence is spoken.
+  // whatsappService keys param order off the template name for exactly this
+  // reason — see BOOST_TEMPLATES_DRAW_NAME_SECOND.
+  //
+  // Known risk, deliberately accepted: "Good luck!" is celebration copy, and
+  // every template on this WABA carrying that phrase (draw_callback_optin,
+  // marketing_new_draw) is MARKETING. If this returns MARKETING, dropping that
+  // closing line is the first lever — then appeal, which is what works.
+  {
+    name: 'draw_boost_receipt_v3',
+    language: LANGUAGE,
+    category: 'UTILITY',
+    allow_category_change: false,
+    components: [
+      { type: 'HEADER', format: 'IMAGE', example: { header_handle: [HANDLE_PLACEHOLDER] } },
+      {
+        type: 'BODY',
+        text:
+          'Hi {{1}}, your completed review has been recorded. You now have *{{2}} chances* for the {{3}}.\n\nWinners are contacted directly after the draw. Good luck!',
+        example: { body_text: [['Shawn', '10', 'iPhone 17 Pro Lucky Draw']] },
+      },
+    ],
+  },
 ];
 
 async function graphGet(path_, token) {
@@ -503,6 +545,30 @@ function printStatusTable(existing, templates) {
   );
 }
 
+/**
+ * Every template on the WABA, category first-class. The send rails pick their
+ * template by env name (WHATSAPP_TEMPLATE_DRAW_BOOST etc.), so before flipping
+ * one of those, the category and language printed here are the facts that
+ * decide whether the send survives the cap and resolves at all.
+ */
+function printAllTable(existing) {
+  const rows = [...existing].sort(
+    (a, b) => (a.category || '').localeCompare(b.category || '') || a.name.localeCompare(b.name),
+  );
+  console.log(`  ${'NAME'.padEnd(30)} ${'CATEGORY'.padEnd(10)} ${'STATUS'.padEnd(10)} LANG`);
+  for (const r of rows) {
+    const extra = [
+      r.rejected_reason && r.rejected_reason !== 'NONE' ? `reason=${r.rejected_reason}` : null,
+      r.quality_score?.score ? `quality=${r.quality_score.score}` : null,
+    ].filter(Boolean).join(' ');
+    console.log(
+      `  ${r.name.padEnd(30)} ${String(r.category || '?').padEnd(10)} ${String(r.status || '?').padEnd(10)} `
+        + `${r.language || '?'}${extra ? `  (${extra})` : ''}`,
+    );
+  }
+  console.log(`\n  ${rows.length} templates · only UTILITY ones are exempt from the per-user marketing cap.`);
+}
+
 function selectedSets() {
   const only = ['--text-only', '--images-only', '--callback-only', '--utility-only'].filter((f) => process.argv.includes(f));
   if (only.length > 1) throw new Error(`${only.join(' and ')} are mutually exclusive`);
@@ -595,6 +661,11 @@ async function main() {
   }
   console.log(`WABA ${wabaId} (Graph ${VERSION})`);
   let existing = await fetchExisting(wabaId, token);
+
+  if (process.argv.includes('--all')) {
+    printAllTable(existing);
+    return;
+  }
 
   if (process.argv.includes('--status')) {
     printStatusTable(existing, considered);
