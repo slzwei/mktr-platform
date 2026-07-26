@@ -16,10 +16,12 @@ afterAll(async () => {
   await closeDb()
 })
 
+// SDK-style signing (bc76365): the verifier computes hmac(body + timestamp),
+// concatenated — never the old `${ts}.${body}` shape these suites carried.
 function signRetellPayload(body, secret) {
   const timestamp = Math.floor(Date.now() / 1000).toString()
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body)
-  const hmac = crypto.createHmac('sha256', secret).update(`${timestamp}.${bodyStr}`).digest('hex')
+  const hmac = crypto.createHmac('sha256', secret).update(`${bodyStr}${timestamp}`).digest('hex')
   return `v=${timestamp},d=${hmac}`
 }
 
