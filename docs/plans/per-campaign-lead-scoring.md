@@ -1,6 +1,6 @@
 # Per-campaign lead scoring — the admin describes the ideal lead, the score moves as things happen
 
-**Status:** v2 SCOPE — isolation rule RESOLVED (Shawn, 2026-07-26), PR A specced to buildable detail (§10). Not Codex-reviewed, not built.
+**Status:** v2 SCOPE — **Codex round 1: REWORK** (3 BLOCKER, 7 MAJOR; §11). All findings verified against code and accepted. NOT ready to build — v2 rework required.
 **Author:** Claude, 2026-07-26, from Shawn's model:
 
 > "The admin, when creating campaigns, will say the ideal lead profile. The AI
@@ -319,6 +319,79 @@ call on 24 Jul"* — the number moving is only useful if the reason moves with i
 - A lead with no events scores exactly its base — the event layer is inert
   until there is evidence.
 - Erased consumers: no lead score, no breakdown, consistent with §9 erasure.
+
+## 11. Codex adversarial review round 1 — REWORK (3 BLOCKER, 7 MAJOR)
+
+gpt-5.6-sol xhigh, 2026-07-26. Every finding below was independently verified
+against the code before being accepted. **All accepted; none disputed.**
+
+### The three blockers
+
+**B1 — Campaign isolation is already broken in the BASE layer, before events.**
+§10.3 claimed isolation is enforced by the event query. False. The base score
+consumes person-wide telemetry: `loadTelemetry()` computes `whatsappReachable`
+as `EXISTS(… WHERE w."recipientHash" = c."phoneHash" AND w.status IN
+('delivered','read'))` — **no campaign predicate at all**
+(`consumerScoringService.js:118-122`), and engagement uses consumer-level
+`signupCount`/`verifiedSignupCount`. A WhatsApp read sent for campaign A
+therefore raises campaign B's score today. The proposed isolation test
+(screening refusal only) would have PASSED while consent, delivery, read and
+signup activity all bled across campaigns.
+→ Isolation must be specified over **every telemetry input**, not just events.
+
+**B2 — The "already exists" WhatsApp→campaign join does not exist.**
+`deliveryReceipts()` joins `redemption_events → wa_message_statuses` on wamid
+and filters by a set of entitlement ids drawn from the whole person journey
+(`leadProfileService.js:105-119`). It never touches activations or campaigns.
+Worse: receipts store no immutable `campaignId`/`prospectId` snapshot, and
+activations can be relinked, so reconstructing ownership from the *current*
+activation can attribute a historical send to the wrong campaign. And
+screening-callback WhatsApps write no receipt at all — their wamid lives only
+in `prospects.screeningMetadata.waCallback`, invisible to the proposed join.
+→ Needs **immutable send-time ownership** (`prospectId`, `campaignId`, kind,
+`wamid`) recorded at send, not reconstructed later.
+
+**B3 — Erasure deliberately PRESERVES `prospects.score`.**
+The shipped contract states the skeleton keeps "ids, campaign,
+status/priority/**score**" (`erasureService.js:21-22`), and the allowlist
+rebuild never nulls it. A `scoreBreakdown` added beside it would survive
+erasure too — carrying event timestamps, inferred sentiment and observation
+ids. That is materially worse than preserving a bare integer, and deleting
+`consumer_profiles` does not help because the new data lives on `prospects`.
+→ §10.7's erasure test would have failed on day one.
+
+### The seven majors (all accepted)
+
+| # | Finding |
+|---|---|
+| M4 | Two drifting authorities. The existing scorer keeps overwriting `meetScore`/`buyScore` from the global model; calling them "a summary of lead scores" without retiring that writer or defining a real projection guarantees disagreement. **And "PR 3's UI already renders both grains" is false** — it renders person grain only, on the profile view; the Prospects queue has no score column at all. |
+| M5 | Spine relink invalidates `consumer_profiles.inputVersion` only. Prospect-grain scores need their own dirty marker, relink invalidation, owner-movement fence, and a prospect cursor in the sweep. |
+| M6 | A date-based decay epoch mechanically fixes the gate but forces a **full-population rewrite daily** under budget, and staggered decay above it. Also: "the hash gate makes a no-op free" is false — telemetry, observations, resolution, hashing and the full score all run *before* the comparison; the gate saves only the write. |
+| M7 | "Existing choke points already bump the input version" is false — neither the WA webhook nor the screening-verdict writers bump or re-score. This is new transactional wiring. **And there is no normalized `agreedToMeet` field**: verdictDetail is `reason`/`interestLevel`/`summary`/`sentiment`/recording (`retellScreeningService.js:666`). §6 specced an event on a field that does not exist. |
+| M8 | A closed *fact* vocabulary does not validate a *scoring config*. `normalizeConfig` permissively merges unknown components, and a non-positive half-life silently disables decay. A schema-valid AI config can still be absurd. Needs semantic invariants, bounded deltas, population simulation, distribution diffs, rollback. Also: `sourceDescription` free text contradicts `campaign-brief.md` §3.1, and Studio AI already treats campaign text as untrusted — this plan specified no equivalent isolation. **And "admin reviews it" is not a control**: the config table has no draft/approved state and the reader activates the highest version immediately. |
+| M9 | `enrichment_scoring_configs` has an integer PK and no campaign/objective/status/parent column; the reader caches one global config. Per-campaign inheritance needs real schema. **The two plans also disagree on objective names** — `insurance_sales`/`recruitment` here vs `agent_leads`/`screened_leads` in the brief. |
+| M10 | `campaign-brief.md`'s claim that every audience axis maps to the taxonomy is false — there is no `lifeStage` key, and the ledger stores 5-year **birth-year** bands, so an age curve needs a date-sensitive overlap rule and cannot use exact age. |
+
+### Disposition
+
+**REWORK accepted.** The plan asserted five things about existing code that are
+untrue (B2, M4's UI claim, M7's choke points, M7's `agreedToMeet`, M10's
+taxonomy mapping) — each written from reading rather than verification. The
+lesson for v2: **claims about existing behaviour get a file:line citation or
+they do not go in the plan.**
+
+The architecture (per-lead score, AI authors / code applies, bounded decaying
+events) was not challenged. What failed is the assumption that the substrate
+already supports it.
+
+v2 must, before any build:
+1. Define isolation over **every** input, and add send-time message ownership.
+2. Resolve the two-authority problem explicitly — one writer, one projection.
+3. Fix erasure for prospect-grain score + breakdown.
+4. Replace the decay-epoch hack with something that doesn't rewrite daily.
+5. Reconcile the objective vocabularies between the two plans.
+6. Specify semantic (not just structural) validation for AI configs, plus a
+   draft/approved state the reader honours.
 
 ## 9. Out of scope
 
