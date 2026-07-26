@@ -77,9 +77,19 @@ export async function up(queryInterface) {
 
     // Seed config v1 — ON CONFLICT DO NOTHING so a re-run never rewrites a
     // version Shawn may already have recalibrated past.
+    // Seed config v1 — ON CONFLICT DO NOTHING so a re-run never rewrites a
+    // version Shawn may already have recalibrated past.
+    //
+    // "createdAt"/"updatedAt" are supplied EXPLICITLY. 091 declares them
+    // DEFAULT now(), but test schemas are built by sync({force:true}) from
+    // the models, where Sequelize emits them NOT NULL with NO database
+    // default — it fills timestamps at the ORM layer, and a raw INSERT that
+    // omits them dies on the not-null constraint. Any raw INSERT into a
+    // model-backed table must name them.
     await q(
-      `INSERT INTO enrichment_scoring_configs (version, "configJson", "activatedAt", "actorUserId")
-       VALUES (1, :cfg::jsonb, now(), NULL)
+      `INSERT INTO enrichment_scoring_configs
+         (version, "configJson", "activatedAt", "actorUserId", "createdAt", "updatedAt")
+       VALUES (1, :cfg::jsonb, now(), NULL, now(), now())
        ON CONFLICT (version) DO NOTHING`,
       { cfg: JSON.stringify(SEED_CONFIG_V1) }
     );
