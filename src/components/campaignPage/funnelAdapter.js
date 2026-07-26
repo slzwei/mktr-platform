@@ -54,5 +54,14 @@ export function deriveFunnelProps(adapted, { onSubmit, previewMode = false, prev
     // Studio jump fixture (preview-only; the form gates consumption on
     // previewMode itself — this is just plumbing).
     ...(previewFixture ? { previewFixture } : {}),
+    // Enrichment profile questions — extracted from the v2 doc BEFORE the
+    // legacy downgrade (the legacy view deliberately excludes v2 top keys;
+    // nothing reaches the funnel "automatically" — studio-profile-questions
+    // §6, Codex PR0 R1 #4). Disabled/absent ⇒ undefined ⇒ block renders
+    // nothing.
+    profileQuestions: isV2Doc && doc.profileQuestions?.enabled === true
+      && Array.isArray(doc.profileQuestions?.questionIds) && doc.profileQuestions.questionIds.length
+      ? { enabled: true, questionIds: doc.profileQuestions.questionIds }
+      : undefined,
   };
 }

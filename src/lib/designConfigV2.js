@@ -143,7 +143,7 @@ export const V1_CONSUMED_KEYS = [
 ];
 
 /** Top-level v2 schema keys (used by downgrade + the clamp's alias scrub). */
-export const V2_TOP_KEYS = ['version', 'template', 'theme', 'content', 'form', 'distribution', 'ai'];
+export const V2_TOP_KEYS = ['version', 'template', 'theme', 'content', 'form', 'distribution', 'ai', 'profileQuestions'];
 
 // ───────────────────────── helpers (dependency-free) ─────────────────────────
 

@@ -603,3 +603,53 @@ describe('CampaignSignupForm — DNC consent gate advertiser', () => {
     expect(screen.queryByText('{Advertiser}')).not.toBeInTheDocument();
   });
 });
+
+describe('CampaignSignupForm — profile questions block (studio-profile-questions §6)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const PQ = { enabled: true, questionIds: ['language', 'pets'] };
+
+  it('renders nothing without the prop (v1 docs / disabled subtree)', () => {
+    renderForm();
+    expect(document.querySelector('[data-se="profileQuestions"]')).toBeNull();
+  });
+
+  it('renders enabled questions with bilingual prompts and skippable chips', () => {
+    renderForm({ profileQuestions: PQ });
+    const block = document.querySelector('[data-se="profileQuestions"]');
+    expect(block).toBeTruthy();
+    expect(block.textContent).toContain('Which language do you prefer?');
+    expect(block.textContent).toContain('您偏好哪种语言');
+    expect(block.textContent).toContain('Optional — helps us serve you better');
+    // Unknown ids render nothing (defense against stale configs).
+    expect(block.textContent).not.toContain('retire');
+  });
+
+  it('single-select toggles on and off (skippable by design)', () => {
+    renderForm({ profileQuestions: PQ });
+    const en = screen.getByRole('button', { name: 'English' });
+    fireEvent.click(en);
+    expect(en).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '中文' }));
+    expect(en).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: '中文' }));
+    expect(screen.getByRole('button', { name: '中文' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('multi-select enforces none-exclusivity client-side (mirrors the server rule)', () => {
+    renderForm({ profileQuestions: PQ });
+    const dog = screen.getByRole('button', { name: 'Dog' });
+    const cat = screen.getByRole('button', { name: 'Cat' });
+    const none = screen.getByRole('button', { name: 'No pets' });
+    fireEvent.click(dog);
+    fireEvent.click(cat);
+    expect(dog).toHaveAttribute('aria-pressed', 'true');
+    expect(cat).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(none);
+    expect(none).toHaveAttribute('aria-pressed', 'true');
+    expect(dog).toHaveAttribute('aria-pressed', 'false');
+    expect(cat).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(dog);
+    expect(none).toHaveAttribute('aria-pressed', 'false');
+  });
+});

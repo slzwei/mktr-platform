@@ -280,6 +280,24 @@ export const schemas = {
       })).max(50).optional(),
       result: Joi.object().optional()
     }).optional(),
+    // Enrichment profile questions (studio-profile-questions §5.4 step 1).
+    // Nested-strict by design: the route's global stripUnknown would
+    // otherwise silently REMOVE a pattern-failed key instead of 400ing
+    // (Codex PR0 R2 #6). Keys are question ids; values are a single option
+    // id or a bounded option-id array (multi questions). Structural abuse
+    // ⇒ 400 (for requests the rate limiter admits — limiter runs first).
+    // Campaign-scoped semantic validation happens in prospectService.
+    profileAnswers: Joi.object()
+      .pattern(
+        Joi.string().pattern(/^[a-z][a-z0-9_]{0,31}$/),
+        Joi.alternatives().try(
+          Joi.string().max(32),
+          Joi.array().items(Joi.string().max(32)).max(8).unique()
+        )
+      )
+      .max(5)
+      .unknown(false)
+      .optional(),
     // Ad attribution (IG/TikTok). Captured from the landing URL, stashed in
     // sourceMetadata.utm for per-ad-set reporting. Previously dropped (the
     // schema rejected unknown keys), so these were lost before this change.

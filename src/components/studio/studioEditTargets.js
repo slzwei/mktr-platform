@@ -32,6 +32,9 @@ export const STUDIO_EDIT_TARGETS = {
   'content.drawCopy.ctaSubline': { section: 'page', id: 'studio-draw-ctasubline' },
   'content.drawCopy.freeEntryTag': { section: 'page', id: 'studio-draw-freeentry' },
   'content.drawCopy.boostBody': { section: 'page', id: 'studio-draw-boostbody' },
+  // Profile-questions block (studio-profile-questions §3) — the whole block
+  // jumps to its FormPanel master toggle; no caret focus (it's a switch).
+  'profileQuestions': { section: 'form', id: 'studio-profile-questions', focus: false },
 };
 
 /** Scroll + focus (caret at end) + flash one inspector field, by target. */

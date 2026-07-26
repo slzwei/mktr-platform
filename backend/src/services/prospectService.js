@@ -46,8 +46,11 @@ import {
 import { recordCaptureConsentEventsTx, canMarketTo } from './consentService.js';
 // Enrichment mapper (docs/plans/consumer-profile-enrichment.md §5): leaf
 // imports only (models + fence + taxonomy) — no cycle back into this module.
-import { buildFactSnapshot, enqueueMapJobTx, drainMapJobs } from './factMapperService.js';
+import { buildFactSnapshot, enqueueMapJobsTx, drainMapJobs } from './factMapperService.js';
 import { bumpEnrichmentInputTx } from './enrichmentFence.js';
+import { getProfileQuestion, resolveAnswer as resolveProfileAnswer } from '../utils/profileQuestionLibrary.js';
+import { validateFact } from '../utils/factTaxonomy.js';
+import { isV2 as isV2DesignConfig } from '../utils/designConfigV2.js';
 // Lead Profile page composer (admin-only, ?include=profile — plan §4). Leaf
 // imports only (models + sibling services); no cycle back into this module.
 import {
@@ -215,7 +218,7 @@ const defaultDeps = {
   recordCaptureConsentEventsTx,
   canMarketTo,
   buildFactSnapshot,
-  enqueueMapJobTx,
+  enqueueMapJobsTx,
   drainMapJobs,
   bumpEnrichmentInputTx,
   onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
@@ -785,6 +788,55 @@ export function makeProspectService(overrides = {}) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), quiz: quizMeta };
     }
 
+    // --- Enrichment profile questions (studio-profile-questions §5.4) ---
+    // Three-leg eligibility gate, ALL legs or the whole object is ignored
+    // (Codex PR0 R2 #3 — backend eligibility must equal rendering
+    // eligibility): raw config is v2 AND profileQuestions.enabled AND not
+    // guided_review. Then iterate the CAMPAIGN'S configured question ids
+    // (never attacker keys), resolve server-side, re-validate, and stash
+    // only canonical accepted answer ids (erasure's sourceMetadata rebuild
+    // removes them). A bad answer never costs a lead.
+    let acceptedProfileFacts = [];
+    {
+      const rawAnswers = safeBody.profileAnswers;
+      const dcRaw = sourceCampaign?.design_config;
+      const pq = dcRaw?.profileQuestions;
+      const eligible = rawAnswers && typeof rawAnswers === 'object' && !Array.isArray(rawAnswers)
+        && isV2DesignConfig(dcRaw)
+        && pq?.enabled === true
+        && dcRaw?.template?.id !== 'guided_review'
+        && Array.isArray(pq?.questionIds);
+      if (eligible) {
+        const acceptedIds = {};
+        const dropped = [];
+        for (const qid of pq.questionIds) {
+          const q = getProfileQuestion(qid);
+          if (!q) continue;
+          const provided = rawAnswers[qid];
+          if (provided === undefined || provided === null || provided === '') continue;
+          const value = resolveProfileAnswer(qid, provided);
+          if (!value || !validateFact(q.factKey, value).ok) {
+            dropped.push(qid);
+            continue;
+          }
+          acceptedProfileFacts.push({ key: q.factKey, value });
+          acceptedIds[qid] = provided;
+        }
+        if (dropped.length) {
+          d.logger.warn('[enrichment] profile answers dropped (invalid)', {
+            campaignId: incoming.campaignId, dropped,
+          });
+        }
+        if (Object.keys(acceptedIds).length) {
+          incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), profileAnswers: acceptedIds };
+        }
+      } else if (rawAnswers && typeof rawAnswers === 'object' && Object.keys(rawAnswers).length) {
+        d.logger.warn('[enrichment] profile answers ignored (campaign not eligible)', {
+          campaignId: incoming.campaignId,
+        });
+      }
+    }
+
     // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
     // The client sends raw answers (+ an advisory result we ignore). We recompute
     // the authoritative profile/readiness/leadScore from the campaign's own quiz
@@ -1036,10 +1088,11 @@ export function makeProspectService(overrides = {}) {
             demographics: newProspect.demographics,
             sourceMetadata: newProspect.sourceMetadata,
             quizDefinition: sourceCampaign?.design_config?.quiz,
+            profileFacts: acceptedProfileFacts,
           });
-          await d.enqueueMapJobTx(sp, {
+          await d.enqueueMapJobsTx(sp, {
             prospectId: newProspect.id,
-            enrichmentRevision: newProspect.enrichmentRevision || 1,
+            formRevision: newProspect.enrichmentRevision || 1,
             snapshot,
           });
         });
@@ -1662,14 +1715,14 @@ export function makeProspectService(overrides = {}) {
         await d.sequelize.transaction(async (t) => {
           const rev = (prospect.enrichmentRevision || 1) + 1;
           await prospect.update({ enrichmentRevision: rev }, { transaction: t });
+          // FORM section only: quiz/profile artifacts are capture-immutable —
+          // absent sections mean "leave those artifacts alone" (§5.1).
           const snapshot = d.buildFactSnapshot({
-            demographics: prospect.demographics,
-            sourceMetadata: prospect.sourceMetadata,
-            quizDefinition: null, // quiz answers are capture-time only; edits never change them
+            demographics: prospect.demographics || {},
           });
-          await d.enqueueMapJobTx(t, {
+          await d.enqueueMapJobsTx(t, {
             prospectId: prospect.id,
-            enrichmentRevision: rev,
+            formRevision: rev,
             snapshot,
           });
         });

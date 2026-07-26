@@ -1,4 +1,5 @@
 import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote } from './panelKit';
+import { PROFILE_QUESTION_LIBRARY, PROFILE_QUESTION_IDS } from '@/lib/profileQuestionLibrary';
 
 /**
  * Form panel (Studio PR 3) — fields order/visibility/required with 2-col
@@ -181,6 +182,43 @@ export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) 
         {verification === 'whatsapp' && whatsappOtpConfigured === true ? (
           <WarnNote tone="info">✓ WhatsApp credentials are configured on the server.</WarnNote>
         ) : null}
+      </PanelSection>
+
+      <PanelSection title="PROFILE QUESTIONS">
+        {/* Enrichment collection block (studio-profile-questions §3): fixed
+            library only — admins pick, never author; answers are structured
+            choices that build the customer profile. All skippable on the
+            funnel. The AI Fill-everything flow never enables this on its
+            own (conversion-vs-data is the owner's per-campaign call). */}
+        <ToggleRow
+          id="studio-profile-questions"
+          label="Ask profile questions"
+          hint="Optional questions after the signup fields — answers build the customer profile"
+          checked={doc.profileQuestions?.enabled === true}
+          onChange={(v) => mut((d) => {
+            const cur = d.profileQuestions || {};
+            d.profileQuestions = {
+              enabled: v === true,
+              questionIds: Array.isArray(cur.questionIds) ? cur.questionIds : [],
+            };
+          })}
+        />
+        {doc.profileQuestions?.enabled === true && PROFILE_QUESTION_LIBRARY.map((q) => (
+          <ToggleRow
+            key={q.id}
+            id={`studio-pq-${q.id}`}
+            label={q.prompt}
+            hint={q.promptZh}
+            checked={(doc.profileQuestions?.questionIds || []).includes(q.id)}
+            onChange={(v) => mut((d) => {
+              const cur = d.profileQuestions || { enabled: true, questionIds: [] };
+              const set = new Set(cur.questionIds || []);
+              if (v) set.add(q.id); else set.delete(q.id);
+              // Canonical library order, deduped — mirrors the clamp.
+              d.profileQuestions = { ...cur, questionIds: PROFILE_QUESTION_IDS.filter((id) => set.has(id)) };
+            })}
+          />
+        ))}
       </PanelSection>
 
       <PanelSection title="ELIGIBILITY GATES">

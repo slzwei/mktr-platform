@@ -20,6 +20,7 @@ vi.mock('@/api/integrations', () => ({ UploadFile: vi.fn() }));
 import CanvasPageSubject from '../CanvasPageSubject';
 import StudioCanvas from '../StudioCanvas';
 import PagePanel from '../panels/PagePanel';
+import FormPanel from '../panels/FormPanel';
 import { STUDIO_SECTIONS } from '../StudioRail';
 import { STUDIO_EDIT_TARGETS, useEditTargetFocus } from '../studioEditTargets';
 import { upgradeDesignConfig } from '@/lib/designConfigV2';
@@ -275,21 +276,27 @@ describe('useEditTargetFocus choreography', () => {
   });
 });
 
-describe('map ↔ PagePanel contract', () => {
+describe('map ↔ panel contract', () => {
   it('every edit target resolves to a rendered element in its section panel', () => {
-    // Express so the trust-line param field renders; every other target is
-    // unconditional in PagePanel. Every current target lives in the Page
-    // panel — a target declaring another section MUST extend this test with
-    // that section's panel harness (diff review #4).
+    // Express so the trust-line param field renders; every other page target
+    // is unconditional in PagePanel. A target declaring another section MUST
+    // extend this test with that section's panel harness (diff review #4) —
+    // 'form' mounts FormPanel (profileQuestions master toggle renders
+    // unconditionally inside its section).
     const doc = docFor('express');
     doc.luckyDraw = { enabled: true, prize: 'P', closesAt: '2099-12-30', boostClosesAt: '2099-12-30', multiplier: 10, winners: 1 };
-    const { container } = render(
+    const { container: pageContainer } = render(
       <PagePanel doc={doc} setPath={vi.fn()} mut={vi.fn()} />
     );
+    const { container: formContainer } = render(
+      <FormPanel doc={doc} setPath={vi.fn()} mut={vi.fn()} />
+    );
+    const harnesses = { page: pageContainer, form: formContainer };
     for (const [path, target] of Object.entries(STUDIO_EDIT_TARGETS)) {
       expect(STUDIO_SECTIONS.map(([id]) => id)).toContain(target.section);
-      expect(target.section, `no panel harness for section "${target.section}" (${path})`).toBe('page');
-      expect(container.querySelector(`#${target.id}`), `missing #${target.id} for ${path}`).toBeTruthy();
+      const harness = harnesses[target.section];
+      expect(harness, `no panel harness for section "${target.section}" (${path})`).toBeTruthy();
+      expect(harness.querySelector(`#${target.id}`), `missing #${target.id} for ${path}`).toBeTruthy();
     }
   });
 });

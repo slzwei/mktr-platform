@@ -13,6 +13,7 @@ import {
 } from '@/lib/consentCopy';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
 import { LIMITS } from '@/lib/designConfigV2';
+import { getProfileQuestion } from '@/lib/profileQuestionLibrary';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 
 /**
@@ -42,6 +43,10 @@ export default function CampaignSignupForm({
   // feeds the UNSAVED doc, which can carry junk mid-edit. Absent → 16 (the
   // frozen v1 size).
   ctaFontSize,
+  // v2 (Campaign Studio) profileQuestions — enrichment questions from the
+  // FIXED library (studio-profile-questions §6). Undefined/disabled ⇒ the
+  // block renders nothing; every question is skippable by design.
+  profileQuestions,
   previewMode = false,
   // v2 (Campaign Studio) content.advertiserName — the DNC gate's advertiser
   // display; defaults to the campaign name exactly as v1 behaves.
@@ -88,6 +93,10 @@ export default function CampaignSignupForm({
     ...(fx?.formData || {}),
   }));
   const [otp, setOtp] = useState('');
+  // Enrichment profile answers — { [questionId]: optionId | optionId[] }.
+  // Skippable by design: tapping a selected chip clears it; the key is
+  // simply absent from the payload when unanswered.
+  const [profileAnswers, setProfileAnswers] = useState({});
   const [otpState, setOtpState] = useState(fx?.otpState ?? 'idle');
   // DNC consent gate (inert unless dncCheckAtSubmit). 'unknown' | 'checking' | 'on_dnc' | 'clear'.
   const [dncStatus, setDncStatus] = useState(fx?.dncStatus ?? 'unknown');
@@ -344,6 +353,10 @@ export default function CampaignSignupForm({
       // DNC consent intent (the server builds the authoritative evidence). Only sent when
       // the gate was actually shown for this lead.
       ...(dncCheckAtSubmit && dncStatus === 'on_dnc' ? { consent_dnc: dncConsent } : {}),
+      // Enrichment profile answers — canonical option ids only; the server
+      // validates against the campaign's configured questions and resolves
+      // taxonomy values itself (studio-profile-questions §5.4).
+      ...(Object.keys(profileAnswers).length ? { profileAnswers } : {}),
     };
 
     // Preview: stop here — never call onSubmit (which would create a real
@@ -924,6 +937,82 @@ export default function CampaignSignupForm({
             }}
           >
             {previewNotice}
+          </div>
+        )}
+
+        {/* Enrichment profile questions (studio-profile-questions §6) —
+            optional chips between the core fields and consent; every
+            question skippable (tap again to clear). data-se marks the
+            Studio click-to-edit jump target; inert on live pages. */}
+        {Array.isArray(profileQuestions?.questionIds) && profileQuestions.questionIds.length > 0 && (
+          <div data-se="profileQuestions" style={{ marginTop: 18 }}>
+            <div style={{
+              fontSize: 12, color: TOKENS.muted, marginBottom: 10,
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+            }}>
+              Optional — helps us serve you better
+            </div>
+            {profileQuestions.questionIds.map((qid) => {
+              const q = getProfileQuestion(qid);
+              if (!q) return null;
+              const current = profileAnswers[q.id];
+              const isSelected = (optId) => (q.multi
+                ? Array.isArray(current) && current.includes(optId)
+                : current === optId);
+              const toggle = (optId) => setProfileAnswers((prev) => {
+                const next = { ...prev };
+                if (!q.multi) {
+                  if (prev[q.id] === optId) delete next[q.id];
+                  else next[q.id] = optId;
+                } else {
+                  let arr = Array.isArray(prev[q.id]) ? [...prev[q.id]] : [];
+                  if (optId === 'none') {
+                    arr = arr.includes('none') ? [] : ['none'];
+                  } else {
+                    arr = arr.filter((x) => x !== 'none');
+                    arr = arr.includes(optId) ? arr.filter((x) => x !== optId) : [...arr, optId];
+                  }
+                  if (arr.length) next[q.id] = arr; else delete next[q.id];
+                }
+                return next;
+              });
+              return (
+                <div key={q.id} style={{ marginBottom: 14 }}>
+                  <div style={{
+                    fontSize: 13.5, fontWeight: 600, color: TOKENS.body, marginBottom: 8,
+                    fontFamily: 'Albert Sans, system-ui, sans-serif',
+                  }}>
+                    {q.prompt}{q.promptZh ? <span style={{ fontWeight: 400, color: TOKENS.muted }}> · {q.promptZh}</span> : null}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {q.options.map((opt) => {
+                      const on = isSelected(opt.id);
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => toggle(opt.id)}
+                          aria-pressed={on}
+                          style={{
+                            padding: '9px 14px',
+                            borderRadius: 999,
+                            border: `1px solid ${on ? (themeColor || TOKENS.body) : TOKENS.hairline}`,
+                            backgroundColor: on ? (themeColor || TOKENS.body) : (TOKENS.inputBg || '#ffffff'),
+                            color: on ? '#ffffff' : TOKENS.body,
+                            fontSize: 13.5,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            fontFamily: 'Albert Sans, system-ui, sans-serif',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
