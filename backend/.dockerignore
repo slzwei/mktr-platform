@@ -21,4 +21,6 @@ load/
 scripts/*
 !scripts/sa61-weekly-reminder.js
 !scripts/sync-redeemed-audience.js
+!scripts/remap-observations.mjs
+!scripts/score-consumers.js
 docker-compose*.yml
