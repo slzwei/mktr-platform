@@ -322,6 +322,10 @@ describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
     // Email has no provider verdict → explicit "accepted", never a delivered claim.
     const accepted = screen.getByText(/boost receipt emailed — accepted/);
     expect(accepted.closest('[title]')?.getAttribute('title')).toMatch(/No delivery confirmation/);
+    // Campaign attribution is a colored dot whose hover/label is the FULL
+    // campaign name (replaced the ambiguous first-word tag).
+    expect(screen.getAllByLabelText('NTUC Trial Reward').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/NTUC ·/)).toBeNull();
 
     const delivered = JSON.parse(JSON.stringify(PROFILE));
     delivered.consumer.entitlements[0].delivery = {

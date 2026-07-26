@@ -43,8 +43,19 @@ const fmtPhone = (v) => {
   const m = /^\+65(\d{4})(\d{4})$/.exec(String(v || ''));
   return m ? `+65 ${m[1]} ${m[2]}` : (v || null);
 };
-/** "Tokyo Getaway Lucky Draw" → "TOKYO" — the history rows' where-tag. */
-const campaignTag = (name) => (String(name || '').trim().split(/\s+/)[0] || '').slice(0, 10).toUpperCase();
+/** History rows carry a per-campaign colored dot (hover = full campaign name)
+ * instead of a truncated text tag — "IPHONE" couldn't tell two iPhone
+ * campaigns apart and read as a device name. Same palette + hash as the
+ * Redemptions console's campaign accents, keyed by campaign id so twin-named
+ * campaigns still get distinct colors. */
+const CAMPAIGN_ACCENTS = ['#0364D3', '#6A3FD1', '#8F6400', '#177239', '#BD3A2E', '#0E7490'];
+function campaignAccent(key) {
+  let hash = 0;
+  const s = String(key || '');
+  for (let i = 0; i < s.length; i += 1) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return CAMPAIGN_ACCENTS[hash % CAMPAIGN_ACCENTS.length];
+}
+const campaignRef = (id, name) => (name || id ? { key: String(id || name), name: name || 'Unnamed campaign' } : null);
 
 const BOOST_VIA_COPY = { agent_scan: 'consultant scan', agent_button: 'consultant confirmation' };
 const NOT_ELIGIBLE_COPY = {
@@ -187,11 +198,11 @@ const FAMILY_TILE = {
 
 function buildHistory(p, journey) {
   const events = [];
-  const push = (at, title, { detail = null, family = 'generic', quiet = false, tag = null, hint = null } = {}) => {
+  const push = (at, title, { detail = null, family = 'generic', quiet = false, campaign = null, hint = null } = {}) => {
     const t = at ? Date.parse(at) : NaN;
-    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, tag, hint });
+    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, campaign, hint });
   };
-  const anchorTag = campaignTag(p.campaign?.name);
+  const anchorCampaign = campaignRef(p.campaign?.id, p.campaign?.name);
 
   const rows = Array.isArray(p.timeline)
     ? p.timeline.map((x) => ({
@@ -199,41 +210,41 @@ function buildHistory(p, journey) {
       label: x.entry?.label || x.row?.description || x.row?.type || 'activity',
     }))
     : (p.activities || []).map((a) => ({ at: a.createdAt, label: a.description || a.type }));
-  for (const r of rows) push(r.at, r.label, { quiet: true, tag: anchorTag });
+  for (const r of rows) push(r.at, r.label, { quiet: true, campaign: anchorCampaign });
 
   for (const s of journey?.signups || []) {
-    const tag = campaignTag(s.campaign?.name);
-    push(s.createdAt, `Signed up as ${fullName(s) || '—'}`, { detail: s.campaign?.name ? ` — ${s.campaign.name}` : null, family: 'signup', tag });
+    const campaign = campaignRef(s.campaign?.id, s.campaign?.name);
+    push(s.createdAt, `Signed up as ${fullName(s) || '—'}`, { detail: s.campaign?.name ? ` — ${s.campaign.name}` : null, family: 'signup', campaign });
     if (s.draw?.boostedAt) {
-      push(s.draw.boostedAt, 'Draw boost recorded', { detail: ` — ${BOOST_VIA_COPY[s.draw.boostVia] || 'boost'}`, family: 'boost', tag });
+      push(s.draw.boostedAt, 'Draw boost recorded', { detail: ` — ${BOOST_VIA_COPY[s.draw.boostVia] || 'boost'}`, family: 'boost', campaign });
     }
   }
   for (const e of journey?.entitlements || []) {
-    const tag = campaignTag(e.campaignName);
+    const campaign = campaignRef(e.campaignId, e.campaignName);
     const title = e.rewardTitle || 'reward';
-    push(e.createdAt, e.drawLinked ? 'Draw pass reserved' : 'Reward reserved', { detail: e.drawLinked ? null : ` — ${title}`, family: 'reward', quiet: true, tag });
-    if (e.unlockedAt) push(e.unlockedAt, e.drawLinked ? 'Draw boost confirmed' : 'Voucher unlocked', { detail: e.drawLinked ? null : ` — ${title}`, family: e.drawLinked ? 'boost' : 'reward', tag });
-    if (e.redeemedAt) push(e.redeemedAt, 'Voucher redeemed ✓', { detail: ` — ${title}`, family: 'reward', tag });
+    push(e.createdAt, e.drawLinked ? 'Draw pass reserved' : 'Reward reserved', { detail: e.drawLinked ? null : ` — ${title}`, family: 'reward', quiet: true, campaign });
+    if (e.unlockedAt) push(e.unlockedAt, e.drawLinked ? 'Draw boost confirmed' : 'Voucher unlocked', { detail: e.drawLinked ? null : ` — ${title}`, family: e.drawLinked ? 'boost' : 'reward', campaign });
+    if (e.redeemedAt) push(e.redeemedAt, 'Voucher redeemed ✓', { detail: ` — ${title}`, family: 'reward', campaign });
     for (const ch of ['email', 'whatsapp']) {
       const r = e.delivery?.[ch];
       if (!r?.at) continue;
       const s = deliveryState(r);
-      push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} — ${s.text}`, { family: 'delivery', quiet: true, tag, hint: s.hint });
+      push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} — ${s.text}`, { family: 'delivery', quiet: true, campaign, hint: s.hint });
     }
   }
   for (const b of journey?.broadcasts?.recent || []) {
     push(b.sentAt || b.at, `Marketing email — ${b.status}${b.reason ? ` (${b.reason.replace(/_/g, ' ')})` : ''}`, { family: 'delivery', quiet: true });
   }
   for (const ld of p.lyfeDelivery || []) {
-    push(ld.at, `Lyfe ${ld.eventType.replace('lead.', '')} — ${ld.status}${ld.reason ? ` (${ld.reason.replace(/_/g, ' ')})` : ''}`, { family: 'delivery', quiet: true, tag: anchorTag });
+    push(ld.at, `Lyfe ${ld.eventType.replace('lead.', '')} — ${ld.status}${ld.reason ? ` (${ld.reason.replace(/_/g, ' ')})` : ''}`, { family: 'delivery', quiet: true, campaign: anchorCampaign });
   }
   if (p.session?.startedAt) {
-    push(p.session.startedAt, `Arrived — ${p.session.landingPath || 'landing page'}`, { family: 'arrival', quiet: true, tag: anchorTag });
+    push(p.session.startedAt, `Arrived — ${p.session.landingPath || 'landing page'}`, { family: 'arrival', quiet: true, campaign: anchorCampaign });
   }
   for (const a of Object.values(p.screeningMetadata?.attempts || {})) {
     if (!a?.startedAt) continue;
     const outcome = (a.outcome || 'attempted').replace(/_/g, ' ');
-    push(a.startedAt, `Screening call — ${outcome}`, { family: 'screening', quiet: a.outcome !== 'qualified', tag: anchorTag });
+    push(a.startedAt, `Screening call — ${outcome}`, { family: 'screening', quiet: a.outcome !== 'qualified', campaign: anchorCampaign });
   }
   return events.sort((a, b) => b.at - a.at);
 }
@@ -738,8 +749,15 @@ export default function AdminV2LeadProfile() {
                           {e.title}
                           {e.detail && <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{e.detail}</span>}
                         </span>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', flex: 'none', paddingTop: 2 }}>
-                          {e.tag ? `${e.tag} · ` : ''}{sgtTime(e.at)}
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', flex: 'none', paddingTop: 2, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                          {e.campaign && (
+                            <span
+                              title={e.campaign.name}
+                              aria-label={e.campaign.name}
+                              style={{ color: campaignAccent(e.campaign.key), fontSize: 8, cursor: 'help', lineHeight: 1 }}
+                            >●</span>
+                          )}
+                          {sgtTime(e.at)}
                         </span>
                       </div>
                     ))}
