@@ -1,6 +1,6 @@
 import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect } from './helpers.js';
 import {
-  Consumer, ConsentEvent, ConsumerSuppression, Draw, DrawEntry,
+  sequelize, Consumer, ConsentEvent, ConsumerSuppression, Draw, DrawEntry,
 } from '../src/models/index.js';
 import {
   previewCohort, listCohortMembers, canMarketToBatch, getCohortFacets, normalizeDefinition,
@@ -468,7 +468,14 @@ describe('members → person click-through (includeProspect, admin-people-direct
     // newer one must win.
     const twice = await makeConsumer('TwoSignups', { verifiedSignupCount: 1 });
     const older = await signup(twice, campA);
-    await older.update({ createdAt: new Date('2026-06-01T00:00:00Z') }, { silent: true, fields: ['createdAt'] });
+    // Raw SQL, not instance.update: Sequelize quietly drops `createdAt` from
+    // an instance update, so the old `{silent:true, fields:['createdAt']}`
+    // backdate never happened. Both signups then landed in the same
+    // millisecond often enough (esp. under --runInBand) that "newest" fell to
+    // the id DESC tiebreak over two RANDOM UUIDs — a coin-flip flake.
+    await sequelize.query('UPDATE prospects SET "createdAt" = :ts WHERE id = :id', {
+      replacements: { ts: new Date('2026-06-01T00:00:00Z'), id: older.id },
+    });
     const newer = await signup(twice, campA, { phone: nextPhone() });
 
     const def = { filters: { campaignIds: [campA.id] } };

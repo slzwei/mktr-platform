@@ -49,7 +49,15 @@
 
 import { MIN_LLM_CONFIDENCE } from './factTaxonomy.js';
 
-export const SCORING_ALGORITHM_VERSION = 'score/v1';
+/**
+ * v2: engagement recency anchors to the person's NEWEST signup
+ * (prospects.createdAt) instead of consumers.lastSeenAt. lastSeenAt refreshes
+ * on spine touches that are RESPONSES (per-campaign engagement), and the
+ * capability-vs-response contract (per-campaign-lead-scoring.md §3.2/§16 B1)
+ * says responses must not move the person-grain score. Migration 094 appends
+ * the config row that makes every stored score recompute under this version.
+ */
+export const SCORING_ALGORITHM_VERSION = 'score/v2';
 
 /** SGT is UTC+8 year-round (no DST) — the one offset this file needs. */
 const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -183,8 +191,11 @@ function scoreEngagement(telemetry, cfg, now) {
   }
   const depth = signups >= 4 ? 1.0 : { 1: 0.35, 2: 0.65, 3: 0.85 }[signups] ?? 1.0;
 
-  const lastSeen = telemetry?.lastSeenAt ? new Date(telemetry.lastSeenAt).getTime() : null;
-  const recency = lastSeen ? decayFactor(now - lastSeen, cfg.decay?.engagementHalfLifeDays) : 1;
+  // Recency anchors to the newest SIGNUP (capability-era anchor), never to
+  // lastSeenAt: lastSeenAt refreshes on response touches, and a response on
+  // one campaign must not refresh the person's standing everywhere (§16 B1).
+  const newestSignup = telemetry?.newestSignupAt ? new Date(telemetry.newestSignupAt).getTime() : null;
+  const recency = newestSignup ? decayFactor(now - newestSignup, cfg.decay?.engagementHalfLifeDays) : 1;
 
   // Verified signups are the ones that proved a live phone — they say more
   // about willingness to engage than a raw form submit does.
@@ -406,7 +417,7 @@ export function normalizeConfig(configJson) {
  *
  * @param {Object} input
  * @param {Object} input.facts      resolveCurrentFacts() output (key → {value, confidence, observationId, basis, …})
- * @param {Object} input.telemetry  {signupCount, verifiedSignupCount, lastSeenAt, marketingConsent, hasEmail, whatsappReachable}
+ * @param {Object} input.telemetry  {signupCount, verifiedSignupCount, newestSignupAt, marketingConsent, hasEmail, whatsappReachable}
  * @param {Object} input.config     configJson from enrichment_scoring_configs (merged over defaults)
  * @param {number} input.now        epoch ms — injected so scoring is reproducible in tests and backfills
  * @returns {{meetScore:number|null, buyScore:number|null, consumerScore:number|null,

@@ -203,7 +203,13 @@ export function makeRetellScreeningService(overrides = {}) {
    * failure path leaves a consistent row for the sweep. Returns a status
    * object for logs/tests; never throws.
    */
-  async function startScreeningAttempt(prospect, { campaign = null, cfg = screeningConfig() } = {}) {
+  // `now` is injectable for the same reason inCallWindow/nextRetryAt take it:
+  // the window gate is time-of-day dependent (SGT), and a clock the tests
+  // cannot pin turns every dial-path test into a 23:59-SGT flake — the
+  // "always-open" '00:00-23:59' test window has an inexpressible final
+  // minute (parseWindow clamps at 23:59, inCallWindow is end-exclusive),
+  // which is exactly when the 26 Jul CI run started. Prod callers omit it.
+  async function startScreeningAttempt(prospect, { campaign = null, cfg = screeningConfig(), now = new Date() } = {}) {
     try {
       if (!cfg.configured) return { status: 'skipped', reason: 'not_configured' };
 
@@ -250,7 +256,6 @@ export function makeRetellScreeningService(overrides = {}) {
         return { status: 'deferred', reason: 'consent_lookup_failed' };
       }
 
-      const now = new Date();
       if (!inCallWindow(cfg, now)) {
         await deferAttempt(prospect, nextWindowOpen(cfg, now));
         return { status: 'deferred', reason: 'outside_window' };
