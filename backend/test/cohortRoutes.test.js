@@ -157,8 +157,17 @@ describe('CRUD lifecycle', () => {
       .set(auth(adminToken));
     expect(res.status).toBe(200);
     expect(res.body.data.total).toBe(1);
-    expect(res.body.data.members[0].reachable).toBe(true);
-    expect(res.body.data.members[0].reasons).toEqual([]);
+    const member = res.body.data.members[0];
+    expect(member.reachable).toBe(true);
+    expect(member.reasons).toEqual([]);
+    // Full member-shape pin (this endpoint's rows were unpinned before the
+    // click-through field landed — additive changes must show up here).
+    expect(Object.keys(member).sort()).toEqual([
+      'consumerId', 'email', 'firstName', 'lastName', 'lastSeenAt',
+      'latestProspectId', 'phone', 'reachable', 'reasons', 'verifiedSignupCount',
+    ]);
+    // The fixture consumer has a linked prospect — the click target resolves.
+    expect(typeof member.latestProspectId).toBe('string');
 
     const bad = await request(app)
       .get(`/api/cohorts/${cohortId}/members?status=weird`)

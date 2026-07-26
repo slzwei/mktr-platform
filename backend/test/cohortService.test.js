@@ -4,6 +4,7 @@ import {
 } from '../src/models/index.js';
 import {
   previewCohort, listCohortMembers, canMarketToBatch, getCohortFacets, normalizeDefinition,
+  makeCohortService,
 } from '../src/services/cohortService.js';
 import { canMarketTo } from '../src/services/consentService.js';
 import { hashPhone } from '../src/utils/piiHashing.js';
@@ -451,6 +452,47 @@ describe('members paging', () => {
     const walked = [...page1.members, ...page2.members, ...page3.members].map((m) => m.consumerId);
     expect(walked).toEqual(all.members.map((m) => m.consumerId));
     expect(page1.total).toBe(13);
+  });
+});
+
+describe('members → person click-through (includeProspect, admin-people-directory §3.6)', () => {
+  test('flag off: member shape is byte-identical (no latestProspectId key)', async () => {
+    const def = { filters: { campaignIds: [campA.id] } };
+    const { members } = await listCohortMembers(def, { limit: 200 });
+    expect(members.length).toBeGreaterThan(0);
+    for (const m of members) expect(Object.keys(m)).not.toContain('latestProspectId');
+  });
+
+  test('flag on: full member shape pinned, and the id is the NEWEST linked prospect', async () => {
+    // A dedicated consumer with TWO signups at controlled createdAt — the
+    // newer one must win.
+    const twice = await makeConsumer('TwoSignups', { verifiedSignupCount: 1 });
+    const older = await signup(twice, campA);
+    await older.update({ createdAt: new Date('2026-06-01T00:00:00Z') }, { silent: true, fields: ['createdAt'] });
+    const newer = await signup(twice, campA, { phone: nextPhone() });
+
+    const def = { filters: { campaignIds: [campA.id] } };
+    const { members } = await listCohortMembers(def, { limit: 200, includeProspect: true });
+    const mine = members.find((m) => m.consumerId === twice.id);
+    expect(mine).toBeDefined();
+    expect(Object.keys(mine).sort()).toEqual([
+      'consumerId', 'email', 'firstName', 'lastName', 'lastSeenAt',
+      'latestProspectId', 'phone', 'reachable', 'reasons', 'verifiedSignupCount',
+    ]);
+    expect(mine.latestProspectId).toBe(newer.id);
+  });
+
+  test('flag off issues NO prospect-batch SQL — the broadcast fan-out never pays', async () => {
+    const { sequelize } = await import('../src/models/index.js');
+    const calls = [];
+    const svc = makeCohortService({
+      sequelize: { query: (...a) => { calls.push(String(a[0])); return sequelize.query(...a); } },
+    });
+    const def = { filters: { campaignIds: [campA.id] } };
+    await svc.listCohortMembers(def, { limit: 5 });
+    expect(calls.some((sql) => sql.includes('DISTINCT ON ("consumerId")'))).toBe(false);
+    await svc.listCohortMembers(def, { limit: 5, includeProspect: true });
+    expect(calls.some((sql) => sql.includes('DISTINCT ON ("consumerId")'))).toBe(true);
   });
 });
 

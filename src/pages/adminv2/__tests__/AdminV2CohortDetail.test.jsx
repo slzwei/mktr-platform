@@ -33,10 +33,10 @@ vi.mock('@/api/adminV2', () => ({
     draws: [],
   })),
   fetchCohortMembers: vi.fn(async (id, { status }) => (status === 'reachable'
-    ? { total: 1, limit: 50, offset: 0, members: [{ consumerId: 'u2', firstName: 'Ready', lastName: 'Person', phone: '+6591112222', email: 'ready@x.com', lastSeenAt: new Date().toISOString(), reachable: true, reasons: [] }] }
+    ? { total: 1, limit: 50, offset: 0, members: [{ consumerId: 'u2', firstName: 'Ready', lastName: 'Person', phone: '+6591112222', email: 'ready@x.com', lastSeenAt: new Date().toISOString(), reachable: true, reasons: [], latestProspectId: 'p42' }] }
     : { total: 2, limit: 50, offset: 0, members: [
-        { consumerId: 'u1', firstName: 'Blocked', lastName: 'Person', phone: '+6590001111', email: null, lastSeenAt: new Date().toISOString(), reachable: false, reasons: ['not_consented'] },
-        { consumerId: 'u3', firstName: 'Silent', lastName: 'Minor', phone: '+6590002222', email: null, lastSeenAt: new Date().toISOString(), reachable: false, reasons: ['age_ineligible', 'not_verified'] },
+        { consumerId: 'u1', firstName: 'Blocked', lastName: 'Person', phone: '+6590001111', email: null, lastSeenAt: new Date().toISOString(), reachable: false, reasons: ['not_consented'], latestProspectId: 'p41' },
+        { consumerId: 'u3', firstName: 'Silent', lastName: 'Minor', phone: '+6590002222', email: null, lastSeenAt: new Date().toISOString(), reachable: false, reasons: ['age_ineligible', 'not_verified'], latestProspectId: null },
       ] })),
   archiveCohort: vi.fn(async () => ({ success: true })),
   previewCohortDefinition: vi.fn(async () => ({ total: 212, reachable: 180, excluded: 32, byReason: {}, gate: { channel: 'all', campaignId: null, minAge: 18, maxAge: null } })),
@@ -98,5 +98,18 @@ describe('AdminV2CohortDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'reachable' }));
     expect(await screen.findByText('Ready Person')).toBeInTheDocument();
     await waitFor(() => expect(fetchCohortMembers).toHaveBeenLastCalledWith('co1', expect.objectContaining({ status: 'reachable' })));
+  });
+
+  it('member rows with a signup anchor link into the person profile; rows without stay inert', async () => {
+    setup();
+    await screen.findByText('Blocked Person');
+    // Linked member: the Person cell is a real link to the profile's PERSON
+    // view, carrying state.from back to this cohort page (table roles intact).
+    const link = screen.getByRole('link', { name: 'Blocked Person' });
+    expect(link).toHaveAttribute('href', '/admin/leads/p41?view=profile');
+    expect(screen.getAllByRole('row').length).toBeGreaterThan(1); // roles preserved
+    // Unlinked member: plain text, no link.
+    expect(screen.getByText('Silent Minor')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Silent Minor' })).not.toBeInTheDocument();
   });
 });

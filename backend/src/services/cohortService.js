@@ -474,7 +474,7 @@ export function makeCohortService(overrides = {}) {
    * person excluded" surface). status: all | reachable | excluded.
    */
   async function listCohortMembers(definition, {
-    channel, status = 'all', limit = 50, offset = 0,
+    channel, status = 'all', limit = 50, offset = 0, includeProspect = false,
   } = {}) {
     const def = normalizeDefinition(definition);
     const ch = normalizeChannel(channel);
@@ -498,6 +498,22 @@ export function makeCohortService(overrides = {}) {
        LIMIT :limit OFFSET :offset`,
       { replacements: { ...replacements, limit: lim, offset: off } });
 
+    // People click-through (admin-people-directory §3.6): resolve each page
+    // member's NEWEST linked prospect in one batch — opt-in so the broadcast
+    // send fan-out (this function's other caller) never pays for it, and the
+    // flag-off member shape stays byte-identical.
+    let latestByConsumer = null;
+    if (includeProspect && rows.length) {
+      const [lp] = await d.sequelize.query(
+        `SELECT DISTINCT ON ("consumerId") "consumerId", id
+           FROM prospects
+          WHERE "consumerId" IN (:consumerIds)
+          ORDER BY "consumerId", "createdAt" DESC, id DESC`,
+        { replacements: { consumerIds: rows.map((r) => r.id) } },
+      );
+      latestByConsumer = new Map(lp.map((p) => [p.consumerId, p.id]));
+    }
+
     return {
       total: count,
       limit: lim,
@@ -512,6 +528,7 @@ export function makeCohortService(overrides = {}) {
         lastSeenAt: r.lastSeenAt,
         reachable: r.reachable === true,
         reasons: r.reachable === true ? [] : reasonsForRow(r, ch),
+        ...(includeProspect ? { latestProspectId: latestByConsumer?.get(r.id) ?? null } : {}),
       })),
     };
   }
