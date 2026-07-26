@@ -1,4 +1,4 @@
-import { sequelize, ConsumerProfile, EnrichmentScoringConfig } from '../models/index.js';
+import { sequelize, EnrichmentScoringConfig } from '../models/index.js';
 import { withConsumerLock, ErasedConsumerError } from './enrichmentFence.js';
 import { resolveCurrentFacts } from '../utils/factResolver.js';
 import { canonicalJson, sha256 } from './factMapperService.js';

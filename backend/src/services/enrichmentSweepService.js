@@ -276,10 +276,12 @@ async function sweepConsumers({ runId, ownerToken, cursor, rowBudget, timeBudget
  * Nightly sweep. Safe to call repeatedly — the date fence makes extra calls
  * no-ops once the night is done.
  */
+// No `now` parameter by design: the SGT date is deliberately re-derived
+// INSIDE the lock (below), so a caller-supplied clock read from before the
+// wait could name a night that is already over.
 export async function runNightlySweep({
   rowBudget = DEFAULT_ROW_BUDGET,
   timeBudgetMs = DEFAULT_TIME_BUDGET_MS,
-  now = Date.now(),
 } = {}) {
   if (!scoringEnabled()) return { ran: false, reason: 'flag_off' };
 
