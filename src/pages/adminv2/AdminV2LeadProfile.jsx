@@ -20,7 +20,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useProspectProfile, useAgentOptions } from '@/hooks/queries/useAdminV2';
-import { bulkAssign, bulkReturnToHeld, bulkDelete } from '@/api/adminV2';
+import { bulkAssign, bulkReturnToHeld, bulkDelete, fetchConsentCopy } from '@/api/adminV2';
 import { STATUS_LABELS, SOURCE_LABELS, heldLabel } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtDate, fmtDay, fmtSGDExact } from '@/lib/adminV2/format';
 import { Card, Chip, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
@@ -219,10 +219,54 @@ function receiptBits(delivery) {
   return [bit(delivery.email, 'pass emailed'), bit(delivery.whatsapp, 'WhatsApp')].filter(Boolean);
 }
 
+/** The exact wording a consent version stamped — themed overlay, closes on
+ * backdrop click or ✕. Draw-terms clauses arrive as pinned designer HTML
+ * (our own stored bytes, same trust as the public campaign page rendering
+ * them); registry clauses are plain text. */
+function ConsentCopyModal({ view, onClose }) {
+  if (!view) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: 'min(620px, 100%)', maxHeight: '74vh', overflowY: 'auto', background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '18px 22px 22px', fontFamily: 'var(--font-ui)', boxShadow: '0 24px 60px rgba(0,0,0,.45)' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Consent wording</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{view.version}</span>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-2)', fontSize: 15, padding: 2 }} aria-label="Close">✕</button>
+        </div>
+        {view.loading && <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Loading…</div>}
+        {!view.loading && view.missing && (
+          <div style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>
+            No stored wording for this version — it predates the consent-copy registry.
+          </div>
+        )}
+        {!view.loading && (view.clauses || []).map((c, i) => (
+          <div key={i} style={{ marginBottom: i < view.clauses.length - 1 ? 16 : 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 }}>
+              {c.label || c.kind}
+              {c.scope ? ` · ${c.scope} scope` : ''}
+              {Array.isArray(c.channels) && c.channels.length ? ` · ${c.channels.join(', ')}` : ''}
+            </div>
+            {c.format === 'html'
+              ? <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--ink-2)' }} dangerouslySetInnerHTML={{ __html: c.copy }} />
+              : <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--ink-2)', whiteSpace: 'pre-wrap' }}>{c.copy}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── history composition (family + tag per row; grouped by SGT day) ──────────
 
 const FAMILY_TILE = {
   signup: { glyph: '●', bg: 'var(--accent-soft)', fg: 'var(--accent-text)' },
+  assignment: { glyph: '→', bg: 'var(--accent-soft)', fg: 'var(--accent-text)' },
   boost: { glyph: '◆', bg: 'var(--hold-soft)', fg: 'var(--hold)' },
   reward: { glyph: '◆', bg: 'var(--ok-soft)', fg: 'var(--ok)' },
   screening: { glyph: '✦', bg: 'var(--ok-soft)', fg: 'var(--ok)' },
@@ -239,17 +283,30 @@ function buildHistory(p, journey) {
   };
   const anchorCampaign = campaignRef(p.campaign?.id, p.campaign?.name);
 
-  const rows = Array.isArray(p.timeline)
+  // Journey signups carry NAMED assignment events (backend resolves the agent
+  // uuid); when present they replace the anchor's raw "Assigned to agent
+  // <uuid>" activity rows, which would otherwise duplicate them unreadably.
+  const journeyHasAssignments = (journey?.signups || []).some((s) => s.assignments?.length);
+  const rows = (Array.isArray(p.timeline)
     ? p.timeline.map((x) => ({
       at: x.row?.createdAt || x.row?.created_at,
       label: x.entry?.label || x.row?.description || x.row?.type || 'activity',
+      type: x.row?.type || null,
     }))
-    : (p.activities || []).map((a) => ({ at: a.createdAt, label: a.description || a.type }));
+    : (p.activities || []).map((a) => ({ at: a.createdAt, label: a.description || a.type, type: a.type || null }))
+  ).filter((r) => !(journeyHasAssignments && r.type === 'assigned'));
   for (const r of rows) push(r.at, r.label, { quiet: true, campaign: anchorCampaign });
 
   for (const s of journey?.signups || []) {
     const campaign = campaignRef(s.campaign?.id, s.campaign?.name);
     push(s.createdAt, `Signed up as ${fullName(s) || '—'}`, { detail: s.campaign?.name ? ` — ${s.campaign.name}` : null, family: 'signup', campaign });
+    for (const a of s.assignments || []) {
+      push(a.at, `Assigned to ${a.agentName || (a.external ? 'an MKTR Leads buyer' : 'an agent')}`, {
+        detail: a.external ? ' — external buyer' : null,
+        family: 'assignment',
+        campaign,
+      });
+    }
     if (s.draw?.boostedAt) {
       push(s.draw.boostedAt, 'Draw boost recorded', { detail: ` — ${BOOST_VIA_COPY[s.draw.boostVia] || 'boost'}`, family: 'boost', campaign });
     }
@@ -354,6 +411,17 @@ export default function AdminV2LeadProfile() {
   const [menu, setMenu] = useState(null);
   const [menuAction, setMenuAction] = useState(null);
   const [menuTarget, setMenuTarget] = useState(null);
+  // Consent-version click-through: null | { version, loading, clauses?, missing? }
+  const [consentCopyView, setConsentCopyView] = useState(null);
+  const openConsentCopy = useCallback(async (version) => {
+    setConsentCopyView({ version, loading: true });
+    try {
+      const data = await fetchConsentCopy(version);
+      setConsentCopyView({ version, loading: false, clauses: data?.clauses || null, missing: !data });
+    } catch {
+      setConsentCopyView({ version, loading: false, clauses: null, missing: true });
+    }
+  }, []);
   useEffect(() => { setMenu(null); setMenuAction(null); }, [prospectId, view]);
   useEffect(() => {
     if (!menu) return undefined;
@@ -717,7 +785,12 @@ export default function AdminV2LeadProfile() {
                 <Disclosure label="Raw consent versions" count={`${consentVersions.length} VERSION${consentVersions.length === 1 ? '' : 'S'}`} indent={36}>
                   {Object.entries(consent || {}).filter(([, c]) => c?.version).map(([kind, c]) => (
                     <div key={kind} style={{ fontSize: 12, color: 'var(--ink-2)', padding: '2px 0' }}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{c.version}</span>
+                      <button
+                        type="button"
+                        onClick={() => openConsentCopy(c.version)}
+                        title="Show the exact wording this version stamped"
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-text)', textDecoration: 'underline dotted', textUnderlineOffset: 3 }}
+                      >{c.version}</button>
                       {' '}· {kind.replace(/_/g, ' ')} · {c.scope} scope{c.occurredAt ? ` · ${fmtDate(c.occurredAt)}` : ''}
                     </div>
                   ))}
@@ -901,7 +974,15 @@ export default function AdminV2LeadProfile() {
                     : <span style={{ color: 'var(--ink-2)' }}>not sent — no app destination</span>}
                 </KvRow>
                 {currentDraw && p.consentMetadata?.drawTerms?.termsVersionId && (
-                  <KvRow label="draw terms">pinned · {String(p.consentMetadata.drawTerms.termsVersionId).slice(0, 8)}</KvRow>
+                  <KvRow label="draw terms">
+                    pinned ·{' '}
+                    <button
+                      type="button"
+                      onClick={() => openConsentCopy(p.consentMetadata.drawTerms.termsVersionId)}
+                      title="Show the pinned terms as the person saw them"
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', color: 'var(--accent-text)', textDecoration: 'underline dotted', textUnderlineOffset: 3 }}
+                    >{String(p.consentMetadata.drawTerms.termsVersionId).slice(0, 8)}</button>
+                  </KvRow>
                 )}
                 {p.nextFollowUpDate && <KvRow label="follow-up">{fmtDateTime(p.nextFollowUpDate)}</KvRow>}
               </div>
@@ -1004,6 +1085,8 @@ export default function AdminV2LeadProfile() {
           </div>
         </>
       )}
+
+      <ConsentCopyModal view={consentCopyView} onClose={() => setConsentCopyView(null)} />
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}>
         <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>

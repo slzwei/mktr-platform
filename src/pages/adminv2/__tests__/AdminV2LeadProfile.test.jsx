@@ -17,9 +17,13 @@ vi.mock('@/api/adminV2', () => ({
   bulkAssign: vi.fn(async () => ({ data: { affectedCount: 1 } })),
   bulkReturnToHeld: vi.fn(),
   bulkDelete: vi.fn(),
+  fetchConsentCopy: vi.fn(async () => ({
+    version: '2026-07-21-agree-all-v1',
+    clauses: [{ kind: 'contact', label: 'Contact & marketing', format: 'text', copy: 'CONTACT CLAUSE COPY', channels: ['phone'], scope: 'brand' }],
+  })),
 }));
 
-import { fetchProspectProfile, bulkAssign, bulkReturnToHeld, bulkDelete } from '@/api/adminV2';
+import { fetchProspectProfile, bulkAssign, bulkReturnToHeld, bulkDelete, fetchConsentCopy } from '@/api/adminV2';
 
 const PROFILE = {
   id: 'p1',
@@ -59,6 +63,7 @@ const PROFILE = {
           outcome: null, drawHistory: [],
         },
         consent: { contact: { granted: true, version: '2026-07-21-agree-all-v1', scope: 'global', occurredAt: '2026-07-21T02:00:00Z' } },
+        assignments: [{ at: '2026-07-20T06:07:00Z', agentName: 'Lee Yi Heng', external: false }],
         rewardDiagnostic: null,
       },
       {
@@ -300,6 +305,26 @@ describe('AdminV2LeadProfile — person-origin mutations pick their signup (§3.
     fireEvent.click(await screen.findByRole('button', { name: 'Return to held' }));
     expect(screen.queryByText("Which campaign's lead?")).not.toBeInTheDocument();
     await waitFor(() => expect(bulkReturnToHeld).toHaveBeenCalledWith(['p1']));
+  });
+});
+
+describe('AdminV2LeadProfile — assignments + consent copy', () => {
+  it('History names the assigned agent for the campaign', async () => {
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByText('Assigned to Lee Yi Heng')).toBeInTheDocument();
+  });
+
+  it('clicking a consent version opens the wording in a themed modal', async () => {
+    setup('/admin/leads/p1?view=profile');
+    // Open the disclosure, then click the version row.
+    fireEvent.click(await screen.findByText(/Raw consent versions/));
+    fireEvent.click(await screen.findByRole('button', { name: '2026-07-21-agree-all-v1' }));
+    expect(fetchConsentCopy).toHaveBeenCalledWith('2026-07-21-agree-all-v1');
+    expect(await screen.findByText('CONTACT CLAUSE COPY')).toBeInTheDocument();
+    expect(screen.getByText(/Contact & marketing/)).toBeInTheDocument();
+    // Backdrop close.
+    fireEvent.click(screen.getByLabelText('Close'));
+    expect(screen.queryByText('CONTACT CLAUSE COPY')).toBeNull();
   });
 });
 

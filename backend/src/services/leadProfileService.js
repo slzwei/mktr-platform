@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import {
   Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
-  EmailBroadcastRecipient, SessionVisit, sequelize,
+  EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent, sequelize,
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { presentState } from '../utils/entitlementPresentState.js';
@@ -36,7 +36,7 @@ const LYFE_DELIVERY_REASONS = {
 export function makeLeadProfileService(overrides = {}) {
   const d = {
     Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
-    EmailBroadcastRecipient, SessionVisit, sequelize, logger,
+    EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent, sequelize, logger,
     getProspectDrawStatus: null, // defaults to a lucky-draw service built below
     getConsentState,
     presentState,
@@ -133,6 +133,58 @@ export function makeLeadProfileService(overrides = {}) {
             }
           : null,
       };
+    }
+    return map;
+  }
+
+  /**
+   * Per-signup assignment history — every `assigned` activity across the
+   * person's signups, with the agent NAMED (capture-time rows store only the
+   * uuid in their description; manual/bulk paths already embed the name).
+   * One bounded query + two batched name lookups; name resolution failures
+   * degrade to whatever readable text the description carries.
+   */
+  async function assignmentHistory(prospectIds) {
+    const map = new Map();
+    if (!prospectIds.length) return map;
+    const acts = await d.ProspectActivity.findAll({
+      where: { prospectId: { [Op.in]: prospectIds }, type: 'assigned' },
+      order: [['createdAt', 'ASC']],
+      limit: 200,
+    }).catch(() => []);
+    if (!acts.length) return map;
+
+    const agentIds = [...new Set(acts.map((a) => a.metadata?.assignedAgentId).filter(Boolean))];
+    const extIds = [...new Set(acts.map((a) => a.metadata?.externalAgentId).filter(Boolean))];
+    const [agents, externals] = await Promise.all([
+      agentIds.length
+        ? d.User.findAll({ where: { id: { [Op.in]: agentIds } }, attributes: ['id', 'firstName', 'lastName'] }).catch(() => [])
+        : [],
+      extIds.length
+        ? d.ExternalAgent.findAll({ where: { id: { [Op.in]: extIds } }, attributes: ['id', 'fullName', 'agency'] }).catch(() => [])
+        : [],
+    ]);
+    const agentName = new Map(agents.map((u) => [String(u.id), `${u.firstName || ''} ${u.lastName || ''}`.trim() || null]));
+    const extName = new Map(externals.map((x) => [String(x.id), x.fullName || x.agency || null]));
+    // Manual-assign descriptions read "Assigned to (agent )?<Name>" — usable
+    // as-is unless the tail is the raw uuid the capture path writes.
+    const nameFromDescription = (desc) => {
+      const m = String(desc || '').match(/^Assigned to (?:agent )?(.+)$/i);
+      if (!m) return null;
+      return /^[0-9a-f-]{36}$/i.test(m[1].trim()) ? null : m[1].trim();
+    };
+
+    for (const a of acts) {
+      const key = String(a.prospectId);
+      if (!map.has(key)) map.set(key, []);
+      const externalId = a.metadata?.externalAgentId || null;
+      map.get(key).push({
+        at: a.createdAt,
+        external: Boolean(externalId),
+        agentName: externalId
+          ? (extName.get(String(externalId)) || null)
+          : (agentName.get(String(a.metadata?.assignedAgentId)) || nameFromDescription(a.description)),
+      });
     }
     return map;
   }
@@ -290,6 +342,9 @@ export function makeLeadProfileService(overrides = {}) {
     const entitledCampaigns = new Set(
       journey.entitlements.map((e) => String(e.campaignId)).filter(Boolean)
     );
+    const assignmentsByProspect = await assignmentHistory(
+      journey.signups.map((s) => String(s.prospectId))
+    );
     const rawById = new Map(raw.map((p) => [String(p.id), p]));
     journey.signups = await Promise.all(journey.signups.map(async (s) => {
       const cid = s.campaign ? String(s.campaign.id) : null;
@@ -300,6 +355,7 @@ export function makeLeadProfileService(overrides = {}) {
         ...s,
         draw: drawMap.get(String(s.prospectId)) ?? null,
         consent: consent ? consentKinds : null,
+        assignments: assignmentsByProspect.get(String(s.prospectId)) || [],
         rewardDiagnostic: wantDiagnostic
           ? await deriveRewardDiagnostic(rawById.get(String(s.prospectId))).catch(() => null)
           : null,

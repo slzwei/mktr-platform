@@ -67,6 +67,20 @@ export async function fetchProspectProfile(id) {
 }
 
 /**
+ * Consent-version click-through (lead profile "Raw consent versions"): the
+ * exact wording that version stamped. 404 → null (era never registered).
+ */
+export async function fetchConsentCopy(version) {
+  try {
+    const resp = await apiClient.get(`/consent-copy/${encodeURIComponent(version)}`);
+    return resp?.data ?? null;
+  } catch (err) {
+    if (err?.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
  * People directory (/AdminPeople): the deduplicated person list. Rows carry
  * latestProspectId, the profile click-through anchor. params: { q, page,
  * limit, sort }.
