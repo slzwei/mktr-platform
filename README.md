@@ -186,6 +186,7 @@ Studio is the **permanent** campaign design surface at `/admin/campaigns/:id/stu
 
 - **Twins:** `src/lib/designConfigV2.js` ↔ `backend/src/utils/designConfigV2.js` (+ `designConfigV2Clamp.js`) must stay in step — the backend clamp is the security boundary for anything a customer page renders.
 - **AI assist** fills every slot: copy, looks, distribution picks, sign-up field selection, and T&C drafting. Draw campaigns use the deterministic `drawTermsTemplate` facts, **never LLM-written legal text**. Publication recommendations are advisory and never auto-applied.
+- **Profile questions** — a campaign can slide enrichment questions into its signup funnel from a **fixed library** (`profileQuestionLibrary`: language, annual income, children, pets, retirement age), each with a per-question Required toggle and a per-campaign Chinese-inline-text toggle. Admins pick questions, never author them: free text would need LLM parsing and would poison the deterministic fact ledger. Answers map to taxonomy fact keys server-side and feed [lead scoring](#lead-scoring--meet--buy). The library is a byte-identical twin — `src/lib/profileQuestionLibrary.js` ↔ `backend/src/utils/profileQuestionLibrary.js`, enforced by a parity test.
 - **Readiness gates** (`campaignReadinessService`) block activation on server-verifiable problems — OTP send-path misconfiguration, missing draw records, close-date drift, promise-vs-enforcement mismatches.
 - The classic `DesignEditor` survives only as the `guided_review` designer; the standalone `/AdminCampaignDesigner` page is retired and redirects into the workspace Design tab.
 - `DESIGN_CONFIG_V2_WRITES_ENABLED` (backend) is the emergency brake on v2 writes.
@@ -216,11 +217,32 @@ Deep-dive: [`src/pages/redeemops/CLAUDE.md`](src/pages/redeemops/CLAUDE.md) and 
 ## 🧾 People, consent & compliance
 
 - **Consumer spine** — `Consumer` deduplicates a real person across campaigns; every prospect links to one (`prospects.consumerId`). Admin surfaces: the people directory (`/AdminPeople`) and the per-person lead profile (`/admin/leads/:prospectId`).
+- **Enrichment ledger** — every fact learned about a person is appended to `ConsumerObservation` with its provenance, then resolved into `ConsumerProfile` by `factMapperService` through an outbox of `EnrichmentJob` rows. Nothing overwrites: the ledger is the audit trail, the profile is the current view.
 - **Consent ledger** — `ConsentEvent` records each grant with its versioned copy (`consentCopyRegistry`, `GET /api/consent-copy/:version`), so any downstream use can prove what the person actually agreed to. Meta/TikTok PII hashing is gated on a ledger-derived marketing-consent flag.
 - **Suppression & erasure** — `ConsumerSuppression` + `SuppressionPropagation` carry unsubscribes outward (`lead.suppressed`, per-destination opt-in); `erasureService` cascades deletion; `/api/unsubscribe` and WhatsApp `STOP` both land in the same place.
 - **Cohorts & broadcasts** — `Cohort` builds cross-campaign audiences; `EmailBroadcast` sends to them with per-recipient tracking and interrupted-run resume (nothing auto-sends on a deploy or restart).
 - **DNC scrubbing** — every captured phone is checked against the Singapore PDPC Do-Not-Call registry (`DNC_API_ENABLED`, RSA-signed, fixed-IP egress proxy), enforced as `block` or `flag`, with a backfill job for checks that errored.
 - **SMS sender compliance** — OTP SMS ships under the SSIR-registered `MKTR` sender ID with per-phone and global daily caps plus threshold alerts (`smsQuota`, `RateCounter`).
+
+### Lead scoring — MEET × BUY
+
+`utils/consumerScoring.js` turns resolved facts plus behavioural telemetry into two sub-scores, so "will they meet a consultant" and "will they buy" stay separate questions:
+
+```
+MEET = engagement 15 + contactability 10 + market fit 15        (raw 40) ×2.5
+BUY  = life events 25 + family gap 20 + capacity 15
+       + coverage headroom −10..0                               (raw 60) /60
+consumerScore = clamp(0, Σ all components, 100)                 ← default sort
+```
+
+The design points worth knowing:
+
+- **The engine is pure.** Facts and telemetry in, scores out — no I/O, no clock (the caller passes `now`). Any score can be re-derived and explained from its stored breakdown, which is what the dials on the lead profile render.
+- **Weights are config, rules are code.** `EnrichmentScoringConfig` carries per-component `maxPoints`, the Meet/Buy `groups` map, and `targetSegments`; each rule returns a 0..1 fraction of its component's max. Recalibrating — or regrouping which components feed Meet vs Buy — is a config row, not a deploy.
+- **Unknown ≠ zero.** BUY is `null` unless at least one fact component is assessable, because an unknown income must not read as low capacity. MEET always computes (engagement and contactability are behavioural), but market fit only contributes when the language or ethnicity fact exists, and the breakdown says so.
+- **Penalties carry their sign in `maxPoints`, never in the fraction** — `coverage_headroom` has `maxPoints −10`, so "fully covered" scores −10 rather than inverting into a bonus.
+
+Scoring runs in-process behind `ENRICHMENT_SCORING_ENABLED`: an hourly tick fenced by `EnrichmentSweepRun` to one real sweep per SGT date, so an instance that was down at the intended hour still sweeps that day. Design: [`docs/plans/consumer-profile-enrichment.md`](docs/plans/consumer-profile-enrichment.md) and [`docs/plans/per-campaign-lead-scoring.md`](docs/plans/per-campaign-lead-scoring.md).
 
 ---
 
@@ -300,11 +322,11 @@ mktr-platform/
 │       ├── server_internal.js# real app init: middleware stack, health, route auto-loader
 │       ├── routes/           # 66 auto-discovered route modules (each exports `meta`)
 │       ├── controllers/      # 44 request handlers
-│       ├── services/         # 96 top-level + 39 under redeemOps/
+│       ├── services/         # 98 top-level + 39 under redeemOps/
 │       ├── models/           # 90 Sequelize models + index.js (associations)
 │       ├── middleware/       # auth, internalRouteHostGuard, prospectScope, validation, …
 │       ├── integrations/     # adapter registry + Lyfe / mktr-leads adapters
-│       ├── database/         # connection, bootstrap, runMigrations, migrations/ (89), seed
+│       ├── database/         # connection, bootstrap, runMigrations, migrations/ (92), seed
 │       ├── utils/ config/ schemas/ scripts/ tests/
 │       └── uploads/          # local asset storage (dev / fallback)
 │
@@ -333,6 +355,7 @@ The backend owns its **own PostgreSQL database** (Sequelize), separate from Lyfe
 - `Prospect` — the lead record: `leadSource` / `leadStatus` / `priority` enums, scoring, JSON `demographics` / `budget` / `consentMetadata` / `sourceMetadata`, `retellCallId`, routing state (`assignedAgentId` **xor** `externalAgentId`, `quarantinedAt` / `quarantineReason`), the DNC block (`dncStatus`, `dncNoVoiceCall`, `dncValidUntil`, …), the screening block (`screeningVerdict`, `screeningAttemptCount`, `screeningNextAttemptAt`, …), and `consumerId` / `enrichmentRevision`.
 - `ProspectActivity` — audit trail. `Attribution` / `SessionVisit` — QR-scan → session → lead attribution chain.
 - `Consumer`, `ConsentEvent`, `ConsumerSuppression`, `SuppressionPropagation`, `Cohort`, `EmailBroadcast` / `EmailBroadcastRecipient` — the person spine, consent ledger, and marketing surfaces.
+- `ConsumerObservation` (append-only fact ledger), `ConsumerProfile` (resolved view + `meetScore` / `buyScore` / `consumerScore` and their breakdown), `EnrichmentJob` (mapper outbox), `EnrichmentScoringConfig` (weights, groups, target segments), `EnrichmentSweepRun` (per-SGT-date sweep fence).
 
 **Campaigns**
 - `Campaign` — `type` (`lead_generation` | `brand_awareness` | `product_promotion` | `event_marketing` | `quiz` | `guided_review`), `status`, `design_config` (the v2 document), `slug`, `min_age`/`max_age`, `metaPixelId`/`tiktokPixelId`, `leadPriceCents`, `firstActivatedAt`, and the routing gates `enforceLeadQuota` + `externalEligible`.
@@ -490,7 +513,8 @@ The backend runs migrations automatically on boot (and, in `NODE_ENV=test`, forc
 | Meta CAPI | `META_CAPI_ENABLED`, `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN`, `META_TEST_EVENT_CODE`, `META_EVENT_QUALIFIED`, `META_EVENT_WON` |
 | TikTok | `TIKTOK_EVENTS_API_ENABLED`, `TIKTOK_PIXEL_ID`, `TIKTOK_ACCESS_TOKEN`, `TIKTOK_TEST_EVENT_CODE` |
 | OTP / SMS | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_SNS_SENDER_ID`, `SNS_AWS_*`, `SMS_DAILY_CAP_PER_PHONE`, `SMS_DAILY_GLOBAL_CAP`, `SMS_DAILY_ALERT_THRESHOLD`, `SMS_ALERT_EMAIL`, `SMS_QUOTA_SALT` |
-| WhatsApp | `WHATSAPP_PROVIDER`, `META_WA_PHONE_NUMBER_ID`, `META_WA_ACCESS_TOKEN`, `META_WA_BUSINESS_ACCOUNT_ID`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_WABA_ID`, `WHATSAPP_TEMPLATE_*` |
+| WhatsApp | `META_WA_PHONE_NUMBER_ID`, `META_WA_ACCESS_TOKEN` (OTP); `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_*` (Redeem Ops sends — a **different** credential pair); `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_WABA_ID` (status webhook) |
+| Enrichment | `ENRICHMENT_MAP_ARTIFACT_JOBS` (artifact-scoped map jobs — flip only after migration 092 has fully rolled), `ENRICHMENT_SCORING_ENABLED` (the MEET × BUY sweep; off = no score is ever written, the ledger fills either way) |
 | Campaign Studio | `DESIGN_CONFIG_V2_WRITES_ENABLED` (emergency brake on v2 writes) |
 | Marketplace | `MARKETPLACE_PUBLIC_API_ENABLED`, `MARKETPLACE_INHERIT_ENABLED` |
 | Redeem Ops | `REDEEM_OPS_ENABLED`, `REDEEM_OPS_ENTITLEMENTS_ENABLED`, `REDEEM_OPS_CADENCES_ENABLED`, `DISCOVERY_ENABLED`, `APIFY_TOKEN`, `DISCOVERY_CANDIDATE_TTL_DAYS`, `REDEEM_HOUSE_PARTNER_ORG_ID` |
@@ -589,6 +613,7 @@ It then schedules the recurring in-process jobs (all skipped under `NODE_ENV=tes
 | Redeem Ops fulfilment sweep | 15 min |
 | Redeem Ops stale sweep + cadence reconcile | 30 min |
 | Idempotency-key purge · suppression-propagation backstop · draw-record backstop | hourly |
+| Enrichment scoring sweep (`ENRICHMENT_SCORING_ENABLED`) — hourly tick, fenced to one real run per SGT date | hourly, first ~150 s after boot |
 | Redemption CAPI reconciliation | 6 h |
 | Redeemed-audience sync to Meta | `REDEEMED_AUDIENCE_SYNC_INTERVAL_HOURS` (default 24 h) |
 | DNC backfill (`DNC_BACKFILL_ENABLED`) · Discover retention purge | `DNC_BACKFILL_INTERVAL_MINUTES` · daily |
