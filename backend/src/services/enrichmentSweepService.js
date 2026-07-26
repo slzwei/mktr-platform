@@ -172,7 +172,7 @@ async function processBatch(ids, ctx) {
     if (Date.now() >= ctx.deadline) return 'time_budget';
 
     try {
-      const res = await scoreOneConsumer(id, { now: Date.now() });
+      const res = await ctx.scoreOne(id, { now: Date.now() });
       ctx.stats[res.status] = (ctx.stats[res.status] || 0) + 1;
     } catch (err) {
       ctx.stats.errors = (ctx.stats.errors || 0) + 1;
@@ -183,7 +183,7 @@ async function processBatch(ids, ctx) {
     ctx.lastId = id;
 
     if (ctx.rowsUsed % HEARTBEAT_EVERY_ROWS === 0 && ctx.runId) {
-      const alive = await heartbeat(ctx.runId, ctx.ownerToken);
+      const alive = await ctx.heartbeatFn(ctx.runId, ctx.ownerToken);
       if (!alive) {
         logger.warn('[enrichmentSweep] lost ownership mid-run — standing down', { runId: ctx.runId });
         return 'taken_over';
@@ -195,9 +195,20 @@ async function processBatch(ids, ctx) {
 
 /**
  * The shared engine for both modes. Config-stale first, then the rotation.
+ *
+ * `deps` exists so the phase logic — budgets, cursor advancement, the
+ * one-pass rotation — is testable without a database. Those rules are pure
+ * control flow over a list of ids, and the redundant-wrap bug lived there
+ * precisely because nothing could exercise it in isolation.
  */
-async function sweepConsumers({ runId, ownerToken, cursor, rowBudget, timeBudgetMs }) {
-  const { version: configVersion, config } = await getActiveScoringConfig();
+export async function sweepConsumers({
+  runId, ownerToken, cursor, rowBudget, timeBudgetMs, deps = {},
+}) {
+  const getConfig = deps.getActiveScoringConfig || getActiveScoringConfig;
+  const findStale = deps.findStaleConsumerIds || findStaleConsumerIds;
+  const findAfter = deps.findConsumerIdsAfter || findConsumerIdsAfter;
+
+  const { version: configVersion, config } = await getConfig();
   const algorithmVersion = config.algorithmVersion;
 
   const ctx = {
@@ -207,6 +218,8 @@ async function sweepConsumers({ runId, ownerToken, cursor, rowBudget, timeBudget
     deadline: Date.now() + timeBudgetMs,
     rowsUsed: 0,
     lastId: null,
+    scoreOne: deps.scoreOneConsumer || scoreOneConsumer,
+    heartbeatFn: deps.heartbeat || heartbeat,
     stats: { scored: 0, unchanged: 0, skipped: 0, errors: 0 },
   };
 
@@ -218,11 +231,22 @@ async function sweepConsumers({ runId, ownerToken, cursor, rowBudget, timeBudget
   // (erased mid-run, vanished), never gets stamped and would be handed back
   // by the very next query. Without a monotonic cursor a single poison row
   // would re-fail its way through the entire night's budget.
+  // Why the budget check names its own reason: `stoppedBy` is the only
+  // signal an operator has for whether a run finished its work or merely ran
+  // out of room, and those demand opposite responses (ignore vs raise the
+  // budget). Breaking out silently reported both as "exhausted".
+  const budgetSpent = () => {
+    if (ctx.rowsUsed >= ctx.rowBudget) return 'row_budget';
+    if (Date.now() >= ctx.deadline) return 'time_budget';
+    return null;
+  };
+
   let stop = null;
   let staleCursor = null;
   for (;;) {
-    if (ctx.rowsUsed >= ctx.rowBudget || Date.now() >= ctx.deadline) break;
-    const batch = await findStaleConsumerIds({
+    stop = budgetSpent();
+    if (stop) break;
+    const batch = await findStale({
       configVersion,
       algorithmVersion,
       limit: Math.min(200, ctx.rowBudget - ctx.rowsUsed),
@@ -236,20 +260,30 @@ async function sweepConsumers({ runId, ownerToken, cursor, rowBudget, timeBudget
 
   const staleScored = ctx.rowsUsed;
 
-  // Phase 2 — budgeted rotation for hash-level staleness. Resumes from the
-  // durable cursor and wraps to the start of the id space when exhausted.
+  // Phase 2 — budgeted rotation for hash-level staleness (facts can move
+  // under a still-current config, and no SQL predicate detects that).
+  //
+  // ONE PASS PER RUN, never a wrap. Walking off the end used to reset the
+  // cursor and start over, so a population smaller than the row budget got
+  // re-examined until the budget ran out — on 130 consumers that was ~370
+  // redundant hash checks a night, every night, reported as useful work. The
+  // cursor is durable, so stopping at the end and resuming next run covers
+  // the same ground without the churn.
   let rotationCursor = cursor?.lastConsumerId || null;
+  let rotationWrapped = false;
   if (!stop) {
     for (;;) {
-      if (ctx.rowsUsed >= ctx.rowBudget || Date.now() >= ctx.deadline) break;
-      const batch = await findConsumerIdsAfter({
+      stop = budgetSpent();
+      if (stop) break;
+      const batch = await findAfter({
         afterId: rotationCursor,
         limit: Math.min(200, ctx.rowBudget - ctx.rowsUsed),
       });
       if (!batch.length) {
-        if (rotationCursor === null) break; // population fully walked this run
-        rotationCursor = null; // wrap around and keep going
-        continue;
+        // End of the id space. Reset so the next run starts from the top.
+        rotationCursor = null;
+        rotationWrapped = true;
+        break;
       }
       stop = await processBatch(batch, ctx);
       rotationCursor = ctx.lastId;
@@ -263,7 +297,9 @@ async function sweepConsumers({ runId, ownerToken, cursor, rowBudget, timeBudget
       rowsUsed: ctx.rowsUsed,
       staleScored,
       rotationScored: ctx.rowsUsed - staleScored,
-      stoppedBy: stop || 'exhausted',
+      // 'exhausted' now means what it says: no stale rows and the rotation
+      // reached the end of the population within budget.
+      stoppedBy: stop || (rotationWrapped ? 'exhausted' : 'no_work'),
       configVersion,
       algorithmVersion,
     },

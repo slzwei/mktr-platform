@@ -49,6 +49,32 @@ All services auto-deploy from `main` on commit (service IDs in `docs/reference/b
 - **Cache-bust** the real domain: `curl -s "https://mktr.sg/?cb=$(date +%s)" | grep -o 'assets/index-[^."]*\.js'`.
 - **Definitive**: `curl` the live JS chunk and `grep` a string unique to your change (not one that existed in the old bundle).
 
+## Running the backend tests locally (you need a real Postgres)
+
+Unit tests run bare, but the **115 DB-backed suites and every migration are unrunnable without Postgres** — `npx jest` with no database OOMs after ~2 min of connection retries rather than failing cleanly. Skipping them locally is how migration 093 shipped broken (2026-07-26) and took every integration suite down on `main`.
+
+```bash
+initdb -D /tmp/pgdata -U postgres --auth=trust
+pg_ctl -D /tmp/pgdata -o "-p 55432 -k /tmp -h 127.0.0.1" -l /tmp/pgdata/log start
+psql -h 127.0.0.1 -p 55432 -U postgres -c "CREATE ROLE ci LOGIN SUPERUSER"
+psql -h 127.0.0.1 -p 55432 -U postgres -c "CREATE DATABASE ci OWNER ci"
+```
+
+Then CI's own four steps (`cd backend`, prefix each with `NODE_ENV=test JWT_SECRET=x DB_HOST=127.0.0.1 DB_PORT=55432 DB_NAME=ci DB_USER=ci DB_PASSWORD=""`):
+
+```
+npx jest --testPathPattern="test/unit/"
+npx jest --testPathPattern="test/(integration/|[^/]+\.test\.js)" --runInBand   # + --max-old-space-size=6144
+npx jest --testPathPattern="test/migrations"
+npx eslint src/ --quiet          # also `npx eslint src/ --quiet` at the repo root for the frontend
+```
+
+**THE GOTCHA THIS EXISTS FOR — test schema ≠ prod schema.** Test boot runs `sync({force:true})` from the MODELS *first*, then migrations. So a `CREATE TABLE IF NOT EXISTS` in a migration is a **no-op** against a table sync already built, and the two shapes differ: Sequelize emits `createdAt`/`updatedAt` as NOT NULL with **no database default** (it fills them in the ORM), while migrations declare `DEFAULT now()`. Consequences:
+
+- **Any raw INSERT into a model-backed table must name `"createdAt"`/`"updatedAt"` explicitly** — omitting them passes in prod and dies in every test.
+- A migration adding columns must also declare them on the model, or they vanish from the test schema (same lesson as `Consumer.js`'s mirrored indexes).
+- Worktrees need `ln -s <main-checkout>/backend/node_modules backend/node_modules` (and the same at the repo root) before jest or eslint will resolve.
+
 ## Ads & tracking (summary — full detail in `docs/reference/ads-and-tracking.md`)
 
 - **Meta**: browser Pixel (`src/lib/metaPixel.js`) + fire-and-forget CAPI (`backend/src/services/metaCapiService.js`), gated by `shouldFireCapi` (skips Retell + Meta-Lead-Ads origins). Ad account `act_2170132703771607`, pixel `1402034528611431`.
