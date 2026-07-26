@@ -1,7 +1,7 @@
 # Per-campaign lead scoring — the admin describes the ideal lead, the score moves as things happen
 
-**Status:** v2 — REWORKED against Codex round 1 (REWORK: 3 BLOCKER / 7 MAJOR,
-all accepted, §12). Ready for round 2. **Not built.**
+**Status:** v2 — Codex round 2 returned REWORK: 4 of the 10 re-opened (§16).
+v3 required before build. **Not built.**
 **Author:** Claude, 2026-07-26, from Shawn's model:
 
 > "The admin, when creating campaigns, will say the ideal lead profile. The AI
@@ -340,3 +340,49 @@ scoring is not available and should not be promised.
 LLM scoring individual leads · cross-campaign response bleed · auto-activating
 an AI config without approval · fitting weights from outcomes (needs closed
 deals; prod has zero).
+
+## 16. Codex round 2 — REWORK (4 of the 10 re-opened)
+
+gpt-5.6-sol xhigh, run 2026-07-26 against the v2 text; log recorded here
+2026-07-27, each finding re-verified against code at `a7ac0a9` before
+acceptance. Six of round 1's ten findings stayed closed and are not to be
+reworked; four re-opened against v2 itself:
+
+1. **B1 (re-opened) — ISOLATION.** §3.2's capability-vs-response
+   classification does not survive the data. A `read` is simultaneously proof
+   of deliverability AND a lead response, and `wa_message_statuses` keeps only
+   the FURTHEST status per wamid (`STATUS_RANK_SQL` upsert,
+   `redeemOps/waWebhookService.js:37,79-87`; `wamid` is the PK,
+   `WaMessageStatus.js:15`) — so §3.3's "delivered-ever" predicate (dropping
+   `'read'`) makes a READ message stop counting as delivered. Prod today: 3
+   `delivered`, 1 `read`, 1 `failed` — the strongest deliverability proof in
+   the table would be the one dropped. Consent is also purpose-scoped in
+   schema (`ConsentEvent.campaignId`, `ConsentEvent.js:25` — "Purpose scope;
+   NULL = explicit global act"), not uniformly person-scoped as §3.2's table
+   asserts. Re-derive the model against what the tables actually store.
+
+2. **M6 (re-opened) — DECAY.** §6 stores "`baseScore` (facts + person
+   telemetry — time-independent)". False: engagement recency decays inside the
+   base (`consumerScoring.js:186-187`) and life-event facts decay inside the
+   base (`:257-259`) — `scoreConsumer` takes `now` and the base is
+   time-dependent. Separately, a freshly-decayed display over a
+   nightly-materialised sort column yields visibly misordered pages. Solve
+   ordering and freshness together, or state plainly which one is sacrificed.
+
+3. **M9 (re-opened) — CONFIG IDENTITY.** §7 says "`campaign-brief.md` gains a
+   required `product` field". The brief was never edited — it has no `product`
+   field in its §4 or §5. Either make the edit in the same change or stop
+   claiming it. And §9 is still a sketch: specify real schema for campaign →
+   product → global resolution, including how per-key caching invalidates
+   inherited entries (today: one process-wide slot with a 60s TTL,
+   `consumerScoringService.js:47-76`).
+
+4. **M10 (re-opened) — lifeStage.** §13.2 says drop `lifeStage` from the
+   brief; the brief still lists it in its §4.2 AND in its §5 example JSON, and
+   still claims "every axis maps onto an existing `factTaxonomy` key" — there
+   is no lifeStage key (`factTaxonomy.js` `FACT_KEYS`). Same rule: make the
+   edit, don't describe it.
+
+**Rule for v3** (the failure mode behind M9 and M10): if the plan describes an
+edit to another document, MAKE the edit in the same change. A described-but-
+unmade edit reads as done and hides the gap from every later reader.
