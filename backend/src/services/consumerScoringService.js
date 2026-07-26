@@ -41,6 +41,17 @@ export function scoringEnabled() {
   return process.env.ENRICHMENT_SCORING_ENABLED === 'true';
 }
 
+/**
+ * The consent kind that means "may we market to them".
+ *
+ * EXPORTED so a test can assert it against ConsentEvent's own enum. It shipped
+ * as `'marketing'` — a kind that has never existed — which silently made
+ * marketingConsent false for every person in production. A bare literal inside
+ * a SQL string is unverifiable by any test that doesn't hit the database with
+ * the right fixture; a named export is checkable for free.
+ */
+export const MARKETING_CONSENT_KIND = 'contact';
+
 // Config is append-only and changes at most a few times a year; a short TTL
 // keeps a sweep of thousands of consumers from re-reading it per row while
 // still picking up a new calibration within the same night.
@@ -106,13 +117,22 @@ export async function loadTelemetry(consumerId) {
   const [[row]] = await sequelize.query(
     `SELECT c."signupCount", c."verifiedSignupCount", c."lastSeenAt",
             (c.email IS NOT NULL AND c.email <> '') AS "hasEmail",
+            -- 'contact' IS the marketing-consent kind. The ledger's enum is
+            -- contact | campaign_terms | third_party | dnc_override |
+            -- draw_terms (ConsentEvent.js:29); there is no 'marketing' row and
+            -- never has been. This filtered on a value that cannot exist, so
+            -- marketingConsent was FALSE for every person in production —
+            -- silently docking 0.45 of contactability from the 128 of 130
+            -- consumers who HAVE granted contact consent. The UI has always
+            -- labelled this kind "marketing" (AdminV2LeadProfile.jsx:1042),
+            -- which is exactly how the wrong literal got written.
             EXISTS (
               SELECT 1 FROM consent_events ce
-               WHERE ce."consumerId" = c.id AND ce.kind = 'marketing'
+               WHERE ce."consumerId" = c.id AND ce.kind = :consentKind
                  AND ce.granted = true
                  AND ce."occurredAt" = (
                    SELECT MAX(ce2."occurredAt") FROM consent_events ce2
-                    WHERE ce2."consumerId" = c.id AND ce2.kind = 'marketing'
+                    WHERE ce2."consumerId" = c.id AND ce2.kind = :consentKind
                  )
             ) AS "marketingConsent",
             EXISTS (
@@ -122,7 +142,7 @@ export async function loadTelemetry(consumerId) {
             ) AS "whatsappReachable"
        FROM consumers c
       WHERE c.id = :cid`,
-    { replacements: { cid: consumerId } }
+    { replacements: { cid: consumerId, consentKind: MARKETING_CONSENT_KIND } }
   );
   if (!row) return null;
   return {
