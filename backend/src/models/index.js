@@ -97,6 +97,25 @@ function defineAssociations() {
   Consumer.hasMany(ConsumerSuppression, { foreignKey: 'consumerId', as: 'suppressions', onDelete: 'RESTRICT' });
   ConsumerSuppression.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'RESTRICT' });
 
+  // Consumer profile enrichment (migration 091,
+  // docs/plans/consumer-profile-enrichment.md). Source-derived observations
+  // anchor to the PROSPECT (owner resolved through the live consumerId link —
+  // relinks are free); only manual observations anchor to the consumer.
+  // CASCADEs here are the test-world safety net — prod erasure deletes
+  // observations/profile rows explicitly (consumers are never hard-deleted).
+  const {
+    ConsumerObservation, ConsumerProfile, EnrichmentJob, EnrichmentScoringConfig
+  } = models;
+  Prospect.hasMany(ConsumerObservation, { foreignKey: 'sourceProspectId', as: 'observations', onDelete: 'CASCADE' });
+  ConsumerObservation.belongsTo(Prospect, { foreignKey: 'sourceProspectId', as: 'sourceProspect', onDelete: 'CASCADE' });
+  Consumer.hasMany(ConsumerObservation, { foreignKey: 'consumerId', as: 'manualObservations', onDelete: 'CASCADE' });
+  ConsumerObservation.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'CASCADE' });
+  Consumer.hasOne(ConsumerProfile, { foreignKey: 'consumerId', as: 'profile', onDelete: 'CASCADE' });
+  ConsumerProfile.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'CASCADE' });
+  EnrichmentJob.belongsTo(Prospect, { foreignKey: 'subjectProspectId', as: 'subjectProspect', onDelete: 'CASCADE' });
+  EnrichmentJob.belongsTo(Consumer, { foreignKey: 'subjectConsumerId', as: 'subjectConsumer', onDelete: 'CASCADE' });
+  EnrichmentScoringConfig.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+
   // Saved cohorts (tracker "cohortapi") — definitions only, resolved live.
   const { Cohort } = models;
   Cohort.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'SET NULL' });
@@ -396,7 +415,8 @@ export const {
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
   AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression,
   SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient,
-  WaMessageStatus
+  WaMessageStatus, ConsumerObservation, ConsumerProfile, EnrichmentJob,
+  EnrichmentScoringConfig, EnrichmentSweepRun
 } = models;
 
 export { sequelize };

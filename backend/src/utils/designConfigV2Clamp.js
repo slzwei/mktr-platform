@@ -49,6 +49,32 @@ import { applyFeaturedDropPolicy } from './featuredDrop.js';
 import { applyLuckyDrawPolicy } from './luckyDraw.js';
 import { applyMarketplacePolicy, normalizeMarketplaceContent } from './marketplaceContent.js';
 import { normalizeCustomerHostChoice } from './customerHost.js';
+import { validateFact } from './factTaxonomy.js';
+
+/**
+ * Enrichment factKey save-gate (consumer-profile-enrichment plan §5): a quiz
+ * question may carry { factKey, factValues: { answerId → taxonomy value } }
+ * so server-scored answers mint consumer observations. Invalid pairs are
+ * STRIPPED here (clamp style: sanitize, never reject) — the mapper re-checks
+ * at map time, so nothing invalid can reach the ledger through either door.
+ */
+function clampQuizFactKeys(quiz) {
+  if (!quiz || typeof quiz !== 'object' || !Array.isArray(quiz.questions)) return quiz;
+  for (const q of quiz.questions) {
+    if (!q || typeof q !== 'object' || q.factKey === undefined) continue;
+    const values = q.factValues && typeof q.factValues === 'object' && !Array.isArray(q.factValues)
+      ? Object.values(q.factValues)
+      : [];
+    const valid = typeof q.factKey === 'string'
+      && values.length > 0
+      && values.every((v) => validateFact(q.factKey, v).ok);
+    if (!valid) {
+      delete q.factKey;
+      delete q.factValues;
+    }
+  }
+  return quiz;
+}
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const clone = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
@@ -383,8 +409,11 @@ export function clampDesignConfigV2(incoming, storedConfig, role) {
     form: clampForm(dc.form),
   };
 
-  // quiz / guidedReview — verbatim passthrough (documented v1-parity exceptions).
-  if (dc.quiz !== undefined) out.quiz = clone(dc.quiz);
+  // quiz / guidedReview — verbatim passthrough (documented v1-parity exceptions)
+  // EXCEPT enrichment factKey mappings, validated against the fact taxonomy
+  // at save time (consumer-profile-enrichment plan §5, Codex R3 #13): invalid
+  // factKey/factValues pairs are stripped so the mapper never sees them.
+  if (dc.quiz !== undefined) out.quiz = clampQuizFactKeys(clone(dc.quiz));
   if (dc.guidedReview !== undefined) out.guidedReview = clone(dc.guidedReview);
 
   // Admin-gated subtrees, stored state read from the stored doc's OWN version.

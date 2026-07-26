@@ -44,6 +44,10 @@ import {
   getConsumerJourney,
 } from './consumerService.js';
 import { recordCaptureConsentEventsTx, canMarketTo } from './consentService.js';
+// Enrichment mapper (docs/plans/consumer-profile-enrichment.md §5): leaf
+// imports only (models + fence + taxonomy) — no cycle back into this module.
+import { buildFactSnapshot, enqueueMapJobTx, drainMapJobs } from './factMapperService.js';
+import { bumpEnrichmentInputTx } from './enrichmentFence.js';
 // Lead Profile page composer (admin-only, ?include=profile — plan §4). Leaf
 // imports only (models + sibling services); no cycle back into this module.
 import {
@@ -210,6 +214,10 @@ const defaultDeps = {
   getProspectOutcomes,
   recordCaptureConsentEventsTx,
   canMarketTo,
+  buildFactSnapshot,
+  enqueueMapJobTx,
+  drainMapJobs,
+  bumpEnrichmentInputTx,
   onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
   AppError,
   logger,
@@ -1017,6 +1025,30 @@ export function makeProspectService(overrides = {}) {
         drawTerms: incoming.consentMetadata?.drawTerms || null,
       });
 
+      // Enrichment outbox (docs/plans/consumer-profile-enrichment.md §5):
+      // freeze the normalized fact snapshot and enqueue the map job IN THIS
+      // transaction (crash-safe — Codex R1 #5), savepoint-isolated like the
+      // spine resolver: enrichment must never fail capture; the nightly
+      // sweep re-drains anything a crash or savepoint rollback loses.
+      try {
+        await d.sequelize.transaction({ transaction: t }, async (sp) => {
+          const snapshot = d.buildFactSnapshot({
+            demographics: newProspect.demographics,
+            sourceMetadata: newProspect.sourceMetadata,
+            quizDefinition: sourceCampaign?.design_config?.quiz,
+          });
+          await d.enqueueMapJobTx(sp, {
+            prospectId: newProspect.id,
+            enrichmentRevision: newProspect.enrichmentRevision || 1,
+            snapshot,
+          });
+        });
+      } catch (enrichErr) {
+        d.logger.warn('[enrichment] map-job outbox failed (sweep heals)', {
+          error: enrichErr?.message || String(enrichErr),
+        });
+      }
+
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
       // Source-aware phrase ("via TikTok ad" / "via web form" / "via {name} QR
       // code" …) instead of the old hardcoded "via {qr} QR code", which
@@ -1330,6 +1362,12 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
+    // Enrichment: opportunistic post-commit drain of the map-job outbox —
+    // fire-and-forget (the job row is already durable; the sweep re-drains).
+    d.drainMapJobs({ limit: 5 }).catch((err) => {
+      d.logger.warn('[enrichment] post-capture drain failed', { error: err?.message || String(err) });
+    });
+
     // Pre-load agent + prospect-with-campaign for the caller's fire-and-forget
     // email side-effects. The campaign's design_config.customerHost drives the
     // confirmation-email brand, so load the campaign (with design_config) for
@@ -1613,6 +1651,49 @@ export function makeProspectService(overrides = {}) {
       await prospect.reload().catch(() => {});
     }
 
+    // Enrichment choke points (docs/plans/consumer-profile-enrichment.md §5,
+    // §6.3 — Codex R4-era #2). Best-effort: the sweep's repair scan heals.
+    // (a) demographics is a mapped field — a staff edit mints the next form-
+    //     artifact revision + a new map job whose activation supersedes the
+    //     old revision's observations (including a CLEARED DOB — zero-fact
+    //     snapshots at revision > 1 still supersede).
+    if (safeUpdates.demographics !== undefined) {
+      try {
+        await d.sequelize.transaction(async (t) => {
+          const rev = (prospect.enrichmentRevision || 1) + 1;
+          await prospect.update({ enrichmentRevision: rev }, { transaction: t });
+          const snapshot = d.buildFactSnapshot({
+            demographics: prospect.demographics,
+            sourceMetadata: prospect.sourceMetadata,
+            quizDefinition: null, // quiz answers are capture-time only; edits never change them
+          });
+          await d.enqueueMapJobTx(t, {
+            prospectId: prospect.id,
+            enrichmentRevision: rev,
+            snapshot,
+          });
+        });
+        d.drainMapJobs({ limit: 2 }).catch(() => {});
+      } catch (enrichErr) {
+        d.logger.warn('[enrichment] edit revision/outbox failed (sweep heals)', {
+          error: enrichErr?.message || String(enrichErr),
+        });
+      }
+    }
+    // (b) prospect lifecycle fields feed the score/DTO — bump the owner's
+    //     input version so the profile goes dirty (no observation write here).
+    if (safeUpdates.leadStatus !== undefined && safeUpdates.leadStatus !== oldStatus && prospect.consumerId) {
+      try {
+        await d.sequelize.transaction(async (t) => {
+          await d.bumpEnrichmentInputTx(t, prospect.consumerId);
+        });
+      } catch (enrichErr) {
+        d.logger.warn('[enrichment] leadStatus input bump failed', {
+          error: enrichErr?.message || String(enrichErr),
+        });
+      }
+    }
+
     // (Reassignment / unassignment is handled exclusively by assignProspect — see the
     // PROSPECT_UPDATE_FIELDS note — so PUT no longer needs unassignment side-effects.)
 
@@ -1705,6 +1786,12 @@ export function makeProspectService(overrides = {}) {
         }
       }
 
+      // Enrichment: a deleted signup CASCADE-deletes its observations, which
+      // changes the owner's resolved facts — dirty their profile in the same
+      // txn (plan §6.3 choke list; erased consumers are skipped by the bump).
+      if (prospect.consumerId) {
+        await d.bumpEnrichmentInputTx(t, prospect.consumerId);
+      }
       await prospect.destroy({ transaction: t });
     });
 
