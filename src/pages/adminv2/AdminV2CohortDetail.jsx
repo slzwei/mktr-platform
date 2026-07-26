@@ -7,7 +7,7 @@
  * per channel (email needs an address, WhatsApp needs a phone…).
  */
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { fetchCohort, fetchCohortMembers, fetchCohortFacets, archiveCohort } from '@/api/adminV2';
@@ -36,6 +36,7 @@ export default function AdminV2CohortDetail() {
   const [editing, setEditing] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // refresh=1: recompute + persist the snapshot every time the screen opens.
   const cohort = useQuery({
@@ -181,7 +182,20 @@ export default function AdminV2CohortDetail() {
             {(members.data?.members || []).map((m) => (
               <div key={m.consumerId} className="av2-row" role="row" style={{ cursor: 'default' }}>
                 <span role="cell" style={{ flex: 1.2, fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {(m.firstName || m.lastName) ? `${m.firstName || ''} ${m.lastName || ''}`.trim() : '—'}
+                  {/* Person cell links into the Lead Profile PERSON view when a
+                      signup anchor exists — a Link inside the cell keeps the
+                      table's row/cell roles intact (admin-people-directory
+                      §3.6). state.from brings the operator back here. */}
+                  {m.latestProspectId ? (
+                    <Link
+                      to={`/admin/leads/${m.latestProspectId}?view=profile`}
+                      state={{ from: `${location.pathname}${location.search}` }}
+                      title="Open person profile"
+                      style={{ color: 'var(--accent-text)', textDecoration: 'none' }}
+                    >
+                      {(m.firstName || m.lastName) ? `${m.firstName || ''} ${m.lastName || ''}`.trim() : '—'}
+                    </Link>
+                  ) : ((m.firstName || m.lastName) ? `${m.firstName || ''} ${m.lastName || ''}`.trim() : '—')}
                   {m.reachable && <Chip tone="ok">✓</Chip>}
                 </span>
                 <span role="cell" className="av2-mono" style={{ width: 120, flex: 'none', fontSize: 11.5 }}>{m.phone || '—'}</span>

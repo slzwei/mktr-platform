@@ -113,6 +113,9 @@ export const members = asyncHandler(async (req, res) => {
     status: req.query.status || 'all',
     limit: req.query.limit,
     offset: req.query.offset,
+    // The admin members table clicks through to the Lead Profile person view;
+    // the flag stays service-level so the broadcast fan-out caller never pays.
+    includeProspect: true,
   });
   res.json({ success: true, data: { cohortId: cohort.id, name: cohort.name, ...result } });
 });
