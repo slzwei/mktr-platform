@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'crypto';
 import { Transaction } from 'sequelize';
 import { sequelize, Consumer, Prospect, RewardEntitlement, DrawEntry } from '../models/index.js';
 import { logger } from '../utils/logger.js';
+import { escapeLike } from '../utils/escapeLike.js';
 import { emailNormKey } from './repeatSignup.js';
 import { normalizePhone } from './prospectHelpers.js';
 
@@ -489,11 +490,102 @@ export function makeConsumerService(overrides = {}) {
     return result;
   }
 
+  /**
+   * The People directory page (admin-people-directory §4.1). Membership is
+   * ROW EXISTENCE — a consumer is listed iff a prospect links to it — never
+   * the signupCount counter (invariant 3: counters are a best-effort
+   * projection whose recompute failures are swallowed; rows are the truth).
+   * The page query's inner JOIN LATERAL enforces existence AND yields
+   * latestProspectId in one pass; the count query states it as EXISTS.
+   *
+   * Erased consumers pass the filter while their prospect skeletons remain,
+   * but never match a search — their identity columns are all null, which is
+   * the PDPA-correct asymmetry (browsable, not look-up-able).
+   */
+  async function listConsumers({ q = '', page = 1, limit = 25, sort = '-lastSeenAt' } = {}) {
+    // Strict positive int: parseInt would accept '2junk'/'2.5'/'1e2' (R2 #7).
+    const posInt = (v, fallback, min, max) => {
+      const s = String(v ?? '');
+      if (!/^\d+$/.test(s)) return fallback;
+      const n = Number(s);
+      if (!Number.isSafeInteger(n)) return fallback;
+      return Math.min(max, Math.max(min, n));
+    };
+    const lim = posInt(limit, 25, 1, 100);
+    const pg = posInt(page, 1, 1, 10_000);
+
+    const SORTS = {
+      '-lastSeenAt': 'c."lastSeenAt" DESC',
+      lastSeenAt: 'c."lastSeenAt" ASC',
+      '-signupCount': 'c."signupCount" DESC',
+      signupCount: 'c."signupCount" ASC',
+      '-firstSeenAt': 'c."firstSeenAt" DESC',
+      firstSeenAt: 'c."firstSeenAt" ASC',
+      // NULLS LAST both directions: DESC defaults to NULLS FIRST, which would
+      // float erased (all-null-name) rows to the top (R1 #13).
+      name: 'c."lastName" ASC NULLS LAST, c."firstName" ASC NULLS LAST',
+      '-name': 'c."lastName" DESC NULLS LAST, c."firstName" DESC NULLS LAST',
+    };
+    const orderBy = SORTS[sort] || SORTS['-lastSeenAt'];
+
+    const like = escapeLike(q);
+    const digits = String(q ?? '').replace(/\D/g, '');
+    const parts = [];
+    if (like) {
+      parts.push(
+        `c."firstName" ILIKE :like ESCAPE '\\'`,
+        `c."lastName" ILIKE :like ESCAPE '\\'`,
+        `concat_ws(' ', c."firstName", c."lastName") ILIKE :like ESCAPE '\\'`,
+        `c.email ILIKE :like ESCAPE '\\'`
+      );
+    }
+    if (digits.length >= 4) parts.push('c.phone LIKE :digitsLike');
+    const qClause = parts.length ? `AND (${parts.join(' OR ')})` : '';
+    const replacements = { like: `%${like}%`, digitsLike: `%${digits}%` };
+
+    // REPEATABLE READ so total and rows come from ONE snapshot — the
+    // connection sets no default isolation and READ COMMITTED re-snapshots
+    // per statement (R2 #1). Read-only, so no serialization retries needed.
+    return d.sequelize.transaction(
+      { isolationLevel: Transaction.ISOLATION_LEVELS.REPEATABLE_READ },
+      async (t) => {
+        const [countRows] = await d.sequelize.query(
+          `SELECT count(*)::int AS total FROM consumers c
+            WHERE EXISTS (SELECT 1 FROM prospects p WHERE p."consumerId" = c.id)
+            ${qClause}`,
+          { replacements, transaction: t }
+        );
+        const [rows] = await d.sequelize.query(
+          `SELECT c.id, c."firstName", c."lastName", c.email, c.phone,
+                  c."signupCount", c."verifiedSignupCount",
+                  c."firstSeenAt", c."lastSeenAt", c."erasedAt",
+                  lp.id AS "latestProspectId"
+             FROM consumers c
+             JOIN LATERAL (
+               SELECT p.id FROM prospects p
+                WHERE p."consumerId" = c.id
+                ORDER BY p."createdAt" DESC, p.id DESC
+                LIMIT 1
+             ) lp ON true
+            WHERE true ${qClause}
+            ORDER BY ${orderBy}, c.id DESC
+            LIMIT :limit OFFSET :offset`,
+          {
+            replacements: { ...replacements, limit: lim, offset: (pg - 1) * lim },
+            transaction: t,
+          }
+        );
+        return { total: countRows?.[0]?.total ?? 0, page: pg, limit: lim, rows };
+      }
+    );
+  }
+
   return {
     resolveConsumerForCaptureTx,
     recomputeConsumersByPhone,
     reconcileConsumerSpine,
     getConsumerJourney,
+    listConsumers,
   };
 }
 
@@ -502,3 +594,4 @@ export const resolveConsumerForCaptureTx = _default.resolveConsumerForCaptureTx;
 export const recomputeConsumersByPhone = _default.recomputeConsumersByPhone;
 export const reconcileConsumerSpine = _default.reconcileConsumerSpine;
 export const getConsumerJourney = _default.getConsumerJourney;
+export const listConsumers = _default.listConsumers;

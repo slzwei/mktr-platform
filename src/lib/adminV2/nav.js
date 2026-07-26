@@ -12,6 +12,8 @@ export const NAV = [
     label: 'Lead Generation',
     items: [
       { to: '/AdminProspects', label: 'Prospects' },
+      // Person-grain sibling of the signup-grain table above.
+      { to: '/AdminPeople', label: 'People' },
       { to: '/AdminCohorts', label: 'Cohorts' },
       { to: '/AdminBroadcasts', label: 'Email Pushes' },
       { to: '/AdminAgents', label: 'Agents' },

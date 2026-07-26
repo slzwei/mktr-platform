@@ -5,7 +5,7 @@
  * and the command bar's two-step assign wires to bulkAssign for the picked
  * signup. Plus the consumer-less (Retell) and erased states.
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -19,7 +19,7 @@ vi.mock('@/api/adminV2', () => ({
   bulkDelete: vi.fn(),
 }));
 
-import { fetchProspectProfile, bulkAssign } from '@/api/adminV2';
+import { fetchProspectProfile, bulkAssign, bulkReturnToHeld, bulkDelete } from '@/api/adminV2';
 
 const PROFILE = {
   id: 'p1',
@@ -88,14 +88,24 @@ function Loc() {
   return <div data-testid="loc">{location.pathname}{location.search}</div>;
 }
 
-function setup(initial = '/admin/leads/p1') {
+function setup(initial = '/admin/leads/p1', fromState) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qIdx = initial.indexOf('?');
+  const entry = fromState === undefined
+    ? initial
+    : {
+      pathname: qIdx === -1 ? initial : initial.slice(0, qIdx),
+      search: qIdx === -1 ? '' : initial.slice(qIdx),
+      state: { from: fromState },
+    };
   render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[initial]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/admin/leads/:prospectId" element={<><AdminV2LeadProfile /><Loc /></>} />
-          <Route path="/AdminProspects" element={<div>LIST</div>} />
+          <Route path="/AdminProspects" element={<><div>LIST</div><Loc /></>} />
+          <Route path="/AdminPeople" element={<><div>PEOPLE LIST</div><Loc /></>} />
+          <Route path="/admin/cohorts/:id" element={<><div>COHORT PAGE</div><Loc /></>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -222,6 +232,74 @@ describe('AdminV2LeadProfile — states', () => {
     await screen.findByText(/This person was erased/);
     expect(screen.getByText('⊘ Draw record unavailable')).toBeInTheDocument();
     expect(screen.getByText('ERASED')).toBeInTheDocument();
+  });
+
+  it('erased person: Assign and Return are suppressed, Delete stays', async () => {
+    const erased = JSON.parse(JSON.stringify(PROFILE));
+    erased.consumer.consumer.erasedAt = '2026-07-12T02:00:00Z';
+    fetchProspectProfile.mockResolvedValue(erased);
+    setup();
+    await screen.findByText(/This person was erased/);
+    expect(screen.queryByRole('button', { name: 'Return to held' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Assign/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+});
+
+describe('AdminV2LeadProfile — back-link origins (§3.4)', () => {
+  it('honors a People origin: label and destination keep the list query', async () => {
+    setup('/admin/leads/p1', '/AdminPeople?q=zep&sort=-signupCount');
+    fireEvent.click(await screen.findByRole('link', { name: '← People' }));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/AdminPeople?q=zep&sort=-signupCount');
+  });
+
+  it('honors a cohort-detail origin with the Cohort label', async () => {
+    setup('/admin/leads/p1', '/admin/cohorts/123e4567-e89b-42d3-a456-426614174000');
+    expect(await screen.findByRole('link', { name: '← Cohort' })).toBeInTheDocument();
+  });
+
+  it('rejects prefix confusion — /AdminPeople-nope falls back to Prospects', async () => {
+    setup('/admin/leads/p1', '/AdminPeople-nope');
+    expect(await screen.findByRole('link', { name: '← Prospects' })).toBeInTheDocument();
+  });
+
+  it('rejects dot segments via canonical equality — the raw query never survives', async () => {
+    setup('/admin/leads/p1', '/AdminPeople/../AdminProspects?x=1');
+    fireEvent.click(await screen.findByRole('link', { name: '← Prospects' }));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/AdminProspects');
+    expect(screen.getByTestId('loc')).not.toHaveTextContent('x=1');
+  });
+});
+
+describe('AdminV2LeadProfile — person-origin mutations pick their signup (§3.5)', () => {
+  it('profile-view Return is two-step: pick the campaign, then mutate THAT lead', async () => {
+    bulkReturnToHeld.mockResolvedValue({ data: { returned: 1 } });
+    setup('/admin/leads/p1?view=profile');
+    fireEvent.click(await screen.findByRole('button', { name: 'Return to held' }));
+    expect(screen.getByText("Which campaign's lead?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: /NTUC Trial Reward/ }));
+    await waitFor(() => expect(bulkReturnToHeld).toHaveBeenCalledWith(['p2']));
+  });
+
+  it('profile-view Delete picks its signup, names it in the confirm, and stays on the page', async () => {
+    bulkDelete.mockResolvedValue({ data: { deleted: 1 } });
+    setup('/admin/leads/p1?view=profile');
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /NTUC Trial Reward/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/NTUC Trial Reward/);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(bulkDelete).toHaveBeenCalledWith(['p2']));
+    // Deleting a SIBLING signup keeps the operator on the person's page.
+    expect(screen.getByTestId('loc')).toHaveTextContent('/admin/leads/p1?view=profile');
+  });
+
+  it('drill-in Return stays one step on the URL anchor', async () => {
+    bulkReturnToHeld.mockResolvedValue({ data: { returned: 1 } });
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Return to held' }));
+    expect(screen.queryByText("Which campaign's lead?")).not.toBeInTheDocument();
+    await waitFor(() => expect(bulkReturnToHeld).toHaveBeenCalledWith(['p1']));
   });
 });
 

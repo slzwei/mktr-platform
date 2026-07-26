@@ -143,10 +143,13 @@ describe('undoSessionUnlock (CX23)', () => {
 });
 
 describe('resendDelivery — draw guard (CX22)', () => {
-  it('a recorded session has NO voucher to resend', async () => {
+  it('a recorded session resends the boost receipt, never the partner voucher', async () => {
+    // wa-delivery-truth (#277) changed this contract: the draw-session resend
+    // now succeeds as the informational receipt instead of rejecting 409.
     const w = mkWorld({ status: 'issued' });
-    await expect(w.svc.resendDelivery('ent1', AGENT, { channel: 'email' }))
-      .rejects.toMatchObject({ statusCode: 409 });
+    const res = await w.svc.resendDelivery('ent1', AGENT, { channel: 'email' });
+    expect(res).toMatchObject({ kind: 'boost_receipt', channel: 'email', emailQueued: true });
+    expect(res.entitlement.tokenHash).toBeNull();
   });
 });
 

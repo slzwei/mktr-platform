@@ -2,10 +2,10 @@
  * Switchboard admin v2 — react-query hooks. Query keys carry period/filters so
  * period switches and filter changes are cache-correct by construction.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
   fetchOverview, fetchAttention, fetchSeries, fetchFunnel,
-  fetchProspects, fetchProspectDetail, fetchProspectProfile, fetchCampaignsList, fetchAgentOptions,
+  fetchProspects, fetchProspectDetail, fetchProspectProfile, fetchConsumers, fetchCampaignsList, fetchAgentOptions,
   fetchAgentsRoster, fetchCampaignSummary, fetchWallets, fetchWalletLedger, fetchAgentGroups,
 } from '@/api/adminV2';
 
@@ -52,7 +52,19 @@ export function useProspects(params) {
     queryKey: ['adminV2', 'prospects', params],
     queryFn: () => fetchProspects(params),
     staleTime: 10_000,
-    keepPreviousData: true,
+    // RQ v5: the v4 `keepPreviousData: true` flag was removed and silently
+    // ignored here — this is the working idiom (page flips keep prior rows).
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** People directory list (/AdminPeople). */
+export function useConsumers(params) {
+  return useQuery({
+    queryKey: ['adminV2', 'consumers', params],
+    queryFn: () => fetchConsumers(params),
+    staleTime: 10_000,
+    placeholderData: keepPreviousData,
   });
 }
 

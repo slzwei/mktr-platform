@@ -6,6 +6,10 @@ export const meta = { path: '/api/consumers' };
 
 const router = express.Router();
 
+// People directory — the deduplicated person list. Same admin-only posture as
+// the journey below: person-grain data aggregates PII across campaigns.
+router.get('/', authenticateToken, requireAdmin, consumerController.listConsumers);
+
 // Cross-campaign person journey — ADMIN ONLY, explicitly. The prospects
 // detail route is deliberately looser (agents open their own leads); this one
 // aggregates a person's history across every campaign and must not be.

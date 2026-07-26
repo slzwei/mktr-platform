@@ -75,6 +75,12 @@ export function fmtAgoShort(value, now = Date.now()) {
   return new Date(t).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', timeZone: SGT });
 }
 
+/** House phone display: +6591234567 → "+65 9123 4567" (root CLAUDE.md rule). */
+export function fmtPhone(v) {
+  const m = /^\+65(\d{4})(\d{4})$/.exec(String(v || ''));
+  return m ? `+65 ${m[1]} ${m[2]}` : (v || null);
+}
+
 /** "days until" for deadlines (SGT end-of-day strings or ISO dates). */
 export function daysUntil(value, now = Date.now()) {
   if (!value) return null;

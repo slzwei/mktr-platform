@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { composeAttentionRows, composeHealthStrip, SEVERITY_ORDER } from '../attention.js';
 import { prospectsToCsv } from '../csv.js';
-import { fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative, daysUntil, fmtNumber, fmtDay } from '../format.js';
+import { fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative, daysUntil, fmtNumber, fmtDay, fmtPhone } from '../format.js';
 import { HELD_REASON_LABELS, STATUS_LABELS, STATUS_CHIP_CLASS, SOURCE_LABELS, LEAD_STATUSES, LEAD_SOURCES, heldLabel } from '../constants.js';
 
 describe('constants — vocabulary completeness', () => {
@@ -238,6 +238,14 @@ describe('formatters', () => {
   it('fmtNumber handles nullish', () => {
     expect(fmtNumber(1024)).toBe('1,024');
     expect(fmtNumber(undefined)).toBe('—');
+  });
+
+  it('fmtPhone renders the house +65 XXXX XXXX display; passes through everything else', () => {
+    expect(fmtPhone('+6591234567')).toBe('+65 9123 4567');
+    expect(fmtPhone('+65 9123 4567')).toBe('+65 9123 4567'); // already spaced — no double format
+    expect(fmtPhone('+123456789012')).toBe('+123456789012'); // non-SG stays raw
+    expect(fmtPhone(null)).toBeNull();
+    expect(fmtPhone('')).toBeNull();
   });
 
   it('fmtDay formats ISO day buckets without tz drift', () => {
