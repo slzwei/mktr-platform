@@ -4,6 +4,10 @@ import {
   getActiveScoringConfig, findStaleConsumerIds, findConsumerIdsAfter,
   scoreOneConsumer, scoringEnabled,
 } from './consumerScoringService.js';
+import {
+  findStaleLeadIds, findLeadIdsAfter, scoreOneLead,
+} from './leadScoringService.js';
+import { LEAD_ALGORITHM_VERSION } from '../utils/consumerScoring.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -166,17 +170,21 @@ export async function finalizeRun(runId, ownerToken, { status, stats, cursor }) 
  * One consumer's failure is logged and counted, never fatal — a single bad
  * row must not cost the night's remaining budget.
  */
-async function processBatch(ids, ctx) {
+async function processBatch(ids, ctx, { scoreOne, rowCap, deadline, grain } = {}) {
+  const score = scoreOne || ctx.scoreOne;
+  const cap = rowCap ?? ctx.rowBudget;
+  const by = deadline ?? ctx.deadline;
+
   for (const id of ids) {
-    if (ctx.rowsUsed >= ctx.rowBudget) return 'row_budget';
-    if (Date.now() >= ctx.deadline) return 'time_budget';
+    if (ctx.rowsUsed >= cap) return 'row_budget';
+    if (Date.now() >= by) return 'time_budget';
 
     try {
-      const res = await ctx.scoreOne(id, { now: Date.now() });
+      const res = await score(id, { now: Date.now() });
       ctx.stats[res.status] = (ctx.stats[res.status] || 0) + 1;
     } catch (err) {
       ctx.stats.errors = (ctx.stats.errors || 0) + 1;
-      logger.error('[enrichmentSweep] scoring failed', { consumerId: id, error: err.message });
+      logger.error('[enrichmentSweep] scoring failed', { grain: grain || 'consumer', id, error: err.message });
     }
 
     ctx.rowsUsed += 1;
@@ -207,6 +215,8 @@ export async function sweepConsumers({
   const getConfig = deps.getActiveScoringConfig || getActiveScoringConfig;
   const findStale = deps.findStaleConsumerIds || findStaleConsumerIds;
   const findAfter = deps.findConsumerIdsAfter || findConsumerIdsAfter;
+  const findStaleLeads = deps.findStaleLeadIds || findStaleLeadIds;
+  const findLeadsAfter = deps.findLeadIdsAfter || findLeadIdsAfter;
 
   const { version: configVersion, config } = await getConfig();
   const algorithmVersion = config.algorithmVersion;
@@ -219,8 +229,29 @@ export async function sweepConsumers({
     rowsUsed: 0,
     lastId: null,
     scoreOne: deps.scoreOneConsumer || scoreOneConsumer,
+    scoreOneLeadFn: deps.scoreOneLead || scoreOneLead,
     heartbeatFn: deps.heartbeat || heartbeat,
     stats: { scored: 0, unchanged: 0, skipped: 0, errors: 0 },
+  };
+
+  /**
+   * THE ROTATION RESERVATION (§6, Codex round 3a/3b).
+   *
+   * A row-count reservation alone guarantees nothing. The deadline is checked
+   * before every row (processBatch above) and the rotation runs only when no
+   * stop occurred, so a wall-clock stop inside the stale phase yields ZERO
+   * rotation — and on a population whose stale backlog recurs nightly (config
+   * churn), the rotation would starve indefinitely.
+   *
+   * So the reservation is two-dimensional: the stale phases stop ADMITTING at
+   * 80% of the row cap AND 80% of the deadline, leaving the rotation the final
+   * 20% admission window of each. ADMISSION is what is reserved, not literal
+   * wall-clock — an in-flight row can still overrun the moment of the check.
+   */
+  const ROTATION_RESERVE = 0.2;
+  const staleLimits = {
+    rowCap: Math.max(1, Math.floor(rowBudget * (1 - ROTATION_RESERVE))),
+    deadline: Date.now() + Math.max(1, Math.floor(timeBudgetMs * (1 - ROTATION_RESERVE))),
   };
 
   // Phase 1 — provably-stale rows (never scored, or scored under an old
@@ -235,30 +266,78 @@ export async function sweepConsumers({
   // signal an operator has for whether a run finished its work or merely ran
   // out of room, and those demand opposite responses (ignore vs raise the
   // budget). Breaking out silently reported both as "exhausted".
-  const budgetSpent = () => {
-    if (ctx.rowsUsed >= ctx.rowBudget) return 'row_budget';
-    if (Date.now() >= ctx.deadline) return 'time_budget';
+  const budgetSpent = (limits = {}) => {
+    const cap = limits.rowCap ?? ctx.rowBudget;
+    const by = limits.deadline ?? ctx.deadline;
+    if (ctx.rowsUsed >= cap) return 'row_budget';
+    if (Date.now() >= by) return 'time_budget';
     return null;
   };
 
-  let stop = null;
-  let staleCursor = null;
-  for (;;) {
-    stop = budgetSpent();
-    if (stop) break;
-    const batch = await findStale({
-      configVersion,
-      algorithmVersion,
-      limit: Math.min(200, ctx.rowBudget - ctx.rowsUsed),
-      afterId: staleCursor,
+  /** One provably-stale phase, bounded by the reserved stale window. */
+  async function stalePhase({ find, scoreOne, grain, findArgs }) {
+    let phaseCursor = null;
+    for (;;) {
+      const spent = budgetSpent(staleLimits);
+      if (spent) return spent;
+      const batch = await find({
+        ...findArgs,
+        limit: Math.min(200, Math.max(1, staleLimits.rowCap - ctx.rowsUsed)),
+        afterId: phaseCursor,
+      });
+      if (!batch.length) return null;
+      const stop = await processBatch(batch, ctx, { scoreOne, grain, ...staleLimits });
+      phaseCursor = ctx.lastId;
+      if (stop) return stop;
+    }
+  }
+
+  /** One rotation phase, against the FULL budget, from a durable cursor. */
+  async function rotationPhase({ find, scoreOne, grain, startCursor }) {
+    let phaseCursor = startCursor;
+    for (;;) {
+      const spent = budgetSpent();
+      if (spent) return { stop: spent, cursor: phaseCursor, wrapped: false };
+      const batch = await find({
+        afterId: phaseCursor,
+        limit: Math.min(200, ctx.rowBudget - ctx.rowsUsed),
+      });
+      if (!batch.length) {
+        // End of the id space. Reset so the next run starts from the top.
+        return { stop: null, cursor: null, wrapped: true };
+      }
+      const stop = await processBatch(batch, ctx, { scoreOne, grain });
+      phaseCursor = ctx.lastId;
+      if (stop) return { stop, cursor: phaseCursor, wrapped: false };
+    }
+  }
+
+  // Phase 1 — provably-stale CONSUMERS, then provably-stale LEADS. Both are
+  // wrong right now, so they share first claim on the budget; the lead phase
+  // includes every dirty-marked lead (§10), which is how an event-driven move
+  // that outlived its in-process rescore still lands the same night.
+  let staleStop = await stalePhase({
+    find: findStale, scoreOne: ctx.scoreOne, grain: 'consumer',
+    findArgs: { configVersion, algorithmVersion },
+  });
+  const consumerStaleScored = ctx.rowsUsed;
+
+  if (staleStop !== 'taken_over') {
+    const leadStop = await stalePhase({
+      find: findStaleLeads, scoreOne: ctx.scoreOneLeadFn, grain: 'lead',
+      findArgs: { configVersion },
     });
-    if (!batch.length) break;
-    stop = await processBatch(batch, ctx);
-    staleCursor = ctx.lastId;
-    if (stop) break;
+    staleStop = leadStop === 'taken_over' ? leadStop : (staleStop || leadStop);
   }
 
   const staleScored = ctx.rowsUsed;
+  const leadStaleScored = staleScored - consumerStaleScored;
+
+  // A stale phase that stopped on its RESERVED window has not spent the run's
+  // budget — only a takeover ends the night early. This is the whole point of
+  // the reservation: 'row_budget' here means "the stale slice is full", not
+  // "there is no room left".
+  let stop = staleStop === 'taken_over' ? 'taken_over' : null;
 
   // Phase 2 — budgeted rotation for hash-level staleness (facts can move
   // under a still-current config, and no SQL predicate detects that).
@@ -270,25 +349,34 @@ export async function sweepConsumers({
   // cursor is durable, so stopping at the end and resuming next run covers
   // the same ground without the churn.
   let rotationCursor = cursor?.lastConsumerId || null;
+  let leadRotationCursor = cursor?.lastProspectId || null;
   let rotationWrapped = false;
+  let leadRotationWrapped = false;
+  let consumerRotationScored = 0;
+
   if (!stop) {
-    for (;;) {
-      stop = budgetSpent();
-      if (stop) break;
-      const batch = await findAfter({
-        afterId: rotationCursor,
-        limit: Math.min(200, ctx.rowBudget - ctx.rowsUsed),
-      });
-      if (!batch.length) {
-        // End of the id space. Reset so the next run starts from the top.
-        rotationCursor = null;
-        rotationWrapped = true;
-        break;
-      }
-      stop = await processBatch(batch, ctx);
-      rotationCursor = ctx.lastId;
-      if (stop) break;
-    }
+    const r = await rotationPhase({
+      find: findAfter, scoreOne: ctx.scoreOne, grain: 'consumer',
+      startCursor: rotationCursor,
+    });
+    rotationCursor = r.cursor;
+    rotationWrapped = r.wrapped;
+    stop = r.stop;
+    consumerRotationScored = ctx.rowsUsed - staleScored;
+  }
+
+  if (stop !== 'taken_over') {
+    // Safe to call unconditionally: an exhausted budget makes this return on
+    // its first check. Each grain keeps its OWN cursor, so a run that only
+    // had room for consumers does not silently advance the lead rotation past
+    // leads it never looked at.
+    const r = await rotationPhase({
+      find: findLeadsAfter, scoreOne: ctx.scoreOneLeadFn, grain: 'lead',
+      startCursor: leadRotationCursor,
+    });
+    leadRotationCursor = r.cursor;
+    leadRotationWrapped = r.wrapped;
+    stop = r.stop || stop;
   }
 
   return {
@@ -296,14 +384,22 @@ export async function sweepConsumers({
       ...ctx.stats,
       rowsUsed: ctx.rowsUsed,
       staleScored,
+      consumerStaleScored,
+      leadStaleScored,
       rotationScored: ctx.rowsUsed - staleScored,
-      // 'exhausted' now means what it says: no stale rows and the rotation
-      // reached the end of the population within budget.
-      stoppedBy: stop || (rotationWrapped ? 'exhausted' : 'no_work'),
+      consumerRotationScored,
+      leadRotationScored: ctx.rowsUsed - staleScored - consumerRotationScored,
+      // 'exhausted' means what it says: no stale rows left and BOTH rotations
+      // reached the end of their population within budget. These per-phase
+      // numbers are the measured throughput §6 promises instead of a
+      // calendar — the rotation period is population ÷ this, and a starving
+      // rotation shows up here as a persistent zero.
+      stoppedBy: stop || (rotationWrapped && leadRotationWrapped ? 'exhausted' : 'no_work'),
       configVersion,
       algorithmVersion,
+      leadAlgorithmVersion: LEAD_ALGORITHM_VERSION,
     },
-    cursor: { lastConsumerId: rotationCursor },
+    cursor: { lastConsumerId: rotationCursor, lastProspectId: leadRotationCursor },
     takenOver: stop === 'taken_over',
   };
 }

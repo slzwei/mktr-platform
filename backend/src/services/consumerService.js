@@ -9,6 +9,7 @@ import { normalizePhone } from './prospectHelpers.js';
 // Codex R4-era #2): a moved prospect changes BOTH people's resolved facts.
 // Leaf import (models only) — no cycle.
 import { bumpManyEnrichmentInputsTx } from './enrichmentFence.js';
+import { markLeadsDirtyTx } from './leadScoreDirty.js';
 
 /**
  * Consumer spine (docs/plans/consumer-spine-and-consent-ledger.md §2).
@@ -378,12 +379,18 @@ export function makeConsumerService(overrides = {}) {
            FROM prospects oldp
           WHERE oldp.id = p.id
             AND p."leadSource" = 'call_bot' AND p."consumerId" IS NOT NULL
-        RETURNING oldp."consumerId" AS old_cid`,
+        RETURNING p.id AS pid, oldp."consumerId" AS old_cid`,
         { transaction: t }
       );
       stats.callBotUnlinked = cbMeta?.rowCount ?? 0;
       if (cbMoved?.length) {
         await bumpManyEnrichmentInputsTx(t, cbMoved.map((r) => r.old_cid));
+        // The unlinked lead itself must be dirtied BY ID: it now has no
+        // consumerId, so the consumer-keyed dirtying inside the bump above
+        // cannot reach it — and losing the person is exactly the kind of
+        // change that moves its score (every person-wide capability term
+        // vanishes with the link).
+        await markLeadsDirtyTx(t, cbMoved.map((r) => r.pid));
       }
 
       // A phone cleared to null/empty (PUT-to-blank) takes its link with it
@@ -394,12 +401,13 @@ export function makeConsumerService(overrides = {}) {
            FROM prospects oldp
           WHERE oldp.id = p.id
             AND p."consumerId" IS NOT NULL AND (p.phone IS NULL OR p.phone = '')
-        RETURNING oldp."consumerId" AS old_cid`,
+        RETURNING p.id AS pid, oldp."consumerId" AS old_cid`,
         { transaction: t }
       );
       stats.emptyPhoneUnlinked = epMeta?.rowCount ?? 0;
       if (epMoved?.length) {
         await bumpManyEnrichmentInputsTx(t, epMoved.map((r) => r.old_cid));
+        await markLeadsDirtyTx(t, epMoved.map((r) => r.pid));
       }
 
       const [, reP] = await d.sequelize.query(

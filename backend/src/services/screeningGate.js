@@ -1,5 +1,6 @@
 import { sequelize, Prospect, ProspectActivity, User, Campaign } from '../models/index.js';
 import { chargeLeadCredit, refundLeadCredit, deductLeadCredit } from './leadCredits.js';
+import { rescoreLeadSoon } from './leadScoringService.js';
 import { persistEventDeliveries, flushDeliveries } from './webhookService.js';
 import { buildLeadCreatedPayload, destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
 import { resolveLeadRouting } from './systemAgent.js';
@@ -39,6 +40,7 @@ const defaultDeps = {
   Campaign,
   chargeLeadCredit,
   refundLeadCredit,
+  rescoreLeadSoon,
   deductLeadCredit,
   persistEventDeliveries,
   flushDeliveries,
@@ -340,6 +342,12 @@ export function makeScreeningGate(overrides = {}) {
           SET "screeningVerdict" = 'qualified',
               "screeningActiveCallId" = NULL,
               "screeningNextAttemptAt" = NULL,
+              -- The verdict is a lead-scoped RESPONSE, so it dirties the lead
+              -- score (per-campaign-lead-scoring.md §10). Set in the SAME
+              -- statement as the verdict rather than a follow-up write: the
+              -- two can then never disagree, and there is no window in which
+              -- a verdict exists with no pending rescore.
+              "scoreDirtyAt" = COALESCE("scoreDirtyAt", NOW()),
               ${metaMergeSql()},
               "updatedAt" = NOW()
         WHERE id = :id AND "quarantineReason" = 'screening_pending'
@@ -348,6 +356,7 @@ export function makeScreeningGate(overrides = {}) {
       { replacements: { id: prospect.id, callId, metaPatch } }
     );
     if (!Array.isArray(rows) || rows.length === 0) return { outcome: 'stale', applied: false };
+    d.rescoreLeadSoon(prospect.id);
     await prospect.reload().catch(() => {});
     const rel = await releaseScreenedLead({ prospect });
     return { outcome: rel.released ? 'released' : 'qualified_pending_delivery', applied: true, release: rel };
@@ -373,6 +382,10 @@ export function makeScreeningGate(overrides = {}) {
                 "screeningVerdict" = 'not_qualified',
                 "screeningActiveCallId" = NULL,
                 "screeningNextAttemptAt" = NULL,
+                -- Same contract as the qualified arm: the verdict and its
+                -- rescore marker land together (§10). not_qualified is the
+                -- strongest negative response the lead grain has.
+                "scoreDirtyAt" = COALESCE("scoreDirtyAt", NOW()),
                 notes = COALESCE(notes, '') || :notesAppend,
                 ${metaMergeSql()},
                 "updatedAt" = NOW()
@@ -410,6 +423,9 @@ export function makeScreeningGate(overrides = {}) {
       );
 
       await t.commit();
+      // POST-commit: the marker is already durable inside the transaction
+      // above, so this is only the latency optimisation (§6).
+      d.rescoreLeadSoon(prospect.id);
       await prospect.reload().catch(() => {});
       d.logger.info('[Screening] lead failed screening — held', { prospectId: prospect.id, callId, refunded: needsRefund });
       return { outcome: 'failed', applied: true };

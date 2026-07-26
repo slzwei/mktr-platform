@@ -72,6 +72,11 @@ const Prospect = sequelize.define('Prospect', {
     type: DataTypes.ENUM('low', 'medium', 'high', 'urgent'),
     defaultValue: 'medium'
   },
+  // ── The lead score (per-campaign-lead-scoring.md §4/§6, migration 097) ────
+  // The score is a property of (person × campaign) — this row. `score` is the
+  // blended total and the default sort key; meet/buy are the two sub-scores
+  // §4's person-grain projection copies up. All of it is written by
+  // leadScoringService and by nothing else.
   score: {
     type: DataTypes.INTEGER,
     allowNull: true,
@@ -79,7 +84,47 @@ const Prospect = sequelize.define('Prospect', {
       min: 0,
       max: 100
     },
-    comment: 'Lead scoring from 0-100'
+    comment: 'Lead score 0-100 as of scoreComputedAt — decayed at WRITE time, never at read (§6)'
+  },
+  meetScore: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: '"Will they meet a consultant", 0-100. NULL = not scoreable, which is not the same as 0.'
+  },
+  buyScore: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: '"Will they buy", 0-100. NULL until ≥1 fact component is assessed — ignorance must never read as a low score.'
+  },
+  scoreBreakdown: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Per-component evidence + the response events, with their timestamps and undecayed weights. Rendered "as of scoreComputedAt".'
+  },
+  scoreComputedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'When the stored number was computed. The decay is baked in as of this instant.'
+  },
+  scoredConfigVersion: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'enrichment_scoring_configs.version that produced the score — keeps old breakdowns interpretable.'
+  },
+  scoringAlgorithmVersion: {
+    type: DataTypes.STRING(24),
+    allowNull: true,
+    comment: 'Algorithm build that produced the score (e.g. lead/v1).'
+  },
+  scoreInputHash: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    comment: 'Content hash of the scored inputs — half of the write gate (§6).'
+  },
+  scoreDirtyAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Lead-grain dirty marker (§10). Set by every choke-point writer; cleared by a rescore. A dirty lead is provably stale, so it rides the sweep\'s stale-first phase.'
   },
   interests: {
     type: DataTypes.TEXT,
@@ -324,6 +369,28 @@ const Prospect = sequelize.define('Prospect', {
 }, {
   tableName: 'prospects',
   indexes: [
+    // Lead-score indexes (migration 097). Mirrored here deliberately: the test
+    // schema is built by sync({force:true}) from this model, so an index that
+    // lives only in the migration is absent from every test — the same lesson
+    // Consumer.js's mirrored indexes exist for.
+    {
+      name: 'idx_prospects_score_stale',
+      fields: ['scoredConfigVersion', 'scoringAlgorithmVersion', 'id']
+    },
+    {
+      name: 'idx_prospects_score_dirty',
+      fields: ['scoreDirtyAt'],
+      where: { scoreDirtyAt: { [Op.ne]: null } }
+    },
+    {
+      name: 'idx_prospects_consumer_score',
+      fields: [
+        'consumerId',
+        { name: 'score', order: 'DESC' },
+        { name: 'createdAt', order: 'DESC' },
+        { name: 'id', order: 'DESC' }
+      ]
+    },
     {
       fields: ['email']
     },

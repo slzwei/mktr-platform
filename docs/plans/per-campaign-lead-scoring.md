@@ -4,7 +4,8 @@
 (re-derived against the tables), M6 → §6 (rewritten), M9 → §7 verified
 shipped + §9 specified, M10 verified shipped. **Codex round 3: PASS**
 (3a REWORK → 3b REWORK → 3c PASS, log in §17). Phase 3 build UNGATED.
-**Not built** (Phase 0 / PR A₀ and PR B shipped separately — §14).
+**BUILT 2026-07-27: PR A₁ and PR A₂ (§14) — §18 records what shipped and the
+three places the build had to deviate from this text.** PR C/D/E remain.
 **Author:** Claude, 2026-07-26, from Shawn's model:
 
 > "The admin, when creating campaigns, will say the ideal lead profile. The AI
@@ -589,10 +590,14 @@ the band-straddle equal-weight rule at `:442-450`; migration
    (`consumerScoringService.js:119-163`), pinned by
    `backend/test/scoringIsolation.test.js`.
 2. **PR A₁ — send-time ownership** (§5). `wa_message_sends` + every send path.
-   Independent, additive, no scoring changes.
+   Independent, additive, no scoring changes. **SHIPPED 2026-07-27** —
+   migration `096-wa-message-sends.js`, `services/redeemOps/waMessageOwnership.js`,
+   stamped at the single `sendTemplate` choke point; §18.1 for the deviation.
 3. **PR A₂ — the lead score** (§4, §6, §10, §11). The structural one: authority,
    projection, write-time decay + the integer write-gate, invalidation,
-   erasure, Prospects column, events UI.
+   erasure, Prospects column, events UI. **SHIPPED 2026-07-27** — migration
+   `097-lead-score.js`, `services/leadScoringService.js`,
+   `services/leadScoreDirty.js`, `utils/screeningSignal.js`, `lead/v1`.
 4. **PR B — age curve + DOB backfill** (§13.2). **SHIPPED 2026-07-27**
    (score/v3 #296, migration `095-scoring-age-curve.js`; prod remap minted
    135 band observations and the same night's backfill scored 130 with Buy
@@ -776,3 +781,71 @@ an in-flight row can overrun the pre-row deadline check
 (`enrichmentSweepService.js:169-172`); (3) §6's cursor described as
 monotonic WITHIN a rotation — it deliberately resets at the end of the
 population (`:282-286`).
+
+## 18. What shipped, and where the build deviated (2026-07-27)
+
+PR A₁ + PR A₂ built off `origin/main` at 26bda82. Backend unit + integration +
+migration suites green against local Postgres (130 suites / 2580 tests, 30
+migration tests), `npx eslint src/ --quiet` clean at both roots, frontend
+vitest 159 files / 2025 tests green. `test/unit/retellScreening.test.js`
+passed at 05:09 SGT — outside the 10:00–20:00 call window — so the recorded
+time-of-day flake did not reproduce on this run.
+
+Three places the substrate did not match this text. Each is a deviation the
+plan should own rather than a silent divergence in code.
+
+### 18.1 `wa_message_sends.campaignId` is NULLABLE (§5 said NOT NULL)
+
+A lead can legitimately carry no campaign at send time: `campaignId` is
+optional at the capture edge (`validation.js:219`, passed through as
+`campaignId || null`, `prospectService.js:1066-1069`), and a permanent
+campaign delete nulls it on surviving prospects
+(`014-add-cascade-rules.js:87`). NOT NULL would force the writer to DROP the
+whole ownership row exactly when a campaignless lead is messaged — losing
+`prospectId`, which IS the ownership, to protect a snapshot that is only
+supporting evidence. Nullable keeps the row.
+
+### 18.2 The person-grain projection carries the BREAKDOWN too (§4 named three columns)
+
+§4 retires `meetScore`/`buyScore`/`consumerScore` as computed values and makes
+them a projection of the winning lead. The breakdown had to follow them: the
+profile card renders `groups.meet`/`groups.buy` component rows straight out of
+`scoreBreakdown` (`AdminV2LeadProfile.jsx:589-624`), so the winning lead's
+numbers beside a breakdown from the retired person-grain pass would render
+components that visibly do not sum to the score above them. `scoreOneConsumer`
+therefore stops writing all four; it keeps its fact-resolution, profile-row and
+stamping duties exactly as §4 says.
+
+### 18.3 There is NO meet signal to normalize (§13.1 assumed one rode in `checks`)
+
+§13.1 said the meet signal "rides un-normalized (e.g. `meet_consultant`)".
+Verified false. The configured agent's `post_call_analysis_data` is exactly
+three fields — `qualified` (boolean, required), `qualification_reason`
+(string), `interest_level` (enum hot|warm|cold, optional)
+(`retell-screening-calls.md:524-527`) — plus Retell's own `user_sentiment`
+(Positive|Neutral|Negative, `retellService.js:235-238`). `meet_consultant`,
+`sg_pr` and `age_in_range` appear in this codebase in exactly ONE place: an
+illustrative comment at `retellScreeningService.js:682`. They are in no agent
+configuration.
+
+So `utils/screeningSignal.js` declares `agreedToMeet` as a slot that
+normalizes to `null`, backed by an intentionally EMPTY `MEET_CHECK_KEYS`, and
+the scorer blends over what is actually present rather than inventing the
+field the plan named. Configuring a real check is a one-line addition to that
+array plus a schema-version bump. What is scoreable today is exactly what
+§13.1's fallback sentence predicted: the `screeningVerdict` column, plus
+`interest_level` and `user_sentiment` mapped through closed vocabularies —
+never raw provider `checks` keys, whose names are whatever an operator last
+typed into the Retell console.
+
+### 18.4 Two things §6/§9 called for that were deliberately NOT built
+
+- **No config migration for the lead components.** `response` and `screening`
+  default in code (`DEFAULT_LEAD_COMPONENTS`). 095's migration existed to force
+  a recompute of already-scored rows; every lead starts unscored, so the first
+  sweep scores the whole population regardless, and a frozen historical row
+  buys nothing. Recalibrating later is an ordinary append-only row carrying
+  `leadComponents`.
+- **§9's per-campaign config store is untouched** — that is PR C, and nothing
+  in A₂ depends on it. Lead scoring resolves the same single global config the
+  person grain does.

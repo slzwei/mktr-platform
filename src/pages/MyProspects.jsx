@@ -44,6 +44,31 @@ import ProspectDetails from"@/components/prospects/ProspectDetails";
 import normalizeProspect, { sourceLine } from"@/utils/normalizeProspect";
 import { getStatusColor, formatStatus } from"@/constants/statusConfig";
 
+/**
+ * The lead score an agent sees (per-campaign-lead-scoring.md §4/§6).
+ *
+ * It is the score for THIS lead on THIS campaign, not a verdict on the person:
+ * the same someone can be a strong recruit and a weak insurance buyer, which
+ * is the whole reason the number moved onto the lead.
+ *
+ * NULL renders as a dash, never a zero — an unscored lead is not a bad lead.
+ * The value is already decayed as of when it was written, so nothing here
+ * recomputes anything (§6: nothing decays at read, anywhere).
+ */
+function LeadScore({ value }) {
+  if (value == null) {
+    return <span className="text-sm text-muted-foreground" title="Not scored yet">—</span>;
+  }
+  return (
+    <span
+      className={`text-sm tabular-nums ${value >= 60 ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+      title={`Lead score ${value}/100`}
+    >
+      {value}
+    </span>
+  );
+}
+
 export default function MyProspects() {
  const [searchQuery, setSearchQuery] = useState("");
  const [selectedProspect, setSelectedProspect] = useState(null);
@@ -184,6 +209,7 @@ export default function MyProspects() {
  <TableHead>Status</TableHead>
  <TableHead>Contact Info</TableHead>
  <TableHead>Campaign</TableHead>
+ <TableHead className="text-right w-[70px]">Score</TableHead>
  <TableHead>Assigned Date</TableHead>
  <TableHead className="text-right">Actions</TableHead>
  </TableRow>
@@ -191,7 +217,7 @@ export default function MyProspects() {
  <TableBody>
  {loading ? (
  <TableRow>
- <TableCell colSpan={6} className="h-32 text-center">
+ <TableCell colSpan={7} className="h-32 text-center">
  <div className="flex flex-col items-center justify-center text-muted-foreground">
  <Loader2 className="w-6 h-6 animate-spin mb-2"/>
  <p>Loading prospects...</p>
@@ -200,7 +226,7 @@ export default function MyProspects() {
  </TableRow>
  ) : filteredProspects.length === 0 ? (
  <TableRow>
- <TableCell colSpan={6} className="h-64 text-center">
+ <TableCell colSpan={7} className="h-64 text-center">
  <div className="flex flex-col items-center justify-center text-muted-foreground">
  <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
  <User className="w-6 h-6 text-muted-foreground"/>
@@ -254,6 +280,9 @@ export default function MyProspects() {
  <p className="font-medium text-foreground">{prospect.campaign?.name || 'Unknown Campaign'}</p>
  <p className="text-xs text-muted-foreground">{sourceLine(prospect)}</p>
  </div>
+ </TableCell>
+ <TableCell className="text-right">
+ <LeadScore value={prospect.score} />
  </TableCell>
  <TableCell>
  <div className="flex items-center text-sm text-muted-foreground">
