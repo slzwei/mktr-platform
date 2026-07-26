@@ -40,6 +40,22 @@ const ConsumerProfile = sequelize.define('ConsumerProfile', {
     validate: { min: 0, max: 100 },
     comment: 'Server-computed only (consumerScoringService); NULL = unscoreable, renders "—"'
   },
+  // §7.1b — the SAME components grouped two ways. Real columns (migration
+  // 093), not scoreBreakdown lookups, because People sorts on them. Declared
+  // on the model as well as the migration: test boot builds schema via
+  // sync({force:true}) BEFORE migrations run (the Consumer.js index lesson).
+  meetScore: {
+    type: DataTypes.SMALLINT,
+    allowNull: true,
+    validate: { min: 0, max: 100 },
+    comment: 'Reachability: engagement + contactability + market fit. NULL = unscoreable'
+  },
+  buyScore: {
+    type: DataTypes.SMALLINT,
+    allowNull: true,
+    validate: { min: 0, max: 100 },
+    comment: 'Potential: life events + family gap + capacity + coverage headroom. NULL until ≥1 fact component is assessed'
+  },
   scoreBreakdown: {
     type: DataTypes.JSONB,
     allowNull: true,
