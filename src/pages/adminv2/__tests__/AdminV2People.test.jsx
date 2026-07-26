@@ -111,4 +111,56 @@ describe('AdminV2People', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
     expect(screen.getByText('Shawn Lee')).toBeInTheDocument();
   });
+
+  // ── MEET × BUY columns (consumer-profile-enrichment §8) ──
+  describe('score columns', () => {
+    const scored = () => {
+      const d = JSON.parse(JSON.stringify(DATA));
+      d.rows[0] = { ...d.rows[0], meetScore: 72, buyScore: 41, scoredConfigVersion: 1 };
+      // Scored, but no fact component assessed ⇒ Buy is honestly NULL.
+      d.rows[2] = { ...d.rows[2], meetScore: 16, buyScore: null, scoredConfigVersion: 1 };
+      return d;
+    };
+
+    it('renders both scores, and an unscoreable Buy as "—" rather than a zero', async () => {
+      fetchConsumers.mockResolvedValue(scored());
+      setup();
+      await screen.findByText('Shawn Lee');
+      expect(screen.getByTitle('Meet 72/100')).toHaveTextContent('72');
+      expect(screen.getByTitle('Buy 41/100')).toHaveTextContent('41');
+      // The unscoreable one must not read as a low score.
+      expect(screen.getByTitle(/Not enough evidence to score Buy/)).toHaveTextContent('—');
+      expect(screen.queryByTitle('Buy 0/100')).not.toBeInTheDocument();
+    });
+
+    it('distinguishes "never scored" from "scored but unscoreable"', async () => {
+      fetchConsumers.mockResolvedValue(scored()); // row 2 (erased) has no score fields at all
+      setup();
+      await screen.findByText('Shawn Lee');
+      expect(screen.getAllByTitle('Not scored yet').length).toBeGreaterThan(0);
+    });
+
+    it('erased people show no score even if a row somehow carries one', async () => {
+      const d = scored();
+      d.rows[1] = { ...d.rows[1], meetScore: 99, buyScore: 99, scoredConfigVersion: 1 };
+      fetchConsumers.mockResolvedValue(d);
+      setup();
+      await screen.findByText('Erased person');
+      expect(screen.queryByTitle('Meet 99/100')).not.toBeInTheDocument();
+    });
+
+    it('Meet and Buy headers sort through the URL', async () => {
+      fetchConsumers.mockResolvedValue(scored());
+      setup();
+      await screen.findByText('Shawn Lee');
+      fireEvent.click(screen.getByRole('button', { name: /^Meet/ }));
+      await waitFor(() => expect(fetchConsumers).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 'meetScore' })
+      ));
+      fireEvent.click(screen.getByRole('button', { name: /^Buy/ }));
+      await waitFor(() => expect(fetchConsumers).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 'buyScore' })
+      ));
+    });
+  });
 });

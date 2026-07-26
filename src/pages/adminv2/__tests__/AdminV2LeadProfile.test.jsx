@@ -408,3 +408,114 @@ describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
     expect(screen.getAllByText('delivered').length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * MEET × BUY scoring panel (consumer-profile-enrichment §7.1b, §8).
+ *
+ * The breakdown leads and the number follows, so these tests are mostly about
+ * the panel telling the truth about what it does NOT know: an unknown
+ * component must never render like a scored zero, and an unscoreable Buy must
+ * say why instead of showing a figure.
+ */
+describe('scoring panel', () => {
+  const ENRICHED = (over = {}) => {
+    const p = JSON.parse(JSON.stringify(PROFILE));
+    p.consumer.enrichment = {
+      meetScore: 32,
+      buyScore: 8,
+      consumerScore: 17,
+      configVersion: 1,
+      algorithmVersion: 'score/v1',
+      scoredAt: '2026-07-26T10:30:41Z',
+      breakdown: {
+        groups: {
+          meet: { score: 32, rawMax: 40, components: ['engagement', 'contactability', 'market_fit'] },
+          buy: { score: 8, rawMax: 60, components: ['life_events', 'family_gap', 'capacity', 'coverage_headroom'] },
+        },
+        components: {
+          engagement: { state: 'assessed', points: 7.5, maxPoints: 15, basisObservationIds: [], note: '1 signup(s), 1 verified' },
+          contactability: { state: 'assessed', points: 5.5, maxPoints: 10, basisObservationIds: [], note: 'reachable via verified phone, email' },
+          market_fit: { state: 'unknown', points: 0, maxPoints: 15, basisObservationIds: [], note: 'no language or ethnicity fact' },
+          life_events: { state: 'unknown', points: 0, maxPoints: 25, basisObservationIds: [], note: 'no recent life event on record' },
+          family_gap: { state: 'assessed', points: 3, maxPoints: 20, basisObservationIds: ['o2'], note: 'children 0' },
+          capacity: { state: 'assessed', points: 1.5, maxPoints: 15, basisObservationIds: ['o1'], note: 'income <40k' },
+          coverage_headroom: { state: 'unknown', points: 0, maxPoints: -10, basisObservationIds: [], note: 'no coverage fact' },
+        },
+        completeness: { assessed: 4, total: 7 },
+      },
+      facts: [
+        { key: 'finance.annual_income_band', value: { v: '<40k' }, source: 'form', confidence: 1, observedAt: '2026-07-26T09:10:24Z', observationIds: ['o1'] },
+        { key: 'family.children_count_band', value: { v: '0' }, source: 'form', confidence: 1, observedAt: '2026-07-26T09:10:24Z', observationIds: ['o2'] },
+        { key: 'household.pets', value: { v: ['dog', 'cat'], complete: false }, source: 'screening_transcript', confidence: 0.8, observedAt: '2026-07-26T09:10:24Z', observationIds: ['o3'] },
+      ],
+      ...over,
+    };
+    return p;
+  };
+
+  it('shows both scores with the config version that produced them', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByText('Scoring')).toBeInTheDocument();
+    expect(screen.getByTitle('Meet 32/100')).toHaveTextContent('32');
+    expect(screen.getByTitle('Buy 8/100')).toHaveTextContent('8');
+    expect(screen.getByText('CONFIG v1')).toBeInTheDocument();
+  });
+
+  it('groups components under reachability and potential', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByText('Reachability')).toBeInTheDocument();
+    expect(screen.getByText('Potential')).toBeInTheDocument();
+    expect(screen.getByText('engagement')).toBeInTheDocument();
+    expect(screen.getByText('coverage headroom')).toBeInTheDocument();
+  });
+
+  it('an unknown component reads "—", never a scored zero', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    // market_fit is unknown: its note explains why, and it shows no points.
+    expect(screen.getByText('no language or ethnicity fact')).toBeInTheDocument();
+    expect(screen.getByText('no recent life event on record')).toBeInTheDocument();
+    // The assessed ones DO show their points.
+    expect(screen.getByText('7.5')).toBeInTheDocument();
+    expect(screen.getByText('1.5')).toBeInTheDocument();
+  });
+
+  it('names the unknowns as unasked questions, not as low scores', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByText(/4 of 7 components assessed/)).toBeInTheDocument();
+    expect(screen.getByText(/questions nobody has been asked/)).toBeInTheDocument();
+  });
+
+  it('an unscoreable Buy explains itself instead of showing a number', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED({ buyScore: null }));
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    expect(screen.getByText('no facts to judge')).toBeInTheDocument();
+    expect(screen.queryByTitle('Buy 0/100')).not.toBeInTheDocument();
+  });
+
+  it('renders the fact ledger with provenance, flagging partial collections', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    expect(screen.getByText(/3 FACTS/)).toBeInTheDocument();
+    expect(screen.getByText('annual income')).toBeInTheDocument();
+    expect(screen.getByText('<40k')).toBeInTheDocument();
+    // A non-complete collection must not imply a closed list.
+    expect(screen.getByText('dog, cat — partial')).toBeInTheDocument();
+    expect(screen.getByText('screening_transcript')).toBeInTheDocument();
+  });
+
+  it('is absent entirely when the person has never been scored', async () => {
+    const p = JSON.parse(JSON.stringify(PROFILE));
+    p.consumer.enrichment = null;
+    fetchProspectProfile.mockResolvedValue(p);
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Campaigns');
+    expect(screen.queryByText('Scoring')).not.toBeInTheDocument();
+  });
+});

@@ -558,6 +558,16 @@ export function makeConsumerService(overrides = {}) {
       // float erased (all-null-name) rows to the top (R1 #13).
       name: 'c."lastName" ASC NULLS LAST, c."firstName" ASC NULLS LAST',
       '-name': 'c."lastName" DESC NULLS LAST, c."firstName" DESC NULLS LAST',
+      // MEET × BUY (consumer-profile-enrichment §8). NULLS LAST in BOTH
+      // directions for the same reason as name: an unscoreable person renders
+      // "—" and must never lead a score-ordered page — ascending by Buy should
+      // surface the lowest real score, not the 129 people we can't score.
+      '-meetScore': 'cp."meetScore" DESC NULLS LAST',
+      meetScore: 'cp."meetScore" ASC NULLS LAST',
+      '-buyScore': 'cp."buyScore" DESC NULLS LAST',
+      buyScore: 'cp."buyScore" ASC NULLS LAST',
+      '-consumerScore': 'cp."consumerScore" DESC NULLS LAST',
+      consumerScore: 'cp."consumerScore" ASC NULLS LAST',
     };
     const orderBy = SORTS[sort] || SORTS['-lastSeenAt'];
 
@@ -589,10 +599,18 @@ export function makeConsumerService(overrides = {}) {
           { replacements, transaction: t }
         );
         const [rows] = await d.sequelize.query(
+          // LEFT JOIN, never INNER: a person with no profile row (never swept,
+          // or scoring has never been enabled) must still be listed — the
+          // People directory is the person index, not the scored index.
+          // scoredConfigVersion distinguishes "scored, unscoreable ⇒ —" from
+          // "never scored", which the column renders identically but the
+          // profile page does not.
           `SELECT c.id, c."firstName", c."lastName", c.email, c.phone,
                   c."signupCount", c."verifiedSignupCount",
                   c."firstSeenAt", c."lastSeenAt", c."erasedAt",
-                  lp.id AS "latestProspectId"
+                  lp.id AS "latestProspectId",
+                  cp."meetScore", cp."buyScore", cp."consumerScore",
+                  cp."scoredConfigVersion"
              FROM consumers c
              JOIN LATERAL (
                SELECT p.id FROM prospects p
@@ -600,6 +618,7 @@ export function makeConsumerService(overrides = {}) {
                 ORDER BY p."createdAt" DESC, p.id DESC
                 LIMIT 1
              ) lp ON true
+             LEFT JOIN consumer_profiles cp ON cp."consumerId" = c.id
             WHERE true ${qClause}
             ORDER BY ${orderBy}, c.id DESC
             LIMIT :limit OFFSET :offset`,
