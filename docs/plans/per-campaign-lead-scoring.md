@@ -1,7 +1,10 @@
 # Per-campaign lead scoring — the admin describes the ideal lead, the score moves as things happen
 
-**Status:** v2 — Codex round 2 returned REWORK: 4 of the 10 re-opened (§16).
-v3 required before build. **Not built.**
+**Status:** v3, 2026-07-27 — §16's four re-opened findings closed: B1 → §3
+(re-derived against the tables), M6 → §6 (rewritten), M9 → §7 verified
+shipped + §9 specified, M10 verified shipped. **Codex round 3: PASS**
+(3a REWORK → 3b REWORK → 3c PASS, log in §17). Phase 3 build UNGATED.
+**Not built** (Phase 0 / PR A₀ and PR B shipped separately — §14).
 **Author:** Claude, 2026-07-26, from Shawn's model:
 
 > "The admin, when creating campaigns, will say the ideal lead profile. The AI
@@ -12,7 +15,8 @@ v3 required before build. **Not built.**
 
 **Supersedes part of:** `consumer-profile-enrichment.md` §7 (shipped 2026-07-26,
 PRs #286/#289).
-**Depends on:** `campaign-brief.md` — which v2 also amends (§7).
+**Depends on:** `campaign-brief.md` — BUILT 2026-07-27 (#297); §7 records the
+shipped alignment (required `product`, no `lifeStage`).
 
 **Every claim about existing code below carries a file:line citation.** v1
 asserted five things about the codebase that were false; that is what the
@@ -41,72 +45,160 @@ capture path, and correctable by editing one config row.
 
 Unchallenged by review. Everything below assumes it.
 
-## 3. THE ISOLATION MODEL (rewritten — Codex B1)
+## 3. THE ISOLATION MODEL (re-derived from the tables — Codex B1, rounds 1 AND 2)
 
-### 3.1 What v1 got wrong
+### 3.1 Two wrong models, for the record
 
-v1 claimed isolation was enforced by the event query. It is not, because the
-**base** score already consumes person-wide telemetry. `loadTelemetry()`
-computes `whatsappReachable` as
-`EXISTS(… WHERE w."recipientHash" = c."phoneHash" AND w.status IN ('delivered','read'))`
-— no campaign predicate (`consumerScoringService.js:118-122`) — and engagement
-reads consumer-level `signupCount`/`verifiedSignupCount`
-(`consumerScoringService.js:107`). **A WhatsApp read for campaign A raises
-campaign B's score in production today.**
+v1 said isolation was enforced by the event query — false; the base consumed
+person-wide telemetry, and until Phase 0 landed a WhatsApp read on campaign A
+raised campaign B's score in production. Round 1 forced the split (shipped:
+§3.3 below).
 
-### 3.2 The correction — classify every input, don't blanket-scope
+v2 replaced that with a classification: every input is either a person-scoped
+CAPABILITY or a lead-scoped RESPONSE, exclusively. Round 2 killed the
+classification on the data: a `read` is simultaneously proof the channel
+works AND attention to this pitch; `wa_message_statuses` stores a frontier
+that cannot retroactively express "delivered but never read"; and consent is
+purpose-scoped in schema, not person-scoped. A partition of *inputs* cannot
+describe tables that store *frontiers* and *scoped acts*.
 
-"Scope everything to the campaign" is the wrong fix. Some sharing is correct:
-if someone read a WhatsApp from campaign A, they demonstrably *are* reachable
-on WhatsApp, and campaign B may rely on that. What must not travel is
-**evidence about how they responded to a particular pitch**.
+### 3.2 The model that survives the tables: one event, two projections
 
-So every input is classified, and the classification is the contract:
+Events are shared evidence; scope is a property of the **reader**, not of
+the row. Each grain owns an extractor, and the isolation contract is what
+each extractor may read:
 
-| Input | Scope | Why |
+- The **person grain (capability)** may read person-wide state: channel
+  frontiers, signup counts, channel existence. It answers "can this person
+  be reached; do they engage with us at all". Consent is deliberately NOT on
+  this list — consent state is inherently (consumer, campaign)-scoped, and
+  what makes any of it person-wide is a stored NULL-campaign row entering
+  every scope's merge (§3.3), not a person-grain extractor.
+- The **lead grain (response)** may read the person-grain inputs PLUS events
+  attributed to (person, THIS campaign) — and never another campaign's
+  attributed events. It answers "how is this person responding to THIS
+  pitch".
+
+A `read` on campaign A's message therefore legitimately moves BOTH: it
+advances the person's WhatsApp frontier (capability — campaign B may rely on
+that), and it is a response event for lead A. What it must never do is
+appear as a *response* on lead B. **"One event, two projections" replaces
+"every event has exactly one scope"** — the surviving rule from v2 is only
+this: a response on one campaign never enters another campaign's response
+terms.
+
+### 3.3 What the tables actually store, and the predicates that respect it
+
+**WhatsApp.** `wa_message_statuses` keeps ONE row per wamid holding the
+FURTHEST status — `sent < delivered < read`, with `failed` terminal and
+outranking read (`STATUS_RANK_SQL`, `redeemOps/waWebhookService.js:37`,
+rank-guarded upsert `:79-87`, terminal-by-design comment `:35-36`; `wamid`
+is the PK, `WaMessageStatus.js:15`). Deliverability is therefore a **rank
+predicate, never an equality**: "reached at least delivered" =
+`status IN ('delivered','read')` — a read row IS a delivered row whose
+frontier moved on. v2's §3.3 ("delivered-ever", dropping `'read'`) was wrong
+for exactly this reason and was never built; what Phase 0 shipped keeps the
+rank set deliberately, with the rationale in the query comment
+(`consumerScoringService.js:150-163`). Prod 2026-07-27: 4 `delivered`, 1
+`read`, 1 `failed` — under v2's wording the `read` row, the strongest proof
+in the table, would have been the one dropped. Two stated consequences of
+the frontier design:
+
+- One read message counts once per grain: as ≥delivered on the person
+  frontier, and as read-of-this-pitch on the ONE lead that owns the message
+  (§5's send table supplies the owner). That is not double-counting — the
+  two grains answer different questions.
+- A delivered-then-`failed` overwrite forfeits that message's deliverability
+  proof, because the frontier keeps only `failed` (`waWebhookService.js:35-36`).
+  Accepted: a failure verdict is stronger operational truth, and any other
+  message can re-prove the channel.
+
+**Consent.** Purpose-scoped in schema AND in the data.
+`ConsentEvent.campaignId` = "Purpose scope; NULL = explicit global act"
+(`ConsentEvent.js:25`); current state is latest-wins per kind across {this
+campaign's acts ∪ global acts} (`getConsentState`,
+`consentService.js:368-394`); the marketing gate requires a VERIFIED
+in-scope grant with no suppression (`canMarketTo`,
+`consentService.js:434-441`). A NULL `campaignId` on a stored act arises
+two ways, and `getConsentState` reads BOTH as global: **explicitly global
+acts** — the brand-era capture twin (`consentService.js:101-114`), its
+backfilled twin (`:321-365`), the verified resubscribe lift (`:159-186`),
+unsubscribe (`:570-577`), erasure's denial (`erasureService.js:686-699`) —
+and **campaignless captures**, whose contact row carries the capture's own
+NULL campaign under EVERY wording era (`campaignId` is optional at the API
+edge, `validation.js:219`; passed through as `campaignId || null`,
+`prospectService.js:1066-1069`; stamped unguarded,
+`consentService.js:71-99`, whose own comment calls such a row "already
+global", `:105-108`; backfill mirrors it, `:243-263`). The scorer's rule is
+therefore NOT an inventory of provenance — it is: **never re-scope a stored
+act.** The lead grain reads consent through the ledger's own derivation —
+scoped rows count only inside their campaign's merge, NULL rows count
+everywhere, whatever minted them — so the score and the gate can never
+disagree about the same row. (Legacy-era WORDING is campaign-scoped where a
+campaign existed, `contactConsent.js:8-14`, `consentService.js:26-29`,
+`ConsentEvent.js:13-16` — a fact about consent semantics, not something the
+scorer re-adjudicates.) Prod 2026-07-27: 158
+campaign-scoped contact acts (156 grants, 2 explicit denials) vs 21 global
+grants — scoped is the NORM, not the edge case v2's table waved away.
+
+So the lead grain scores consent exactly the way the send gate reads it:
+
+    contactable(lead of person P on campaign C) :=
+      latest-wins contact state over {C-scoped acts ∪ global acts}
+      is granted ∧ verified, and P is not suppressed
+      — i.e. canMarketTo semantics (consentService.js:434-441)
+
+so the score can never advertise a reachability the gate would refuse. A
+grant scoped to C feeds only C's lead; a global act feeds every lead; an
+unsubscribe (global revoke) zeroes them all. The shipped person-grain
+predicate — latest `'contact'` act regardless of scope, unverified,
+suppression-blind (`consumerScoringService.js:141-149`) — is an interim
+approximation at a grain that §4 retires: once the person score is a
+projection of lead scores, no separate person-grain consent predicate
+exists to be wrong.
+
+### 3.4 The input table, re-derived
+
+| Input | Who may read it | Rule |
 |---|---|---|
-| All facts (income, family, language, age…) | **PERSON** | Properties of a human. The spine exists for this. |
-| Marketing consent | **PERSON** | "May we contact them" is about the human. |
-| Has email / phone verified | **PERSON** | Channel existence. |
-| WhatsApp **deliverability** ("a message has ever reached this number") | **PERSON** | Channel health, not interest. |
-| WhatsApp **read of a specific message** | **LEAD** | Interest in *this* pitch. |
-| Screening verdict / sentiment / interest | **LEAD** | Response to *this* pitch. |
-| Signup recency | **LEAD** | This signup's recency, not the person's newest anywhere. |
-| Signup count across campaigns | **PERSON** | Repeat engagement is a real person-level signal. |
+| Resolved facts (income, family, age…) | every lead's base | person properties; the spine exists for this |
+| WhatsApp frontier ≥ delivered, any message of the person's | every lead's base (capability term) | rank predicate `IN ('delivered','read')` |
+| WhatsApp `read` of a message owned by (P, C) | lead (P, C) only | response event, decaying; owner comes from §5's send-time stamp, never inference |
+| Consent | lead (P, C), at (consumer, campaign) scope | `canMarketTo` semantics above |
+| Screening verdict / sentiment / interest | the screened lead only | §13.1's normalized contract |
+| Signup recency | each lead: its OWN `prospects.createdAt` | the person-grain "newest signup" anchor (`consumerScoringService.js:119-130`) retires with §4's projection |
+| Signup count / verified count / email on file | every lead's base | person capability, as today (`consumerScoringService.js:118-131`) |
 
-**Rule:** a **capability** (can we reach them) is person-scoped; a **response**
-(did they engage, did they agree, did they refuse) is lead-scoped.
+### 3.5 The test contract (extends the shipped suite)
 
-### 3.3 Consequences for the shipped engine
+Phase 0 shipped the person-grain half as a pinned contract suite —
+`backend/test/scoringIsolation.test.js` ("responses do not cross campaigns"
+`:85`; "capabilities DO cross campaigns — pinned so an over-scoping 'fix'
+fails here" `:148`). Phase 3 extends it at lead grain: one person, live
+leads on campaigns A and B —
 
-`loadTelemetry` must be split. `whatsappReachable` stays person-scoped but is
-redefined as *delivered-ever* (dropping `'read'` from the predicate, since read
-is now a lead-scoped response). Engagement's recency input changes from the
-consumer's `lastSeenAt` to **this prospect's** `createdAt`.
-
-This is a behaviour change to code shipped today, and it changes existing
-scores. It must land as a config/algorithm version bump so every stored score
-is recomputed and the change is visible in `scoringAlgorithmVersion`.
-
-### 3.4 The test contract (v1's was inadequate)
-
-v1 proposed one test: a screening refusal on A leaves B unchanged. That would
-have passed while four other inputs bled. Required instead — **for each row of
-§3.2's table**, a test asserting the scope actually holds. Specifically, with
-one person holding two live leads on different campaigns:
-
-- WhatsApp **read** on A's message → B byte-identical.
+- `read` on A's owned message when the person already has ≥delivered proof
+  elsewhere → B byte-identical; A gains a response event.
+- `read` on A's owned message as the person's FIRST frontier proof → B's
+  capability term rises (capability travels BY DESIGN — pinned), and B gains
+  no response event.
 - Screening refusal on A → B byte-identical.
-- A's signup being newer → does not change B's recency term.
-- WhatsApp **delivered** on A → B's contactability *does* rise (asserting the
-  person-scoped half deliberately, so a future "fix" to over-scope is caught).
-- Marketing consent granted via A → B's contactability rises.
+- A's signup being newer → B's recency term unchanged.
+- Contact grant scoped to A, no global act → contactable(A) true,
+  contactable(B) false. A brand-era grant (which mints the global twin) →
+  both true. An unsubscribe → both false. NOTE: this REPLACES the shipped
+  suite's person-grain pin "a contact consent granted via one campaign
+  raises the person score" (`scoringIsolation.test.js:163`) — correct for
+  the person-grain era, superseded by lead-grain scoping when Phase 3's
+  authority flip lands; the WhatsApp capability pins remain.
+- `delivered`→`failed` overwrite on the person's only proven message →
+  frontier proof lost (pinned, documenting §3.3's accepted forfeit).
 
 ## 4. ONE AUTHORITY (rewritten — Codex M4)
 
 v1 kept `consumer_profiles.meetScore`/`buyScore` as "a summary" while the
 existing writer kept overwriting them from the global model
-(`consumerScoringService.js:199-228`) — two authorities guaranteed to disagree.
+(`consumerScoringService.js:240-272`) — two authorities guaranteed to disagree.
 
 **Decision: the LEAD score is the sole computed authority.**
 
@@ -139,7 +231,7 @@ campaign snapshot (`redeemOps/entitlementService.js:211`), activations can be
 relinked (`redeemOps/activationService.js:117,153`), so a historical send can
 be attributed to the wrong campaign. And screening-callback WhatsApps write no
 receipt at all — their wamid lives only in `prospects.screeningMetadata.waCallback`
-(`retellScreeningService.js:516`).
+(`retellScreeningService.js:521-529`; merged by `patchWaCallback`, `:538-540`).
 
 **New table `wa_message_sends`** — ownership stamped at send, never derived:
 
@@ -160,55 +252,123 @@ keeps writing `wa_message_statuses` keyed by wamid, untouched
 Backfill: none possible for historical sends (ownership was never recorded).
 Pre-existing reads simply do not score. Stated, not hidden.
 
-## 6. DECAY WITHOUT DAILY REWRITES (rewritten — Codex M6)
+## 6. DECAY AT WRITE TIME — ONE STORED TRUTH (rewritten — Codex M6, rounds 1 AND 2)
 
-v1 proposed a decay epoch in the hash. Codex is right that this forces a
-full-population rewrite every day under budget, and staggered decay above it.
-Also correct: "the hash gate makes a no-op free" is false — telemetry,
-observations, resolution, hashing and the whole score all run before the
-comparison (`consumerScoringService.js:169-176`); the gate saves only the write.
+v1 proposed a decay epoch in the hash; round 1 was right that it forces a
+full-population rewrite every day. v2 proposed "store a time-independent
+`baseScore`, decay at read"; round 2 killed that twice over. First, the base
+is NOT time-independent: engagement recency decays inside it
+(`consumerScoring.js:226-227`, half-life 180d) and life-event facts decay
+inside it (`consumerScoring.js:297-298`, half-life 365d), both against the
+`now` the scorer takes (`consumerScoring.js:532`; knobs `:121-124`). Second,
+a freshly-decayed display sorted by a nightly-materialized column shows
+visibly misordered pages. Both mechanisms are withdrawn.
 
-**Correction: never store a time-dependent number as if it were stable.**
+**v3 decision: one stored number, decayed at WRITE time. Every consumer of
+the score — sort, display, API — reads that stored number. Nothing decays at
+read, anywhere.**
 
-- **Stored:** `baseScore` (facts + person telemetry — time-independent) and the
-  **event list with timestamps and undecayed weights**. Changes only when a real
-  input changes, so the hash gate works exactly as designed, unchanged.
-- **Displayed:** decay applied at READ time. Always fresh, never stale, no write.
-- **Sorted:** a materialized `score` column, refreshed by the nightly sweep,
-  used only for ORDER BY. Being up to 24h stale for *ordering* is acceptable;
-  showing a stale *number* is not.
+- `prospects.score` (INTEGER 0-100, `Prospect.js:75-83` — written by nothing;
+  serialized through the prospect list API like every non-screening column,
+  `prospectService.js:2458-2462`, but rendered and consumed by nothing)
+  becomes the lead score as of `scoreComputedAt`, with
+  the same stamps `consumer_profiles` uses — config version, algorithm
+  version, input hash, computed-at (`consumerScoringService.js:240-258`).
+  The breakdown column stores events with timestamps and undecayed weights;
+  each rescore recomputes their decayed contributions, and the card renders
+  them "as of `scoreComputedAt`".
+- **Ordering and display cannot disagree, because they are the same
+  column.** That is how ordering and freshness are "solved together": there
+  is only one number, and it is the stored one.
+- **The sacrifice, stated plainly: pure-time freshness between rescores.**
+  The stored number does not age until rewritten. (At person grain today the
+  drift is UNBOUNDED: the input hash omits `now` entirely —
+  `computeScoreInputHash`, `consumerScoringService.js:185-198` — so the
+  gate at `:229-234` skips every pure-decay rewrite forever.) At lead grain
+  the write-gate weakens by exactly one clause: **skip the write iff the
+  input hash matches AND the recomputed integers (score and the breakdown's
+  group scores) equal the stored ones.** The compute already runs before the
+  gate either way (`consumerScoringService.js:206-217` precede `:229-234`)
+  — round 1 established the gate only ever saved the *write* — so the extra
+  writes are exactly the rows whose integer actually moved.
+- **Freshness is a reserved slice plus a monotonic cursor — not a promised
+  calendar number.** The nightly sweep is date-fenced (one live run per SGT
+  date, `enrichmentSweepService.js:90-131`) and DOUBLY budgeted — 500 rows
+  and 5 minutes by default (`:45-46`), the deadline checked before every
+  row (`:169-172`) — and it spends both budgets config-stale-first, the
+  rotation running only when no stop occurred (`:246-259`, `:274`). A
+  row-count reservation alone therefore guarantees nothing — a wall-clock
+  stop inside the stale phase still yields zero rotation — so PR A₂'s sweep
+  extension (§10) reserves the rotation slice in BOTH dimensions: the stale
+  phase stops ADMITTING rows at 80% of the row cap and 80% of the deadline,
+  leaving the rotation the final 20% admission window of each (an in-flight
+  row can still overrun the moment of the check, `:169-172` — admission is
+  what is reserved, not literal wall-clock). What CAN be promised: coverage
+  is monotonic within each rotation (the durable cursor resumes an
+  incomplete pass, `:272-292`, and deliberately resets only at the end of
+  the population so the next decay cycle starts over, `:282-286`), the
+  rotation period is population ÷ measured nightly rotation throughput, and
+  that
+  throughput is observable per run in `staleScored` / `rotationScored` /
+  `stoppedBy` (`:294-305`) — an alarmable number, not an assumed one. At
+  today's scale the question is academic: the shipped consumer sweep
+  completes its entire 130-consumer population inside these same budgets
+  (prod run rows, 2026-07-27), and the lead population is 138. Both phases score with a fresh `now` (`:175`), so stale-phase
+  rows are decay-fresh too. With half-lives of 180/365 days, one day of
+  drift is sub-integer for almost every row (≤ ~0.15 points on the
+  worst-placed engagement term), so the nightly write set stays small
+  **organically — integer quantization does what v1's epoch machinery was
+  invented for.**
+- **Event-driven moves don't wait for the rotation.** The choke-point
+  writers (§13.1) set the lead's dirty marker in the same transaction and
+  fire a post-commit rescore attempt (the house pattern —
+  `consentService.js:196-206` does exactly this for propagation); the dirty
+  marker makes a dirty lead PROVABLY STALE, so it rides the stale-FIRST
+  phase — first claim on the next run's budget, ahead of all rotation work
+  (§10 wires the marker into the lead-grain stale query). A read or a
+  screening verdict therefore moves the stored score within seconds in the
+  normal case; if the in-process attempt dies with the process, the next
+  sweep's priority phase picks it up — subject to the same measured-backlog
+  caveat as above (a stale backlog larger than one night's budget delays
+  its tail, visibly in `staleScored`).
 
-**And the daily refresh set is small by construction:** only leads with at
-least one decaying event need re-materializing. A lead with no events has a
-static score forever. Today that would be a handful of rows, not 130.
+**The daily refresh set stays small by construction:** a lead with no
+decaying terms rewrites only when a real input changes — the hash gate's
+original design, unchanged for those rows.
 
-## 7. OBJECTIVE VS PRODUCT — the vocabularies were confused (Codex M9)
+## 7. OBJECTIVE VS PRODUCT — two orthogonal axes; the brief half SHIPPED (Codex M9)
 
 Codex found the plans disagreeing: `insurance_sales`/`recruitment` here vs
-`agent_leads`/`screened_leads` in `campaign-brief.md:69`. The real problem is
-that these are **two orthogonal axes**, and v1 conflated them.
+`agent_leads`/`screened_leads` in the brief. The real problem was that these
+are **two orthogonal axes**, and v1 conflated them:
 
 - **Objective** = what you want *out of* the campaign (leads, screened leads,
-  audience, partner footfall). Already in the brief.
+  audience, partner footfall).
 - **Product** = what you are *selling* (insurance, recruitment, a partner
-  offer). **Missing entirely**, and it is what determines who counts as good.
+  offer) — and product is what determines who counts as a good lead. You can
+  run `agent_leads` for insurance *or* for recruitment, and they want
+  opposite people.
 
-You can run `agent_leads` for insurance *or* for recruitment, and they want
-opposite people. So:
+**The brief edit is MADE, not described — shipped 2026-07-27 (#297), verified
+in this pass:** `campaign-brief.md` §4.1b defines `product` as a REQUIRED
+single pick (`insurance | recruitment | partner_offer`), stored in
+`campaigns.targetAudience`. The twin validator enforces it — product required
+at `utils/campaignBrief.js:130-132` (vocabulary `:47-52`), unknown keys
+rejected loudly (`:122-125`; audience keys `:139-142`) — wired service-level:
+create 422s at `campaignService.js:530-531`, update at `campaignService.js:797-806`.
 
-**`campaign-brief.md` gains a required `product` field**
-(`insurance` | `recruitment` | `partner_offer`), and **scoring profiles key off
-`product`, not `objective`.** This also resolves v1's separate observation that
-the brief was missing recruitment.
+What this section still prescribes, for §9 to implement: **scoring profiles
+key off `product`, never `objective`.**
 
 ## 8. AI CONFIG SAFETY (rewritten — Codex M8)
 
 v1 claimed a closed vocabulary made AI output safe. Codex is right that it does
 not: `factTaxonomy` validates *facts*, not scoring configs
 (`factTaxonomy.js:108`); `normalizeConfig` permissively merges unknown
-components and retains them as zero-point entries rather than rejecting
-(`consumerScoring.js:388,419`); a non-positive half-life silently disables decay
-(`consumerScoring.js:105`). A schema-valid config can still be absurd.
+components (`consumerScoring.js:500-519`) which then survive as zero-point
+"no rule for this component" entries rather than being rejected
+(`consumerScoring.js:539-546`); a non-positive half-life silently disables
+decay (`consumerScoring.js:143-145`). A schema-valid config can still be absurd.
 
 Four controls, none of which existed in v1:
 
@@ -222,34 +382,130 @@ Four controls, none of which existed in v1:
    90+ is obvious here and invisible to schema validation.
 3. **A real draft/approved state.** Today `EnrichmentScoringConfig` has no
    status and the reader takes the highest version immediately
-   (`EnrichmentScoringConfig.js:18`, `consumerScoringService.js:60,65`) — so an
-   AI proposal inserted into that table would be **live before anyone read it**.
-   Add `status ∈ draft|approved|superseded`; the reader takes the highest
-   *approved* version only.
+   (`EnrichmentScoringConfig.js:19`, `consumerScoringService.js:71-87`) — so an
+   AI proposal inserted into that table would be **live before anyone read it**
+   (within one 60s cache TTL). Add `status ∈ draft|approved|superseded`; the
+   reader takes the highest *approved* version only (§9's schema carries the
+   column).
 4. **Untrusted-input handling for `sourceDescription`.** It is admin free text
    reaching a prompt. Studio AI already treats campaign text as untrusted and
-   sanitizes server-side (`campaignCopyAiService.js:684,1077`); this reuses that
-   posture. The free text drives *only* the AI proposal and is never itself a
+   handles it on both sides: the prompt pins all campaign context as
+   untrusted DATA, never instructions (`campaignCopyAiService.js:702`, and
+   per-request at `:775`), and model OUTPUT passes dedicated sanitizers
+   (`:351-444`). This reuses that posture — and item 1's semantic
+   invariants are the scoring-side twin of that output validation. The free text drives *only* the AI proposal and is never itself a
    scoring input — which keeps `campaign-brief.md` §3.1's no-free-text rule
    intact.
 
-## 9. SCHEMA THE CONFIG STORE NEEDS (Codex M9)
+## 9. CONFIG STORE: SCHEMA, RESOLUTION, CACHING (Codex M9 — specified)
 
-`enrichment_scoring_configs` today: integer PK, no campaign, objective, status,
-or parent column (`091-consumer-enrichment.js:212`), read through one
-process-wide cache selecting the global maximum
-(`consumerScoringService.js:47,65`). Putting `campaignId` inside `configJson`
-supplies none of what is needed. Required:
+Today: `enrichment_scoring_configs` has **`version` INTEGER as its primary
+key** and no scope column of any kind (`091-consumer-enrichment.js:213-220`,
+`EnrichmentScoringConfig.js:18-25`); the reader is one process-wide cache
+slot with a 60s TTL taking the global maximum version
+(`getActiveScoringConfig`, `consumerScoringService.js:58-87`); `activatedAt`
+exists and is ignored — an inserted row goes live on the next TTL expiry.
+Putting `campaignId` inside `configJson` supplies none of what is needed.
 
-`campaignId` (nullable, FK) · `productKey` (nullable) · `status` · unique on
-(campaignId, version) · resolution order **campaign → product → global**, each
-step indexed · per-key caching instead of one global slot.
+**Schema (one new migration).** Keep the table; keep `version` as the PK and
+the single global sequence. A row's `version` IS its identity at every
+scope — which is what keeps the existing stamp
+(`scoredConfigVersion`, written at `consumerScoringService.js:240-258`, and
+the lead-grain twin §6 adds) a single unambiguous integer, with no composite
+keys and no change to how breakdowns are interpreted. Add:
+
+    "campaignId"  UUID NULL           -- scope tag with SNAPSHOT semantics —
+                                      -- deliberately NO foreign key, see below
+    "productKey"  VARCHAR(24) NULL    -- code-checked against BRIEF_PRODUCT_IDS
+                                      -- (utils/campaignBrief.js:47-52)
+    status        VARCHAR(12) NOT NULL DEFAULT 'approved'
+                  -- §8's lifecycle: draft | approved | superseded.
+                  -- Existing rows grandfather as approved: they are live today.
+    CHECK ("campaignId" IS NULL OR "productKey" IS NULL)
+                  -- a row binds ONE scope: campaign, product, or global (both NULL)
+
+**No FK on `campaignId` — snapshot semantics, §5's rule.** Campaigns can be
+permanently deleted (`campaignService.js:1032-1035`) while their prospects
+survive with `campaignId` nulled (`014-add-cascade-rules.js:87`). An `ON
+DELETE CASCADE` would therefore destroy version rows still stamped on
+surviving leads — breaking the invariant that every stored breakdown stays
+interpretable (`EnrichmentScoringConfig.js:14-16`) — and `SET NULL` is
+worse: it would silently promote a dead campaign's bespoke config to GLOBAL
+scope (campaignId NULL *means* global). A bare UUID does neither: a deleted
+campaign's rows become unreachable history, every historical stamp keeps
+resolving, and nulled-campaign leads fall through to the global step below.
+
+**`version` allocation becomes real DDL in the same migration.** Today the
+column is a bare `INTEGER PRIMARY KEY` with no sequence or default
+(`091-consumer-enrichment.js:214`) and each migration hand-allocates
+`MAX(version)+1` (`094-scoring-recency-anchor.js:35-41`) — a pattern two
+concurrent runtime writers (an AI draft and an admin approval, §8) would
+race. The migration attaches `GENERATED BY DEFAULT AS IDENTITY` and
+`setval`s the backing sequence past `MAX(version)`; from then on EVERY
+writer — runtime and future migrations alike — omits `version` and lets the
+identity assign it.
+
+Partial indexes, one per resolution step: `("campaignId", version DESC) WHERE
+"campaignId" IS NOT NULL` · `("productKey", version DESC) WHERE "productKey"
+IS NOT NULL` · `(version DESC) WHERE "campaignId" IS NULL AND "productKey" IS
+NULL`.
+
+**Resolution**, for scoring a lead on campaign C — product read from
+`campaigns.targetAudience.product` when a brief exists (`hasBrief`,
+`utils/campaignBrief.js:101-105`); campaigns without one (never backfilled,
+though an admin may fill one in at any time via the Details form —
+`campaignService.js:797-806`, `campaign-brief.md` §7.3) skip step 2 while
+`hasBrief` is false:
+
+1. highest APPROVED version where `campaignId = C`;
+2. else highest APPROVED version where `productKey = product(C)`;
+3. else highest APPROVED global version — today's three rows, unchanged.
+
+The resolved row's `version` is stamped on the scored row, so "which config
+scored this lead" has exactly one answer even when C inherited from product
+or global. Changing the resolution order itself is an algorithm change
+(bump `SCORING_ALGORITHM_VERSION`), never a data migration.
+
+Config-staleness under resolution: the sweep's stale phase (§10's prospect
+cursor) compares each lead's stamped version against the version its
+campaign CURRENTLY resolves to — one indexed resolution per distinct
+`campaignId` in the batch, cached like any other read. An approval at any
+scope therefore makes exactly the inheriting leads stale, and the rotation
+remains the catch-all for everything SQL cannot see, unchanged.
+
+**Caching.** Replace the single slot with a map keyed by resolution entry
+point — `campaign:<uuid>` | `product:<key>` | `global` — same 60s TTL per
+entry. Invalidation is two mechanisms, and **inherited entries are exactly
+why the first one is whole-map**:
+
+- **Write-through bust of the ENTIRE map, by BOTH resolution-input
+  writers.** A cached `campaign:C` entry may hold an inherited
+  product/global row; it goes stale two ways, and only one of them touches
+  the config table. (a) A config write — §8's approval endpoint inserting or
+  re-statusing any row, at any scope C might inherit from. (b) A brief edit
+  that changes `targetAudience.product` via `updateCampaign`
+  (`campaignService.js:797-806`) — that re-routes `campaign:C` to a
+  DIFFERENT product chain without any config row changing. Per-key
+  invalidation would need reverse-dependency bookkeeping; instead both
+  writers clear the whole map in-process. The map holds at most
+  (campaigns + products + 1) entries; a full bust costs one refetch per key.
+- **The 60s TTL is the cross-process floor.** Processes that didn't perform
+  the write — other instances, and the standalone scripts
+  (`score-consumers.js` runs in its own process with a fresh cache) —
+  converge within one TTL, the same bound the shipped single-slot cache
+  already accepts (`consumerScoringService.js:56-58`) — and the TTL also
+  floors any resolution-input mutation path not enumerated above. A
+  just-approved config can score up to 60s of leads under the old
+  resolution in such a process. Stated, accepted.
+
+The empty-table fallback (code defaults at version 0,
+`consumerScoringService.js:81-83`) survives unchanged as the tail of step 3.
 
 ## 10. LEAD-GRAIN INVALIDATION (Codex M5)
 
 Prospect-grain scores need their own invalidation; nothing existing covers them.
 The spine relinker bumps only `consumer_profiles.inputVersion`
-(`consumerService.js:317,336`), `bumpEnrichmentInputTx` upserts only
+(`consumerService.js:318-337`), `bumpEnrichmentInputTx` upserts only
 `consumer_profiles` (`enrichmentFence.js:38-52`), and the sweep enumerates
 consumers calling `scoreOneConsumer` (`enrichmentSweepService.js:204,221`).
 
@@ -291,7 +547,7 @@ and it lost — PR A is roughly double v1's implied size.
 
 There is **no normalized `agreedToMeet`**. The verdict detail is `reason`,
 `interestLevel`, `summary`, `sentiment`, recording/transcript, plus an arbitrary
-provider `checks` object (`retellScreeningService.js:664-672`). v1 specced an
+provider `checks` object (`retellScreeningService.js:672-685`). v1 specced an
 event on a field that does not exist.
 
 PR A must define an explicit Retell analysis schema with a versioned, normalized
@@ -318,18 +574,29 @@ current SGT year**, with an explicit overlap rule for a band straddling a curve
 boundary (weight by the fraction of the band in each segment). Exact-age
 scoring is not available and should not be promised.
 
+*Both halves SHIPPED 2026-07-27: `lifeStage` is out of the brief (#297 —
+§16 item 4 records the verification), and the age curve landed exactly as
+specified (score/v3 #296 — `scoreAge`, `consumerScoring.js:426-456`, with
+the band-straddle equal-weight rule at `:442-450`; migration
+`095-scoring-age-curve.js`; the DOB backfill ran in prod the same night).*
+
 ## 14. Build order (revised)
 
-1. **PR A₀ — isolation correction** (§3.3). Split telemetry, fix
-   `whatsappReachable`, switch recency to the lead. Small, ships against
-   today's person score, and stops a live cross-campaign bleed. **Do this first
-   regardless of everything else.**
+1. **PR A₀ — isolation correction** (§3.3). **SHIPPED 2026-07-27 as Phase 0**
+   (#292 consent-kind fix + #294 score/v2, migration
+   `094-scoring-recency-anchor.js`) — in the CORRECTED form, not v2's: the
+   rank set kept `'read'`, recency anchored to the newest prospect
+   (`consumerScoringService.js:119-163`), pinned by
+   `backend/test/scoringIsolation.test.js`.
 2. **PR A₁ — send-time ownership** (§5). `wa_message_sends` + every send path.
    Independent, additive, no scoring changes.
 3. **PR A₂ — the lead score** (§4, §6, §10, §11). The structural one: authority,
-   projection, decay-at-read, invalidation, erasure, Prospects column, events UI.
-4. **PR B — age curve + DOB backfill** (§13.2). Independent of all the above and
-   still the largest accuracy gain available (129/130 have a DOB; it scores 0).
+   projection, write-time decay + the integer write-gate, invalidation,
+   erasure, Prospects column, events UI.
+4. **PR B — age curve + DOB backfill** (§13.2). **SHIPPED 2026-07-27**
+   (score/v3 #296, migration `095-scoring-age-curve.js`; prod remap minted
+   135 band observations and the same night's backfill scored 130 with Buy
+   non-null for 129 — the one NULL has no DOB).
 5. **PR C — per-campaign configs** (§7, §9).
 6. **PR D — AI authoring** (§2, §8).
 7. **PR E — email opens.** Tracking pixel first; not captured today
@@ -360,6 +627,12 @@ reworked; four re-opened against v2 itself:
    schema (`ConsentEvent.campaignId`, `ConsentEvent.js:25` — "Purpose scope;
    NULL = explicit global act"), not uniformly person-scoped as §3.2's table
    asserts. Re-derive the model against what the tables actually store.
+   *Closed in v3 → §3: one event, two projections — scope belongs to the
+   reading extractor, not the row; deliverability is a rank predicate (the
+   shipped Phase-0 telemetry already keeps `IN ('delivered','read')`,
+   `consumerScoringService.js:150-163`); consent is scored at
+   (consumer, campaign) scope with `canMarketTo` semantics
+   (`consentService.js:368-394,434-441`).*
 
 2. **M6 (re-opened) — DECAY.** §6 stores "`baseScore` (facts + person
    telemetry — time-independent)". False: engagement recency decays inside the
@@ -368,6 +641,10 @@ reworked; four re-opened against v2 itself:
    time-dependent. Separately, a freshly-decayed display over a
    nightly-materialised sort column yields visibly misordered pages. Solve
    ordering and freshness together, or state plainly which one is sacrificed.
+   *Closed in v3 → §6: one stored number, decayed at write time, read by
+   sort AND display (they cannot disagree); the sacrifice — pure-time
+   freshness between rescores — stated with its bound (one sweep rotation;
+   integer write-gate). v1's epoch and v2's decay-at-read both withdrawn.*
 
 3. **M9 (re-opened) — CONFIG IDENTITY.** §7 says "`campaign-brief.md` gains a
    required `product` field". The brief was never edited — it has no `product`
@@ -379,8 +656,11 @@ reworked; four re-opened against v2 itself:
    *First half CLOSED 2026-07-27 with the brief build: `product` is now
    §4.1b of `campaign-brief.md` — a REQUIRED enum
    (`insurance | recruitment | partner_offer`) captured at creation and
-   stored in `campaigns.targetAudience` (`utils/campaignBrief.js`). The §9
-   config-resolution schema half stays open.*
+   stored in `campaigns.targetAudience` (`utils/campaignBrief.js`). Second
+   half closed in v3 → §9: scope columns on the version-PK table, campaign →
+   product → global resolution with the resolved `version` stamped, and the
+   cache-invalidation contract for inherited entries (whole-map
+   write-through bust + the 60s TTL cross-process floor).*
 
 4. **M10 — lifeStage. CLOSED 2026-07-27** (the edit, not a description of
    it): `campaign-brief.md` §4.2 and its §5 example JSON no longer carry
@@ -398,3 +678,101 @@ reworked; four re-opened against v2 itself:
 **Rule for v3** (the failure mode behind M9 and M10): if the plan describes an
 edit to another document, MAKE the edit in the same change. A described-but-
 unmade edit reads as done and hides the gap from every later reader.
+
+## 17. Codex round 3 — 3a REWORK → 3b REWORK → 3c PASS
+
+gpt-5.6-sol xhigh, 2026-07-27; every finding of every pass verified against
+code before acceptance — all were real.
+
+**Round 3a — against the first v3 text.** Its own summary: B1 substantively
+closed, the `product`/`lifeStage` ship verified genuine; M6's bound and
+M9's config half re-opened on the details below.
+
+1. **M6/§6 (major)** — the ⌈population/budget⌉ freshness bound ignored the
+   5-minute time budget and the config-stale-first phase
+   (`enrichmentSweepService.js:45-46,246-259,272-274`): recurring config
+   churn can starve the rotation indefinitely. → Bound restated as
+   conditional (steady-state), stale-phase rows counted as decay-refreshed
+   too, a reserved rotation floor (default 20% of `rowBudget`) added to PR
+   A₂, starvation made measurable via the run row's per-phase stats.
+2. **M9/§9 (major)** — `ON DELETE CASCADE` on `campaignId` would delete
+   version rows still stamped on leads that SURVIVE a permanent campaign
+   delete (`campaignService.js:1032-1035`; prospects keep living with
+   `campaignId` nulled, `014-add-cascade-rules.js:87`), breaking breakdown
+   interpretability; `SET NULL` would silently promote a dead campaign's
+   config to GLOBAL scope. → No FK: bare-UUID snapshot scope tag, §5's rule.
+3. **M9/§9 (major)** — "keep the single global sequence" had no DDL behind
+   it: the PK is a bare INTEGER (`091-consumer-enrichment.js:214`) and
+   migrations hand-allocate `MAX(version)+1`
+   (`094-scoring-recency-anchor.js:35-41`), which concurrent runtime writers
+   would race. → `GENERATED BY DEFAULT AS IDENTITY` + `setval` past MAX in
+   the same migration; every later writer omits `version`.
+4. **M9/§9 (major)** — the invalidation contract covered config writes but
+   not the OTHER resolution input: `updateCampaign` can change
+   `targetAudience.product` (`campaignService.js:797-806`), re-routing a
+   campaign to a different product chain with no config write. → Both
+   writers bust the whole map; the TTL floors unenumerated paths.
+5. **§3.3 (minor)** — the global-consent-act inventory missed erasure's
+   explicit global denial (`erasureService.js:686-699`). → Added.
+6. **§6 (minor)** — "`prospects.score` read by no code path" overstated: the
+   list API serializes every non-screening column
+   (`prospectService.js:2458-2462`), so it rides the API unrendered. →
+   Reworded to written-by-nothing / consumed-by-nothing.
+7. **§8 (minor)** — the refreshed citation pointed at OUTPUT sanitizers
+   (`campaignCopyAiService.js:351-444`) for an input-posture claim; the
+   input posture is the untrusted-DATA prompt pin (`:702`, `:775`). →
+   Re-cited both sides; item 1's invariants named as the output-side twin.
+8. **Header (minor)** — the status line referenced §17 before it existed. →
+   This section.
+
+**Round 3b — re-run after those fixes: REWORK (2 major, 4 minor), all
+verified real and accepted.** Its own summary: the no-FK, identity-allocation
+and product-change cache-bust fixes substantively sound; the one-stored-number
+decision sound but its bound not; the shipped `product`/`lifeStage` work
+genuine.
+
+1. **M6/§6 (major)** — 3a's fix reserved rows but not wall-clock: the
+   deadline is checked before every row
+   (`enrichmentSweepService.js:169-172`) and rotation runs only when no
+   stop occurred (`:274`), so a time stop inside the stale phase still
+   yields zero rotation, and ⌈population/rowBudget⌉ is no bound when five
+   minutes admits fewer rows; "next sweep worst-case" was likewise
+   unsupported. → Reservation made two-dimensional (row cap AND clipped
+   deadline for the stale phase); the calendar claim replaced by
+   monotonic-coverage + measured-throughput (alarmable via the per-phase
+   stats); event-driven recovery re-anchored on the stale-first phase
+   (dirty ⇒ provably stale ⇒ first claim on the next run's budget).
+2. **B1/§3 (major)** — §3.2 let the person grain "read consent acts" while
+   §3.3 scoped grants per campaign — an internal contradiction — and the
+   global-act inventory was STILL not exhaustive: campaignless captures
+   write their contact row with `campaignId` NULL under EVERY wording era
+   (`validation.js:219`, `prospectService.js:1066-1069`,
+   `consentService.js:71-99` — whose own comment calls the row "already
+   global", `:105-108`; backfill `:243-263`), and `getConsentState` reads
+   every NULL row as global. → Consent removed from the person-grain
+   extractor; the inventory replaced by the rule that survives any
+   provenance: the scorer NEVER re-scopes a stored act — it reads the
+   ledger's own derivation.
+3. **M9/§9 (minor)** — "pre-brief campaigns keep `{}` forever" overstated:
+   `updateCampaign` accepts a brief at any time
+   (`campaignService.js:797-806`; `campaign-brief.md` §7.3 calls it
+   reversible). → "skip step 2 while `hasBrief` is false".
+4. **§5 (minor)** — the waCallback citation stopped before the operative
+   lines (`retellScreeningService.js:526` stores the wamid; `:538-540` is
+   the merge). → Re-cited `:521-529` + `:538-540`.
+5. **§7 (minor)** — the 422 throw is `:531`, beside the `:530` call. →
+   `:530-531`.
+6. **§9/§17 (minor)** — the `MAX(version)+1` expression sits at `094:35`;
+   `:39-41` shows only the predicate. → `:35-41`.
+
+**Round 3c — re-run after those fixes: PASS, with three MINOR nits — "B1,
+M6, M9, and M10 are otherwise genuinely closed. The shipped
+`product`/`lifeStage` edits and all three Round 3b citation corrections
+exist at the claimed lines."** The nits, verified real and folded in the
+same change: (1) §3.5 now states it REPLACES the shipped suite's
+person-grain consent pin (`scoringIsolation.test.js:163`) rather than only
+extending it; (2) §6's reservation described as an ADMISSION window, since
+an in-flight row can overrun the pre-row deadline check
+(`enrichmentSweepService.js:169-172`); (3) §6's cursor described as
+monotonic WITHIN a rotation — it deliberately resets at the end of the
+population (`:282-286`).
