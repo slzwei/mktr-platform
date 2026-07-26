@@ -5,6 +5,10 @@ import { logger } from '../utils/logger.js';
 import { escapeLike } from '../utils/escapeLike.js';
 import { emailNormKey } from './repeatSignup.js';
 import { normalizePhone } from './prospectHelpers.js';
+// Enrichment input bumps on relink (consumer-profile-enrichment plan §6.3,
+// Codex R4-era #2): a moved prospect changes BOTH people's resolved facts.
+// Leaf import (models only) — no cycle.
+import { bumpManyEnrichmentInputsTx } from './enrichmentFence.js';
 
 /**
  * Consumer spine (docs/plans/consumer-spine-and-consent-ledger.md §2).
@@ -215,14 +219,24 @@ export function makeConsumerService(overrides = {}) {
           continue;
         }
         await upsertProjection(phone, buildProjection(rows), transaction);
-        await d.sequelize.query(
+        // Self-join reads the PRE-update row so RETURNING can surface the old
+        // owner — both sides of a relink go enrichment-dirty (plan §6.3).
+        const [moved] = await d.sequelize.query(
           `UPDATE prospects p SET "consumerId" = c.id
-             FROM consumers c
+             FROM consumers c, prospects oldp
             WHERE c.phone = :phone AND p.phone = :phone
+              AND oldp.id = p.id
               AND p."leadSource" <> 'call_bot'
-              AND p."consumerId" IS DISTINCT FROM c.id`,
+              AND p."consumerId" IS DISTINCT FROM c.id
+          RETURNING oldp."consumerId" AS old_cid, c.id AS new_cid`,
           { replacements: { phone }, transaction }
         );
+        if (moved?.length) {
+          await bumpManyEnrichmentInputsTx(
+            transaction,
+            moved.flatMap((r) => [r.old_cid, r.new_cid])
+          );
+        }
       }
     } catch (err) {
       d.logger.warn('[consumer] recompute failed (reconciler heals)', {
@@ -307,31 +321,50 @@ export function makeConsumerService(overrides = {}) {
         const values = slice.map((_, j) => `(:p${j}::uuid, :c${j}::uuid)`).join(',');
         const repl = {};
         slice.forEach(([pid, cid], j) => { repl[`p${j}`] = pid; repl[`c${j}`] = cid; });
-        const [, meta] = await d.sequelize.query(
+        // Self-join surfaces the pre-update owner: relinks dirty BOTH sides'
+        // enrichment inputs (plan §6.3 — a moved signup changes two people).
+        const [movedRows, meta] = await d.sequelize.query(
           `UPDATE prospects AS p SET "consumerId" = v.cid
-             FROM (VALUES ${values}) AS v(pid, cid)
-            WHERE p.id = v.pid AND p."consumerId" IS DISTINCT FROM v.cid`,
+             FROM (VALUES ${values}) AS v(pid, cid), prospects AS oldp
+            WHERE p.id = v.pid AND oldp.id = p.id
+              AND p."consumerId" IS DISTINCT FROM v.cid
+          RETURNING oldp."consumerId" AS old_cid, v.cid AS new_cid`,
           { replacements: repl, transaction: t }
         );
         stats.prospectsLinked += meta?.rowCount ?? 0;
+        if (movedRows?.length) {
+          await bumpManyEnrichmentInputsTx(t, movedRows.flatMap((r) => [r.old_cid, r.new_cid]));
+        }
       }
 
-      const [, cbMeta] = await d.sequelize.query(
-        `UPDATE prospects SET "consumerId" = NULL
-          WHERE "leadSource" = 'call_bot' AND "consumerId" IS NOT NULL`,
+      const [cbMoved, cbMeta] = await d.sequelize.query(
+        `UPDATE prospects p SET "consumerId" = NULL
+           FROM prospects oldp
+          WHERE oldp.id = p.id
+            AND p."leadSource" = 'call_bot' AND p."consumerId" IS NOT NULL
+        RETURNING oldp."consumerId" AS old_cid`,
         { transaction: t }
       );
       stats.callBotUnlinked = cbMeta?.rowCount ?? 0;
+      if (cbMoved?.length) {
+        await bumpManyEnrichmentInputsTx(t, cbMoved.map((r) => r.old_cid));
+      }
 
       // A phone cleared to null/empty (PUT-to-blank) takes its link with it
       // (Codex R2 #4). Invalid-but-present phones are NOT touched: those are
       // capture-linked raw-format rows (Meta) whose links are healed above.
-      const [, epMeta] = await d.sequelize.query(
-        `UPDATE prospects SET "consumerId" = NULL
-          WHERE "consumerId" IS NOT NULL AND (phone IS NULL OR phone = '')`,
+      const [epMoved, epMeta] = await d.sequelize.query(
+        `UPDATE prospects p SET "consumerId" = NULL
+           FROM prospects oldp
+          WHERE oldp.id = p.id
+            AND p."consumerId" IS NOT NULL AND (p.phone IS NULL OR p.phone = '')
+        RETURNING oldp."consumerId" AS old_cid`,
         { transaction: t }
       );
       stats.emptyPhoneUnlinked = epMeta?.rowCount ?? 0;
+      if (epMoved?.length) {
+        await bumpManyEnrichmentInputsTx(t, epMoved.map((r) => r.old_cid));
+      }
 
       const [, reP] = await d.sequelize.query(
         `UPDATE reward_entitlements re SET "consumerId" = p."consumerId"

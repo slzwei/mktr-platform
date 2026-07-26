@@ -314,6 +314,12 @@ const Prospect = sequelize.define('Prospect', {
     type: DataTypes.JSONB,
     allowNull: true,
     comment: 'Evidence only (state lives in the discrete columns): { intendedAgentId, alreadyCharged, chargeRefunded, attempts: {<token>: {…}}, verdictDetail }. Excluded from list projections (transcripts are detail-only).'
+  },
+  enrichmentRevision: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    comment: 'Monotonic revision of this prospect\'s FORM artifact (capture=1; each staff edit to mapped fields increments + enqueues a new map job). Revision identity for consumer_observations — plan §3.1/§5.'
   }
 }, {
   tableName: 'prospects',

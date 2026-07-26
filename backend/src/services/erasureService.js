@@ -319,6 +319,7 @@ export function makeErasureService(overrides = {}) {
               "dncNoFax" = NULL, "dncCheckedAt" = NULL, "dncValidUntil" = NULL,
               "dncMetadata" = NULL,
               "consentMetadata" = '{"erased":true}'::jsonb,
+              "screeningMetadata" = NULL, "screeningActiveCallId" = NULL,
               "consumerId" = :consumerId,
               "updatedAt" = now()
             WHERE id IN (:pids)`,
@@ -333,6 +334,43 @@ export function makeErasureService(overrides = {}) {
             'UPDATE prospects SET "sourceMetadata" = :sm WHERE id = :id',
             { replacements: { sm: JSON.stringify(erasedSourceMetadata(p.sourceMetadata)), id: p.id }, transaction: t }
           );
+        }
+
+        // Enrichment cascade (consumer-profile-enrichment plan §9): the fact
+        // ledger + persona profile carry raw PII (evidence quotes, summaries)
+        // — DELETE, never redact. Prospects are scrubbed (not deleted) and the
+        // consumer row survives with erasedAt, so no FK cascade fires: these
+        // must be explicit. Jobs of EVERY status lose payload + lastError for
+        // BOTH subject addressings (synth jobs are consumer-subject; their
+        // lastError can carry model-output text — Codex R3 #4 / R4 #4); live
+        // ones are cancelled.
+        {
+          const obsWhere = pids.length
+            ? '"sourceProspectId" IN (:pids) OR "consumerId" = :consumerId'
+            : '"consumerId" = :consumerId';
+          const [, obsMeta] = await d.sequelize.query(
+            `DELETE FROM consumer_observations WHERE ${obsWhere}`,
+            { replacements: { pids, consumerId }, transaction: t }
+          );
+          report.observations = rowCount(obsMeta);
+
+          const [, profMeta] = await d.sequelize.query(
+            'DELETE FROM consumer_profiles WHERE "consumerId" = :consumerId',
+            { replacements: { consumerId }, transaction: t }
+          );
+          report.profileDeleted = rowCount(profMeta) > 0;
+
+          const jobsWhere = pids.length
+            ? '"subjectConsumerId" = :consumerId OR "subjectProspectId" IN (:pids)'
+            : '"subjectConsumerId" = :consumerId';
+          const [, jobsMeta] = await d.sequelize.query(
+            `UPDATE enrichment_jobs SET
+                status = CASE WHEN status IN ('pending','leased') THEN 'cancelled' ELSE status END,
+                payload = NULL, "lastError" = NULL, "updatedAt" = now()
+              WHERE ${jobsWhere}`,
+            { replacements: { pids, consumerId }, transaction: t }
+          );
+          report.enrichmentJobs = rowCount(jobsMeta);
         }
 
         // The person's browsing records (Codex R1 #9): sessions + attribution
