@@ -8,6 +8,9 @@ dist/
 .env
 backend/.env
 .env.*
+# ...but the committed template must stay trackable — `.env.*` above would
+# otherwise shadow it, so a delete-and-re-add would silently fail to stage.
+!.env.example
 
 # OS / editor
 .DS_Store
