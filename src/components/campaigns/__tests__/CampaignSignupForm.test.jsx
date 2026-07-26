@@ -625,6 +625,13 @@ describe('CampaignSignupForm — profile questions block (studio-profile-questio
     expect(block.textContent).not.toContain('retire');
   });
 
+  it('offers all four official languages as chips', () => {
+    renderForm({ profileQuestions: PQ });
+    for (const label of ['English', '中文', 'Bahasa Melayu', 'தமிழ்']) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    }
+  });
+
   it('single-select toggles on and off (skippable by design)', () => {
     renderForm({ profileQuestions: PQ });
     const en = screen.getByRole('button', { name: 'English' });
