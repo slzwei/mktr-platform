@@ -56,8 +56,8 @@ function deliveryStatus(e) {
       text: `${noun} WhatsApp not delivered — ${capped ? 'Meta marketing limit' : (wa.delivery.errorTitle || 'reported failed')}`,
       tone: 'warn',
       hint: capped
-        ? 'Meta accepted the message, then silently dropped it: the customer recently received another marketing-category template from us and Meta caps those per person over a rolling window (error 131049). Retry after the window clears, or use email/link.'
-        : `Meta accepted the message but reported it undelivered${wa.delivery.errorTitle ? `: ${wa.delivery.errorTitle}` : ''}${wa.delivery.errorCode ? ` (code ${wa.delivery.errorCode})` : ''}.`,
+        ? "Meta accepted it, then dropped it — this customer hit Meta's per-person marketing message limit. Retries fail until the window clears; use email or a link."
+        : `Meta reported it undelivered${wa.delivery.errorTitle ? `: ${wa.delivery.errorTitle}` : ''}.`,
     };
   }
   const em = e.delivery?.email;
@@ -68,7 +68,7 @@ function deliveryStatus(e) {
         return {
           text: `${noun} email not delivered — ${em.delivery.errorTitle || 'provider reported failure'}`,
           tone: 'warn',
-          hint: 'The email provider accepted this message and later reported it undelivered.',
+          hint: 'The provider accepted it, then reported it undelivered.',
         };
       }
       const at = new Date(em.at).toLocaleString('en-SG', {
@@ -77,18 +77,48 @@ function deliveryStatus(e) {
       return {
         text: `${noun} emailed · ${at}`,
         tone: 'ok',
-        hint: 'The email provider accepted this message for delivery. Delivery confirmation is not available for emails.',
+        hint: 'Accepted by the provider. Delivery is not confirmed for emails.',
       };
     }
     return {
       text: `${noun} email failed — resend or share a link`,
       tone: 'warn',
-      hint: 'The send attempt was rejected before leaving our system — the customer has received nothing on this channel.',
+      hint: 'Rejected before it left our system — the customer received nothing on this channel.',
     };
   }
-  if (e.emailDeliverable === false) return { text: 'Never emailed — share a link instead', tone: 'warn', hint: 'No usable email address on file for this customer.' };
-  if (['eligible', 'issued'].includes(e.status)) return { text: 'Not delivered yet', tone: 'muted', hint: 'No delivery attempt has been recorded for this reward yet.' };
+  if (e.emailDeliverable === false) return { text: 'Never emailed — share a link instead', tone: 'warn', hint: 'No usable email address on file.' };
+  if (['eligible', 'issued'].includes(e.status)) return { text: 'Not delivered yet', tone: 'muted', hint: 'No delivery attempt recorded yet.' };
   return null;
+}
+
+/** Themed hover hint (ops light theme) — dotted underline invites the hover;
+ * the bubble matches the console instead of the native OS tooltip. */
+function DeliveryHint({ text, hint, color }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      className="relative inline-block min-w-0 max-w-full"
+    >
+      <span className="truncate inline-block max-w-full align-bottom" style={{ color, textDecoration: 'underline dotted', textDecorationColor: 'var(--ro-text-3)', textUnderlineOffset: 3 }}>
+        {text}
+      </span>
+      {open && hint && (
+        <span
+          role="tooltip"
+          className="absolute left-0 z-40"
+          style={{
+            bottom: 'calc(100% + 7px)', width: 230, padding: '8px 11px',
+            background: '#fff', border: '1px solid var(--ro-line)', borderRadius: 9,
+            boxShadow: '0 10px 28px rgba(15, 23, 42, .14)',
+            fontSize: 11.5, lineHeight: 1.5, color: 'var(--ro-text-2)',
+            whiteSpace: 'normal', textAlign: 'left', textDecoration: 'none',
+          }}
+        >{hint}</span>
+      )}
+    </span>
+  );
 }
 
 /* Deterministic accent per campaign — the stack header dot and the Recent
@@ -434,8 +464,12 @@ export default function RedemptionsPage() {
             {e.tokenHint ? ` · code …${e.tokenHint}` : ''}
           </p>
         </div>
-        <span className="text-xs truncate" title={delivery?.hint || undefined} style={{ color: deliveryColor, ...(delivery?.hint ? { cursor: 'help' } : {}) }}>
-          {delivery ? `${delivery.tone === 'warn' ? '⚠ ' : ''}${delivery.text}` : ''}
+        <span className="text-xs truncate" style={{ color: deliveryColor }}>
+          {delivery
+            ? (delivery.hint
+              ? <DeliveryHint text={`${delivery.tone === 'warn' ? '⚠ ' : ''}${delivery.text}`} hint={delivery.hint} color={deliveryColor} />
+              : `${delivery.tone === 'warn' ? '⚠ ' : ''}${delivery.text}`)
+            : ''}
         </span>
         <span className="min-w-0">
           <RoTag tone={statusTone(e.status)} size="sm">{statusLabel(e.status)}</RoTag>

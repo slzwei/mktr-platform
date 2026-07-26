@@ -315,13 +315,18 @@ describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
     };
     fetchProspectProfile.mockResolvedValue(profile);
     setup('/admin/leads/p1?view=profile');
-    const failedRow = await screen.findByText(/boost receipt WhatsApp — not delivered \(Meta marketing limit\)/);
-    expect(failedRow).toBeInTheDocument();
-    // Hover explanation rides the row's native title.
-    expect(failedRow.closest('[title]')?.getAttribute('title')).toMatch(/error 131049/);
+    // The state word is a dotted-underline hover target; hovering opens the
+    // THEMED tooltip (role=tooltip), not a native title box.
+    const failedState = await screen.findByText('not delivered (Meta marketing limit)');
+    fireEvent.mouseEnter(failedState.parentElement);
+    expect((await screen.findByRole('tooltip')).textContent).toMatch(/marketing message limit/);
+    fireEvent.mouseLeave(failedState.parentElement);
     // Email has no provider verdict → explicit "accepted", never a delivered claim.
-    const accepted = screen.getByText(/boost receipt emailed — accepted/);
-    expect(accepted.closest('[title]')?.getAttribute('title')).toMatch(/No delivery confirmation/);
+    expect(screen.getByText(/boost receipt emailed —/)).toBeInTheDocument();
+    const accepted = screen.getAllByText('accepted')[0];
+    fireEvent.mouseEnter(accepted.parentElement);
+    expect((await screen.findByRole('tooltip')).textContent).toMatch(/Delivery is not confirmed/);
+    fireEvent.mouseLeave(accepted.parentElement);
     // Campaign attribution is a colored dot whose hover/label is the FULL
     // campaign name (replaced the ambiguous first-word tag).
     expect(screen.getAllByLabelText('NTUC Trial Reward').length).toBeGreaterThan(0);
@@ -337,6 +342,7 @@ describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
     };
     fetchProspectProfile.mockResolvedValue(delivered);
     setup('/admin/leads/p1?view=profile');
-    expect(await screen.findByText(/pass WhatsApp — delivered/)).toBeInTheDocument();
+    expect(await screen.findByText(/pass WhatsApp —/)).toBeInTheDocument();
+    expect(screen.getAllByText('delivered').length).toBeGreaterThan(0);
   });
 });

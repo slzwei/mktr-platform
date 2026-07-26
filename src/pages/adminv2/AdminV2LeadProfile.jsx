@@ -145,7 +145,7 @@ function deliveryState(r) {
     return {
       ok: false,
       text: 'failed to send',
-      hint: `The send attempt was rejected before leaving our system${r.error ? `: ${r.error}` : ''}.`,
+      hint: `Rejected before it left our system${r.error ? `: ${r.error}` : ''}.`,
     };
   }
   const st = r.delivery?.status;
@@ -155,31 +155,66 @@ function deliveryState(r) {
       ok: false,
       text: capped ? 'not delivered (Meta marketing limit)' : 'not delivered',
       hint: capped
-        ? 'Meta accepted this message, then silently dropped it: the recipient recently received another marketing-category template from us, and Meta caps how many a person can get in a rolling window (error 131049). It cannot be retried until the window clears.'
-        : `Meta accepted this message but reported it undelivered${r.delivery?.errorTitle ? `: ${r.delivery.errorTitle}` : ''}${r.delivery?.errorCode ? ` (code ${r.delivery.errorCode})` : ''}.`,
+        ? "Meta accepted it, then dropped it — this person hit Meta's per-person marketing message limit. Retries fail until the window clears; use email or a link."
+        : `Meta reported it undelivered${r.delivery?.errorTitle ? `: ${r.delivery.errorTitle}` : r.delivery?.errorCode ? ` (code ${r.delivery.errorCode})` : ''}.`,
     };
   }
   if (st === 'read') {
-    return { ok: true, text: 'read', hint: 'Meta confirmed the recipient opened this message on WhatsApp.' };
+    return { ok: true, text: 'read', hint: 'Opened by the recipient on WhatsApp.' };
   }
   if (st === 'delivered') {
-    return { ok: true, text: 'delivered', hint: "Meta confirmed this message reached the recipient's device." };
+    return { ok: true, text: 'delivered', hint: "Delivered to the recipient's device." };
   }
   if (st === 'sent') {
-    return { ok: true, text: 'sent, delivery pending', hint: 'Meta dispatched the message; delivery to the device is not confirmed yet.' };
+    return { ok: true, text: 'sent, delivery pending', hint: 'Dispatched by Meta — delivery not confirmed yet.' };
   }
   return {
     ok: true,
     text: 'accepted',
-    hint: 'The provider accepted this message for delivery. No delivery confirmation exists for it — emails and sends from before 26 Jul 2026 never report one.',
+    hint: 'Accepted by the provider. Delivery is not confirmed for this message.',
   };
+}
+
+/** Themed hover hint — dotted underline invites the hover; the bubble uses the
+ * page's own surface tokens instead of the native OS tooltip. */
+function HoverHint({ label, hint, underline = true, color, ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      aria-label={ariaLabel || undefined}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      style={{ position: 'relative', display: 'inline-block' }}
+    >
+      <span
+        style={{
+          ...(underline ? { textDecoration: 'underline dotted', textDecorationColor: 'var(--ink-3)', textUnderlineOffset: 3 } : {}),
+          ...(color ? { color } : {}),
+        }}
+      >{label}</span>
+      {open && hint && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute', left: 0, bottom: 'calc(100% + 7px)', zIndex: 40,
+            width: 230, padding: '8px 11px', background: 'var(--surface)',
+            border: '1px solid var(--line)', borderRadius: 9,
+            boxShadow: '0 10px 28px rgba(0,0,0,.3)',
+            fontSize: 11.5, lineHeight: 1.5, color: 'var(--ink-2)',
+            fontFamily: 'var(--font-ui)', fontWeight: 500,
+            whiteSpace: 'normal', textAlign: 'left', textDecoration: 'none',
+          }}
+        >{hint}</span>
+      )}
+    </span>
+  );
 }
 
 function receiptBits(delivery) {
   if (!delivery) return [];
-  const bit = (r, label) => {
+  const bit = (r, prefix) => {
     const s = deliveryState(r);
-    return s ? { ok: s.ok, label: `${label} — ${s.text}`, hint: s.hint } : null;
+    return s ? { ok: s.ok, prefix, state: s } : null;
   };
   return [bit(delivery.email, 'pass emailed'), bit(delivery.whatsapp, 'WhatsApp')].filter(Boolean);
 }
@@ -198,9 +233,9 @@ const FAMILY_TILE = {
 
 function buildHistory(p, journey) {
   const events = [];
-  const push = (at, title, { detail = null, family = 'generic', quiet = false, campaign = null, hint = null } = {}) => {
+  const push = (at, title, { detail = null, family = 'generic', quiet = false, campaign = null, state = null } = {}) => {
     const t = at ? Date.parse(at) : NaN;
-    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, campaign, hint });
+    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, campaign, state });
   };
   const anchorCampaign = campaignRef(p.campaign?.id, p.campaign?.name);
 
@@ -228,8 +263,7 @@ function buildHistory(p, journey) {
     for (const ch of ['email', 'whatsapp']) {
       const r = e.delivery?.[ch];
       if (!r?.at) continue;
-      const s = deliveryState(r);
-      push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} — ${s.text}`, { family: 'delivery', quiet: true, campaign, hint: s.hint });
+      push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} — `, { family: 'delivery', quiet: true, campaign, state: deliveryState(r) });
     }
   }
   for (const b of journey?.broadcasts?.recent || []) {
@@ -743,19 +777,22 @@ export default function AdminV2LeadProfile() {
                       {fmtDay(day.key).toUpperCase()}
                     </div>
                     {day.events.map((e, i) => (
-                      <div key={i} title={e.hint || undefined} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', ...(e.hint ? { cursor: 'help' } : {}) }}>
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0' }}>
                         <GlyphTile family={e.family} />
                         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: e.quiet ? 'var(--ink-2)' : 'var(--ink)', fontWeight: e.quiet ? 500 : 600, lineHeight: 1.35 }}>
                           {e.title}
+                          {e.state && <HoverHint label={e.state.text} hint={e.state.hint} color={e.state.ok ? undefined : 'var(--bad)'} />}
                           {e.detail && <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{e.detail}</span>}
                         </span>
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', flex: 'none', paddingTop: 2, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                           {e.campaign && (
-                            <span
-                              title={e.campaign.name}
-                              aria-label={e.campaign.name}
-                              style={{ color: campaignAccent(e.campaign.key), fontSize: 8, cursor: 'help', lineHeight: 1 }}
-                            >●</span>
+                            <HoverHint
+                              label="●"
+                              hint={e.campaign.name}
+                              underline={false}
+                              color={campaignAccent(e.campaign.key)}
+                              ariaLabel={e.campaign.name}
+                            />
                           )}
                           {sgtTime(e.at)}
                         </span>
@@ -796,9 +833,13 @@ export default function AdminV2LeadProfile() {
             {heroReceipts.length > 0 && (
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', marginTop: 6 }}>
                 {heroReceipts.map((r, i) => (
-                  <span key={i} title={r.hint || undefined} style={r.hint ? { cursor: 'help' } : undefined}>
+                  <span key={i}>
                     {i > 0 && ' · '}
-                    <span style={{ color: r.ok ? 'var(--ok)' : 'var(--bad)', fontWeight: 700 }}>{r.label}</span>
+                    <span style={{ fontWeight: 700 }}>
+                      {r.prefix}
+                      {' — '}
+                      <HoverHint label={r.state.text} hint={r.state.hint} color={r.ok ? 'var(--ok)' : 'var(--bad)'} />
+                    </span>
                   </span>
                 ))}
               </div>
