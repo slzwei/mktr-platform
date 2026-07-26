@@ -24,6 +24,7 @@ describe('Campaign CRUD', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Integration Test Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'lead_generation',
         is_active: true,
         min_age: 21,
@@ -132,7 +133,7 @@ describe('Campaign role-based access', () => {
     const res = await request(app)
       .post('/api/campaigns')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ name: 'Agent Campaign', type: 'lead_generation', is_active: true })
+      .send({ name: 'Agent Campaign', targetAudience: { objective: 'agent_leads', product: 'insurance' }, type: 'lead_generation', is_active: true })
 
     expect(res.status).toBe(201)
   })
@@ -355,6 +356,7 @@ describe('Campaign with design_config', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Design Config Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'brand_awareness',
         is_active: true,
         design_config: designConfig
@@ -388,6 +390,7 @@ describe('Campaign with ad_playlist', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Playlist Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'brand_awareness',
         is_active: true,
         ad_playlist: playlist
@@ -418,6 +421,7 @@ describe('Campaign with dates', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Dated Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'event_marketing',
         is_active: true,
         start_date: '2026-04-01',
@@ -449,6 +453,7 @@ describe('Campaign with commission amounts', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Commission Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'lead_generation',
         is_active: true,
         commission_amount_driver: 25.50,
@@ -470,6 +475,7 @@ describe('Campaign with assigned_agents', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: 'Agents Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'lead_generation',
         is_active: true,
         assigned_agents: agents
@@ -781,6 +787,7 @@ describe('Campaign error paths — XSS in campaign name', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: xssName,
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'lead_generation',
         is_active: true
       })
@@ -788,6 +795,80 @@ describe('Campaign error paths — XSS in campaign name', () => {
     expect(res.status).toBe(201)
     // The name should be stored (or sanitized) — either way no 500 error
     expect(res.body.data.campaign.name).toBeDefined()
+  })
+})
+
+describe('Campaign brief at the create door (campaign-brief.md §7.2)', () => {
+  it('POST /api/campaigns — 422 without objective + product', async () => {
+    const res = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'No Brief Campaign', type: 'lead_generation' })
+
+    expect(res.status).toBe(422)
+    expect(res.body.message).toMatch(/objective/)
+  })
+
+  it('POST /api/campaigns — stores the normalized brief and derived archetype; round-trips on GET', async () => {
+    const res = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Briefed Campaign',
+        type: 'lead_generation',
+        is_active: false,
+        targetAudience: {
+          objective: 'screened_leads',
+          product: 'insurance',
+          audience: { language: 'zh', ageBands: ['60+', '45-59'] },
+          target: { value: 150, byDate: '2026-12-31' },
+        },
+      })
+
+    expect(res.status).toBe(201)
+    const stored = res.body.data.campaign.targetAudience
+    expect(stored).toEqual({
+      briefVersion: 1,
+      objective: 'screened_leads',
+      product: 'insurance',
+      audience: { language: 'zh', ageBands: ['45-59', '60+'] },
+      target: { value: 150, byDate: '2026-12-31' },
+      archetype: 'plain_form',
+    })
+
+    const fetched = await request(app)
+      .get(`/api/campaigns/${res.body.data.campaign.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(fetched.status).toBe(200)
+    expect(fetched.body.data.campaign.targetAudience).toEqual(stored)
+  })
+
+  it('PUT /api/campaigns/:id — a provided brief must be complete; omission leaves the stored one', async () => {
+    const created = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Brief Update Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'recruitment' },
+      })
+    expect(created.status).toBe(201)
+    const id = created.body.data.campaign.id
+
+    const bad = await request(app)
+      .put(`/api/campaigns/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ targetAudience: { objective: 'agent_leads' } })
+    expect(bad.status).toBe(422)
+
+    const rename = await request(app)
+      .put(`/api/campaigns/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Brief Update Campaign 2' })
+    expect(rename.status).toBe(200)
+    expect(rename.body.data.campaign.targetAudience).toMatchObject({
+      objective: 'agent_leads',
+      product: 'recruitment',
+    })
   })
 })
 

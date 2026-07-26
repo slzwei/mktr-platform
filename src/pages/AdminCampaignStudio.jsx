@@ -440,6 +440,7 @@ export default function AdminCampaignStudio() {
               // Success-gated (Codex diff #6): stale cached data through a
               // failed refetch must not claim "verified".
               whatsappOtpConfigured={readinessStatus === 'success' ? serverReadiness?.whatsappOtpConfigured : undefined}
+              campaignBrief={campaign?.targetAudience}
             />
           )}
           {doc && section === 'quiz' && <StudioQuizPanel doc={doc} campaign={campaign} setPath={setPath} />}

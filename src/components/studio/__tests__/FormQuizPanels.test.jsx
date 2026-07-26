@@ -111,6 +111,56 @@ describe('FormPanel — fields editor mechanics (mock parity)', () => {
   });
 });
 
+describe('FormPanel — profile-question suggestions from the campaign brief (§6.4)', () => {
+  const BRIEF = {
+    briefVersion: 1,
+    objective: 'agent_leads',
+    product: 'insurance',
+    audience: { language: 'zh', ageBands: ['45-59', '60+'] },
+    archetype: 'plain_form',
+  };
+
+  it('no brief → no suggestion block', () => {
+    render(<Harness v1={{}} Panel={FormPanel} />);
+    expect(screen.queryByTestId('brief-question-suggestions')).toBeNull();
+  });
+
+  it('renders suggestions with reasons and NEVER auto-enables anything', () => {
+    render(<Harness v1={{}} Panel={FormPanel} panelProps={{ campaignBrief: BRIEF }} />);
+    const block = screen.getByTestId('brief-question-suggestions');
+    expect(block.textContent).toContain('Which language do you prefer?');
+    expect(block.textContent).toContain('What is your annual income range?');
+    expect(block.textContent).toContain('At what age do you plan to retire?');
+    // Rendering suggestions must not touch the doc — asking stays a human act.
+    expect(latestDoc.profileQuestions?.enabled).not.toBe(true);
+    expect(latestDoc.profileQuestions?.questionIds || []).toEqual([]);
+  });
+
+  it('one click adds exactly that question (enabling the section) — the human decision', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={{}} Panel={FormPanel} panelProps={{ campaignBrief: BRIEF }} />);
+    await user.click(screen.getByTestId('brief-suggest-add-annual_income'));
+    expect(latestDoc.profileQuestions.enabled).toBe(true);
+    expect(latestDoc.profileQuestions.questionIds).toEqual(['annual_income']);
+    // The added question leaves the suggestion list; the others stay.
+    expect(screen.queryByTestId('brief-suggest-add-annual_income')).toBeNull();
+    expect(screen.getByTestId('brief-suggest-add-language')).toBeTruthy();
+  });
+
+  it('already-asked questions are not re-suggested', () => {
+    render(
+      <Harness
+        v1={{ profileQuestions: { enabled: true, questionIds: ['language', 'annual_income'], requiredIds: [] } }}
+        Panel={FormPanel}
+        panelProps={{ campaignBrief: BRIEF }}
+      />
+    );
+    expect(screen.queryByTestId('brief-suggest-add-language')).toBeNull();
+    expect(screen.queryByTestId('brief-suggest-add-annual_income')).toBeNull();
+    expect(screen.getByTestId('brief-suggest-add-retirement_age')).toBeTruthy();
+  });
+});
+
 describe('StudioQuizPanel — the editing view over verbatim storage', () => {
   it('empty state loads the validated starter wholesale', async () => {
     const user = userEvent.setup();

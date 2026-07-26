@@ -999,3 +999,61 @@ describe('eligibility-gates amendment — gates + verification are WRITES, not a
     expect(res.draft).toEqual([]);
   });
 });
+
+describe('campaign brief in the AI context (campaign-brief.md §6.2)', () => {
+  const BRIEFED_CAMPAIGN = {
+    ...BARE_CAMPAIGN,
+    targetAudience: {
+      briefVersion: 1,
+      objective: 'agent_leads',
+      product: 'insurance',
+      audience: { language: 'zh', ageBands: ['45-59', '60+'], incomeBand: '80-120k' },
+      target: { value: 200, byDate: '2026-09-30' },
+      notes: 'SECRET-OPERATOR-NOTE never reaches the prompt',
+      archetype: 'plain_form',
+    },
+  };
+
+  it('pre-brief campaign → campaignBrief null (no opinion, never a default)', () => {
+    expect(buildCampaignContext(BARE_CAMPAIGN).campaignBrief).toBeNull();
+    expect(buildCampaignContext({ ...BARE_CAMPAIGN, targetAudience: {} }).campaignBrief).toBeNull();
+  });
+
+  it('briefed campaign → fixed enum→phrase facts, audience + target included', () => {
+    const brief = buildCampaignContext(BRIEFED_CAMPAIGN).campaignBrief;
+    expect(brief.objective).toMatch(/qualified leads delivered to agents/);
+    expect(brief.product).toMatch(/insurance \/ financial planning/);
+    expect(brief.audience).toEqual([
+      'Intended audience language: Mandarin Chinese.',
+      'Intended age bands: 45-59, 60+.',
+      'Intended household income: $80k–$120k/yr.',
+    ]);
+    expect(brief.target).toBe('Stated target: ~200 sign-ups by 2026-09-30.');
+  });
+
+  it('the stored brief reaches the prompt; free-text notes NEVER do', () => {
+    const ctx = buildCampaignContext(BRIEFED_CAMPAIGN);
+    const prompts = buildCopyDraftPrompts({
+      mode: 'copy',
+      scope: null,
+      regen: 0,
+      templateId: 'editorial',
+      brief: { topic: 'voucher', audience: '', objective: '', mustInclude: '', tone: 'Friendly' },
+      ctx,
+      fields: allowedCopyFields(ctx, 'editorial'),
+      settings: SETTINGS,
+    });
+    expect(prompts.user).toContain('Mandarin Chinese');
+    expect(prompts.user).not.toContain('SECRET-OPERATOR-NOTE');
+    expect(prompts.system).toContain('campaign.campaignBrief');
+  });
+
+  it("'any' picks carry no steer and are omitted from the facts", () => {
+    const ctx = buildCampaignContext({
+      ...BARE_CAMPAIGN,
+      targetAudience: { objective: 'partner_footfall', product: 'partner_offer', audience: { language: 'any', incomeBand: 'any' } },
+    });
+    expect(ctx.campaignBrief.audience).toBeUndefined();
+    expect(ctx.campaignBrief.objective).toMatch(/redeeming at the partner/);
+  });
+});

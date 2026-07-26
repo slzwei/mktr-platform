@@ -317,6 +317,7 @@ describe('campaignDeviceSync (unit)', () => {
 
       await campaignService.createCampaign({
         name: 'New Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         assigned_agents: ['agent-1', 'agent-2'],
       }, { id: 'admin-1', role: 'admin' });
 
@@ -332,6 +333,7 @@ describe('campaignDeviceSync (unit)', () => {
 
       await campaignService.createCampaign({
         name: 'New Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         ad_playlist: [{ url: 'https://cdn.com/video.mp4', type: 'video', duration: 10000 }],
       }, { id: 'admin-1', role: 'admin' });
 
@@ -347,6 +349,7 @@ describe('campaignDeviceSync (unit)', () => {
 
       await campaignService.createCampaign({
         name: 'Bare Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
       }, { id: 'admin-1', role: 'admin' });
 
       expect(CampaignAgentAssignment.bulkCreate).not.toHaveBeenCalled();
@@ -360,6 +363,7 @@ describe('campaignDeviceSync (unit)', () => {
 
       await campaignService.createCampaign({
         name: 'Active Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         is_active: true,
       }, { id: 'admin-1' });
 
@@ -375,6 +379,7 @@ describe('campaignDeviceSync (unit)', () => {
 
       await campaignService.createCampaign({
         name: 'Draft Campaign',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         is_active: false,
       }, { id: 'admin-1' });
 

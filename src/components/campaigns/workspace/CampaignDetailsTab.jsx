@@ -9,6 +9,7 @@ import { Loader2, Gift, Plus, X, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { buildDrawTermsHtml, formatLongDate } from './drawTermsTemplate';
+import CampaignBriefFields, { briefDraftFromCampaign, briefDraftComplete, briefDraftToPayload } from './CampaignBriefFields';
 
 const toDateInput = (v) => {
   if (!v) return '';
@@ -73,6 +74,10 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
     drawPassTheme: initial?.design_config?.luckyDraw?.passTheme || 'titanium',
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Campaign brief (campaign-brief.md): objective + product gate creation;
+  // on edit the pickers show the stored brief and save with the details.
+  const [brief, setBrief] = useState(() => briefDraftFromCampaign(initial?.targetAudience));
 
   // "Fill it for me" — one brief drafts every field below (create mode only).
   // The server clamps the model output (dates/ages/prize rows); this merge
@@ -164,6 +169,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+    if (!isEdit && !briefDraftComplete(brief)) return; // objective + product gate creation (server 422s regardless)
     if (draw && (prizeRows.length === 0 || !form.drawClosesAt)) return; // row 1 + close date are required; belt for non-native submits
     const drawConfig = draw
       ? {
@@ -210,12 +216,17 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
     // Second arg = the brief the operator typed (create only; edit never shows
     // the box). The workspace uses a non-empty brief to auto-design the whole
     // page after create — it is transient input, never persisted as a field.
+    // Include the brief only when both required picks are made: an edit of a
+    // pre-brief campaign must never be forced to answer (no backfill), and an
+    // incomplete brief must not reach the server (it would 422 the save).
+    const briefPayload = briefDraftToPayload(brief);
     onSubmit({
       ...drawConfig,
       // Narrow top-level field on edit, NOT a design_config write: a
       // Studio-saved campaign rejects an untagged design_config outright, and
       // the server merges this into the stored luckyDraw after every draw gate.
       ...(drawEdit ? { drawPassTheme: form.drawPassTheme } : {}),
+      ...(briefPayload ? { targetAudience: briefPayload } : {}),
       name: form.name.trim(),
       type: campaignType,
       min_age: Number(form.min_age) || 18,
@@ -263,6 +274,8 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
           </CardContent>
         </Card>
       )}
+
+      <CampaignBriefFields draft={brief} onChange={setBrief} isEdit={isEdit} />
 
       <Card>
         <CardHeader>
@@ -425,7 +438,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
         {/* `designing` = the post-create AI page-design pass (create flow, when
             a brief was used). It reuses this button so the operator sees the
             work continue, not a frozen "Create" button. */}
-        <Button type="submit" disabled={saving || designing || !form.name.trim()}>
+        <Button type="submit" disabled={saving || designing || !form.name.trim() || (!isEdit && !briefDraftComplete(brief))}>
           {(saving || designing) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
           {designing ? 'Designing your page…' : isEdit ? 'Save details' : 'Create draft & continue'}
         </Button>

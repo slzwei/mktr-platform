@@ -7,6 +7,13 @@ import CampaignDetailsTab from '../CampaignDetailsTab';
 
 afterEach(cleanup);
 
+// The brief's two required picks gate creation (campaign-brief.md §7.2) —
+// every create-mode submit in this suite makes them first.
+const pickBrief = () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Agent leads' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Insurance / financial planning' }));
+};
+
 describe('CampaignDetailsTab', () => {
   it('submits a payload carrying type, enforceLeadQuota and pixel ids', () => {
     const onSubmit = vi.fn();
@@ -20,6 +27,7 @@ describe('CampaignDetailsTab', () => {
     fireEvent.change(screen.getByLabelText(/Lead price/i), { target: { value: '8.5' } });
     fireEvent.click(screen.getByRole('switch')); // enforce quota on
 
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -30,6 +38,72 @@ describe('CampaignDetailsTab', () => {
       leadPriceCents: 850,
       metaPixelId: '123',
       tiktokPixelId: 'TT9',
+      targetAudience: { objective: 'agent_leads', product: 'insurance' },
+    });
+  });
+
+  it('create is blocked until both brief picks are made; optional axes ride the payload', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={onSubmit} />
+    );
+    fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Briefed' } });
+    // Name alone: the submit stays disabled until objective + product.
+    expect(screen.getByRole('button', { name: /Create draft/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Screened leads' }));
+    expect(screen.getByRole('button', { name: /Create draft/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recruitment' }));
+    expect(screen.getByRole('button', { name: /Create draft/i })).not.toBeDisabled();
+    // Optional audience + target picks flow into the payload.
+    fireEvent.click(screen.getByRole('button', { name: 'Chinese (Mandarin)' }));
+    fireEvent.click(screen.getByRole('button', { name: '45-59' }));
+    fireEvent.click(screen.getByRole('button', { name: '60+' }));
+    fireEvent.change(screen.getByLabelText('Target number of sign-ups'), { target: { value: '200' } });
+    fireEvent.change(screen.getByLabelText('Target date'), { target: { value: '2026-09-30' } });
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    expect(onSubmit.mock.calls[0][0].targetAudience).toEqual({
+      objective: 'screened_leads',
+      product: 'recruitment',
+      audience: { language: 'zh', ageBands: ['45-59', '60+'] },
+      target: { value: 200, byDate: '2026-09-30' },
+    });
+  });
+
+  it('edit of a pre-brief campaign never forces answers and OMITS targetAudience', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab
+        initial={{ name: 'Legacy', type: 'lead_generation', targetAudience: {} }}
+        isEdit
+        saving={false}
+        onSubmit={onSubmit}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Save details/i }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect('targetAudience' in onSubmit.mock.calls[0][0]).toBe(false);
+  });
+
+  it('edit shows the stored brief picked and saves an updated one', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab
+        initial={{
+          name: 'Briefed',
+          type: 'lead_generation',
+          targetAudience: { briefVersion: 1, objective: 'agent_leads', product: 'insurance', archetype: 'plain_form' },
+        }}
+        isEdit
+        saving={false}
+        onSubmit={onSubmit}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Agent leads' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Partner footfall' }));
+    fireEvent.click(screen.getByRole('button', { name: /Save details/i }));
+    expect(onSubmit.mock.calls[0][0].targetAudience).toEqual({
+      objective: 'partner_footfall',
+      product: 'insurance',
     });
   });
 
@@ -76,6 +150,7 @@ describe('CampaignDetailsTab', () => {
   it('does not submit when the name is empty', () => {
     const onSubmit = vi.fn();
     render(<CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={onSubmit} />);
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -111,6 +186,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
       <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
     );
     fillBasics();
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const payload = onSubmit.mock.calls[0][0];
@@ -172,6 +248,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     );
     fillBasics();
     fireEvent.click(screen.getByRole('button', { name: /gold/i }));
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit.mock.calls[0][0].design_config.luckyDraw.passTheme).toBe('gold');
   });
@@ -183,6 +260,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     );
     fillBasics();
     fireEvent.change(screen.getByLabelText('Min age'), { target: { value: '21' } });
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     const terms = onSubmit.mock.calls[0][0].design_config.termsContent;
     // D8 (PR-3): the form's max_age (default 65, enforced at capture) now
@@ -199,6 +277,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     );
     fillBasics();
     fireEvent.change(screen.getByLabelText('Min age'), { target: { value: '16' } });
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit.mock.calls[0][0].design_config.termsContent).toContain('aged 18 to 65');
   });
@@ -211,6 +290,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     fillBasics();
     addSecondPrize(3, '$100 FairPrice Voucher');
     expect(screen.getByTestId('multi-prize-note')).toBeInTheDocument();
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     const dc = onSubmit.mock.calls[0][0].design_config;
     expect(dc.luckyDraw.prizes).toEqual([
@@ -236,6 +316,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     fireEvent.blur(screen.getByLabelText('Prize 3 quantity'));
     expect(screen.getByLabelText('Prize 3 quantity').value).toBe('99');
     fireEvent.change(screen.getByLabelText('Prize 3 name'), { target: { value: 'Voucher' } });
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit.mock.calls[0][0].design_config.luckyDraw.prizes).toEqual([
       { qty: 1, name: 'iPhone 17 Pro' },
@@ -264,6 +345,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     fillBasics();
     fireEvent.change(screen.getByLabelText('Session boost deadline'), { target: { value: '2026-08-15' } });
     fireEvent.change(screen.getByLabelText('Session multiplier'), { target: { value: '20' } });
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     const ld = onSubmit.mock.calls[0][0].design_config.luckyDraw;
     expect(ld.boostClosesAt).toBe('2026-08-15');
@@ -276,6 +358,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
       <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
     );
     fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Draw' } });
+    pickBrief();
     fireEvent.submit(screen.getByRole('button', { name: /Create draft/i }).closest('form'));
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -286,6 +369,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
       <CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={onSubmit} />
     );
     fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Plain' } });
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit.mock.calls[0][0].design_config).toBeUndefined();
   });
@@ -386,6 +470,7 @@ describe('CampaignDetailsTab — brief handoff + designing state', () => {
     render(<CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={onSubmit} />);
     fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Voucher Push' } });
     fireEvent.change(screen.getByLabelText('Campaign brief for AI draft'), { target: { value: '  $20 NTUC voucher for verified sign-ups  ' } });
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit.mock.calls[0][1]).toBe('$20 NTUC voucher for verified sign-ups'); // trimmed
@@ -395,6 +480,7 @@ describe('CampaignDetailsTab — brief handoff + designing state', () => {
     const onSubmit = vi.fn();
     render(<CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={onSubmit} />);
     fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Plain' } });
+    pickBrief();
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit.mock.calls[0][1]).toBe('');
   });
