@@ -374,13 +374,25 @@ export function makeWhatsappService(overrides = {}) {
 
   /** "×N confirmed" receipt at a recorded draw session — the WA twin of
    * sendBoostReceiptEmail, same register as the email body. The
-   * `draw_boost_receipt` template carries the Vault 'boost' card as its IMAGE
-   * header — the QR-less celebration state (giant ×N; the pass is consumed,
-   * nothing left to scan); 3 params = name, draw name, multiplier. */
+   * `draw_boost_receipt_v2` template carries the Vault 'boost' card as its
+   * IMAGE header — the QR-less celebration state (giant ×N; the pass is
+   * consumed, nothing left to scan); 3 params = name, multiplier, draw name.
+   *
+   * THE ORDER IS THE TEMPLATE'S, NOT OURS. v2 reads "You now have *{{2}}
+   * chances* for the {{3}}" — the reverse of the retired MARKETING original
+   * ("your entry to the {{2}} now holds {{3}} chances"). Params are positional
+   * with no per-template remap, so the default name and this array must move
+   * together: pointing WHATSAPP_TEMPLATE_DRAW_BOOST back at the original, or
+   * at any future reworded twin, silently swaps the draw name and the
+   * multiplier in the customer's message. It shipped that way to two
+   * recipients on 2026-07-26 ("*iPhone 17 Pro Lucky Draw chances* for the 10")
+   * because the v2 rewording that won the UTILITY category moved the
+   * placeholders and nothing here followed. Re-read the live body before
+   * flipping the env name. */
   async function sendBoostReceiptWhatsApp({ prospect, drawCtx }) {
     return sendTemplate({
       prospect,
-      templateName: process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt',
+      templateName: process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt_v2',
       card: {
         state: 'boost',
         rewardName: cleanParam(drawCtx?.drawName, 'the lucky draw'),
@@ -394,8 +406,8 @@ export function makeWhatsappService(overrides = {}) {
       },
       params: [
         cleanParam(prospect?.firstName, 'there'),
-        cleanParam(drawCtx?.drawName, 'the lucky draw'),
         String(drawCtx?.multiplier || 10),
+        cleanParam(drawCtx?.drawName, 'the lucky draw'),
       ],
     });
   }

@@ -9,7 +9,7 @@ import { makeWhatsappService, canWhatsAppProspect, waRecipient } from '../servic
 const ENV_KEYS = [
   'REDEEM_OPS_WHATSAPP_ENABLED', 'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_TEMPLATE_PASS', 'WHATSAPP_TEMPLATE_VOUCHER', 'WHATSAPP_TEMPLATE_LANG',
-  'WHATSAPP_QR_HEADER', 'WHATSAPP_CLAIM_ORIGIN',
+  'WHATSAPP_QR_HEADER', 'WHATSAPP_CLAIM_ORIGIN', 'WHATSAPP_TEMPLATE_DRAW_BOOST',
 ];
 let savedEnv;
 beforeEach(() => {
@@ -243,6 +243,29 @@ describe('QR-header send sequence (default: header ON)', () => {
     expect(params.length).toBe(4);
     expect(params[2]).toBe('vtok-raw');
     expect(params[3]).toBe('17 Aug 2026');
+  });
+
+  it('boost receipt: body params follow the v2 sentence — name, MULTIPLIER, draw name', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, card });
+    const r = await svc.sendBoostReceiptWhatsApp({
+      prospect: consented,
+      drawCtx: { drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10, prize: 'an iPhone 17 Pro' },
+    });
+    expect(r.sent).toBe(true);
+    const send = fetch.calls[1];
+    expect(send.body.template.name).toBe('draw_boost_receipt_v2');
+    // v2's body is "You now have *{{2}} chances* for the {{3}}" — the multiplier
+    // comes BEFORE the draw name. Reversing these renders "*iPhone 17 Pro Lucky
+    // Draw chances* for the 10", which is what two recipients actually got on
+    // 2026-07-26: the template was reworded to win the UTILITY category and the
+    // caller kept the MARKETING original's order. Positional params, no remap —
+    // so the name on the line above and this array are one decision.
+    expect(send.body.template.components[1].parameters.map((p) => p.text)).toEqual([
+      'Sarah', '10', 'iPhone 17 Pro Lucky Draw',
+    ]);
   });
 
   it('WHATSAPP_CLAIM_ORIGIN overrides the pass-QR host (and the card wordmark follows)', async () => {
