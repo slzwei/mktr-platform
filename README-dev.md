@@ -21,13 +21,14 @@ npm run dev                  # http://localhost:5173
 
 Need Postgres quickly? `cd backend && docker-compose up -d` brings up a local instance matching `env.example`.
 
-### Run the SPA as either brand
-The same SPA builds into two brands via `VITE_BRAND`:
+### Run the SPA as any of the three surfaces
+The same SPA builds into three Render static sites via `VITE_BRAND` / `VITE_SURFACE`:
 ```bash
-npm run dev                      # mktr.sg (operator/admin) — default
-VITE_BRAND=redeem npm run dev    # redeem.sg (customer lead-capture only)
+npm run dev                      # mktr.sg (operator console) — default
+VITE_BRAND=redeem npm run dev    # redeem.sg (marketplace + campaign pages + lead capture)
+VITE_SURFACE=ops npm run dev     # ops.redeem.sg (Redeem Ops staff)
 ```
-On the `redeem` build, admin/auth routes redirect to `mktr.sg`, so use the default brand for admin work.
+On the `redeem` build, admin/auth routes redirect to `mktr.sg`, so use the default brand for admin work. The `ops` build registers only auth + `/redeem-ops/*` and bounces everything else into the queue.
 
 ## Common tasks
 
@@ -55,11 +56,13 @@ The API base is `http://localhost:3001/api`. Explore it via:
 - **Postman** — import `backend/postman-collection.json`
 - **Health/diagnostics** — `GET /health`, `GET /health/public-host`, `GET /health/sync`
 
-Most routes need `Authorization: Bearer <jwt>`; lead capture (`POST /api/prospects`) and the public tracker/share redirects are open. Inbound webhook routes (`/api/retell`, `/api/meta`, `/api/integrations/lyfe`) are HMAC-verified over the raw request body.
+Most routes need `Authorization: Bearer <jwt>`. Open to the public: lead capture (`POST /api/prospects`), the tracker/share redirects, reward claim (`GET /api/reward-claim/:token`), the screening callback, and `/api/unsubscribe`. Inbound webhook routes are verified over the raw request body — `/api/retell/`, `/api/integrations/lyfe/` and `/api/external/` by HMAC-SHA256, `/api/whatsapp/` by `X-Hub-Signature-256`.
 
 ## Integrations are opt-in
 
-Retell, Meta (Pixel/CAPI/Lead Ads), TikTok, the Lyfe and mktr-leads webhooks, OTP (AWS SNS / Meta WhatsApp), and object storage are **all optional and disabled unless their env vars are set** — the app boots and the core lead flow works without any of them. Lead delivery additionally requires the master switch `WEBHOOK_ENABLED="true"`. See [`backend/env.example`](backend/env.example) for the annotated list.
+Retell (capture bot + screening calls), Meta Pixel/CAPI, TikTok, the Lyfe and mktr-leads webhooks, OTP (AWS SNS / Meta WhatsApp), WhatsApp template sends, DNC scrubbing, Redeem Ops, Apify Discover, HitPay, and object storage are **all optional and disabled unless their env vars are set** — the app boots and the core lead flow works without any of them. Lead delivery additionally requires the master switch `WEBHOOK_ENABLED="true"`. See [`backend/env.example`](backend/env.example) for the annotated list of every var the server reads.
+
+> There is no Meta Lead Ads ingestion path. `sourceMetadata.metaLeadgenId` is only ever *read*, as a CAPI/TikTok suppression guard for leads already attributed to Meta lead-gen.
 
 ---
 
@@ -81,4 +84,6 @@ TOKEN=$(curl -s -X POST http://localhost:4001/v1/auth/login \
 curl -s http://localhost:4000/api/adtech/health -H "Authorization: Bearer $TOKEN"
 ```
 
-Related feature flags on the monolith: `ENABLE_DOMAIN_PREFIXES=true` (mounts `/api/leadgen/*`, `/api/adtech/*` mirrors), `AUTH_JWKS_URL` (JWKS verification). The `backend/src/middleware/leadgenProxyShim.js` shim references this scaffold; don't delete one without the other.
+Related feature flags on the monolith: `ENABLE_DOMAIN_PREFIXES=true` (mounts `/api/leadgen/*`, `/api/adtech/*` mirrors), `AUTH_JWKS_URL` / `AUTH_ISSUER` / `AUTH_AUDIENCE` (JWKS verification for an external identity provider).
+
+> The `leadgenProxyShim.js` middleware that used to proxy into this scaffold was **deleted in PR #25** — nothing in the backend references `services/` any more, so the scaffold can be removed on its own whenever the owner decides.
