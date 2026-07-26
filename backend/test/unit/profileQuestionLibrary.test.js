@@ -76,18 +76,18 @@ describe('clampDesignConfigV2 — profileQuestions subtree (§3)', () => {
 
   test('unknown ids dropped, order preserved, deduped, capped', () => {
     expect(clamp({ enabled: true, questionIds: ['pets', 'bogus', 'language', 'pets'] }))
-      .toEqual({ enabled: true, questionIds: ['pets', 'language'] });
+      .toEqual({ enabled: true, questionIds: ['pets', 'language'], requiredIds: [], showZh: true });
   });
 
   test('enabled with zero valid ids clamps to disabled', () => {
     expect(clamp({ enabled: true, questionIds: ['bogus'] }))
-      .toEqual({ enabled: false, questionIds: [] });
-    expect(clamp({ enabled: true })).toEqual({ enabled: false, questionIds: [] });
+      .toEqual({ enabled: false, questionIds: [], requiredIds: [], showZh: true });
+    expect(clamp({ enabled: true })).toEqual({ enabled: false, questionIds: [], requiredIds: [], showZh: true });
   });
 
   test('garbage shapes sanitize to disabled; absent stays absent (upgrade preservation)', () => {
-    expect(clamp('yes please')).toEqual({ enabled: false, questionIds: [] });
-    expect(clamp([1, 2])).toEqual({ enabled: false, questionIds: [] });
+    expect(clamp('yes please')).toEqual({ enabled: false, questionIds: [], requiredIds: [], showZh: true });
+    expect(clamp([1, 2])).toEqual({ enabled: false, questionIds: [], requiredIds: [], showZh: true });
     const out = clampDesignConfigV2(base, undefined, 'admin');
     expect(out.profileQuestions).toBeUndefined();
   });
@@ -98,6 +98,17 @@ describe('clampDesignConfigV2 — profileQuestions subtree (§3)', () => {
       undefined,
       'admin'
     );
-    expect(out.profileQuestions).toEqual({ enabled: true, questionIds: ['language'] });
+    expect(out.profileQuestions).toEqual({ enabled: true, questionIds: ['language'], requiredIds: [], showZh: true });
+  });
+
+  test('requiredIds must be a subset of asked questions; dupes dropped (owner controls 07-26)', () => {
+    expect(clamp({ enabled: true, questionIds: ['language', 'pets'], requiredIds: ['pets', 'pets', 'children', 'bogus'] }))
+      .toEqual({ enabled: true, questionIds: ['language', 'pets'], requiredIds: ['pets'], showZh: true });
+  });
+
+  test('showZh: only explicit false hides the Chinese copy', () => {
+    expect(clamp({ enabled: true, questionIds: ['language'], showZh: false }).showZh).toBe(false);
+    expect(clamp({ enabled: true, questionIds: ['language'], showZh: 'nope' }).showZh).toBe(true);
+    expect(clamp({ enabled: true, questionIds: ['language'] }).showZh).toBe(true);
   });
 });

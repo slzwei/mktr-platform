@@ -61,7 +61,7 @@ import { PROFILE_QUESTION_IDS, MAX_PROFILE_QUESTIONS } from './profileQuestionLi
  */
 function clampProfileQuestions(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { enabled: false, questionIds: [] };
+    return { enabled: false, questionIds: [], requiredIds: [], showZh: true };
   }
   const seen = new Set();
   const questionIds = [];
@@ -71,7 +71,17 @@ function clampProfileQuestions(raw) {
     questionIds.push(id);
     if (questionIds.length >= MAX_PROFILE_QUESTIONS) break;
   }
-  return { enabled: raw.enabled === true && questionIds.length > 0, questionIds };
+  // requiredIds ⊆ questionIds (a question can't be required if it isn't
+  // asked); showZh defaults ON (hide the inline Chinese only on explicit
+  // false) — owner controls added 2026-07-26.
+  const requiredIds = [...new Set(Array.isArray(raw.requiredIds) ? raw.requiredIds : [])]
+    .filter((id) => questionIds.includes(id));
+  return {
+    enabled: raw.enabled === true && questionIds.length > 0,
+    questionIds,
+    requiredIds,
+    showZh: raw.showZh !== false,
+  };
 }
 
 /**
