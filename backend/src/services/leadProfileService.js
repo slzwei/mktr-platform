@@ -1,7 +1,8 @@
 import { Op } from 'sequelize';
 import {
   Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
-  EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent, sequelize,
+  EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent,
+  RedemptionEvent, ConsentEvent, sequelize,
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { presentState } from '../utils/entitlementPresentState.js';
@@ -36,7 +37,8 @@ const LYFE_DELIVERY_REASONS = {
 export function makeLeadProfileService(overrides = {}) {
   const d = {
     Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
-    EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent, sequelize, logger,
+    EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent,
+    RedemptionEvent, ConsentEvent, sequelize, logger,
     getProspectDrawStatus: null, // defaults to a lucky-draw service built below
     getConsentState,
     presentState,
@@ -202,6 +204,104 @@ export function makeLeadProfileService(overrides = {}) {
     return map;
   }
 
+  // Lifecycle event types worth a History row. claim_viewed is handled
+  // separately (SQL-collapsed to first + count — one refresh-happy customer
+  // must never starve the cap); manual_override rows are filtered to the
+  // allowlisted actions below.
+  const LIFECYCLE_EVENT_TYPES = ['unlock_reversed', 'verify_attempt', 'rejected', 'reversed', 'expired', 'manual_override'];
+  const LIFECYCLE_ACTIONS = new Set(['resend_pass', 'resend_voucher', 'resend_boost', 'auto_resend', 'cancelled']);
+
+  /**
+   * Voucher/pass lifecycle per entitlement (lead-history-completeness):
+   * undo, scans (+rejections), void, reservation expiry, cancel and resend
+   * audits — newest-first bounded fetch re-sorted ASC for projection, staff
+   * actors named in one batch. Reasons surface ONLY on the two staff-explained
+   * events (undo, cancel) — erasure scrubs metadata.reason, so erased people's
+   * rows degrade to the bare fact automatically.
+   */
+  async function entitlementEvents(entitlementIds) {
+    const out = new Map();
+    if (!entitlementIds.length) return out;
+    const [decisive, views] = await Promise.all([
+      d.RedemptionEvent.findAll({
+        where: { entitlementId: { [Op.in]: entitlementIds }, type: { [Op.in]: LIFECYCLE_EVENT_TYPES } },
+        order: [['createdAt', 'DESC'], ['id', 'DESC']],
+        limit: 200,
+      }).catch(() => []),
+      d.sequelize.query(
+        `SELECT "entitlementId", MIN("createdAt") AS first_at, COUNT(*)::int AS n
+           FROM redemption_events
+          WHERE "entitlementId" IN (:ids) AND type = 'claim_viewed'
+          GROUP BY "entitlementId"`,
+        { replacements: { ids: entitlementIds } }
+      ).then(([rows]) => rows).catch(() => []),
+    ]);
+
+    const staffIds = [...new Set(decisive.filter((e) => e.actorType === 'staff' && e.actorUserId).map((e) => String(e.actorUserId)))];
+    const staff = staffIds.length
+      ? await d.User.findAll({ where: { id: { [Op.in]: staffIds } }, attributes: ['id', 'firstName', 'lastName'] }).catch(() => [])
+      : [];
+    const staffName = new Map(staff.map((u) => [String(u.id), `${u.firstName || ''} ${u.lastName || ''}`.trim() || null]));
+
+    const ensure = (id) => {
+      const k = String(id);
+      if (!out.has(k)) out.set(k, { events: [], claimViews: null });
+      return out.get(k);
+    };
+    for (const e of [...decisive].reverse()) {
+      const md = e.metadata || {};
+      if (e.type === 'manual_override' && !LIFECYCLE_ACTIONS.has(md.action)) continue;
+      ensure(e.entitlementId).events.push({
+        at: e.createdAt,
+        type: e.type,
+        ...(e.type === 'manual_override' ? { action: md.action, channel: md.channel || null } : {}),
+        ...((e.type === 'unlock_reversed' || md.action === 'cancelled') && md.reason
+          ? { reason: String(md.reason).slice(0, 120) }
+          : {}),
+        ...(e.actorType === 'staff' && e.actorUserId
+          ? { actorName: staffName.get(String(e.actorUserId)) || null }
+          : {}),
+      });
+    }
+    for (const v of views) {
+      ensure(v.entitlementId).claimViews = { firstAt: v.first_at, count: v.n };
+    }
+    return out;
+  }
+
+  /**
+   * Consent lifecycle rows (contact kind only), source-allowlisted:
+   * withdrawals are `source:'unsubscribe'` (metadata.via says whether the act
+   * was the email link or a WhatsApp STOP), re-grants are `source:
+   * 'resubscribe'`. Capture-time grants/denials stay off the timeline (the
+   * signup rows imply them — a capture-to-capture re-grant is a documented
+   * non-row), and erasure's own false event is excluded because the erasure
+   * banner/row carries that fact. Newest-first fetch with the canonical
+   * consent tie-break, reversed for projection.
+   */
+  async function consentTimeline(consumerId) {
+    if (!consumerId) return [];
+    const rows = await d.ConsentEvent.findAll({
+      where: {
+        consumerId,
+        kind: 'contact',
+        [Op.or]: [
+          { granted: false, source: 'unsubscribe' },
+          { granted: true, source: 'resubscribe' },
+        ],
+      },
+      order: [['occurredAt', 'DESC'], ['createdAt', 'DESC'], ['id', 'DESC']],
+      limit: 50,
+    }).catch(() => []);
+    return rows.reverse().map((r) => ({
+      at: r.occurredAt || r.createdAt,
+      granted: r.granted,
+      source: r.source,
+      via: r.metadata?.via || null,
+      campaignId: r.campaignId || null,
+    }));
+  }
+
   /** Draw rails across a campaign set — entitlements on one speak the draw voice. */
   async function drawRailActivationIds(campaignIds) {
     const railIds = new Set();
@@ -331,17 +431,23 @@ export function makeLeadProfileService(overrides = {}) {
       for (const r of rows) extraById.set(String(r.id), r);
     }
     const receipts = await deliveryReceipts(entIds);
+    const lifecycle = await entitlementEvents(entIds);
     journey.entitlements = journey.entitlements.map((e) => {
       const extra = extraById.get(String(e.id));
+      const lc = lifecycle.get(String(e.id));
       return {
         ...e,
         state: extra ? d.presentState(extra, d.now()) : null,
         unlockedVia: extra?.unlockedVia || null,
         tokenHint: extra?.tokenHint || null,
+        expiresAt: e.expiresAt ?? extra?.expiresAt ?? null,
         drawLinked: Boolean(extra?.activationId && railIds.has(String(extra.activationId))),
         delivery: receipts.get(String(e.id)) || { email: null, whatsapp: null },
+        events: lc?.events || [],
+        claimViews: lc?.claimViews || null,
       };
     });
+    journey.consentTimeline = await consentTimeline(journey.consumer?.id);
 
     // Consent is SCOPED — resolve per signup campaign (campaign + global
     // latest-wins), never one person-wide last-per-kind map.
@@ -413,6 +519,7 @@ export function makeLeadProfileService(overrides = {}) {
       }),
     ]);
     const receipts = await deliveryReceipts(entitlements.map((e) => e.id));
+    const lifecycle = await entitlementEvents(entitlements.map((e) => e.id));
     return {
       draw: drawMap.get(String(prospect.id)) ?? null,
       entitlements: entitlements.map((e) => ({
@@ -430,6 +537,8 @@ export function makeLeadProfileService(overrides = {}) {
         tokenHint: e.tokenHint || null,
         drawLinked: Boolean(e.activationId && railIds.has(String(e.activationId))),
         delivery: receipts.get(String(e.id)) || { email: null, whatsapp: null },
+        events: lifecycle.get(String(e.id))?.events || [],
+        claimViews: lifecycle.get(String(e.id))?.claimViews || null,
       })),
       rewardDiagnostic: entitlements.length
         ? null
@@ -521,6 +630,8 @@ export function makeLeadProfileService(overrides = {}) {
     getProspectOutcomes,
     deriveRewardDiagnostic,
     assignmentHistory,
+    entitlementEvents,
+    consentTimeline,
   };
 }
 

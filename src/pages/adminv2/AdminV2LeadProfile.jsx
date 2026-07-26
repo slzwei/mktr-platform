@@ -270,17 +270,70 @@ const FAMILY_TILE = {
   unassignment: { glyph: '←', bg: 'var(--hold-soft)', fg: 'var(--hold)' },
   boost: { glyph: '◆', bg: 'var(--hold-soft)', fg: 'var(--hold)' },
   reward: { glyph: '◆', bg: 'var(--ok-soft)', fg: 'var(--ok)' },
+  outcome: { glyph: '★', bg: 'var(--ok-soft)', fg: 'var(--ok)' },
+  consent: { glyph: '✋', bg: 'var(--hold-soft)', fg: 'var(--hold)' },
   screening: { glyph: '✦', bg: 'var(--ok-soft)', fg: 'var(--ok)' },
   delivery: { glyph: '✉', bg: 'var(--surface-2)', fg: 'var(--ink-2)' },
   arrival: { glyph: '○', bg: 'var(--surface-2)', fg: 'var(--ink-3)' },
   generic: { glyph: '○', bg: 'var(--surface-2)', fg: 'var(--ink-2)' },
 };
 
+// Voucher/pass lifecycle rows (lead-history-completeness). `drawLinked`
+// decides the noun — event metadata alone can't (draw lookups fail open on
+// the writer side).
+const RESEND_NOUNS = { resend_pass: 'Pass', resend_voucher: 'Voucher', resend_boost: 'Boost receipt' };
+function lifecycleRow(ev, e) {
+  const noun = e.drawLinked ? 'Pass' : 'Voucher';
+  if (ev.type === 'verify_attempt') {
+    return { title: e.drawLinked ? 'Pass scanned by consultant' : 'Voucher scanned at merchant', quiet: true, family: 'reward' };
+  }
+  if (ev.type === 'rejected') {
+    return { title: 'Scan rejected — not redeemable', quiet: true, family: 'reward', tone: 'bad' };
+  }
+  if (ev.type === 'unlock_reversed') {
+    return { title: 'Draw boost undone', detail: ev.reason ? ` — ${ev.reason}` : null, family: 'unassignment' };
+  }
+  if (ev.type === 'reversed') {
+    return { title: `Redemption voided${ev.actorName ? ` by ${ev.actorName}` : ''}`, family: 'reward', tone: 'bad' };
+  }
+  if (ev.type === 'expired') {
+    // The sweep only expires ELIGIBLE rows — this event is reservation expiry.
+    return { title: e.drawLinked ? 'Draw pass expired' : 'Reservation expired', quiet: true, family: 'generic' };
+  }
+  if (ev.type === 'manual_override') {
+    if (ev.action === 'cancelled') {
+      return { title: `Cancelled${ev.actorName ? ` by ${ev.actorName}` : ''}`, detail: ev.reason ? ` — ${ev.reason}` : null, family: 'reward', tone: 'bad' };
+    }
+    if (ev.action === 'auto_resend') {
+      return { title: `${noun} resend retried automatically`, quiet: true, family: 'delivery' };
+    }
+    if (RESEND_NOUNS[ev.action]) {
+      const via = ev.channel === 'link' ? 'share link issued' : ev.channel ? `via ${ev.channel}` : '';
+      return {
+        // "initiated", deliberately — the audit row commits before the
+        // fire-and-forget send; the delivery receipt rows carry the outcome.
+        title: `${RESEND_NOUNS[ev.action]} resend initiated${ev.actorName ? ` by ${ev.actorName}` : ''}`,
+        detail: via ? ` — ${via}` : null,
+        quiet: true,
+        family: 'delivery',
+      };
+    }
+  }
+  return null;
+}
+
+const OUTCOME_LAPSE_COPY = {
+  selected_unclaimed: 'not claimed in time',
+  selected_unreachable: 'could not be reached',
+  selected_ineligible: 'ineligible',
+  selected_declined: 'declined the prize',
+};
+
 function buildHistory(p, journey) {
   const events = [];
-  const push = (at, title, { detail = null, family = 'generic', quiet = false, campaign = null, state = null } = {}) => {
+  const push = (at, title, { detail = null, family = 'generic', quiet = false, campaign = null, state = null, tone = null } = {}) => {
     const t = at ? Date.parse(at) : NaN;
-    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, campaign, state });
+    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, campaign, state, tone });
   };
   const anchorCampaign = campaignRef(p.campaign?.id, p.campaign?.name);
 
@@ -321,18 +374,65 @@ function buildHistory(p, journey) {
     if (s.draw?.boostedAt) {
       push(s.draw.boostedAt, 'Draw boost recorded', { detail: ` — ${BOOST_VIA_COPY[s.draw.boostVia] || 'boost'}`, family: 'boost', campaign });
     }
+    // Draw result (lead-history-completeness): selection at drawnAt, its
+    // resolution (claim / lapse) at outcomeAt — never timeline a lapse at the
+    // draw moment. Missing timestamps skip the row rather than invent one.
+    const oc = s.draw?.outcome;
+    if (oc?.status?.startsWith('selected_')) {
+      if (oc.drawnAt) {
+        push(oc.drawnAt, 'Selected in the draw', {
+          detail: oc.attemptNo > 1 ? ` — redraw ${oc.attemptNo}` : null,
+          family: 'outcome', campaign,
+        });
+      }
+      if (oc.status === 'selected_claimed' && (oc.claimedAt || oc.outcomeAt)) {
+        push(oc.claimedAt || oc.outcomeAt, 'Prize claimed', { family: 'outcome', campaign });
+      } else if (OUTCOME_LAPSE_COPY[oc.status] && oc.outcomeAt) {
+        push(oc.outcomeAt, 'Selection lapsed', { detail: ` — ${OUTCOME_LAPSE_COPY[oc.status]}`, family: 'outcome', tone: 'bad', campaign });
+      }
+    } else if (oc?.status === 'not_selected_final' && oc.outcomeAt) {
+      push(oc.outcomeAt, 'Not selected in the draw', { quiet: true, family: 'generic', campaign });
+    }
   }
-  for (const e of journey?.entitlements || []) {
+  // Consumer-less (B4) leads carry their entitlements on signupProfile — the
+  // same lifecycle events must render for them too.
+  const entList = journey?.entitlements?.length ? journey.entitlements : (p.signupProfile?.entitlements || []);
+  for (const e of entList) {
     const campaign = campaignRef(e.campaignId, e.campaignName);
     const title = e.rewardTitle || 'reward';
     push(e.createdAt, e.drawLinked ? 'Draw pass reserved' : 'Reward reserved', { detail: e.drawLinked ? null : ` — ${title}`, family: 'reward', quiet: true, campaign });
     if (e.unlockedAt) push(e.unlockedAt, e.drawLinked ? 'Draw boost confirmed' : 'Voucher unlocked', { detail: e.drawLinked ? null : ` — ${title}`, family: e.drawLinked ? 'boost' : 'reward', campaign });
     if (e.redeemedAt) push(e.redeemedAt, 'Voucher redeemed ✓', { detail: ` — ${title}`, family: 'reward', campaign });
+    if (e.claimViews?.firstAt) {
+      // First open only, with the total — a refresh-happy customer is one row.
+      push(e.claimViews.firstAt, `Opened their reward link${e.claimViews.count > 1 ? ` — ×${e.claimViews.count} views` : ''}`, { family: 'arrival', quiet: true, campaign });
+    }
+    for (const ev of e.events || []) {
+      const row = lifecycleRow(ev, e);
+      if (row) push(ev.at, row.title, { detail: row.detail || null, family: row.family, quiet: row.quiet || false, tone: row.tone || null, campaign });
+    }
+    // Issued vouchers expire WITHOUT a ledger event (the sweep only touches
+    // eligible rows) — derive the row from expiresAt.
+    if (!e.drawLinked && e.status === 'issued' && !e.redeemedAt && e.expiresAt && Date.parse(e.expiresAt) < Date.now()) {
+      push(e.expiresAt, 'Voucher expired', { detail: ` — ${title}`, family: 'generic', quiet: true, campaign });
+    }
     for (const ch of ['email', 'whatsapp']) {
       const r = e.delivery?.[ch];
       if (!r?.at) continue;
       push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} — `, { family: 'delivery', quiet: true, campaign, state: deliveryState(r) });
     }
+  }
+  // Consent lifecycle (contact kind, source-allowlisted server-side).
+  for (const c of journey?.consentTimeline || []) {
+    if (c.granted === false) {
+      const via = c.via === 'wa_stop' ? 'WhatsApp STOP' : c.via === 'unsubscribe_link' ? 'unsubscribe link' : (c.via || 'unsubscribe');
+      push(c.at, 'Marketing consent withdrawn', { detail: ` — ${via}`, family: 'consent', tone: 'bad' });
+    } else {
+      push(c.at, 'Marketing consent re-granted', { family: 'consent' });
+    }
+  }
+  if (journey?.consumer?.erasedAt) {
+    push(journey.consumer.erasedAt, 'Erased under PDPA', { detail: ' — personal data removed', family: 'unassignment', tone: 'bad' });
   }
   for (const b of journey?.broadcasts?.recent || []) {
     push(b.sentAt || b.at, `Marketing email — ${b.status}${b.reason ? ` (${b.reason.replace(/_/g, ' ')})` : ''}`, { family: 'delivery', quiet: true });
@@ -850,7 +950,7 @@ export default function AdminV2LeadProfile() {
             </Card>
           </div>
 
-          <Card title="History" meta={`EVERY ACTION BY THIS PERSON · ${history.length} EVENT${history.length === 1 ? '' : 'S'}`}>
+          <Card title="History" meta={history.length > 120 ? `LATEST 120 OF ${history.length} EVENTS` : `EVERY ACTION BY THIS PERSON · ${history.length} EVENT${history.length === 1 ? '' : 'S'}`}>
             {historyDays.length === 0 ? (
               <EmptyState title="Nothing yet" hint="Events land here as they happen." />
             ) : (
@@ -863,10 +963,10 @@ export default function AdminV2LeadProfile() {
                     {day.events.map((e, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0' }}>
                         <GlyphTile family={e.family} />
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: e.quiet ? 'var(--ink-2)' : 'var(--ink)', fontWeight: e.quiet ? 500 : 600, lineHeight: 1.35 }}>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: e.tone === 'bad' ? 'var(--bad)' : e.quiet ? 'var(--ink-2)' : 'var(--ink)', fontWeight: e.quiet ? 500 : 600, lineHeight: 1.35 }}>
                           {e.title}
                           {e.state && <HoverHint label={e.state.text} hint={e.state.hint} color={e.state.ok ? undefined : 'var(--bad)'} />}
-                          {e.detail && <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{e.detail}</span>}
+                          {e.detail && <span style={{ color: e.tone === 'bad' ? 'var(--bad)' : 'var(--ink-2)', fontWeight: 500 }}>{e.detail}</span>}
                         </span>
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)', flex: 'none', paddingTop: 2, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                           {e.campaign && (

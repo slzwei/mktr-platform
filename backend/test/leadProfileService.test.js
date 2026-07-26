@@ -504,3 +504,59 @@ describe('assignmentHistory — the three assigned-activity flavors', () => {
     expect(map.get('p1')[0].agentName).toBe('Marcus Wong');
   });
 });
+
+describe('entitlementEvents — voucher/pass lifecycle projection', () => {
+  const ev = (entitlementId, createdAt, type, { metadata = null, actorType = 'system', actorUserId = null } = {}) =>
+    ({ entitlementId, createdAt, type, metadata, actorType, actorUserId });
+
+  it('projects the lifecycle allowlist ASC, names staff, allowlists reasons, skips foreign overrides', async () => {
+    const rows = [
+      ev('e1', '2026-07-25T10:00:00Z', 'manual_override', { metadata: { action: 'cancelled', reason: 'duplicate signup' }, actorType: 'staff', actorUserId: 's-1' }),
+      ev('e1', '2026-07-25T09:00:00Z', 'reversed', { actorType: 'staff', actorUserId: 's-1' }),
+      ev('e1', '2026-07-25T08:00:00Z', 'manual_override', { metadata: { action: 'resend_voucher', channel: 'whatsapp' }, actorType: 'staff', actorUserId: 's-1' }),
+      ev('e1', '2026-07-25T07:00:00Z', 'manual_override', { metadata: { action: 'erased' } }),
+      ev('e1', '2026-07-25T06:00:00Z', 'verify_attempt', {}),
+    ];
+    const svc = makeLeadProfileService({
+      RedemptionEvent: { findAll: jest.fn(async () => rows) },
+      User: { findAll: jest.fn(async () => [{ id: 's-1', firstName: 'Ops', lastName: 'Staff' }]) },
+      sequelize: { query: jest.fn(async () => [[{ entitlementId: 'e1', first_at: '2026-07-25T05:00:00Z', n: 7 }]]) },
+    });
+    const map = await svc.entitlementEvents(['e1']);
+    const got = map.get('e1');
+    expect(got.events.map((e) => e.type)).toEqual(['verify_attempt', 'manual_override', 'reversed', 'manual_override']);
+    expect(got.events[1]).toMatchObject({ action: 'resend_voucher', channel: 'whatsapp', actorName: 'Ops Staff' });
+    expect(got.events[3]).toMatchObject({ action: 'cancelled', reason: 'duplicate signup' });
+    expect(got.events[2].reason).toBeUndefined(); // reversed reason never surfaces
+    expect(got.claimViews).toEqual({ firstAt: '2026-07-25T05:00:00Z', count: 7 });
+  });
+
+  it('returns empty shapes when queries fail (projection never breaks the profile)', async () => {
+    const svc = makeLeadProfileService({
+      RedemptionEvent: { findAll: jest.fn(async () => { throw new Error('db'); }) },
+      sequelize: { query: jest.fn(async () => { throw new Error('db'); }) },
+    });
+    const map = await svc.entitlementEvents(['e1']);
+    expect(map.size).toBe(0);
+  });
+});
+
+describe('consentTimeline — source-allowlisted contact events', () => {
+  it('keeps unsubscribes (with via) and resubscribes, newest-first fetch reversed to ASC', async () => {
+    const findAll = jest.fn(async () => [
+      { occurredAt: '2026-07-26T10:00:00Z', createdAt: '2026-07-26T10:00:00Z', granted: true, source: 'resubscribe', metadata: {}, campaignId: null },
+      { occurredAt: '2026-07-25T10:00:00Z', createdAt: '2026-07-25T10:00:00Z', granted: false, source: 'unsubscribe', metadata: { via: 'wa_stop' }, campaignId: null },
+    ]);
+    const svc = makeLeadProfileService({ ConsentEvent: { findAll } });
+    const rows = await svc.consentTimeline('con-1');
+    expect(rows.map((r) => [r.granted, r.via])).toEqual([[false, 'wa_stop'], [true, null]]);
+    const where = findAll.mock.calls[0][0].where;
+    expect(where.kind).toBe('contact');
+    expect(findAll.mock.calls[0][0].order[0]).toEqual(['occurredAt', 'DESC']);
+  });
+
+  it('empty for missing consumer id', async () => {
+    const svc = makeLeadProfileService({ ConsentEvent: { findAll: jest.fn() } });
+    expect(await svc.consentTimeline(null)).toEqual([]);
+  });
+});

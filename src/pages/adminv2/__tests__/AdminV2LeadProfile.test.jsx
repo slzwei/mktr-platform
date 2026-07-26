@@ -85,10 +85,20 @@ const PROFILE = {
       redeemedAt: '2026-05-03T03:26:00Z', unlockedVia: 'agent_scan', tokenHint: '9876',
       drawLinked: false,
       delivery: { email: { ok: true, kind: 'voucher', at: '2026-05-02T02:00:00Z' }, whatsapp: null },
+      claimViews: { firstAt: '2026-05-02T03:00:00Z', count: 7 },
+      events: [
+        { at: '2026-05-03T03:20:00Z', type: 'verify_attempt' },
+        { at: '2026-05-03T05:00:00Z', type: 'manual_override', action: 'resend_voucher', channel: 'whatsapp', actorName: 'Ops Staff' },
+        { at: '2026-05-04T05:00:00Z', type: 'manual_override', action: 'cancelled', reason: 'duplicate signup', actorName: 'Ops Staff' },
+      ],
     }],
     drawEntries: 1,
     suppressions: [],
     broadcasts: { counts: { sent: 1 }, recent: [] },
+    consentTimeline: [
+      { at: '2026-07-22T04:00:00Z', granted: false, source: 'unsubscribe', via: 'wa_stop', campaignId: null },
+      { at: '2026-07-23T04:00:00Z', granted: true, source: 'resubscribe', via: null, campaignId: null },
+    ],
   },
 };
 
@@ -319,6 +329,26 @@ describe('AdminV2LeadProfile — assignments + consent copy', () => {
     expect(screen.getByText('Returned to held')).toBeInTheDocument();
     expect(screen.getByText(/taken back from Lee Yi Heng/)).toBeInTheDocument();
     expect(screen.getByText('Unassigned')).toBeInTheDocument();
+  });
+
+  it('History shows voucher lifecycle, draw outcome and consent rows', async () => {
+    const profile = JSON.parse(JSON.stringify(PROFILE));
+    profile.consumer.signups[0].draw.outcome = {
+      status: 'selected_claimed', attemptNo: 2, drawnAt: '2026-07-24T06:00:00Z',
+      claimedAt: '2026-07-25T06:00:00Z', outcomeAt: '2026-07-25T06:00:00Z', claimDeadline: null,
+    };
+    fetchProspectProfile.mockResolvedValue(profile);
+    setup('/admin/leads/p1?view=profile');
+    expect(await screen.findByText('Selected in the draw')).toBeInTheDocument();
+    expect(screen.getByText('Prize claimed')).toBeInTheDocument();
+    expect(screen.getByText(/Opened their reward link — ×7 views/)).toBeInTheDocument();
+    expect(screen.getByText('Voucher scanned at merchant')).toBeInTheDocument();
+    expect(screen.getByText('Voucher resend initiated by Ops Staff')).toBeInTheDocument();
+    expect(screen.getByText('Cancelled by Ops Staff')).toBeInTheDocument();
+    expect(screen.getByText(/duplicate signup/)).toBeInTheDocument();
+    expect(screen.getByText('Marketing consent withdrawn')).toBeInTheDocument();
+    expect(screen.getByText(/WhatsApp STOP/)).toBeInTheDocument();
+    expect(screen.getByText('Marketing consent re-granted')).toBeInTheDocument();
   });
 
   it('clicking a consent version opens the wording in a themed modal', async () => {

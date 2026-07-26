@@ -1053,9 +1053,20 @@ export function makeLuckyDrawService(overrides = {}) {
           attemptNo: last.attemptNo,
           claimDeadline: last.claimDeadline || null,
           claimedAt: last.claimedAt || null,
+          // History timestamps (lead-history-completeness): drawnAt is the
+          // SELECTION moment; outcomeAt is when the outcome was recorded
+          // (claim time, or the staff outcome-entry moment via updatedAt) —
+          // a lapse must not be timelined at the draw moment.
+          drawnAt: last.drawnAt || null,
+          outcomeAt: last.outcome === 'pending' ? null : (last.claimedAt || last.updatedAt || null),
         };
       } else if (attempts.length > 0) {
-        outcome = { status: anyClaimed ? 'not_selected_final' : 'not_selected_yet' };
+        const winner = attempts.find((a) => a.outcome === 'claimed') || null;
+        outcome = {
+          status: anyClaimed ? 'not_selected_final' : 'not_selected_yet',
+          // Final non-selection becomes TRUE when the eventual winner claims.
+          outcomeAt: anyClaimed ? (winner?.claimedAt || null) : null,
+        };
       }
       out.set(pid, {
         ...block,
