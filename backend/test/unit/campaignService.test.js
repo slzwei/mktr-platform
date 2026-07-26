@@ -443,12 +443,17 @@ describe('campaignService (unit)', () => {
   // ────────────────────────────────────────────────
 
   describe('createCampaign', () => {
+    // The API create door requires the campaign brief's two picks
+    // (campaign-brief.md §7.2); every create body in this suite carries one.
+    const BRIEF = { objective: 'agent_leads', product: 'insurance' };
+
     it('creates campaign with all provided fields', async () => {
       const inst = makeCampaignInstance();
       Campaign.create.mockResolvedValue(inst);
 
       const body = {
         name: 'New Campaign',
+        targetAudience: BRIEF,
         min_age: 21,
         max_age: 55,
         start_date: '2026-01-01',
@@ -471,7 +476,7 @@ describe('campaignService (unit)', () => {
     it('sets createdBy from user.id', async () => {
       Campaign.create.mockResolvedValue(makeCampaignInstance());
 
-      await campaignService.createCampaign({ name: 'C' }, { id: 'user-99', role: 'admin' });
+      await campaignService.createCampaign({ name: 'C', targetAudience: BRIEF }, { id: 'user-99', role: 'admin' });
 
       const createArg = Campaign.create.mock.calls[0][0];
       expect(createArg.createdBy).toBe('user-99');
@@ -480,7 +485,7 @@ describe('campaignService (unit)', () => {
     it('defaults status to active when is_active is true', async () => {
       Campaign.create.mockResolvedValue(makeCampaignInstance());
 
-      await campaignService.createCampaign({ name: 'C', is_active: true }, { id: 'u1' });
+      await campaignService.createCampaign({ name: 'C', targetAudience: BRIEF, is_active: true }, { id: 'u1' });
 
       const createArg = Campaign.create.mock.calls[0][0];
       expect(createArg.status).toBe('active');
@@ -489,7 +494,7 @@ describe('campaignService (unit)', () => {
     it('defaults status to draft when is_active is false', async () => {
       Campaign.create.mockResolvedValue(makeCampaignInstance());
 
-      await campaignService.createCampaign({ name: 'C', is_active: false }, { id: 'u1' });
+      await campaignService.createCampaign({ name: 'C', targetAudience: BRIEF, is_active: false }, { id: 'u1' });
 
       const createArg = Campaign.create.mock.calls[0][0];
       expect(createArg.status).toBe('draft');
@@ -498,12 +503,59 @@ describe('campaignService (unit)', () => {
     it('defaults is_active to true when not provided', async () => {
       Campaign.create.mockResolvedValue(makeCampaignInstance());
 
-      await campaignService.createCampaign({ name: 'C' }, { id: 'u1' });
+      await campaignService.createCampaign({ name: 'C', targetAudience: BRIEF }, { id: 'u1' });
 
       const createArg = Campaign.create.mock.calls[0][0];
       expect(createArg.is_active).toBe(true);
       // Note: status uses the destructured is_active (undefined → falsy → 'draft')
       expect(createArg.status).toBe('draft');
+    });
+
+    // ── campaign brief (campaign-brief.md §5/§7) ──
+
+    it('422s without a brief — objective + product block the API create door', async () => {
+      await expect(campaignService.createCampaign({ name: 'C' }, { id: 'u1', role: 'admin' }))
+        .rejects.toMatchObject({ statusCode: 422, message: expect.stringMatching(/objective/) });
+      await expect(campaignService.createCampaign(
+        { name: 'C', targetAudience: { objective: 'agent_leads' } }, { id: 'u1', role: 'admin' }
+      )).rejects.toMatchObject({ statusCode: 422, message: expect.stringMatching(/product/) });
+      expect(Campaign.create).not.toHaveBeenCalled();
+    });
+
+    it('422s on an invalid brief value rather than silently dropping it', async () => {
+      await expect(campaignService.createCampaign(
+        { name: 'C', targetAudience: { ...BRIEF, audience: { language: 'klingon' } } },
+        { id: 'u1', role: 'admin' }
+      )).rejects.toMatchObject({ statusCode: 422 });
+      expect(Campaign.create).not.toHaveBeenCalled();
+    });
+
+    it('stores the normalized brief with the archetype derived from the created doc', async () => {
+      Campaign.create.mockResolvedValue(makeCampaignInstance());
+
+      await campaignService.createCampaign({
+        name: 'Draw C',
+        is_active: false,
+        targetAudience: {
+          ...BRIEF,
+          briefVersion: 42,
+          archetype: 'quiz', // payload archetype is ignored — derived, never taken
+          audience: { language: 'zh', ageBands: ['60+', '45-59'] },
+        },
+        design_config: {
+          luckyDraw: { enabled: true, closesAt: '2026-09-30', prize: 'iPhone' },
+          termsContent: '<p>terms</p>',
+        },
+      }, { id: 'u1', role: 'admin' });
+
+      const stored = Campaign.create.mock.calls[0][0].targetAudience;
+      expect(stored).toEqual({
+        briefVersion: 1,
+        objective: 'agent_leads',
+        product: 'insurance',
+        audience: { language: 'zh', ageBands: ['45-59', '60+'] },
+        archetype: 'draw',
+      });
     });
   });
 
@@ -596,6 +648,84 @@ describe('campaignService (unit)', () => {
         await campaignService.updateCampaign('camp-1', { drawPassTheme: 'gold' }, makeReq());
 
         expect(inst.update.mock.calls[0][0].design_config).toBeUndefined();
+      });
+    });
+
+    // Campaign brief on update: full-valid-or-422 when provided, archetype
+    // tracks the doc, and pre-brief campaigns stay blank (campaign-brief.md §4.4/§7.3).
+    describe('targetAudience (campaign brief)', () => {
+      const storedBrief = {
+        briefVersion: 1, objective: 'agent_leads', product: 'insurance', archetype: 'plain_form',
+      };
+
+      it('stores a provided brief with the archetype derived from the stored doc', async () => {
+        const inst = makeCampaignInstance({ design_config: { marketplaceListed: true } });
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await campaignService.updateCampaign(
+          'camp-1',
+          { targetAudience: { objective: 'partner_footfall', product: 'partner_offer', archetype: 'draw' } },
+          makeReq()
+        );
+
+        expect(inst.update.mock.calls[0][0].targetAudience).toEqual({
+          briefVersion: 1, objective: 'partner_footfall', product: 'partner_offer', archetype: 'reward',
+        });
+      });
+
+      it('422s an invalid brief and writes nothing', async () => {
+        const inst = makeCampaignInstance();
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await expect(campaignService.updateCampaign(
+          'camp-1', { targetAudience: { objective: 'agent_leads' } }, makeReq()
+        )).rejects.toMatchObject({ statusCode: 422 });
+        expect(inst.update).not.toHaveBeenCalled();
+      });
+
+      it('recomputes the archetype when a design_config save changes the mechanic', async () => {
+        const inst = makeCampaignInstance({
+          is_active: false,
+          status: 'draft',
+          targetAudience: storedBrief,
+          design_config: {},
+        });
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await campaignService.updateCampaign(
+          'camp-1',
+          { design_config: { luckyDraw: { enabled: true, closesAt: '2026-09-30', prize: 'iPhone' }, termsContent: '<p>t</p>' } },
+          makeReq()
+        );
+
+        expect(inst.update.mock.calls[0][0].targetAudience).toEqual({ ...storedBrief, archetype: 'draw' });
+      });
+
+      it('an unrelated save leaves an in-sync brief untouched', async () => {
+        const inst = makeCampaignInstance({ targetAudience: { ...storedBrief }, design_config: {} });
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await campaignService.updateCampaign('camp-1', { name: 'Renamed' }, makeReq());
+
+        expect(inst.update.mock.calls[0][0].targetAudience).toBeUndefined();
+      });
+
+      it('pre-brief campaigns stay blank — {} never gets an archetype stamped', async () => {
+        const inst = makeCampaignInstance({
+          is_active: false,
+          status: 'draft',
+          targetAudience: {},
+          design_config: {},
+        });
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await campaignService.updateCampaign(
+          'camp-1',
+          { design_config: { luckyDraw: { enabled: true, closesAt: '2026-09-30', prize: 'iPhone' }, termsContent: '<p>t</p>' } },
+          makeReq()
+        );
+
+        expect(inst.update.mock.calls[0][0].targetAudience).toBeUndefined();
       });
     });
 

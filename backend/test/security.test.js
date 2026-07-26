@@ -214,6 +214,7 @@ describe('XSS prevention in request body', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         name: '<img src=x onerror=alert(document.cookie)>',
+        targetAudience: { objective: 'agent_leads', product: 'insurance' },
         type: 'lead_generation'
       })
     expect([200, 201, 400]).toContain(res.status)

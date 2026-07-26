@@ -1,7 +1,15 @@
 # Campaign brief — asking what a campaign is FOR, at creation
 
-**Status:** v2 SCOPE — §7's four owner decisions RESOLVED (Shawn, 2026-07-26).
-Not Codex-reviewed, not built. Ready for review.
+**Status:** BUILT 2026-07-27 — Phases 1 + 2 + 4 shipped in one PR with three
+owner amendments recorded in §7.5 (product axis added; lifeStage dropped per
+scoring-plan §16 M10; target.metric derived, not stored). Phase 3 (scoring)
+stays gated; Phase 5 (measurement) unbuilt.
+Twin `src/lib/campaignBrief.js` ↔ `backend/src/utils/campaignBrief.js`
+(byte-parity test), capture in both create surfaces (workspace
+CampaignDetailsTab + classic AdminCampaignForm), enforcement in
+`campaignService.createCampaign`/`updateCampaign`, AI feed in
+`campaignCopyAiService.buildCampaignContext` (`ctx.campaignBrief`), question
+suggestions in the Studio Form panel.
 **Author:** Claude, 2026-07-26 (from Shawn's ask: "during campaign creation we
 need to ask the user what the campaign target audience is, what is the end
 goal")
@@ -56,6 +64,9 @@ fields and leaves `type` alone.
    contradiction between the answer and the truth.
 3. **Never block creation.** A campaign with no brief must still work exactly
    as today. Seven prod campaigns have no brief and never will.
+   *(Superseded for NEW campaigns by owner decision §7.2: creation is blocked
+   on the objective and product picks. Existing briefless campaigns still work
+   exactly as today — updates never force answers.)*
 4. **Advisory to AI, authoritative to config.** The brief *suggests* to the
    Studio AI (which the admin can then override freely) but *determines* the
    scoring segment (which must be deterministic and explainable).
@@ -76,20 +87,40 @@ fields and leaves `type` alone.
 Not Meta's objective taxonomy — MKTR's. These are the four things a campaign
 here actually does.
 
+### 4.1b Product — "what is being offered?" (single pick, required)
+
+**Amendment 2026-07-27:** the v2 scope conflated objective with product; they
+are orthogonal. You can run `agent_leads` for insurance OR for recruitment —
+and they want opposite people on the page.
+
+| Value | Means |
+|---|---|
+| `insurance` | The reader is a potential policyholder |
+| `recruitment` | The reader is a potential hire, not a customer |
+| `partner_offer` | A partner's product or venue is the draw |
+
+Required alongside objective — creation is blocked on both picks (§7.2).
+
 ### 4.2 Audience — "who is this for?" (structured, all optional)
 
 - **Language / market** — `en` \| `zh` \| `ms` \| `ta` \| `any`
   → **the single highest-value field**: feeds the scoring market-fit segment
   per campaign, replacing today's one global zh/chinese assumption.
-- **Age band** — multi-select over the taxonomy's 5-year bands, collapsed to
-  ranges (`18-29`, `30-44`, `45-59`, `60+`).
-- **Life stage** — `young_single` \| `young_family` \| `established_family` \|
-  `pre_retiree` \| `retiree` \| `any`.
+- **Age band** — multi-select over ranges collapsing the taxonomy's 5-year
+  birth-year bands (`18-29`, `30-44`, `45-59`, `60+`).
 - **Income band** — reuse `finance.annual_income_band`'s five bands, or `any`.
 
-Every axis maps onto an existing `factTaxonomy` key. That is deliberate: the
-brief states the audience in the SAME vocabulary the fact ledger uses, so
-"who we wanted" and "who we got" are directly comparable (§7).
+There is deliberately **NO life-stage axis** (amendment 2026-07-27, closing
+scoring-plan §16 M10): `factTaxonomy` has no lifeStage key, and life stage is
+derivable from children + marital + age facts — inventing a brief-only
+vocabulary would break the comparability rule below.
+
+Language and income map onto existing `factTaxonomy` keys
+(`identity.preferred_language`, `finance.annual_income_band` — the parity is
+test-enforced via `validateFact`); age bands are ranges over the taxonomy's
+birth-year bands. That is deliberate: the brief states the audience in the
+SAME vocabulary the fact ledger uses, so "who we wanted" and "who we got" are
+directly comparable (§6.5).
 
 ### 4.3 Target — "how many, by when?" (optional, two fields)
 
@@ -106,19 +137,24 @@ field §6.3's scoring split consumes.
 
 ## 5. Where it lives
 
-**Reuse `campaigns.targetAudience`**, widened to hold the whole brief:
+**Reuse `campaigns.targetAudience`**, widened to hold the whole brief
+(as built — no lifeStage, no stored metric, product required):
 
 ```
 targetAudience: {
+  briefVersion: 1,
   objective: 'agent_leads',
-  audience: { language: 'zh', ageBands: ['30-44','45-59'],
-              lifeStage: 'established_family', incomeBand: 'any' },
-  target: { metric: 'qualified_leads', value: 200, byDate: '2026-09-30' },
-  archetype: 'draw',            // derived, recomputed on save
-  notes: '…',                   // free text, advisory, consumed by nothing
-  briefVersion: 1
+  product: 'insurance',
+  audience: { language: 'zh', ageBands: ['30-44','45-59'], incomeBand: 'any' },
+  target: { value: 200, byDate: '2026-09-30' },
+  archetype: 'draw',            // derived, recomputed on save — never asked, never taken from input
+  notes: '…',                   // free text, advisory, consumed by NOTHING (not even the AI prompt)
 }
 ```
+
+`target.metric` is NOT stored (amendment 2026-07-27): §4.1's table already
+maps each objective to its success metric, and storing the pair invites the
+contradiction principle 2 exists to prevent. Measurement derives it.
 
 **Not `design_config`.** The brief is business metadata, not design. Putting
 it in `design_config` would drag it through the v2 clamp, the twin-file parity
@@ -132,22 +168,41 @@ part of the payload. One fewer column beats one better name.
 
 ## 6. What consumes it — phased, each independently shippable
 
-### 6.1 Phase 1 — capture (no consumer)
+### 6.1 Phase 1 — capture (no consumer) — **BUILT 2026-07-27**
 
-Schema + a create-flow step + an edit surface in Studio. Ships useful on day
+Schema + a create-flow step + an edit surface. Ships useful on day
 one purely as recorded intent: "what was this campaign for?" is currently
 unanswerable for all seven prod campaigns.
+
+As built: the four questions render in BOTH create surfaces (workspace
+`CampaignDetailsTab` + classic `AdminCampaignForm` — whichever
+`VITE_CAMPAIGN_WORKSPACE_ENABLED` selects, the server requirement cannot 422
+a UI with no way to answer). The edit surface is the same Details form, NOT
+Studio — the brief is campaign metadata and saves with the other metadata;
+the Studio READS it (AI context + Form-panel suggestions) but does not edit
+it. Enforcement is service-level (`normalizeBrief` → 422), so internal
+creators (Retell bootstrap `bootstrap.js`, `duplicateCampaign` — which
+carries the source brief verbatim via its row spread) stay exempt.
 
 Backfill: none. Existing campaigns keep `{}` and every consumer treats a
 missing brief as "no opinion", never as a default.
 
-### 6.2 Phase 2 — Studio AI (the biggest immediate win)
+### 6.2 Phase 2 — Studio AI (the biggest immediate win) — **BUILT 2026-07-27**
 
 Feed objective + audience into the "Fill everything" prompt. The AI currently
-infers audience from the campaign name; a `zh` / `pre_retiree` brief would
+infers audience from the campaign name; a `zh` / near-retiree brief would
 change headline, tone, imagery, and the T&C register.
 
 Strictly advisory — the admin overrides anything, as today.
+
+As built: `buildCampaignContext` adds `ctx.campaignBrief` =
+`briefPromptFacts(campaign.targetAudience)` — fixed enum→phrase strings, so
+no operator-typed text rides the prompt (notes are excluded by design; the
+target number/date are validated). One guardrail line tells the model the
+stored brief is the durable audience signal and the operator's typed per-run
+brief wins on conflict. All modes get it (full / everything / scoped),
+including the create flow's headless auto-design pass, which runs after the
+campaign row (and its brief) is stored.
 
 ### 6.3 Phase 3 — scoring (gated)
 
@@ -165,15 +220,22 @@ Two things, both blocked on the layer split discussed 2026-07-26:
 before there are enough won leads to validate any weighting at all (prod
 2026-07-26: **zero** won leads — every weight is currently unvalidated).
 
-### 6.4 Phase 4 — profile-question suggestion
+### 6.4 Phase 4 — profile-question suggestion — **BUILT 2026-07-27**
 
 The brief implies which of PR 0's five questions earn their conversion cost:
-an `audience_build` campaign wants `language` only; an `agent_leads` campaign
-targeting `pre_retiree` wants `retirement_age` and `annual_income`.
+an `audience_build` campaign wants `language` only; an `agent_leads` insurance
+campaign targeting 45-59/60+ wants `retirement_age` and `annual_income`.
 
 **Suggest, never auto-enable.** Enabling a question changes a live funnel's
 conversion — that stays a human decision, consistent with the existing rule
 that AI "Fill everything" never enables questions on its own.
+
+As built: `suggestProfileQuestions(brief)` (deterministic rules documented in
+the twin) renders a dashed "suggested by the campaign brief" block in the
+Studio Form panel; each row is a one-click **+ Add** (the click is the human
+decision — it may switch the section on). Recruitment and partner offers
+deliberately suggest nothing beyond the language rules — asking a recruit or
+a voucher redeemer their income is pure friction. `pets` is never suggested.
 
 ### 6.5 Phase 5 — measurement
 
@@ -203,6 +265,23 @@ be faked by intuition at forty campaigns.
    than moving to Redeem Ops. Open sub-question deferred: whether such a
    campaign also needs partner-specific brief fields (which partner, what was
    committed) — revisit when the first one is built.
+
+### 7.5 Build amendments (owner-directed, 2026-07-27)
+
+1. **`product` added as a second REQUIRED pick** (§4.1b): `insurance` \|
+   `recruitment` \| `partner_offer`. The v2 scope conflated objective with
+   product; they are orthogonal, and the same objective wants opposite people
+   depending on the product. Creation now blocks on BOTH picks.
+2. **`lifeStage` dropped** from §4.2 and the §5 shape — closes
+   `per-campaign-lead-scoring.md` §16 M10. No `factTaxonomy` key exists for
+   it; it is derivable from children + marital + age.
+3. **`target.metric` not stored** — derived from the objective at read time
+   (§5). "Derive what you can" applied to our own schema.
+4. **Edit surface** is the Details form (workspace tab + classic page), not
+   Studio (§6.1) — the brief saves with campaign metadata; Studio reads it.
+5. `notes` is accepted and stored by the schema (≤500 chars, consumed by
+   nothing) but has no create-UI field yet — add one only if intent-recording
+   demand shows up.
 
 ## 8. Explicitly out of scope
 

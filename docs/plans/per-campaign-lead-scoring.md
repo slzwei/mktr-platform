@@ -376,8 +376,20 @@ reworked; four re-opened against v2 itself:
    product → global resolution, including how per-key caching invalidates
    inherited entries (today: one process-wide slot with a 60s TTL,
    `consumerScoringService.js:47-76`).
+   *First half CLOSED 2026-07-27 with the brief build: `product` is now
+   §4.1b of `campaign-brief.md` — a REQUIRED enum
+   (`insurance | recruitment | partner_offer`) captured at creation and
+   stored in `campaigns.targetAudience` (`utils/campaignBrief.js`). The §9
+   config-resolution schema half stays open.*
 
-4. **M10 (re-opened) — lifeStage.** §13.2 says drop `lifeStage` from the
+4. **M10 — lifeStage. CLOSED 2026-07-27** (the edit, not a description of
+   it): `campaign-brief.md` §4.2 and its §5 example JSON no longer carry
+   `lifeStage`, and the mapping claim now names the two axes that DO map
+   (`identity.preferred_language`, `finance.annual_income_band` — parity
+   test-enforced via `validateFact`) with age bands as ranges over
+   birth-year bands. The shipped validator (`utils/campaignBrief.js`
+   `normalizeBrief`) rejects a `lifeStage` key outright.
+   *Original finding:* §13.2 says drop `lifeStage` from the
    brief; the brief still lists it in its §4.2 AND in its §5 example JSON, and
    still claims "every axis maps onto an existing `factTaxonomy` key" — there
    is no lifeStage key (`factTaxonomy.js` `FACT_KEYS`). Same rule: make the
