@@ -47,6 +47,14 @@ function qrHeaderEnabled() {
   return String(process.env.WHATSAPP_QR_HEADER ?? 'true').toLowerCase() !== 'false';
 }
 
+/** Boost-receipt bodies whose {{2}} is the draw name and {{3}} the chances
+ * count. Everything newer says it the way people speak it — "you now have ×10
+ * chances for the iPhone 17 Pro Lucky Draw" — so the count comes second.
+ * See sendBoostReceiptWhatsApp for why this is keyed by name. */
+const BOOST_TEMPLATES_DRAW_NAME_SECOND = new Set([
+  'draw_boost_receipt', 'draw_boost_receipt_v2', 'draw_session_receipt',
+]);
+
 /** Host baked into the templates' body link — the WA channel standardizes on redeem.sg. */
 function claimOrigin() {
   return process.env.WHATSAPP_CLAIM_ORIGIN || 'https://redeem.sg';
@@ -373,17 +381,29 @@ export function makeWhatsappService(overrides = {}) {
   }
 
   /** "×N confirmed" receipt at a recorded draw session — the WA twin of
-   * sendBoostReceiptEmail, same register as the email body. The
-   * `draw_boost_receipt` template carries the Vault 'boost' card as its IMAGE
-   * header — the QR-less celebration state (giant ×N; the pass is consumed,
-   * nothing left to scan); 3 params = name, draw name, multiplier. */
+   * sendBoostReceiptEmail, same register as the email body. The template
+   * carries the Vault 'boost' card as its IMAGE header — the QR-less
+   * celebration state (giant ×N; the pass is consumed, nothing left to scan).
+   *
+   * Always 3 params, but their ORDER belongs to the template, not to this
+   * deploy: `draw_boost_receipt_v3` reads {{2}} as the chances count and {{3}}
+   * as the draw name, while the older `draw_boost_receipt`/`_v2` bodies read
+   * them the other way round. Meta's approval and the Render env flip are two
+   * manual steps that cannot be made simultaneous, so binding the order to the
+   * resolved NAME is what keeps every intermediate state correct — otherwise
+   * whichever half lands first sends "you now have iPhone 17 Pro Lucky Draw
+   * chances for the 10". Unknown names get the v3 order (the direction of
+   * travel); drop this map once the legacy pair is retired. */
   async function sendBoostReceiptWhatsApp({ prospect, drawCtx }) {
+    const templateName = process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt';
+    const drawName = cleanParam(drawCtx?.drawName, 'the lucky draw');
+    const multiplier = String(drawCtx?.multiplier || 10);
     return sendTemplate({
       prospect,
-      templateName: process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt',
+      templateName,
       card: {
         state: 'boost',
-        rewardName: cleanParam(drawCtx?.drawName, 'the lucky draw'),
+        rewardName: drawName,
         partnerName: 'Lucky draw',
         draw: {
           multiplier: drawCtx?.multiplier,
@@ -394,8 +414,9 @@ export function makeWhatsappService(overrides = {}) {
       },
       params: [
         cleanParam(prospect?.firstName, 'there'),
-        cleanParam(drawCtx?.drawName, 'the lucky draw'),
-        String(drawCtx?.multiplier || 10),
+        ...(BOOST_TEMPLATES_DRAW_NAME_SECOND.has(templateName)
+          ? [drawName, multiplier]
+          : [multiplier, drawName]),
       ],
     });
   }

@@ -9,7 +9,7 @@ import { makeWhatsappService, canWhatsAppProspect, waRecipient } from '../servic
 const ENV_KEYS = [
   'REDEEM_OPS_WHATSAPP_ENABLED', 'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_TEMPLATE_PASS', 'WHATSAPP_TEMPLATE_VOUCHER', 'WHATSAPP_TEMPLATE_LANG',
-  'WHATSAPP_QR_HEADER', 'WHATSAPP_CLAIM_ORIGIN',
+  'WHATSAPP_QR_HEADER', 'WHATSAPP_CLAIM_ORIGIN', 'WHATSAPP_TEMPLATE_DRAW_BOOST',
 ];
 let savedEnv;
 beforeEach(() => {
@@ -243,6 +243,44 @@ describe('QR-header send sequence (default: header ON)', () => {
     expect(params.length).toBe(4);
     expect(params[2]).toBe('vtok-raw');
     expect(params[3]).toBe('17 Aug 2026');
+  });
+
+  // The boost body's variable order differs between template generations, and
+  // the two halves of the switch (Meta approving the new template, the Render
+  // env flip) land at different times. Getting it wrong is silent — Meta happily
+  // renders "you now have iPhone 17 Pro Lucky Draw chances for the 10" — so the
+  // order is pinned to the NAME here, in both directions.
+  describe('boost receipt: param order belongs to the template, not the deploy', () => {
+    const drawCtx = { drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10, prize: 'an iPhone 17 Pro' };
+    const sendParams = async () => {
+      const fetch = fetchRecorder();
+      await makeSvc({ fetch }).sendBoostReceiptWhatsApp({ prospect: consented, drawCtx });
+      return fetch.calls[1].body.template.components[1].parameters.map((p) => p.text);
+    };
+
+    it.each(['draw_boost_receipt', 'draw_boost_receipt_v2', 'draw_session_receipt'])(
+      '%s reads {{2}} as the draw name',
+      async (name) => {
+        enableWithCreds();
+        process.env.WHATSAPP_TEMPLATE_DRAW_BOOST = name;
+        expect(await sendParams()).toEqual(['Sarah', 'iPhone 17 Pro Lucky Draw', '10']);
+      },
+    );
+
+    it('draw_boost_receipt_v3 reads {{2}} as the chances count', async () => {
+      enableWithCreds();
+      process.env.WHATSAPP_TEMPLATE_DRAW_BOOST = 'draw_boost_receipt_v3';
+      expect(await sendParams()).toEqual(['Sarah', '10', 'iPhone 17 Pro Lucky Draw']);
+    });
+
+    it('unset env falls back to draw_boost_receipt and its legacy order', async () => {
+      enableWithCreds();
+      const fetch = fetchRecorder();
+      await makeSvc({ fetch }).sendBoostReceiptWhatsApp({ prospect: consented, drawCtx });
+      expect(fetch.calls[1].body.template.name).toBe('draw_boost_receipt');
+      expect(fetch.calls[1].body.template.components[1].parameters.map((p) => p.text))
+        .toEqual(['Sarah', 'iPhone 17 Pro Lucky Draw', '10']);
+    });
   });
 
   it('WHATSAPP_CLAIM_ORIGIN overrides the pass-QR host (and the card wordmark follows)', async () => {
