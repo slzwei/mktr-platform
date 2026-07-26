@@ -304,7 +304,7 @@ describe('AdminV2LeadProfile — person-origin mutations pick their signup (§3.
 });
 
 describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
-  it('renders post-acceptance states: 131049 as Meta marketing limit, delivered as ✓✓', async () => {
+  it('renders unambiguous text states with hover explanations', async () => {
     const profile = JSON.parse(JSON.stringify(PROFILE));
     profile.consumer.entitlements[0].delivery = {
       email: { ok: true, kind: 'boost_receipt', at: '2026-05-02T02:00:00Z', delivery: null },
@@ -315,9 +315,13 @@ describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
     };
     fetchProspectProfile.mockResolvedValue(profile);
     setup('/admin/leads/p1?view=profile');
-    expect(await screen.findByText(/boost receipt WhatsApp ✗ not delivered — Meta marketing limit/)).toBeInTheDocument();
-    // Email has no provider verdict → the honest bare ✓ (accepted).
-    expect(screen.getByText(/boost receipt emailed ✓$/)).toBeInTheDocument();
+    const failedRow = await screen.findByText(/boost receipt WhatsApp — not delivered \(Meta marketing limit\)/);
+    expect(failedRow).toBeInTheDocument();
+    // Hover explanation rides the row's native title.
+    expect(failedRow.closest('[title]')?.getAttribute('title')).toMatch(/error 131049/);
+    // Email has no provider verdict → explicit "accepted", never a delivered claim.
+    const accepted = screen.getByText(/boost receipt emailed — accepted/);
+    expect(accepted.closest('[title]')?.getAttribute('title')).toMatch(/No delivery confirmation/);
 
     const delivered = JSON.parse(JSON.stringify(PROFILE));
     delivered.consumer.entitlements[0].delivery = {
@@ -329,6 +333,6 @@ describe('AdminV2LeadProfile — delivery truth (wa-delivery-truth)', () => {
     };
     fetchProspectProfile.mockResolvedValue(delivered);
     setup('/admin/leads/p1?view=profile');
-    expect(await screen.findByText(/pass WhatsApp ✓✓ delivered/)).toBeInTheDocument();
+    expect(await screen.findByText(/pass WhatsApp — delivered/)).toBeInTheDocument();
   });
 });

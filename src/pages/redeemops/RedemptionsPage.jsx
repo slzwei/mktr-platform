@@ -51,27 +51,43 @@ function deliveryStatus(e) {
   const wa = e.delivery?.whatsapp;
   if (wa?.ok && wa.delivery?.status === 'failed') {
     const noun = RECEIPT_NOUNS[wa.kind] || 'Pass';
-    const why = String(wa.delivery.errorCode) === '131049'
-      ? 'Meta marketing limit'
-      : (wa.delivery.errorTitle || 'reported failed');
-    return { text: `${noun} WhatsApp not delivered — ${why}`, tone: 'warn' };
+    const capped = String(wa.delivery.errorCode) === '131049';
+    return {
+      text: `${noun} WhatsApp not delivered — ${capped ? 'Meta marketing limit' : (wa.delivery.errorTitle || 'reported failed')}`,
+      tone: 'warn',
+      hint: capped
+        ? 'Meta accepted the message, then silently dropped it: the customer recently received another marketing-category template from us and Meta caps those per person over a rolling window (error 131049). Retry after the window clears, or use email/link.'
+        : `Meta accepted the message but reported it undelivered${wa.delivery.errorTitle ? `: ${wa.delivery.errorTitle}` : ''}${wa.delivery.errorCode ? ` (code ${wa.delivery.errorCode})` : ''}.`,
+    };
   }
   const em = e.delivery?.email;
   if (em) {
     const noun = RECEIPT_NOUNS[em.kind] || 'Pass';
     if (em.ok) {
       if (em.delivery?.status === 'failed') {
-        return { text: `${noun} email not delivered — ${em.delivery.errorTitle || 'provider reported failure'}`, tone: 'warn' };
+        return {
+          text: `${noun} email not delivered — ${em.delivery.errorTitle || 'provider reported failure'}`,
+          tone: 'warn',
+          hint: 'The email provider accepted this message and later reported it undelivered.',
+        };
       }
       const at = new Date(em.at).toLocaleString('en-SG', {
         day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
       });
-      return { text: `${noun} emailed · ${at}`, tone: 'ok' };
+      return {
+        text: `${noun} emailed · ${at}`,
+        tone: 'ok',
+        hint: 'The email provider accepted this message for delivery. Delivery confirmation is not available for emails.',
+      };
     }
-    return { text: `${noun} email failed — resend or share a link`, tone: 'warn' };
+    return {
+      text: `${noun} email failed — resend or share a link`,
+      tone: 'warn',
+      hint: 'The send attempt was rejected before leaving our system — the customer has received nothing on this channel.',
+    };
   }
-  if (e.emailDeliverable === false) return { text: 'Never emailed — share a link instead', tone: 'warn' };
-  if (['eligible', 'issued'].includes(e.status)) return { text: 'Not delivered yet', tone: 'muted' };
+  if (e.emailDeliverable === false) return { text: 'Never emailed — share a link instead', tone: 'warn', hint: 'No usable email address on file for this customer.' };
+  if (['eligible', 'issued'].includes(e.status)) return { text: 'Not delivered yet', tone: 'muted', hint: 'No delivery attempt has been recorded for this reward yet.' };
   return null;
 }
 
@@ -418,7 +434,7 @@ export default function RedemptionsPage() {
             {e.tokenHint ? ` · code …${e.tokenHint}` : ''}
           </p>
         </div>
-        <span className="text-xs truncate" style={{ color: deliveryColor }}>
+        <span className="text-xs truncate" title={delivery?.hint || undefined} style={{ color: deliveryColor, ...(delivery?.hint ? { cursor: 'help' } : {}) }}>
           {delivery ? `${delivery.tone === 'warn' ? '⚠ ' : ''}${delivery.text}` : ''}
         </span>
         <span className="min-w-0">

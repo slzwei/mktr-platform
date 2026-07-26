@@ -122,35 +122,53 @@ function heroFor(draw, rewards, diagnostic) {
   return { big: 'No outcome recorded', tail: '', tone: 'quiet', meta: null };
 }
 
-// Post-acceptance truth (wa-delivery-truth): a receipt's base ✓ means the
+// Post-acceptance truth (wa-delivery-truth): a receipt's base state means the
 // provider ACCEPTED the message — only the joined status inbox can prove
 // delivered/read, or surface Meta's silent drops (131049 = the per-user
-// marketing frequency cap that ate real boost receipts).
-function deliverySuffix(r) {
+// marketing frequency cap that ate real boost receipts). Deliberately words,
+// not glyphs — a ✓ reads as "delivered" no matter what it technically meant —
+// and every state carries a hover explanation (native title).
+function deliveryState(r) {
   if (!r) return null;
-  if (!r.ok) return { ok: false, text: '✗ failed' };
+  if (!r.ok) {
+    return {
+      ok: false,
+      text: 'failed to send',
+      hint: `The send attempt was rejected before leaving our system${r.error ? `: ${r.error}` : ''}.`,
+    };
+  }
   const st = r.delivery?.status;
   if (st === 'failed') {
-    const why = String(r.delivery?.errorCode) === '131049'
-      ? 'Meta marketing limit'
-      : (r.delivery?.errorTitle || null);
-    return { ok: false, text: `✗ not delivered${why ? ` — ${why}` : ''}` };
+    const capped = String(r.delivery?.errorCode) === '131049';
+    return {
+      ok: false,
+      text: capped ? 'not delivered (Meta marketing limit)' : 'not delivered',
+      hint: capped
+        ? 'Meta accepted this message, then silently dropped it: the recipient recently received another marketing-category template from us, and Meta caps how many a person can get in a rolling window (error 131049). It cannot be retried until the window clears.'
+        : `Meta accepted this message but reported it undelivered${r.delivery?.errorTitle ? `: ${r.delivery.errorTitle}` : ''}${r.delivery?.errorCode ? ` (code ${r.delivery.errorCode})` : ''}.`,
+    };
   }
-  if (st === 'read') return { ok: true, text: '✓✓ read' };
-  if (st === 'delivered') return { ok: true, text: '✓✓ delivered' };
-  if (st === 'sent') return { ok: true, text: '✓ sent' };
-  return { ok: true, text: '✓' }; // accepted; nothing further heard (emails, legacy rows)
+  if (st === 'read') {
+    return { ok: true, text: 'read', hint: 'Meta confirmed the recipient opened this message on WhatsApp.' };
+  }
+  if (st === 'delivered') {
+    return { ok: true, text: 'delivered', hint: "Meta confirmed this message reached the recipient's device." };
+  }
+  if (st === 'sent') {
+    return { ok: true, text: 'sent, delivery pending', hint: 'Meta dispatched the message; delivery to the device is not confirmed yet.' };
+  }
+  return {
+    ok: true,
+    text: 'accepted',
+    hint: 'The provider accepted this message for delivery. No delivery confirmation exists for it — emails and sends from before 26 Jul 2026 never report one.',
+  };
 }
 
 function receiptBits(delivery) {
   if (!delivery) return [];
   const bit = (r, label) => {
-    if (!r) return null;
-    if (!r.ok) return { ok: false, label: `${label} failed` };
-    const st = r.delivery?.status;
-    if (st === 'failed') return { ok: false, label: `${label} not delivered` };
-    if (st === 'read' || st === 'delivered') return { ok: true, label: `${label} ${st}` };
-    return { ok: true, label };
+    const s = deliveryState(r);
+    return s ? { ok: s.ok, label: `${label} — ${s.text}`, hint: s.hint } : null;
   };
   return [bit(delivery.email, 'pass emailed'), bit(delivery.whatsapp, 'WhatsApp')].filter(Boolean);
 }
@@ -169,9 +187,9 @@ const FAMILY_TILE = {
 
 function buildHistory(p, journey) {
   const events = [];
-  const push = (at, title, { detail = null, family = 'generic', quiet = false, tag = null } = {}) => {
+  const push = (at, title, { detail = null, family = 'generic', quiet = false, tag = null, hint = null } = {}) => {
     const t = at ? Date.parse(at) : NaN;
-    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, tag });
+    if (!Number.isNaN(t)) events.push({ at: t, title, detail, family, quiet, tag, hint });
   };
   const anchorTag = campaignTag(p.campaign?.name);
 
@@ -199,8 +217,8 @@ function buildHistory(p, journey) {
     for (const ch of ['email', 'whatsapp']) {
       const r = e.delivery?.[ch];
       if (!r?.at) continue;
-      const s = deliverySuffix(r);
-      push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} ${s.text}`, { family: 'delivery', quiet: true, tag });
+      const s = deliveryState(r);
+      push(r.at, `${(r.kind || 'pass').replace(/_/g, ' ')} ${ch === 'email' ? 'emailed' : 'WhatsApp'} — ${s.text}`, { family: 'delivery', quiet: true, tag, hint: s.hint });
     }
   }
   for (const b of journey?.broadcasts?.recent || []) {
@@ -714,7 +732,7 @@ export default function AdminV2LeadProfile() {
                       {fmtDay(day.key).toUpperCase()}
                     </div>
                     {day.events.map((e, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0' }}>
+                      <div key={i} title={e.hint || undefined} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', ...(e.hint ? { cursor: 'help' } : {}) }}>
                         <GlyphTile family={e.family} />
                         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: e.quiet ? 'var(--ink-2)' : 'var(--ink)', fontWeight: e.quiet ? 500 : 600, lineHeight: 1.35 }}>
                           {e.title}
@@ -760,9 +778,9 @@ export default function AdminV2LeadProfile() {
             {heroReceipts.length > 0 && (
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', marginTop: 6 }}>
                 {heroReceipts.map((r, i) => (
-                  <span key={i}>
+                  <span key={i} title={r.hint || undefined} style={r.hint ? { cursor: 'help' } : undefined}>
                     {i > 0 && ' · '}
-                    <span style={{ color: r.ok ? 'var(--ok)' : 'var(--bad)' }}>{r.ok ? '✓' : '✗'}</span> {r.label}
+                    <span style={{ color: r.ok ? 'var(--ok)' : 'var(--bad)', fontWeight: 700 }}>{r.label}</span>
                   </span>
                 ))}
               </div>
