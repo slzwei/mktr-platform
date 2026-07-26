@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { format, parseISO } from 'date-fns';
 import { Calendar as CalendarIcon, ArrowLeft, Upload, Trash2, Loader2, Video, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import CampaignBriefFields, { briefDraftFromCampaign, briefDraftComplete, briefDraftToPayload } from '@/components/campaigns/workspace/CampaignBriefFields';
 
 export default function AdminCampaignForm() {
  const { id } = useParams();
@@ -40,6 +41,8 @@ export default function AdminCampaignForm() {
  const [loading, setLoading] = useState(false);
  const [fetching, setFetching] = useState(isEditMode);
  const [uploading, setUploading] = useState(false);
+ // Campaign brief — objective + product gate creation (the server 422s without them).
+ const [brief, setBrief] = useState(() => briefDraftFromCampaign(null));
 
  useEffect(() => {
  if (isEditMode) {
@@ -51,6 +54,7 @@ export default function AdminCampaignForm() {
  try {
  const campaign = await Campaign.get(id);
  if (campaign) {
+ setBrief(briefDraftFromCampaign(campaign.targetAudience));
  setFormData({
  name: campaign.name || '',
  type: campaign.type || 'lead_generation',
@@ -136,9 +140,17 @@ export default function AdminCampaignForm() {
  toast.error('End date must be on or after start date');
  return;
  }
+ if (!isEditMode && !briefDraftComplete(brief)) {
+ toast.error('Pick the campaign objective and product first');
+ return;
+ }
  setLoading(true);
  try {
+ // Brief included only when both required picks are made — an edit of a
+ // pre-brief campaign is never forced to answer (no backfill).
+ const briefPayload = briefDraftToPayload(brief);
  const formattedData = {
+ ...(briefPayload ? { targetAudience: briefPayload } : {}),
  name: formData.name,
  type: formData.type,
  min_age: formData.min_age,
@@ -276,6 +288,8 @@ export default function AdminCampaignForm() {
  </div>
  </CardContent>
  </Card>
+
+ <CampaignBriefFields draft={brief} onChange={setBrief} isEdit={isEditMode} />
 
  <Card>
  <CardHeader>

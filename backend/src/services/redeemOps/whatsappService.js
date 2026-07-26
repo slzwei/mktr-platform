@@ -47,12 +47,18 @@ function qrHeaderEnabled() {
   return String(process.env.WHATSAPP_QR_HEADER ?? 'true').toLowerCase() !== 'false';
 }
 
-/** Boost-receipt bodies whose {{2}} is the draw name and {{3}} the chances
- * count. Everything newer says it the way people speak it — "you now have ×10
- * chances for the iPhone 17 Pro Lucky Draw" — so the count comes second.
- * See sendBoostReceiptWhatsApp for why this is keyed by name. */
+/**
+ * Boost-receipt bodies that name the draw at {{2}} and the chances count at
+ * {{3}} — the older phrasing ("your entry to the {{2}} now holds {{3}} chances",
+ * "Campaign: {{2}} / Entry total after this session: ×{{3}}"). Everything since
+ * says it the way people say it — "you now have ×10 chances for the iPhone 17
+ * Pro Lucky Draw" — so the count comes second and unlisted names get that
+ * order, the direction of travel. Verified against the live bodies on
+ * 2026-07-27; `draw_boost_receipt_v2` is deliberately NOT here.
+ * See sendBoostReceiptWhatsApp for why the order is keyed by name at all.
+ */
 const BOOST_TEMPLATES_DRAW_NAME_SECOND = new Set([
-  'draw_boost_receipt', 'draw_boost_receipt_v2', 'draw_session_receipt',
+  'draw_boost_receipt', 'draw_session_receipt',
 ]);
 
 /** Host baked into the templates' body link — the WA channel standardizes on redeem.sg. */
@@ -381,21 +387,26 @@ export function makeWhatsappService(overrides = {}) {
   }
 
   /** "×N confirmed" receipt at a recorded draw session — the WA twin of
-   * sendBoostReceiptEmail, same register as the email body. The template
-   * carries the Vault 'boost' card as its IMAGE header — the QR-less
-   * celebration state (giant ×N; the pass is consumed, nothing left to scan).
+   * sendBoostReceiptEmail, same register as the email body. The
+   * `draw_boost_receipt_v2` template carries the Vault 'boost' card as its
+   * IMAGE header — the QR-less celebration state (giant ×N; the pass is
+   * consumed, nothing left to scan); 3 params = name, multiplier, draw name.
    *
-   * Always 3 params, but their ORDER belongs to the template, not to this
-   * deploy: `draw_boost_receipt_v3` reads {{2}} as the chances count and {{3}}
-   * as the draw name, while the older `draw_boost_receipt`/`_v2` bodies read
-   * them the other way round. Meta's approval and the Render env flip are two
-   * manual steps that cannot be made simultaneous, so binding the order to the
-   * resolved NAME is what keeps every intermediate state correct — otherwise
-   * whichever half lands first sends "you now have iPhone 17 Pro Lucky Draw
-   * chances for the 10". Unknown names get the v3 order (the direction of
-   * travel); drop this map once the legacy pair is retired. */
+   * THE ORDER IS THE TEMPLATE'S, NOT OURS, so it is keyed by the RESOLVED NAME
+   * rather than fixed per deploy. v2 reads "You now have *{{2}} chances* for
+   * the {{3}}" — the reverse of the retired MARKETING original ("your entry to
+   * the {{2}} now holds {{3}} chances"). Params are positional with no
+   * per-template remap, and Meta's approval and the Render env flip are two
+   * manual steps that cannot be made simultaneous: binding the order to the
+   * name is what keeps every intermediate state correct, instead of whichever
+   * half lands first sending "*iPhone 17 Pro Lucky Draw chances* for the 10" —
+   * which is exactly what two recipients got on 2026-07-26, when the rewording
+   * that won v2 the UTILITY category moved the placeholders and nothing here
+   * followed. Re-read the live body (`--all` on the submit script, or Graph
+   * `fields=components`) before adding a name; assuming a twin inherited its
+   * predecessor's wording is the mistake that caused this. */
   async function sendBoostReceiptWhatsApp({ prospect, drawCtx }) {
-    const templateName = process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt';
+    const templateName = process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt_v2';
     const drawName = cleanParam(drawCtx?.drawName, 'the lucky draw');
     const multiplier = String(drawCtx?.multiplier || 10);
     return sendTemplate({

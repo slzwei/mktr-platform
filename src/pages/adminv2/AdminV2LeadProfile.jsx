@@ -478,6 +478,181 @@ function ConsentKv({ label, state, legacy }) {
   );
 }
 
+/* ── MEET × BUY scoring (consumer-profile-enrichment §7.1b, §8) ───────────
+ * The BREAKDOWN LEADS and the number follows (plan §11 step 4): these weights
+ * are a v1 calibration, so the panel has to show its working or it is just an
+ * authoritative-looking guess. Every component states whether it was assessed
+ * or is simply unknown — that distinction is the point, because "unknown
+ * capacity" and "low capacity" must never render the same way.
+ */
+const COMPONENT_LABELS = {
+  engagement: 'engagement',
+  contactability: 'contactability',
+  market_fit: 'market fit',
+  life_events: 'life events',
+  family_gap: 'family gap',
+  capacity: 'capacity',
+  coverage_headroom: 'coverage headroom',
+};
+
+const FACT_LABELS = {
+  'identity.gender': 'gender',
+  'identity.birth_year_band': 'born',
+  'identity.ethnicity': 'ethnicity',
+  'identity.preferred_language': 'language',
+  'family.marital_status': 'marital status',
+  'family.children': 'children',
+  'family.children_count_band': 'children',
+  'family.parents_alive': 'parents alive',
+  'household.pets': 'pets',
+  'assets.car_owner': 'car owner',
+  'assets.property': 'property',
+  'career.job_title': 'job title',
+  'career.industry': 'industry',
+  'career.employment': 'employment',
+  'finance.income_band': 'monthly income',
+  'finance.annual_income_band': 'annual income',
+  'finance.retirement_age_band': 'retirement age',
+  'finance.existing_coverage': 'existing coverage',
+  'life_event.recent': 'recent life event',
+  'interests.tags': 'interests',
+  'residency.status': 'residency',
+};
+
+/** Taxonomy values are always {v: …} plus per-key extras — render them flat. */
+function factText(value) {
+  if (!value || typeof value !== 'object') return '—';
+  const v = value.v;
+  let body;
+  if (Array.isArray(v)) {
+    body = v.length
+      ? v.map((x) => (x && typeof x === 'object' ? Object.values(x).filter(Boolean).join(' ') : String(x))).join(', ')
+      : 'none';
+  } else if (typeof v === 'boolean') {
+    body = v ? 'yes' : 'no';
+  } else {
+    body = String(v ?? '—');
+  }
+  if (value.when) body += ` (${value.when})`;
+  // complete:false means "at least these" — say so rather than implying a
+  // closed list the ledger never claimed.
+  if (Array.isArray(v) && value.complete === false) body += ' — partial';
+  return body;
+}
+
+function ScoreDial({ label, value, hint }) {
+  const known = value != null;
+  return (
+    <div style={{ flex: 1, minWidth: 96 }}>
+      <div className="av2-microcaps" style={{ color: 'var(--ink-3)' }}>{label}</div>
+      <div
+        style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}
+        title={known ? `${label} ${value}/100` : hint}
+      >
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 26, fontWeight: 800, lineHeight: 1, color: known ? 'var(--ink)' : 'var(--ink-3)' }}>
+          {known ? value : '—'}
+        </span>
+        {known && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)' }}>/100</span>}
+      </div>
+      {!known && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 3 }}>{hint}</div>}
+    </div>
+  );
+}
+
+function ComponentRow({ name, c }) {
+  const assessed = c.state === 'assessed';
+  const max = Number(c.maxPoints) || 0;
+  // A penalty component's magnitude is what fills the bar; its sign shows in
+  // the number. Unknown draws no bar at all — an empty bar would read as zero.
+  const pct = assessed && max !== 0 ? Math.min(100, Math.abs(c.points / max) * 100) : 0;
+  const penalty = max < 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '3px 0', fontSize: 12 }}>
+      <span style={{ width: 116, flex: 'none', color: assessed ? 'var(--ink-2)' : 'var(--ink-3)' }}>
+        {COMPONENT_LABELS[name] || name.replace(/_/g, ' ')}
+      </span>
+      <span style={{ width: 58, flex: 'none', fontFamily: 'var(--font-mono)', fontSize: 11, textAlign: 'right', color: assessed ? 'var(--ink)' : 'var(--ink-3)' }}>
+        {assessed ? `${c.points}` : '—'}<span style={{ color: 'var(--ink-3)' }}>/{max}</span>
+      </span>
+      <span aria-hidden="true" style={{ width: 46, flex: 'none', height: 4, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
+        {assessed && pct > 0 && (
+          <span style={{ display: 'block', width: `${pct}%`, height: '100%', background: penalty ? 'var(--bad)' : 'var(--accent-text)' }} />
+        )}
+      </span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.note || ''}>
+        {c.note || (assessed ? '' : 'unknown')}
+      </span>
+    </div>
+  );
+}
+
+function EnrichmentCard({ enrichment }) {
+  const bd = enrichment?.breakdown;
+  const comps = bd?.components || {};
+  const groups = bd?.groups || {};
+  const completeness = bd?.completeness;
+  const meetNames = groups.meet?.components || [];
+  const buyNames = groups.buy?.components || [];
+  const facts = enrichment?.facts || [];
+
+  return (
+    <Card
+      title="Scoring"
+      meta={enrichment?.configVersion != null ? `CONFIG v${enrichment.configVersion}` : undefined}
+    >
+      <div style={{ padding: '12px 18px 6px', display: 'flex', gap: 18 }}>
+        <ScoreDial label="Meet" value={enrichment?.meetScore} hint="no signal yet" />
+        <ScoreDial
+          label="Buy"
+          value={enrichment?.buyScore}
+          hint="no facts to judge"
+        />
+      </div>
+
+      <div style={{ padding: '4px 18px 12px' }}>
+        {meetNames.length > 0 && (
+          <>
+            <div className="av2-microcaps" style={{ padding: '6px 0 2px' }}>Reachability</div>
+            {meetNames.map((n) => comps[n] && <ComponentRow key={n} name={n} c={comps[n]} />)}
+          </>
+        )}
+        {buyNames.length > 0 && (
+          <>
+            <div className="av2-microcaps" style={{ padding: '10px 0 2px' }}>Potential</div>
+            {buyNames.map((n) => comps[n] && <ComponentRow key={n} name={n} c={comps[n]} />)}
+          </>
+        )}
+        {completeness && (
+          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', paddingTop: 10 }}>
+            {completeness.assessed} of {completeness.total} components assessed
+            {completeness.assessed < completeness.total && ' — the unknowns above are questions nobody has been asked'}
+          </div>
+        )}
+      </div>
+
+      {facts.length > 0 && (
+        <Disclosure label="Fact ledger" count={`${facts.length} FACT${facts.length === 1 ? '' : 'S'}`} indent={36}>
+          {facts.map((f) => (
+            <div key={f.key} style={{ display: 'flex', gap: 10, fontSize: 12, padding: '3px 0', alignItems: 'baseline' }}>
+              <span style={{ width: 116, flex: 'none', color: 'var(--ink-3)' }}>{FACT_LABELS[f.key] || f.key}</span>
+              <span style={{ flex: 1, minWidth: 0, color: 'var(--ink)', fontWeight: 600, overflowWrap: 'anywhere' }}>
+                {factText(f.value)}
+              </span>
+              <span
+                className="av2-mono"
+                style={{ flex: 'none', fontSize: 10, color: 'var(--ink-3)' }}
+                title={`${f.source} · confidence ${f.confidence}${f.observedAt ? ` · ${fmtDate(f.observedAt)}` : ''}`}
+              >
+                {f.source}
+              </span>
+            </div>
+          ))}
+        </Disclosure>
+      )}
+    </Card>
+  );
+}
+
 function Disclosure({ label, count, children, indent = 34 }) {
   return (
     <details style={{ borderTop: '1px solid var(--line)' }}>
@@ -908,6 +1083,11 @@ export default function AdminV2LeadProfile() {
                 </Disclosure>
               )}
             </section>
+
+            {/* Absent until the sweep has scored this person (and gone for
+                erased people, whose profile row is deleted) — an empty
+                scoring card would imply a verdict we haven't reached. */}
+            {journey?.enrichment && <EnrichmentCard enrichment={journey.enrichment} />}
 
             <Card title="Campaigns" meta={`${railSignups.length} SIGNUP${railSignups.length === 1 ? '' : 'S'}`}>
               {railSignups.map((s, i) => {

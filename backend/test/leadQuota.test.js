@@ -77,7 +77,7 @@ describe('enforceLeadQuota enablement via the campaign API', () => {
     const created = await request(app)
       .post('/api/campaigns')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ name, enforceLeadQuota: true });
+      .send({ name, targetAudience: { objective: 'agent_leads', product: 'insurance' }, enforceLeadQuota: true });
     expect(created.status).toBe(201);
 
     const c = await Campaign.findOne({ where: { name } });

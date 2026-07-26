@@ -147,9 +147,13 @@ describe('GET /api/consumers — membership is row existence', () => {
     expect(typeof res.body.data.total).toBe('number')
     const a = res.body.data.rows.find((r) => r.id === C.a.id)
     expect(a).toBeDefined()
+    // + the four MEET × BUY projections (§8). Pinned deliberately: this row
+    // shape is the People page's contract, so widening it is a decision, not
+    // a side effect.
     expect(Object.keys(a).sort()).toEqual([
-      'email', 'erasedAt', 'firstName', 'firstSeenAt', 'id', 'lastName',
-      'lastSeenAt', 'latestProspectId', 'phone', 'signupCount', 'verifiedSignupCount',
+      'buyScore', 'consumerScore', 'email', 'erasedAt', 'firstName', 'firstSeenAt',
+      'id', 'lastName', 'lastSeenAt', 'latestProspectId', 'meetScore', 'phone',
+      'scoredConfigVersion', 'signupCount', 'verifiedSignupCount',
     ])
     expect(a).toMatchObject({
       firstName: 'Zephyrine', lastName: 'Peopledir', phone: '+6598111001',
@@ -273,5 +277,74 @@ describe('GET /api/consumers — sort and pagination', () => {
     const seen = [...ids(p1), ...ids(p2)]
     expect(new Set(seen).size).toBe(seen.length)
     expect(p1.body.data.total).toBe(p2.body.data.total)
+  })
+})
+
+/**
+ * MEET × BUY columns (consumer-profile-enrichment §8).
+ *
+ * The load-bearing contract is that the LEFT JOIN must not change WHO is
+ * listed: the People directory is the person index, not the scored index, so
+ * an unscored person stays on the page with null scores. And NULLS LAST has
+ * to hold in BOTH sort directions — ascending by Buy should surface the
+ * lowest real score, not the crowd of people we cannot score at all.
+ */
+describe('GET /api/consumers — scores', () => {
+  let scoredId
+
+  beforeAll(async () => {
+    const { ConsumerProfile } = await import('../src/models/index.js')
+    // 'a' is the ordinary linked fixture — score exactly that one so every
+    // other Peopledir row stays a live example of the unscored case.
+    scoredId = C.a.id
+    await ConsumerProfile.upsert({
+      consumerId: scoredId,
+      meetScore: 71,
+      buyScore: 44,
+      consumerScore: 58,
+      scoredConfigVersion: 1,
+      scoringAlgorithmVersion: 'score/v1',
+      scoreInputHash: 'x'.repeat(64),
+      scoreBreakdown: { completeness: { assessed: 5, total: 7 } },
+      scoreComputedAt: new Date(),
+      inputVersion: 1,
+      syncedInputVersion: 0,
+    })
+  })
+
+  it('projects the scores onto the listed rows', async () => {
+    const res = await get(scoped('&limit=100'))
+    expect(res.status).toBe(200)
+    const row = res.body.data.rows.find((r) => r.id === scoredId)
+    expect(row).toBeTruthy()
+    expect(row.meetScore).toBe(71)
+    expect(row.buyScore).toBe(44)
+    expect(row.scoredConfigVersion).toBe(1)
+  })
+
+  it('keeps unscored people on the page with null scores (LEFT JOIN, not INNER)', async () => {
+    const res = await get(scoped('&limit=100'))
+    const unscored = res.body.data.rows.filter((r) => r.id !== scoredId)
+    expect(unscored.length).toBeGreaterThan(0)
+    for (const r of unscored) {
+      expect(r.meetScore).toBeNull()
+      expect(r.scoredConfigVersion).toBeNull()
+    }
+  })
+
+  it('sorts by Meet desc with the scored person first', async () => {
+    const res = await get(scoped('&limit=100&sort=-meetScore'))
+    expect(res.body.data.rows[0].id).toBe(scoredId)
+  })
+
+  it('ASCENDING by Buy still puts NULLs last — an unscoreable person never leads', async () => {
+    const res = await get(scoped('&limit=100&sort=buyScore'))
+    expect(res.body.data.rows[0].id).toBe(scoredId)
+    expect(res.body.data.rows[res.body.data.rows.length - 1].buyScore).toBeNull()
+  })
+
+  it('an unknown sort still falls back rather than erroring', async () => {
+    const res = await get(scoped('&sort=notAColumn'))
+    expect(res.status).toBe(200)
   })
 })

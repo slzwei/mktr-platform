@@ -11,6 +11,7 @@ import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy, normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { PASS_THEMES } from '../utils/drawTheme.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
+import { normalizeBrief, deriveArchetype, hasBrief } from '../utils/campaignBrief.js';
 import { buildDrawTermsHtml } from '../utils/drawTermsTemplate.js';
 import { checkDrawConsistency } from '../utils/drawConsistency.js';
 import {
@@ -520,6 +521,19 @@ export async function createCampaign(body, user) {
     campaignData.design_config = clampDesignConfig(body.design_config, undefined, user?.role);
   }
 
+  // Campaign brief (docs/plans/campaign-brief.md §5/§7): objective + product
+  // are REQUIRED at the API create door — four ~30s questions five systems
+  // consume. Internal creators (Retell bootstrap, duplicateCampaign) call
+  // Campaign.create directly and are exempt; pre-brief campaigns keep {}
+  // forever (no backfill). archetype is derived from the clamped doc, never
+  // taken from the payload.
+  const briefResult = normalizeBrief(body.targetAudience);
+  if (!briefResult.ok) throw new AppError(briefResult.error, 422);
+  campaignData.targetAudience = {
+    ...briefResult.brief,
+    archetype: deriveArchetype(campaignData.design_config),
+  };
+
   // Draw terms need the campaign id for the version row, but the requirements
   // must fail BEFORE the row exists — no half-created draw campaign. (A crash
   // between Campaign.create and the terms pin below still self-heals: the next
@@ -777,6 +791,29 @@ export async function updateCampaign(id, body, req) {
         throw new AppError(`drawPassTheme must be one of: ${PASS_THEMES.join(', ')}.`, 422);
       }
       updateData.design_config = { ...nextDoc, luckyDraw: { ...ld, passTheme: theme } };
+    }
+  }
+
+  // Campaign brief: a provided targetAudience must be a full valid brief
+  // (there is no clearing door — omission means "leave it alone"), and the
+  // derived archetype tracks the DOC (campaign-brief.md §4.4): recomputed on
+  // every save that carries a brief or lands on a campaign that has one.
+  // Pre-brief campaigns keep {} untouched — a blank brief never gets an
+  // archetype stamped, so "no brief" stays unambiguous.
+  if (body.targetAudience !== undefined) {
+    const briefResult = normalizeBrief(body.targetAudience);
+    if (!briefResult.ok) throw new AppError(briefResult.error, 422);
+    updateData.targetAudience = briefResult.brief;
+  }
+  {
+    const briefBase = updateData.targetAudience
+      || (hasBrief(campaign.targetAudience) ? campaign.targetAudience : null);
+    if (briefBase) {
+      const nextDoc = updateData.design_config !== undefined ? updateData.design_config : campaign.design_config;
+      const archetype = deriveArchetype(nextDoc);
+      if (updateData.targetAudience || briefBase.archetype !== archetype) {
+        updateData.targetAudience = { ...briefBase, archetype };
+      }
     }
   }
 

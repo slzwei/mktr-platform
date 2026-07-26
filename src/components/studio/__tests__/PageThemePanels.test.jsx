@@ -124,6 +124,70 @@ describe('PagePanel — doc round-trips', () => {
   });
 });
 
+describe('PagePanel — per-template hero asset guidance', () => {
+  it('states the recommended size for the CURRENT template and re-states it on switch', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={BASE_V1} Panel={PagePanel} />);
+    const spec = () => screen.getByTestId('studio-media-spec');
+    // editorial — the fixed 16:9 story card
+    expect(spec()).toHaveTextContent('Recommended 1600 × 900 px · 16:9 landscape');
+    await user.click(screen.getByRole('button', { name: /Gazette/ }));
+    // gazette — the letterboxed prize plate is a different frame entirely
+    expect(spec()).toHaveTextContent('Recommended 2100 × 600 px · 3.5:1 panorama');
+    await user.click(screen.getByRole('button', { name: /Nightfall/ }));
+    expect(spec()).toHaveTextContent('Recommended 2000 × 2400 px · 5:6 portrait');
+  });
+
+  it('says nothing when there is no media to size', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={BASE_V1} Panel={PagePanel} />);
+    expect(screen.getByTestId('studio-media-spec')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'None' }));
+    expect(screen.queryByTestId('studio-media-spec')).not.toBeInTheDocument();
+  });
+
+  it('warns instead of sizing on the templates that render no hero media', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={BASE_V1} Panel={PagePanel} />);
+    await user.click(screen.getByRole('button', { name: /Spotlight/ }));
+    expect(screen.getByTestId('studio-media-spec')).toHaveTextContent(/Spotlight has no hero-media slot/);
+    // …and it must not claim the upload is thrown away — it still feeds the listing.
+    expect(screen.getByTestId('studio-media-spec')).toHaveTextContent(/marketplace listing/);
+    await user.click(screen.getByRole('button', { name: /Express/ }));
+    expect(screen.getByTestId('studio-media-spec')).toHaveTextContent(/Express has no hero-media slot/);
+  });
+
+  it('warns when a template PARAM is what is suppressing the image', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={BASE_V1} Panel={PagePanel} />);
+    await user.click(screen.getByRole('button', { name: /Stub/ }));
+    expect(screen.getByTestId('studio-media-spec')).toHaveTextContent('Recommended 2000 × 500 px');
+    await user.click(screen.getByRole('button', { name: 'Accent' })); // ticket header tone
+    expect(screen.getByTestId('studio-media-spec')).toHaveTextContent(/Accent ticket header .* hides the image/);
+
+    await user.click(screen.getByRole('button', { name: /Checklist/ }));
+    expect(screen.getByTestId('studio-media-spec')).toHaveTextContent('Recommended 2000 × 500 px');
+    await user.click(screen.getByLabelText(/Slim hero band/));
+    expect(screen.getByTestId('studio-media-spec')).toHaveTextContent(/Slim hero band is switched off/);
+  });
+
+  it('warns about YouTube padding only once there is a real video, and only off-16:9', async () => {
+    const user = userEvent.setup();
+    const pad = () => screen.queryByText(/keeps the video's own\s+aspect ratio/);
+    render(<Harness v1={BASE_V1} Panel={PagePanel} />);
+    await user.click(screen.getByRole('button', { name: 'YouTube' }));
+    await user.click(screen.getByRole('button', { name: /Checklist/ }));
+    expect(pad()).not.toBeInTheDocument(); // no URL yet — nothing to warn about
+    await user.type(screen.getByLabelText('YouTube URL'), 'https://youtu.be/dQw4w9WgXcQ');
+    expect(pad()).toBeInTheDocument(); // checklist's frame is 4:1
+    await user.click(screen.getByRole('button', { name: /Journey/ }));
+    expect(pad()).not.toBeInTheDocument(); // journey's frame really is 16:9
+    // Poster RECOMMENDS 16:9 but its frame is aspectRatio:auto — still pads.
+    await user.click(screen.getByRole('button', { name: /Poster/ }));
+    expect(pad()).toBeInTheDocument();
+  });
+});
+
 describe('ThemePanel — doc round-trips', () => {
   it('preset pick writes theme.preset; the parity baseline is labeled', async () => {
     const user = userEvent.setup();

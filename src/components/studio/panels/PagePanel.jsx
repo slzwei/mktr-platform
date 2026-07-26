@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { UploadFile } from '@/api/integrations';
 import { MAX_UPLOAD_SIZE_MB } from '@/lib/uploadLimits';
 import { TEMPLATE_IDS, DRAW_TEMPLATE_IDS, LIMITS, youTubeIdFrom, resolveTheme } from '@/lib/designConfigV2';
+import { heroMediaSpec, heroMediaHiddenReason, heroFramePadsYouTube } from '@/lib/heroMediaSpecs';
 import {
   DRAW_TRUST_ROW_DEFAULT,
   DRAW_SCAM_LINE_DEFAULT,
@@ -91,6 +92,13 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
   };
 
   const ytId = media.kind === 'youtube' || media.kind === 'video' ? youTubeIdFrom(media.src) : null;
+
+  // Asset guidance for THIS template — every template frames the media
+  // differently and every frame is object-fit: cover, so the wrong ratio is
+  // cropped, not letterboxed. `hiddenReason` covers the templates (and param
+  // combinations) where the upload renders nowhere at all.
+  const mediaSpec = heroMediaSpec(templateId);
+  const mediaHiddenReason = heroMediaHiddenReason(templateId, params);
 
   return (
     <div data-testid="panel-page">
@@ -444,6 +452,25 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
             onChange={(v) => setMedia({ kind: v, ...(v === 'none' ? { src: '' } : {}) })}
           />
         </div>
+        {(media.kind || 'none') !== 'none' && (
+          mediaHiddenReason ? (
+            <div data-testid="studio-media-spec">
+              <WarnNote>{mediaHiddenReason}</WarnNote>
+            </div>
+          ) : (
+            <div
+              data-testid="studio-media-spec"
+              style={{ background: 'var(--surface-2, #F4F5F7)', borderRadius: 8, padding: '8px 10px', fontSize: 11, lineHeight: 1.55, color: 'var(--ink-2, #5B616E)', display: 'flex', flexDirection: 'column', gap: 3 }}
+            >
+              <div style={{ color: 'var(--ink, #171A20)', fontWeight: 600 }}>
+                {`Recommended ${mediaSpec.size} px · ${mediaSpec.ratio}`}
+              </div>
+              <div>{mediaSpec.frame}</div>
+              {/* --ink-3 on --surface-2 is ~2.9:1 — below AA for 11px text. */}
+              {mediaSpec.tip ? <div style={{ color: 'var(--ink-2, #5B616E)' }}>{mediaSpec.tip}</div> : null}
+            </div>
+          )
+        )}
         {media.kind === 'image' && (
           <>
             <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e, 'image')} data-testid="studio-image-input" />
@@ -475,6 +502,13 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
               ) : (
                 <WarnNote>Not a recognizable YouTube URL — the page will treat this as a plain video file.</WarnNote>
               )
+            ) : null}
+            {ytId && heroFramePadsYouTube(templateId) ? (
+              <WarnNote>
+                The embed fills this frame, but the YouTube player keeps the video&apos;s own
+                aspect ratio instead of cover-cropping — a standard 16:9 video will show bars
+                here. Upload a video file if you need it edge to edge.
+              </WarnNote>
             ) : null}
           </>
         )}

@@ -15,6 +15,7 @@ calls) and delivers them to insurance agents via the Lyfe mobile app:
 | Two-brand routing-guard route lists, URL-helper contracts, prod env tables, DNS, Render IDs | `docs/reference/brand-and-hosting.md` |
 | **Redeem Ops** (partner CRM, tasks, rewards, Discover, cadences) — `ops.redeem.sg` | `src/pages/redeemops/CLAUDE.md` + `docs/redeem-ops/` |
 | Meta tracking / redeemed-audience deep design | `docs/plans/meta-tracking-implementation.md`, `docs/plans/meta-redeemed-audience-sync.md` |
+| **Campaign brief** (the four "what is this FOR?" picks at creation — objective+product REQUIRED, stored in `campaigns.targetAudience` JSONB, NEVER design_config; feeds Studio-AI context + Form-panel question suggestions; pre-brief campaigns stay `{}` forever) | `docs/plans/campaign-brief.md` · twin `src/lib/campaignBrief.js` ↔ `backend/src/utils/campaignBrief.js` (byte-parity) |
 | **Marketplace inheritance** (single door LIVE 2026-07-22 — redeem.sg listings + featured tiles derive from the campaign page; editors show read-only inherited previews; flags `MARKETPLACE_INHERIT_ENABLED` + `VITE_MARKETPLACE_INHERIT_ENABLED` flip together; Phase C clamp removal pending ≥1wk soak + sign-off) | `docs/plans/marketplace-inherits-campaign-page.md` (plan + review log + flip record) · twins `src/lib/listingDerivation.js` ↔ `backend/src/utils/listingDerivation.js` |
 | **Campaign Studio** (the PERMANENT campaign design surface — design_config v2 twins, v2 renderer `src/components/campaignPage/` reusing the funnel, full-viewport editor + AI assist at `/admin/campaigns/:id/studio`; AI "Fill everything" covers ALL slots incl. Distribution picks, sign-up FIELD selection, T&C drafting (draw campaigns = deterministic drawTermsTemplate facts, never LLM legal text), draw-aware looks, + advisory publication recommendations (never auto-applied); create-flow auto-run via `/studio?ai=full`; classic DesignEditor survives ONLY for guided_review; backend `DESIGN_CONFIG_V2_WRITES_ENABLED` = emergency brake; per-campaign migration/rollback runbook) | `docs/reference/campaign-studio-rollout.md` (rollout/rollback) · `docs/plans/campaign-studio-implementation-prompt.md` (build history) · `docs/plans/studio-ai-full-coverage-plan.md` + `docs/plans/studio-ai-create-everything-plan.md` (AI coverage) · twins `src/lib/designConfigV2.js` ↔ `backend/src/utils/designConfigV2.js` (+ `designConfigV2Clamp.js`) |
 
@@ -48,6 +49,32 @@ All services auto-deploy from `main` on commit (service IDs in `docs/reference/b
 - **Origin** (bypasses domain cache): `curl -s https://mktr-platform.onrender.com/ | grep -o 'assets/index-[^."]*\.js'`.
 - **Cache-bust** the real domain: `curl -s "https://mktr.sg/?cb=$(date +%s)" | grep -o 'assets/index-[^."]*\.js'`.
 - **Definitive**: `curl` the live JS chunk and `grep` a string unique to your change (not one that existed in the old bundle).
+
+## Running the backend tests locally (you need a real Postgres)
+
+Unit tests run bare, but the **115 DB-backed suites and every migration are unrunnable without Postgres** — `npx jest` with no database OOMs after ~2 min of connection retries rather than failing cleanly. Skipping them locally is how migration 093 shipped broken (2026-07-26) and took every integration suite down on `main`.
+
+```bash
+initdb -D /tmp/pgdata -U postgres --auth=trust
+pg_ctl -D /tmp/pgdata -o "-p 55432 -k /tmp -h 127.0.0.1" -l /tmp/pgdata/log start
+psql -h 127.0.0.1 -p 55432 -U postgres -c "CREATE ROLE ci LOGIN SUPERUSER"
+psql -h 127.0.0.1 -p 55432 -U postgres -c "CREATE DATABASE ci OWNER ci"
+```
+
+Then CI's own four steps (`cd backend`, prefix each with `NODE_ENV=test JWT_SECRET=x DB_HOST=127.0.0.1 DB_PORT=55432 DB_NAME=ci DB_USER=ci DB_PASSWORD=""`):
+
+```
+npx jest --testPathPattern="test/unit/"
+npx jest --testPathPattern="test/(integration/|[^/]+\.test\.js)" --runInBand   # + --max-old-space-size=6144
+npx jest --testPathPattern="test/migrations"
+npx eslint src/ --quiet          # also `npx eslint src/ --quiet` at the repo root for the frontend
+```
+
+**THE GOTCHA THIS EXISTS FOR — test schema ≠ prod schema.** Test boot runs `sync({force:true})` from the MODELS *first*, then migrations. So a `CREATE TABLE IF NOT EXISTS` in a migration is a **no-op** against a table sync already built, and the two shapes differ: Sequelize emits `createdAt`/`updatedAt` as NOT NULL with **no database default** (it fills them in the ORM), while migrations declare `DEFAULT now()`. Consequences:
+
+- **Any raw INSERT into a model-backed table must name `"createdAt"`/`"updatedAt"` explicitly** — omitting them passes in prod and dies in every test.
+- A migration adding columns must also declare them on the model, or they vanish from the test schema (same lesson as `Consumer.js`'s mirrored indexes).
+- Worktrees need `ln -s <main-checkout>/backend/node_modules backend/node_modules` (and the same at the repo root) before jest or eslint will resolve.
 
 ## Ads & tracking (summary — full detail in `docs/reference/ads-and-tracking.md`)
 

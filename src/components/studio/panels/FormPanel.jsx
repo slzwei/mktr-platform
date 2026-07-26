@@ -1,5 +1,6 @@
 import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote } from './panelKit';
-import { PROFILE_QUESTION_LIBRARY, PROFILE_QUESTION_IDS } from '@/lib/profileQuestionLibrary';
+import { PROFILE_QUESTION_LIBRARY, PROFILE_QUESTION_IDS, getProfileQuestion } from '@/lib/profileQuestionLibrary';
+import { suggestProfileQuestions } from '@/lib/campaignBrief';
 
 /**
  * Form panel (Studio PR 3) — fields order/visibility/required with 2-col
@@ -28,11 +29,28 @@ const pairId = () => `row-${Date.now().toString(36)}${(pairCounter += 1)}`;
 // `whatsappOtpConfigured` (PR 5): the server readiness payload's env fact.
 // true → creds verified, the speculative warning is noise; false/undefined →
 // keep warning (fail-noisy while unknown).
-export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) {
+// `campaignBrief`: the campaign's stored targetAudience (campaign-brief.md
+// §6.4) — drives the SUGGESTED profile questions below. Suggestions are
+// one-click adds, never auto-applied: enabling a question changes a live
+// funnel's conversion, and that stays a human decision.
+export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured, campaignBrief }) {
   const bind = makeBind(doc, setPath);
   const fields = doc.form?.fields || [];
   const gates = doc.form?.gates || {};
   const verification = doc.form?.verification === 'whatsapp' ? 'whatsapp' : 'sms';
+  const askedIds = doc.profileQuestions?.questionIds || [];
+  const suggestions = suggestProfileQuestions(campaignBrief).filter((s) => !askedIds.includes(s.id));
+
+  const addSuggestedQuestion = (id) => mut((d) => {
+    const cur = d.profileQuestions || {};
+    const set = new Set([...(cur.questionIds || []), id]);
+    d.profileQuestions = {
+      ...cur,
+      enabled: true, // the click is the human decision — it may switch the section on
+      questionIds: PROFILE_QUESTION_IDS.filter((qid) => set.has(qid)),
+      requiredIds: (cur.requiredIds || []).filter((qid) => set.has(qid)),
+    };
+  });
 
   const mutFields = (fn) => mut((d) => fn(d.form.fields));
 
@@ -203,6 +221,37 @@ export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) 
             };
           })}
         />
+        {suggestions.length > 0 && (
+          <div
+            data-testid="brief-question-suggestions"
+            style={{ border: '1px dashed var(--line-strong, #C6CAD2)', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}
+          >
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, color: 'var(--ink-3, #9BA0AB)' }}>
+              SUGGESTED BY THE CAMPAIGN BRIEF
+            </span>
+            {suggestions.map((s) => (
+              <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink, #171A20)' }}>
+                    {getProfileQuestion(s.id)?.prompt || s.id}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--ink-3, #9BA0AB)' }}>{s.reason}</div>
+                </div>
+                <button
+                  type="button"
+                  className="av2-btn av2-btn--ghost av2-btn--sm"
+                  data-testid={`brief-suggest-add-${s.id}`}
+                  onClick={() => addSuggestedQuestion(s.id)}
+                >
+                  + Add
+                </button>
+              </div>
+            ))}
+            <span style={{ fontSize: 10, color: 'var(--ink-3, #9BA0AB)' }}>
+              Suggestions only — each question changes conversion, so adding one is always your call.
+            </span>
+          </div>
+        )}
         {doc.profileQuestions?.enabled === true && (
           <ToggleRow
             id="studio-pq-showzh"

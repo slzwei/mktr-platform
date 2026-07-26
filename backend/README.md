@@ -56,6 +56,7 @@ It then schedules the recurring in-process jobs (all skipped under `NODE_ENV=tes
 | Redeem Ops fulfilment sweep | 15 min |
 | Redeem Ops stale sweep + cadence reconcile | 30 min |
 | Idempotency-key purge · suppression-propagation backstop · draw-record backstop | hourly |
+| Enrichment scoring sweep (`ENRICHMENT_SCORING_ENABLED`) — fenced to one real run per SGT date by `enrichment_sweep_runs` | hourly, first ~150 s after boot |
 | Redemption CAPI reconciliation | 6 h |
 | Redeemed-audience sync to Meta | `REDEEMED_AUDIENCE_SYNC_INTERVAL_HOURS` (default 24 h) |
 | DNC backfill (`DNC_BACKFILL_ENABLED`) · Discover retention purge | `DNC_BACKFILL_INTERVAL_MINUTES` · daily |
@@ -127,11 +128,13 @@ Base URL: `https://api.mktr.sg/api` (prod) · `http://localhost:3001/api` (dev).
 
 ## Data model
 
-The backend owns its **own** PostgreSQL database (separate from Lyfe's Supabase) — 90 Sequelize models in `src/models/` with associations in `src/models/index.js`, and 89 migrations under `src/database/migrations/`.
+The backend owns its **own** PostgreSQL database (separate from Lyfe's Supabase) — 90 Sequelize models in `src/models/` with associations in `src/models/index.js`, and 92 migrations under `src/database/migrations/`.
 
 Pipeline-central: `User`, `Prospect`, `ProspectActivity`, `Campaign`, `LeadPackage` / `LeadPackageAssignment`, `RoundRobinCursor`, `WalletLedger`, `Payment`, `QrTag` / `QrScan`, `ShortLink`, `Attribution`, `ExternalAgent` / `ExternalCampaignAgent`, `WebhookSubscriber` / `WebhookDelivery`, `IdempotencyKey`.
 
 Person spine & consent: `Consumer`, `ConsentEvent`, `ConsumerSuppression`, `SuppressionPropagation`, `Cohort`, `EmailBroadcast` / `EmailBroadcastRecipient`.
+
+Enrichment & scoring: `ConsumerObservation` (append-only fact ledger), `ConsumerProfile` (resolved view + `meetScore` / `buyScore` / `consumerScore` + breakdown), `EnrichmentJob` (mapper outbox), `EnrichmentScoringConfig` (weights / groups / target segments), `EnrichmentSweepRun` (per-SGT-date sweep fence). The scoring math is pure and lives in `utils/consumerScoring.js` — see the [README section](../README.md#lead-scoring--meet--buy).
 
 Rewards, draws & Redeem Ops: `RewardOffer` / `RewardEntitlement` / `Redemption`, `Activation`, `Draw` / `DrawEntry` / `DrawAttempt` / `DrawBoostReview` / `DrawTermsVersion`, the `Partner*` / `Outreach*` / `Discovery*` families.
 
@@ -155,7 +158,8 @@ Retired but still in the schema: `Device`, `Vehicle`, `Car`, `FleetOwner`, `Driv
 | Meta | `META_CAPI_ENABLED`, `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN`, `META_TEST_EVENT_CODE`; `META_EVENT_QUALIFIED`, `META_EVENT_WON`, `META_EVENT_REDEEMED` |
 | TikTok | `TIKTOK_EVENTS_API_ENABLED`, `TIKTOK_PIXEL_ID`, `TIKTOK_ACCESS_TOKEN`, `TIKTOK_TEST_EVENT_CODE` |
 | Retell screening | `RETELL_SCREENING_ENABLED`, `RETELL_SCREENING_AGENT_ID`, `RETELL_SCREENING_FROM_NUMBER`, `SCREENING_*` (attempts, window, concurrency, TTL, alerts) |
-| OTP | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_SNS_SENDER_ID`; `SNS_AWS_ACCESS_KEY_ID` / `SNS_AWS_SECRET_ACCESS_KEY` (preferred SNS-only pair — set both or neither); `WHATSAPP_PROVIDER`, `META_WA_PHONE_NUMBER_ID`, `META_WA_ACCESS_TOKEN`, `META_WA_BUSINESS_ACCOUNT_ID` |
+| OTP | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_SNS_SENDER_ID`; `SNS_AWS_ACCESS_KEY_ID` / `SNS_AWS_SECRET_ACCESS_KEY` (preferred SNS-only pair — set both or neither); `META_WA_PHONE_NUMBER_ID`, `META_WA_ACCESS_TOKEN`. The WhatsApp OTP channel is chosen per campaign by `design_config.otpChannel`, not by an env var. |
+| Enrichment | `ENRICHMENT_MAP_ARTIFACT_JOBS`, `ENRICHMENT_SCORING_ENABLED` |
 | SMS caps (SSIR) | `SMS_DAILY_CAP_PER_PHONE` (7), `SMS_DAILY_GLOBAL_CAP` (500), `SMS_DAILY_ALERT_THRESHOLD` (250), `SMS_ALERT_EMAIL`, `SMS_QUOTA_SALT` — guard the registered `MKTR` sender ID; see `docs/reference/sms-sender-id-compliance.md` |
 | WhatsApp sends | `REDEEM_OPS_WHATSAPP_ENABLED`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_*` — **a different credential pair from the `META_WA_*` OTP set above** |
 | WhatsApp webhook | `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` (**prod fails closed without it**), `WHATSAPP_WABA_ID` |

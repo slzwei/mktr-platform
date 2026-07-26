@@ -42,6 +42,46 @@ function SortHeader({ label, field, sort, onSort, width, align }) {
   );
 }
 
+/**
+ * A MEET or BUY score (consumer-profile-enrichment §7.1b).
+ *
+ * NULL is not zero and must never look like a low score — it means we lack
+ * the evidence to judge, so it renders as a dim em-dash with a title that
+ * says which kind of nothing it is. Buy is NULL for anyone with no fact
+ * component assessed, which today is nearly everyone.
+ */
+function ScoreCell({ value, scored, kind }) {
+  if (value == null) {
+    return (
+      <span
+        className="av2-mono"
+        style={{ width: 58, flex: 'none', fontSize: 11, color: 'var(--ink-3)', textAlign: 'right' }}
+        title={scored
+          ? `Not enough evidence to score ${kind} — open the person to see what's missing`
+          : 'Not scored yet'}
+      >
+        —
+      </span>
+    );
+  }
+  // Weight only the top of the range: a faint ramp reads as ranking without
+  // implying precision the number doesn't have.
+  const strong = value >= 60;
+  return (
+    <span
+      className="av2-mono"
+      style={{
+        width: 58, flex: 'none', fontSize: 12, textAlign: 'right',
+        fontWeight: strong ? 700 : 500,
+        color: strong ? 'var(--ink)' : 'var(--ink-2)',
+      }}
+      title={`${kind} ${value}/100`}
+    >
+      {value}
+    </span>
+  );
+}
+
 export default function AdminV2People() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFilters(searchParams), [searchParams]);
@@ -132,7 +172,9 @@ export default function AdminV2People() {
         <div className="av2-thead">
           <SortHeader label="Person" field="name" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} />
           <span className="av2-microcaps" style={{ width: 130, flex: 'none' }}>Phone</span>
-          <SortHeader label="Signups" field="signupCount" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={170} />
+          <SortHeader label="Signups" field="signupCount" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={150} />
+          <SortHeader label="Meet" field="meetScore" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={58} align="right" />
+          <SortHeader label="Buy" field="buyScore" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={58} align="right" />
           <SortHeader label="Last seen" field="lastSeenAt" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={100} align="right" />
         </div>
 
@@ -180,9 +222,13 @@ export default function AdminV2People() {
               <span className="av2-mono" style={{ width: 130, flex: 'none', fontSize: 11, color: 'var(--ink-2)' }}>
                 {fmtPhone(r.phone) || '—'}
               </span>
-              <span style={{ width: 170, flex: 'none', fontSize: 12, color: 'var(--ink-2)' }}>
+              <span style={{ width: 150, flex: 'none', fontSize: 12, color: 'var(--ink-2)' }}>
                 {r.signupCount} signup{r.signupCount === 1 ? '' : 's'} ({r.verifiedSignupCount} verified)
               </span>
+              {/* Erased people keep no profile row (§9) — show nothing rather
+                  than a stale number. */}
+              <ScoreCell value={erased ? null : r.meetScore} scored={!erased && r.scoredConfigVersion != null} kind="Meet" />
+              <ScoreCell value={erased ? null : r.buyScore} scored={!erased && r.scoredConfigVersion != null} kind="Buy" />
               <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10, color: 'var(--ink-3)', textAlign: 'right' }} title={fmtDateTime(r.lastSeenAt)}>
                 {fmtRelative(r.lastSeenAt)}
               </span>

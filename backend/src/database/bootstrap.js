@@ -261,6 +261,28 @@ export async function bootstrapDatabase() {
       logger.info('[RedemptionCapi] reconciliation sweep scheduled (6h interval)');
     }
 
+    // Consumer enrichment scoring sweep (consumer-profile-enrichment §7.3).
+    // Recomputes MEET × BUY for consumers whose facts, telemetry or scoring
+    // config moved. Ticks HOURLY but is fenced to one real run per SGT date
+    // by enrichment_sweep_runs — the frequent tick exists so a process that
+    // was down at the intended hour still sweeps that day rather than
+    // silently skipping it. Extra ticks cost one indexed SELECT.
+    // §13 pivot: this runs IN-PROCESS; the Mac/Ollama worker and its
+    // claim/renew/complete endpoints were dropped.
+    if (String(process.env.ENRICHMENT_SCORING_ENABLED || 'false').toLowerCase() === 'true') {
+      const runEnrichmentSweep = async () => {
+        try {
+          const { runNightlySweep } = await import('../services/enrichmentSweepService.js');
+          await runNightlySweep();
+        } catch (err) {
+          logger.warn('[EnrichmentScoring] sweep failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runEnrichmentSweep, 150_000);
+      setInterval(runEnrichmentSweep, 60 * 60 * 1000);
+      logger.info('[EnrichmentScoring] scoring sweep scheduled (hourly tick, one run per SGT date)');
+    }
+
     // Redeem Ops claim-inactivity sweep (docs/redeem-ops/ERD.md §6). Flags
     // at-risk (48h no first outreach) and stale (14d no meaningful activity)
     // partners — NEVER auto-releases; managers act on the flags. In-process like

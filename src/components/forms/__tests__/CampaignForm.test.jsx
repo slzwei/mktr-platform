@@ -139,16 +139,32 @@ describe('AdminCampaignForm', () => {
  expect(input.value).toBe('My New Campaign');
  });
 
- it('submits form and calls Campaign.create', async () => {
+ it('submits form and calls Campaign.create with the campaign brief', async () => {
  renderForm();
  const nameInput = screen.getByLabelText('Campaign Name');
  fireEvent.change(nameInput, { target: { value: 'Test Campaign', name: 'name' } });
+ // The brief's two required picks gate creation (campaign-brief.md §7.2).
+ fireEvent.click(screen.getByRole('button', { name: 'Agent leads' }));
+ fireEvent.click(screen.getByRole('button', { name: 'Insurance / financial planning' }));
 
  const form = screen.getByText('Save Changes').closest('form');
  fireEvent.submit(form);
 
  await waitFor(() => {
  expect(Campaign.create).toHaveBeenCalled();
+ });
+ expect(Campaign.create.mock.calls[0][0].targetAudience).toEqual({
+ objective: 'agent_leads',
+ product: 'insurance',
+ });
+ });
+
+ it('refuses to create without the brief picks', async () => {
+ renderForm();
+ fireEvent.change(screen.getByLabelText('Campaign Name'), { target: { value: 'No Brief', name: 'name' } });
+ fireEvent.submit(screen.getByText('Save Changes').closest('form'));
+ await waitFor(() => {
+ expect(Campaign.create).not.toHaveBeenCalled();
  });
  });
 });

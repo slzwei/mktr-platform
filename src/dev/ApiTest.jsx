@@ -69,9 +69,8 @@ export default function ApiTest() {
  try {
  const newCampaign = await entities.Campaign.create({
  name: 'Frontend Test Campaign',
- description: 'Testing frontend integration',
  type: 'lead_generation',
- budget: 1000
+ targetAudience: { objective: 'agent_leads', product: 'insurance' }
  });
  addResult('Create Campaign', !!newCampaign.id, `Campaign ID: ${newCampaign.id}`);
  } catch (error) {

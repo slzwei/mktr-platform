@@ -62,11 +62,14 @@ function renderCreate() {
   );
 }
 
-// Drive the create form: name is required to enable the button; the brief in
-// the "Fill it for me" box is what gets forwarded to the auto-design step.
+// Drive the create form: name + the campaign brief's two required picks
+// (campaign-brief.md §7.2) enable the button; the brief in the "Fill it for
+// me" box is what gets forwarded to the auto-design step.
 async function createWith({ name = 'My Campaign', brief } = {}) {
   const user = userEvent.setup();
   await user.type(screen.getByLabelText('Campaign name'), name);
+  await user.click(screen.getByRole('button', { name: 'Agent leads' }));
+  await user.click(screen.getByRole('button', { name: 'Insurance / financial planning' }));
   if (brief) await user.type(screen.getByLabelText('Campaign brief for AI draft'), brief);
   await user.click(screen.getByRole('button', { name: /Create draft/i }));
   return user;

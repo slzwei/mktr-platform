@@ -429,3 +429,38 @@ describe('relink bumps (§6.3)', () => {
     expect(loser).toBeTruthy()
   })
 })
+
+describe('the band reaches the Buy score (score/v3 — PR B seam)', () => {
+  it('a DOB-only capture scores Buy from age alone, under the migrated config, citing the band', async () => {
+    const prospect = await capture()
+    await drainAndQuiesce(prospect.id)
+
+    const { scoreOneConsumer, _resetConfigCache } = await import('../src/services/consumerScoringService.js')
+    _resetConfigCache()
+    const result = await scoreOneConsumer(prospect.consumerId, { force: true })
+    expect(result.status).toBe('scored')
+    // Pre-v3 this person was buyScore NULL — no fact component assessable.
+    expect(result.buyScore).not.toBeNull()
+
+    const profile = await ConsumerProfile.findByPk(prospect.consumerId)
+    // v3 semantics hold whether the config came from the 095 row (fresh-DB
+    // boot) or the code defaults (reused DB — migrations skip, table empty);
+    // the 095 row's own content is pinned by migration095ScoringAgeConfig.
+    expect(profile.scoringAlgorithmVersion).toBe('score/v3')
+    expect(profile.scoreBreakdown.groups.buy.components).toContain('age')
+
+    const comps = profile.scoreBreakdown.components
+    expect(comps.age.state).toBe('assessed')
+    const band = await ConsumerObservation.findOne({
+      where: { sourceProspectId: prospect.id, key: 'identity.birth_year_band', supersededAt: null },
+    })
+    expect(comps.age.basisObservationIds).toContain(band.id)
+
+    // Almost-everyone-scoreable must still read THIN: age is the only
+    // assessed Buy fact, and completeness says so.
+    expect(comps.capacity.state).toBe('unknown')
+    expect(comps.family_gap.state).toBe('unknown')
+    expect(profile.scoreBreakdown.completeness.total).toBe(8)
+    expect(profile.scoreBreakdown.completeness.assessed).toBeLessThan(4)
+  })
+})
