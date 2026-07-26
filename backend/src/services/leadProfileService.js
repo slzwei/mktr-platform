@@ -138,11 +138,15 @@ export function makeLeadProfileService(overrides = {}) {
   }
 
   /**
-   * Per-signup assignment history — every `assigned` activity across the
-   * person's signups, with the agent NAMED (capture-time rows store only the
-   * uuid in their description; manual/bulk paths already embed the name).
-   * One bounded query + two batched name lookups; name resolution failures
-   * degrade to whatever readable text the description carries.
+   * Per-signup assignment history — the `assigned` activity type carries
+   * THREE event flavors, distinguished by metadata: a real assignment
+   * (assignedAgentId / externalAgentId), a return-to-held
+   * (returnedToHeld: true, previousAgentId), and a bare unassignment
+   * (previousAgentId only). Each is projected with its `kind` and the agent
+   * NAMED (capture-time rows store only the uuid in their description;
+   * manual/bulk paths already embed the name). One bounded query + two
+   * batched name lookups; name resolution failures degrade to whatever
+   * readable text the description carries.
    */
   async function assignmentHistory(prospectIds) {
     const map = new Map();
@@ -154,7 +158,7 @@ export function makeLeadProfileService(overrides = {}) {
     }).catch(() => []);
     if (!acts.length) return map;
 
-    const agentIds = [...new Set(acts.map((a) => a.metadata?.assignedAgentId).filter(Boolean))];
+    const agentIds = [...new Set(acts.flatMap((a) => [a.metadata?.assignedAgentId, a.metadata?.previousAgentId]).filter(Boolean))];
     const extIds = [...new Set(acts.map((a) => a.metadata?.externalAgentId).filter(Boolean))];
     const [agents, externals] = await Promise.all([
       agentIds.length
@@ -177,13 +181,22 @@ export function makeLeadProfileService(overrides = {}) {
     for (const a of acts) {
       const key = String(a.prospectId);
       if (!map.has(key)) map.set(key, []);
-      const externalId = a.metadata?.externalAgentId || null;
+      const md = a.metadata || {};
+      const externalId = md.externalAgentId || null;
+      const kind = md.returnedToHeld
+        ? 'returned_to_held'
+        : (externalId || md.assignedAgentId || /^assigned/i.test(a.description || ''))
+          ? 'assigned'
+          : 'unassigned';
       map.get(key).push({
         at: a.createdAt,
+        kind,
         external: Boolean(externalId),
-        agentName: externalId
-          ? (extName.get(String(externalId)) || null)
-          : (agentName.get(String(a.metadata?.assignedAgentId)) || nameFromDescription(a.description)),
+        agentName: kind === 'assigned'
+          ? (externalId
+            ? (extName.get(String(externalId)) || null)
+            : (agentName.get(String(md.assignedAgentId)) || nameFromDescription(a.description)))
+          : (agentName.get(String(md.previousAgentId)) || null),
       });
     }
     return map;
@@ -507,6 +520,7 @@ export function makeLeadProfileService(overrides = {}) {
     getLyfeDelivery,
     getProspectOutcomes,
     deriveRewardDiagnostic,
+    assignmentHistory,
   };
 }
 

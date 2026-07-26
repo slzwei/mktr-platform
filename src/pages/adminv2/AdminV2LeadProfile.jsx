@@ -267,6 +267,7 @@ function ConsentCopyModal({ view, onClose }) {
 const FAMILY_TILE = {
   signup: { glyph: '●', bg: 'var(--accent-soft)', fg: 'var(--accent-text)' },
   assignment: { glyph: '→', bg: 'var(--accent-soft)', fg: 'var(--accent-text)' },
+  unassignment: { glyph: '←', bg: 'var(--hold-soft)', fg: 'var(--hold)' },
   boost: { glyph: '◆', bg: 'var(--hold-soft)', fg: 'var(--hold)' },
   reward: { glyph: '◆', bg: 'var(--ok-soft)', fg: 'var(--ok)' },
   screening: { glyph: '✦', bg: 'var(--ok-soft)', fg: 'var(--ok)' },
@@ -301,11 +302,21 @@ function buildHistory(p, journey) {
     const campaign = campaignRef(s.campaign?.id, s.campaign?.name);
     push(s.createdAt, `Signed up as ${fullName(s) || '—'}`, { detail: s.campaign?.name ? ` — ${s.campaign.name}` : null, family: 'signup', campaign });
     for (const a of s.assignments || []) {
-      push(a.at, `Assigned to ${a.agentName || (a.external ? 'an MKTR Leads buyer' : 'an agent')}`, {
-        detail: a.external ? ' — external buyer' : null,
-        family: 'assignment',
-        campaign,
-      });
+      if (a.kind === 'returned_to_held') {
+        push(a.at, 'Returned to held', {
+          detail: a.agentName ? ` — taken back from ${a.agentName}` : null,
+          family: 'unassignment', campaign,
+        });
+      } else if (a.kind === 'unassigned') {
+        push(a.at, `Unassigned${a.agentName ? ` from ${a.agentName}` : ''}`, {
+          family: 'unassignment', campaign,
+        });
+      } else {
+        push(a.at, `Assigned to ${a.agentName || (a.external ? 'an MKTR Leads buyer' : 'an agent')}`, {
+          detail: a.external ? ' — external buyer' : null,
+          family: 'assignment', campaign,
+        });
+      }
     }
     if (s.draw?.boostedAt) {
       push(s.draw.boostedAt, 'Draw boost recorded', { detail: ` — ${BOOST_VIA_COPY[s.draw.boostVia] || 'boost'}`, family: 'boost', campaign });

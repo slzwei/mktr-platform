@@ -461,3 +461,46 @@ describe('prospectService.getProspect include gating', () => {
     expect(row._set.signupProfile).toEqual({ draw: null, entitlements: [], rewardDiagnostic: null });
   });
 });
+
+describe('assignmentHistory — the three assigned-activity flavors', () => {
+  const act = (prospectId, createdAt, metadata, description) => ({ prospectId, createdAt, metadata, description });
+
+  function svcWith(acts) {
+    return makeLeadProfileService({
+      ProspectActivity: { findAll: jest.fn(async () => acts) },
+      User: {
+        findAll: jest.fn(async () => [
+          { id: 'u-1', firstName: 'Lee', lastName: 'Yi Heng' },
+        ]),
+      },
+      ExternalAgent: {
+        findAll: jest.fn(async () => [{ id: 'x-1', fullName: 'Buyer Bob', agency: null }]),
+      },
+    });
+  }
+
+  it('classifies assignment, unassignment and return-to-held, naming the agent in each', async () => {
+    const svc = svcWith([
+      act('p1', '2026-07-25T08:00:00Z', { assignedAgentId: 'u-1' }, 'Assigned to agent u-1'),
+      act('p1', '2026-07-25T09:00:00Z', { previousAgentId: 'u-1' }, 'Unassigned from agent'),
+      act('p1', '2026-07-25T10:00:00Z', { previousAgentId: 'u-1', returnedToHeld: true, via: 'web_admin' }, 'Returned to held queue by admin'),
+      act('p2', '2026-07-25T11:00:00Z', { externalAgentId: 'x-1' }, 'Routed to external buyer x-1 (MKTR Leads)'),
+    ]);
+    const map = await svc.assignmentHistory(['p1', 'p2']);
+    expect(map.get('p1').map((a) => a.kind)).toEqual(['assigned', 'unassigned', 'returned_to_held']);
+    expect(map.get('p1')[0]).toMatchObject({ agentName: 'Lee Yi Heng', external: false });
+    expect(map.get('p1')[1].agentName).toBe('Lee Yi Heng'); // unassigned FROM whom
+    expect(map.get('p1')[2].agentName).toBe('Lee Yi Heng'); // taken back from whom
+    expect(map.get('p2')[0]).toMatchObject({ kind: 'assigned', external: true, agentName: 'Buyer Bob' });
+  });
+
+  it('falls back to the description name when the uuid no longer resolves', async () => {
+    const svc = makeLeadProfileService({
+      ProspectActivity: { findAll: jest.fn(async () => [act('p1', '2026-07-25T08:00:00Z', { assignedAgentId: 'gone' }, 'Assigned to Marcus Wong')]) },
+      User: { findAll: jest.fn(async () => []) },
+      ExternalAgent: { findAll: jest.fn(async () => []) },
+    });
+    const map = await svc.assignmentHistory(['p1']);
+    expect(map.get('p1')[0].agentName).toBe('Marcus Wong');
+  });
+});

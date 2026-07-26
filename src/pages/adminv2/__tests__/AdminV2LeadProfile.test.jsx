@@ -63,7 +63,11 @@ const PROFILE = {
           outcome: null, drawHistory: [],
         },
         consent: { contact: { granted: true, version: '2026-07-21-agree-all-v1', scope: 'global', occurredAt: '2026-07-21T02:00:00Z' } },
-        assignments: [{ at: '2026-07-20T06:07:00Z', agentName: 'Lee Yi Heng', external: false }],
+        assignments: [
+          { at: '2026-07-20T06:07:00Z', kind: 'assigned', agentName: 'Lee Yi Heng', external: false },
+          { at: '2026-07-21T03:00:00Z', kind: 'returned_to_held', agentName: 'Lee Yi Heng', external: false },
+          { at: '2026-07-21T05:00:00Z', kind: 'unassigned', agentName: null, external: false },
+        ],
         rewardDiagnostic: null,
       },
       {
@@ -309,9 +313,12 @@ describe('AdminV2LeadProfile — person-origin mutations pick their signup (§3.
 });
 
 describe('AdminV2LeadProfile — assignments + consent copy', () => {
-  it('History names the assigned agent for the campaign', async () => {
+  it('History names assignments, return-to-held and unassignment', async () => {
     setup('/admin/leads/p1?view=profile');
     expect(await screen.findByText('Assigned to Lee Yi Heng')).toBeInTheDocument();
+    expect(screen.getByText('Returned to held')).toBeInTheDocument();
+    expect(screen.getByText(/taken back from Lee Yi Heng/)).toBeInTheDocument();
+    expect(screen.getByText('Unassigned')).toBeInTheDocument();
   });
 
   it('clicking a consent version opens the wording in a themed modal', async () => {
