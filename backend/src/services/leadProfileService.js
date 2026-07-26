@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import {
   Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
   EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent,
-  RedemptionEvent, ConsentEvent, sequelize,
+  RedemptionEvent, ConsentEvent, ConsumerProfile, sequelize,
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { presentState } from '../utils/entitlementPresentState.js';
@@ -10,6 +10,8 @@ import { makeLuckyDrawService } from './luckyDrawService.js';
 import { getConsentState } from './consentService.js';
 import { phoneKeyOf, LIVE_PHONE_STATUSES } from './redeemOps/entitlementService.js';
 import { phoneVerificationIsCurrent } from './consumerService.js';
+import { loadObservations } from './consumerScoringService.js';
+import { resolveCurrentFacts } from '../utils/factResolver.js';
 import { SCREENING_REASONS } from './screeningConstants.js';
 
 /**
@@ -38,12 +40,14 @@ export function makeLeadProfileService(overrides = {}) {
   const d = {
     Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
     EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent,
-    RedemptionEvent, ConsentEvent, sequelize, logger,
+    RedemptionEvent, ConsentEvent, ConsumerProfile, sequelize, logger,
     getProspectDrawStatus: null, // defaults to a lucky-draw service built below
     getConsentState,
     presentState,
     phoneKeyOf,
     phoneVerificationIsCurrent,
+    loadObservations,
+    resolveCurrentFacts,
     now: () => new Date(),
     ...overrides,
   };
@@ -485,7 +489,76 @@ export function makeLeadProfileService(overrides = {}) {
       .then((rows) => rows.map((r) => ({ channel: r.channel, reason: r.reason })))
       .catch(() => []);
     journey.broadcasts = await broadcastHistory(journey.consumer.id);
+    journey.enrichment = erased ? null : await consumerEnrichment(journey.consumer.id);
     return journey;
+  }
+
+  /**
+   * MEET × BUY standing + the fact ledger behind it
+   * (consumer-profile-enrichment §8). Read-only: the scores are written by the
+   * sweep (consumerScoringService) and this only projects them.
+   *
+   * Returns null when the person has never been scored — a profile row is
+   * minted by the input-version bump before any sweep runs, so "row exists"
+   * does NOT mean "scored". `scoredConfigVersion` is the stamp that does, and
+   * it is set even when both scores come back NULL (§7.1), which is exactly
+   * the state the UI must distinguish from "we have no opinion yet".
+   *
+   * Erased people are skipped by the caller: erasure DELETES the profile row
+   * and cascades the ledger, so there is nothing to read and asking would
+   * only risk resurrecting a shape.
+   */
+  async function consumerEnrichment(consumerId) {
+    if (!consumerId) return null;
+    try {
+      const row = await d.ConsumerProfile.findByPk(consumerId);
+      if (!row || row.scoredConfigVersion == null) return null;
+
+      // The ledger, resolved the same way the scorer resolved it — the panel
+      // must agree with the breakdown it sits next to, so it goes through
+      // resolveCurrentFacts rather than reading rows directly.
+      //
+      // This is the one read here that carries no LIMIT, deliberately.
+      // Resolution is a TOTAL function over a key's rows (§3.4): freshness
+      // windows and collection baselines are computed across the whole set,
+      // so a truncated input doesn't return fewer facts — it returns WRONG
+      // ones, silently. Per-person ledgers are inherently small (a bounded
+      // taxonomy, one active row per key plus superseded history), so the
+      // honest trade is an unbounded read over a naturally small set rather
+      // than a bounded read over a corrupted one.
+      let facts = [];
+      try {
+        const observations = await d.loadObservations(consumerId);
+        const resolved = d.resolveCurrentFacts(observations);
+        facts = Object.entries(resolved)
+          .map(([key, f]) => ({
+            key,
+            value: f.value,
+            source: f.source,
+            confidence: f.confidence,
+            observedAt: f.sourceEventAt,
+            observationIds: f.basis || [],
+          }))
+          .sort((a, b) => (a.key < b.key ? -1 : 1));
+      } catch (err) {
+        // A ledger read failure must not blank the scores beside it.
+        d.logger.warn('[leadProfile] fact ledger read failed (omitted)', { error: err?.message });
+      }
+
+      return {
+        meetScore: row.meetScore ?? null,
+        buyScore: row.buyScore ?? null,
+        consumerScore: row.consumerScore ?? null,
+        breakdown: row.scoreBreakdown || null,
+        scoredAt: row.scoreComputedAt || null,
+        configVersion: row.scoredConfigVersion ?? null,
+        algorithmVersion: row.scoringAlgorithmVersion || null,
+        facts,
+      };
+    } catch (err) {
+      d.logger.warn('[leadProfile] enrichment read failed (omitted)', { error: err?.message });
+      return null;
+    }
   }
 
   /**
