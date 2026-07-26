@@ -1,6 +1,7 @@
 # Campaign brief — asking what a campaign is FOR, at creation
 
-**Status:** v1 SCOPE — not reviewed, not approved, not built.
+**Status:** v2 SCOPE — §7's four owner decisions RESOLVED (Shawn, 2026-07-26).
+Not Codex-reviewed, not built. Ready for review.
 **Author:** Claude, 2026-07-26 (from Shawn's ask: "during campaign creation we
 need to ask the user what the campaign target audience is, what is the end
 goal")
@@ -184,18 +185,24 @@ speakers, got 12% `zh`.
 That comparison is the real prize. It is also the one thing here that cannot
 be faked by intuition at forty campaigns.
 
-## 7. Open questions for Shawn
+## 7. Owner decisions (Shawn, 2026-07-26) — all four RESOLVED
 
-1. **Objective list (§4.1)** — are those the right four? They are my read of
-   what MKTR campaigns actually do, not a taxonomy from anywhere.
-2. **Required or optional?** Recommendation: objective required, everything
-   else optional. Requiring the lot gets honest answers on campaign #1 and
-   clicked-through defaults by #20.
-3. **Retrofit the 7 existing campaigns?** ~5 minutes of clicking, and it makes
-   Phase 5 comparisons possible for current traffic. Recommendation: yes, by
-   hand, no migration.
-4. **Does `partner_footfall` belong here or in Redeem Ops?** Partner campaigns
-   may want their own brief shape entirely.
+1. **Objective list — all four stand** (§4.1 unchanged): `agent_leads`,
+   `screened_leads`, `audience_build`, `partner_footfall`.
+2. **Objective REQUIRED; audience and target OPTIONAL.** Requiring everything
+   buys honest answers on campaign #1 and clicked-through defaults by #20.
+   Creation is blocked only on the one pick.
+3. **NO backfill.** The 7 existing campaigns keep `{}` forever. Consequence,
+   accepted knowingly: §6.5's aimed-at-vs-got comparison will not cover
+   today's traffic — including `Redeem $10 Fairprice Voucher`, which is
+   currently ~58 signups/month. Measurement starts with the next campaign
+   created. Reversible at any time by filling one in by hand.
+4. **`partner_footfall` STAYS.** Shawn does sometimes run campaigns where
+   delivering customers to a partner is the actual deliverable, not a side
+   effect of lead capture. It remains a first-class objective here rather
+   than moving to Redeem Ops. Open sub-question deferred: whether such a
+   campaign also needs partner-specific brief fields (which partner, what was
+   committed) — revisit when the first one is built.
 
 ## 8. Explicitly out of scope
 
