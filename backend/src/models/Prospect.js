@@ -72,7 +72,7 @@ const Prospect = sequelize.define('Prospect', {
     type: DataTypes.ENUM('low', 'medium', 'high', 'urgent'),
     defaultValue: 'medium'
   },
-  // ── The lead score (per-campaign-lead-scoring.md §4/§6, migration 097) ────
+  // ── The lead score (per-campaign-lead-scoring.md §4/§6, migration 099) ────
   // The score is a property of (person × campaign) — this row. `score` is the
   // blended total and the default sort key; meet/buy are the two sub-scores
   // §4's person-grain projection copies up. All of it is written by
@@ -369,7 +369,7 @@ const Prospect = sequelize.define('Prospect', {
 }, {
   tableName: 'prospects',
   indexes: [
-    // Lead-score indexes (migration 097). Mirrored here deliberately: the test
+    // Lead-score indexes (migration 099). Mirrored here deliberately: the test
     // schema is built by sync({force:true}) from this model, so an index that
     // lives only in the migration is absent from every test — the same lesson
     // Consumer.js's mirrored indexes exist for.

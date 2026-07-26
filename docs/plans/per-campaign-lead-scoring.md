@@ -596,7 +596,7 @@ the band-straddle equal-weight rule at `:442-450`; migration
 3. **PR A₂ — the lead score** (§4, §6, §10, §11). The structural one: authority,
    projection, write-time decay + the integer write-gate, invalidation,
    erasure, Prospects column, events UI. **SHIPPED 2026-07-27** — migration
-   `097-lead-score.js`, `services/leadScoringService.js`,
+   `099-lead-score.js`, `services/leadScoringService.js`,
    `services/leadScoreDirty.js`, `utils/screeningSignal.js`, `lead/v1`.
 4. **PR B — age curve + DOB backfill** (§13.2). **SHIPPED 2026-07-27**
    (score/v3 #296, migration `095-scoring-age-curve.js`; prod remap minted

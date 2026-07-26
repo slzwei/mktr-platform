@@ -311,7 +311,7 @@ export function makeErasureService(overrides = {}) {
         // THE SCORE NOW GOES TOO (per-campaign-lead-scoring.md §11). It used
         // to be retained — named in the skeleton above and never touched here
         // — which was defensible while it was a dead column written by
-        // nothing. Since 097 it is a live judgement about the person, and its
+        // nothing. Since 099 it is a live judgement about the person, and its
         // breakdown is materially worse than the bare integer: the response
         // events carry the timestamps of when they read our messages, the
         // normalized screening signal carries inferred sentiment and interest,

@@ -1,5 +1,5 @@
 /**
- * 097 — the score moves to the lead (per-campaign-lead-scoring.md §4, §6, §10).
+ * 099 — the score moves to the lead (per-campaign-lead-scoring.md §4, §6, §10).
  *
  * A fresh grad is a great recruit and a poor insurance buyer: identical facts,
  * opposite verdict. One number per PERSON cannot hold both, so the score
