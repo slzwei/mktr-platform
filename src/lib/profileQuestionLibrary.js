@@ -26,9 +26,15 @@ export const PROFILE_QUESTION_LIBRARY = [
     multi: false,
     prompt: 'Which language do you prefer?',
     promptZh: '您偏好哪种语言？',
+    // Singapore's four official languages, each labelled in its own script.
+    // The taxonomy has always accepted en|zh|ms|ta (factTaxonomy LANGUAGES) —
+    // ms and ta were simply never offered, so no market-fit segment keyed to
+    // Malay or Tamil could ever match on language.
     options: [
       { id: 'en', label: 'English' },
       { id: 'zh', label: '中文' },
+      { id: 'ms', label: 'Bahasa Melayu' },
+      { id: 'ta', label: 'தமிழ்' },
     ],
   },
   {
@@ -95,7 +101,7 @@ export const getProfileQuestion = (id) => byId.get(id) || null;
 
 // Single-select answer → taxonomy value.
 const SINGLE_VALUES = {
-  language: { en: { v: 'en' }, zh: { v: 'zh' } },
+  language: { en: { v: 'en' }, zh: { v: 'zh' }, ms: { v: 'ms' }, ta: { v: 'ta' } },
   annual_income: {
     lt40: { v: '<40k' }, '40to80': { v: '40-80k' }, '80to120': { v: '80-120k' },
     '120to200': { v: '120-200k' }, gt200: { v: '>200k' },

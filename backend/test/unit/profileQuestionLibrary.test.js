@@ -50,6 +50,13 @@ describe('profileQuestionLibrary', () => {
     expect(resolveAnswer('children', 'three_plus')).toEqual({ v: '3_plus' });
   });
 
+  test('language offers all four official languages, each resolving to its taxonomy code', () => {
+    const lang = getProfileQuestion('language');
+    expect(lang.options.map((o) => o.id)).toEqual(['en', 'zh', 'ms', 'ta']);
+    expect(resolveAnswer('language', 'ms')).toEqual({ v: 'ms' });
+    expect(resolveAnswer('language', 'ta')).toEqual({ v: 'ta' });
+  });
+
   test('pets multi: server composes the complete canonical collection', () => {
     expect(resolveAnswer('pets', ['cat', 'dog'])).toEqual({ v: ['cat', 'dog'], complete: true });
     expect(resolveAnswer('pets', ['dog', 'cat'])).toEqual({ v: ['cat', 'dog'], complete: true }); // canonical order

@@ -47,7 +47,7 @@ from per-option values). [R1 #6]
 
 | id | factKey | Shape | resolveAnswer contract |
 |---|---|---|---|
-| `language` | `identity.preferred_language` | single | en/zh → `{v}` |
+| `language` | `identity.preferred_language` | single | en/zh/ms/ta → `{v}` (all four official languages, 2026-07-27; the taxonomy always allowed them) |
 | `annual_income` | `finance.annual_income_band` | single | 5 bands verbatim |
 | `children` | `family.children_count_band` (**new key**, §4) | single | none/1/2/3+ → `{v:'0'\|'1'\|'2'\|'3_plus'}` |
 | `pets` | `household.pets` | multi | dog/cat/other/none chips → canonical-ordered, deduped `{v:[…], complete:true}`; `none` EXCLUSIVE (none+dog ⇒ invalid answer, dropped); prompt copy is "select all that apply" so `complete:true` is honest |
