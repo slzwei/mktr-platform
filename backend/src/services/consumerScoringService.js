@@ -115,7 +115,19 @@ export async function loadObservations(consumerId) {
  */
 export async function loadTelemetry(consumerId) {
   const [[row]] = await sequelize.query(
-    `SELECT c."signupCount", c."verifiedSignupCount", c."lastSeenAt",
+    `SELECT c."signupCount", c."verifiedSignupCount",
+            -- Engagement recency anchors to the NEWEST signup, not lastSeenAt.
+            -- lastSeenAt refreshes on spine touches that are per-campaign
+            -- RESPONSES, and the capability-vs-response contract (§16 B1 of
+            -- per-campaign-lead-scoring.md) forbids a response on one campaign
+            -- from moving the person's standing everywhere. "Newest" is
+            -- (createdAt DESC, id DESC) — the house tiebreak (factResolver.js,
+            -- cohortService.js) — over ALL the person's prospects; erased
+            -- people never reach this query (the fence skips them).
+            (SELECT p."createdAt" FROM prospects p
+              WHERE p."consumerId" = c.id
+              ORDER BY p."createdAt" DESC, p.id DESC
+              LIMIT 1) AS "newestSignupAt",
             (c.email IS NOT NULL AND c.email <> '') AS "hasEmail",
             -- 'contact' IS the marketing-consent kind. The ledger's enum is
             -- contact | campaign_terms | third_party | dnc_override |
@@ -135,6 +147,15 @@ export async function loadTelemetry(consumerId) {
                     WHERE ce2."consumerId" = c.id AND ce2.kind = :consentKind
                  )
             ) AS "marketingConsent",
+            -- DELIBERATELY IN ('delivered','read') — do not "fix" to
+            -- delivered-only: wa_message_statuses keeps one row per wamid
+            -- holding the FURTHEST status (STATUS_RANK upsert,
+            -- redeemOps/waWebhookService.js), so a READ message no longer
+            -- reads as 'delivered' and dropping 'read' would un-reach exactly
+            -- the people with the strongest deliverability proof. A read
+            -- counts here ONLY as deliverability (a person-scoped CAPABILITY);
+            -- read-as-RESPONSE is lead-scoped and belongs to Phase 3
+            -- (per-campaign-lead-scoring.md §16 B1).
             EXISTS (
               SELECT 1 FROM wa_message_statuses w
                WHERE w."recipientHash" = c."phoneHash"
@@ -148,7 +169,7 @@ export async function loadTelemetry(consumerId) {
   return {
     signupCount: Number(row.signupCount) || 0,
     verifiedSignupCount: Number(row.verifiedSignupCount) || 0,
-    lastSeenAt: row.lastSeenAt,
+    newestSignupAt: row.newestSignupAt,
     hasEmail: Boolean(row.hasEmail),
     marketingConsent: Boolean(row.marketingConsent),
     whatsappReachable: Boolean(row.whatsappReachable),

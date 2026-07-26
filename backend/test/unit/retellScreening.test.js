@@ -29,7 +29,11 @@ const CFG = {
   dryRun: false,
   maxAttempts: 3,
   retryMinutes: 120,
-  callWindow: '00:00-23:59', // always-open for tests
+  // NOT actually always-open: parseWindow cannot say 24:00 and inCallWindow
+  // is end-exclusive, so the 23:59 SGT minute is OUTSIDE this window — which
+  // is exactly when the 26 Jul CI run started, failing every dial-path test.
+  // Dial-path tests pass `now: IN_WINDOW` instead of trusting the wall clock.
+  callWindow: '00:00-23:59',
   maxConcurrent: 3,
   maxDialsPerDay: 50,
   staleCallMinutes: 30,
@@ -37,6 +41,10 @@ const CFG = {
   onUnreachable: 'release',
   sweepIntervalMinutes: 5,
 };
+
+/** A fixed instant inside CFG's window: 12:00 SGT. Keeps every dial-path
+ *  test hour-independent — the reason startScreeningAttempt takes `now`. */
+const IN_WINDOW = new Date('2026-07-23T04:00:00Z');
 
 function stampFor(phone) {
   return {
@@ -218,7 +226,7 @@ describe('startScreeningAttempt', () => {
       min_age: 25,
       max_age: 60,
     };
-    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: camp, cfg: CFG });
+    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: camp, cfg: CFG, now: IN_WINDOW });
     expect(out.status).toBe('dialed');
     expect(deps.retellClient.createPhoneCall).toHaveBeenCalledWith(expect.objectContaining({
       from_number: CFG.fromNumber,
@@ -288,6 +296,7 @@ describe('startScreeningAttempt', () => {
     const out = await svc.startScreeningAttempt(pendingProspect(), {
       campaign: screeningCampaign(),
       cfg: { ...CFG, callWindow: '10:00-10:01' },
+      now: IN_WINDOW, // 12:00 SGT — deterministically outside [10:00, 10:01)
     });
     expect(out).toMatchObject({ status: 'deferred', reason: 'outside_window' });
   });
@@ -295,18 +304,18 @@ describe('startScreeningAttempt', () => {
   it('daily budget and concurrency caps defer instead of dialing', async () => {
     const seqBudget = fakeSequelize([[[{}]], [[{ dialsToday: 50 }]], [[{ id: 'p' }]]]);
     const svcBudget = makeRetellScreeningService(dialerDeps(seqBudget));
-    expect((await svcBudget.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG })).reason).toBe('budget_exhausted');
+    expect((await svcBudget.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG, now: IN_WINDOW })).reason).toBe('budget_exhausted');
     expect(seqBudget.tx.rollback).toHaveBeenCalled();
 
     const seqConc = fakeSequelize([[[{}]], [[{ dialsToday: 0 }]], [[{ inFlight: 3 }]], [[{ id: 'p' }]]]);
     const svcConc = makeRetellScreeningService(dialerDeps(seqConc));
-    expect((await svcConc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG })).reason).toBe('concurrency_full');
+    expect((await svcConc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG, now: IN_WINDOW })).reason).toBe('concurrency_full');
   });
 
   it('dry run logs and never calls Retell', async () => {
     const deps = dialerDeps(fakeSequelize());
     const svc = makeRetellScreeningService(deps);
-    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: { ...CFG, dryRun: true } });
+    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: { ...CFG, dryRun: true }, now: IN_WINDOW });
     expect(out.reason).toBe('dry_run');
     expect(deps.retellClient.createPhoneCall).not.toHaveBeenCalled();
   });
@@ -319,7 +328,7 @@ describe('startScreeningAttempt', () => {
     const err = Object.assign(new Error('timeout'), { transient: true });
     const deps = dialerDeps(seq, { retellClient: { createPhoneCall: jest.fn().mockRejectedValue(err), getCall: jest.fn() } });
     const svc = makeRetellScreeningService(deps);
-    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG });
+    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG, now: IN_WINDOW });
     expect(out.status).toBe('dispatch_unknown');
     // No sentinel-clearing UPDATE ran after the claim (only evidence patches).
     const clearing = seq.calls.filter((c) => c.sql.includes(`SET "screeningActiveCallId" = NULL`));
@@ -336,7 +345,7 @@ describe('startScreeningAttempt', () => {
     const err = Object.assign(new Error('bad request'), { transient: false });
     const deps = dialerDeps(seq, { retellClient: { createPhoneCall: jest.fn().mockRejectedValue(err), getCall: jest.fn() } });
     const svc = makeRetellScreeningService(deps);
-    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG });
+    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG, now: IN_WINDOW });
     expect(out.status).toBe('dispatch_failed');
     expect(seq.calls.some((c) => c.sql.includes(`SET "screeningActiveCallId" = NULL`))).toBe(true);
   });

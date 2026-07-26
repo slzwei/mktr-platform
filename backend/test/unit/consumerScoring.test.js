@@ -21,7 +21,7 @@ const NOW = Date.UTC(2026, 6, 26, 9, 0, 0) // 2026-07-26 17:00 SGT
 const fullTelemetry = {
   signupCount: 1,
   verifiedSignupCount: 1,
-  lastSeenAt: new Date(NOW).toISOString(),
+  newestSignupAt: new Date(NOW).toISOString(),
   hasEmail: true,
   marketingConsent: true,
   whatsappReachable: true,
@@ -78,6 +78,43 @@ describe('scoreability — a number is never invented from ignorance', () => {
     expect(r.breakdown.components.engagement.state).toBe('unknown')
     expect(r.meetScore).not.toBeNull()
     expect(r.buyScore).toBeNull()
+  })
+})
+
+describe('v2 recency anchor — newest signup, never lastSeenAt (§16 B1)', () => {
+  const HALF_LIFE_AGO = new Date(NOW - 180 * 86_400_000).toISOString() // one engagementHalfLifeDays
+
+  test('recency decays from newestSignupAt', () => {
+    const fresh = score({}, fullTelemetry)
+    const stale = score({}, { ...fullTelemetry, newestSignupAt: HALF_LIFE_AGO })
+    // depth(1 signup)=0.35; one half-life halves it; verified bonus 0.15 rides
+    // on top. Precision 1: stored breakdown points are rounded to 2dp.
+    expect(stale.breakdown.components.engagement.points)
+      .toBeCloseTo((0.35 * 0.5 + 0.15) * 15, 1)
+    expect(stale.breakdown.components.engagement.points)
+      .toBeLessThan(fresh.breakdown.components.engagement.points)
+  })
+
+  test('lastSeenAt is IGNORED — a response touch cannot refresh the person score', () => {
+    // Old signup + a lastSeenAt refreshed "now" (e.g. a WhatsApp read landed
+    // somewhere): the engine must score it identically to the old signup
+    // alone. This pins the v2 anchor so a regression back to lastSeenAt fails.
+    const anchorOnly = score({}, { ...fullTelemetry, newestSignupAt: HALF_LIFE_AGO })
+    const withTouch = score({}, {
+      ...fullTelemetry,
+      newestSignupAt: HALF_LIFE_AGO,
+      lastSeenAt: new Date(NOW).toISOString(),
+    })
+    expect(withTouch.breakdown.components.engagement.points)
+      .toBe(anchorOnly.breakdown.components.engagement.points)
+    expect(withTouch.meetScore).toBe(anchorOnly.meetScore)
+  })
+
+  test('missing newestSignupAt falls back to full recency, as lastSeen always did', () => {
+    const { newestSignupAt, ...rest } = fullTelemetry
+    const r = score({}, rest)
+    expect(r.breakdown.components.engagement.points)
+      .toBeCloseTo((0.35 + 0.15) * 15, 5)
   })
 })
 
