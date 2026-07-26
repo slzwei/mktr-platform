@@ -77,6 +77,37 @@ describe('deriveRewardDiagnostic (issueForProspect parity)', () => {
     expect(await svc.deriveRewardDiagnostic(verifiedProspect)).toBe('no_active_activation');
   });
 
+  describe('signups that predate the stamp epoch (2026-07-09)', () => {
+    // The public form has hard-gated submit on a passed OTP since 2025-09-03,
+    // but the server only began PERSISTING the proof in 059bb1c. Every lead
+    // captured before that reads back with no stamp — 134 of 138 rows in prod
+    // — and calling them "phone unverified" accuses leads that did nothing
+    // wrong. They are still BLOCKED (issuance needs the stamp); only the
+    // reported reason changes.
+    const preEpoch = {
+      ...verifiedProspect, sourceMetadata: {}, createdAt: new Date('2026-07-01T15:35:19Z'),
+    };
+
+    it('names the missing record, not the lead', async () => {
+      expect(await diagDeps().deriveRewardDiagnostic(preEpoch)).toBe('verification_not_recorded');
+    });
+
+    it('still refuses AT THE PHONE GATE — parity with issueForProspect, which checks the stamp before the activation', async () => {
+      const Activation = { findOne: jest.fn().mockResolvedValue(liveActivation()) };
+      const svc = diagDeps({ Activation });
+      // A live activation is sitting right there and must NOT be reported: the
+      // real engine never gets far enough to look at it.
+      expect(await svc.deriveRewardDiagnostic(preEpoch)).toBe('verification_not_recorded');
+      expect(Activation.findOne).not.toHaveBeenCalled();
+    });
+
+    it('post-epoch rows are unaffected — a missing stamp there is a real finding', async () => {
+      expect(await diagDeps().deriveRewardDiagnostic({
+        ...preEpoch, createdAt: new Date('2026-07-20T00:00:00Z'),
+      })).toBe('phone_not_verified');
+    });
+  });
+
   it('screening holds are reward-eligible (the AI gate withholds delivery, not the reward)', async () => {
     const svc = diagDeps({
       Activation: { findOne: jest.fn().mockResolvedValue(liveActivation()) },

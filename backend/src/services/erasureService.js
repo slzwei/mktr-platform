@@ -12,7 +12,7 @@ import { makeRedeemOpsAuditService } from './redeemOps/auditService.js';
 import { buildLeadDeletedPayload } from './prospectHelpers.js';
 import { flushDeliveries, historicallyTargetedSubscribers } from './webhookService.js';
 import { reconcileSuppressionPropagation } from './suppressionPropagationService.js';
-import { evictVerifiedPhone } from './verifiedPhoneStore.js';
+import { evictVerifiedPhone, forgetPhoneVerification } from './verifiedPhoneStore.js';
 import { evictDncCheckCache } from './dncCheckService.js';
 
 /**
@@ -65,7 +65,7 @@ const defaultDeps = {
   sequelize, Consumer, Prospect, RewardEntitlement, RedemptionEvent,
   ConsentEvent, ConsumerSuppression, WebhookSubscriber, WebhookDelivery,
   logger, flushDeliveries, historicallyTargetedSubscribers, reconcileSuppressionPropagation,
-  evictVerifiedPhone, evictDncCheckCache,
+  evictVerifiedPhone, evictDncCheckCache, forgetPhoneVerification,
   inventory: makeInventoryService(),
   audit: makeRedeemOpsAuditService(),
 };
@@ -730,6 +730,11 @@ export function makeErasureService(overrides = {}) {
       try {
         d.evictVerifiedPhone(erasedPhone);
         d.evictDncCheckCache(erasedPhone);
+        // The durable OTP marker outlives the process, so evicting the caches
+        // is no longer enough to erase the person — the row goes too. Awaited
+        // (erasure must not report success while proof survives) but its own
+        // failures are swallowed inside forgetPhoneVerification.
+        await d.forgetPhoneVerification(erasedPhone);
       } catch (err) {
         d.logger.warn('[erasure] cache eviction failed', { error: err?.message || String(err) });
       }

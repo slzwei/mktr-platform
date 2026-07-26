@@ -37,7 +37,7 @@ import {
 // metaCapiService and consentService — all already in this module's graph.
 import { processLeadOutcome } from './leadOutcomeService.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
-import { isPhoneRecentlyVerified } from './verifiedPhoneStore.js';
+import { isPhoneVerifiedDurable } from './verifiedPhoneStore.js';
 import {
   resolveConsumerForCaptureTx,
   recomputeConsumersByPhone,
@@ -206,7 +206,7 @@ const defaultDeps = {
   sendTikTokCompleteRegistrationEvent,
   processLeadOutcome,
   getOrCreateProspectShareLink,
-  isPhoneRecentlyVerified,
+  isPhoneVerifiedDurable,
   resolveConsumerForCaptureTx,
   recomputeConsumersByPhone,
   getConsumerJourney,
@@ -467,15 +467,19 @@ export function makeProspectService(overrides = {}) {
     }
 
     // Normalize the phone to E.164 HERE — before the draw gate and before any
-    // routing side effect — and consult the in-memory OTP marker exactly ONCE.
-    // The marker self-expires (10-min TTL), so gate-then-restamp double reads
-    // could pass the gate yet miss the stamp near the boundary, producing an
-    // accepted entrant the freeze would later exclude; one read = one truth
-    // for both the gate and the stamp below.
+    // routing side effect — and consult the OTP marker exactly ONCE. The marker
+    // self-expires, so gate-then-restamp double reads could pass the gate yet
+    // miss the stamp near the boundary, producing an accepted entrant the
+    // freeze would later exclude; one read = one truth for both the gate and
+    // the stamp below.
+    //
+    // DURABLE read, not the in-process Map: this answer decides both draw entry
+    // and whether reward-bearing proof gets written, so it must survive a
+    // redeploy landing between the lead's OTP and their submit.
     if (incoming.phone) {
       incoming.phone = normalizePhone(incoming.phone);
     }
-    const otpMarkerLive = Boolean(incoming.phone && d.isPhoneRecentlyVerified?.(incoming.phone));
+    const otpMarkerLive = Boolean(incoming.phone && await d.isPhoneVerifiedDurable?.(incoming.phone));
 
     // Lucky-draw entry gate (docs/plans/lucky-draw-10x.md §4.4) — draw campaigns
     // ONLY; the general funnel's capture-everything posture is untouched. Runs

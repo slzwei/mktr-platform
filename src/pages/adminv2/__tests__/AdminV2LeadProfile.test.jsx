@@ -242,6 +242,39 @@ describe('AdminV2LeadProfile — states', () => {
     expect(screen.getByText('Positive')).toBeInTheDocument();
   });
 
+  it('a pre-stamp signup is never called "phone unverified"', async () => {
+    // 134 of 138 prod rows predate the 2026-07-09 server stamp, and the public
+    // form has hard-gated submit on a passed OTP since 2025-09-03 — so the
+    // proof is missing, the verification almost certainly was not.
+    const pre = JSON.parse(JSON.stringify(PROFILE));
+    pre.createdAt = '2026-07-01T15:35:19Z';
+    pre.sourceMetadata = {};
+    pre.consumer.signups[0].draw = null;
+    pre.consumer.signups[0].createdAt = '2026-07-01T15:35:19Z';
+    pre.consumer.signups[0].verified = false;
+    pre.consumer.signups[0].verificationEvidence = 'unrecorded';
+    pre.consumer.signups[0].rewardDiagnostic = 'verification_not_recorded';
+    pre.signupProfile = { draw: null, entitlements: [], rewardDiagnostic: 'verification_not_recorded' };
+    fetchProspectProfile.mockResolvedValue(pre);
+    setup();
+    expect(await screen.findByText('No reward')).toBeInTheDocument();
+    expect(screen.getByText(/signed up before we recorded OTP proof/)).toBeInTheDocument();
+    expect(screen.queryByText(/phone unverified/)).not.toBeInTheDocument();
+  });
+
+  it('the no-linked-person banner blames the epoch, not the lead, for a pre-stamp signup', async () => {
+    fetchProspectProfile.mockResolvedValue({
+      ...JSON.parse(JSON.stringify(PROFILE)),
+      consumer: null,
+      createdAt: '2026-07-01T15:35:19Z',
+      sourceMetadata: {},
+      signupProfile: { draw: null, entitlements: [], rewardDiagnostic: 'verification_not_recorded' },
+    });
+    setup();
+    expect(await screen.findByText(/predates the OTP proof the identity spine links on/)).toBeInTheDocument();
+    expect(screen.queryByText(/\(phone unverified\)/)).not.toBeInTheDocument();
+  });
+
   it('erased person: banner and the honest draw hero', async () => {
     const erased = JSON.parse(JSON.stringify(PROFILE));
     erased.consumer.consumer.erasedAt = '2026-07-12T02:00:00Z';
