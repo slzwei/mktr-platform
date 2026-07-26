@@ -399,7 +399,7 @@ export const {
   Commission, LeadPackage, LeadPackageAssignment, Payment, CampaignPreview,
   QrScan, Attribution, SessionVisit, ProspectActivity, UserPayout,
   Device, BeaconEvent, Impression, IdempotencyKey, ShortLink,
-  ShortLinkClick, RoundRobinCursor, Verification, ProvisioningSession,
+  ShortLinkClick, RoundRobinCursor, Verification, PhoneVerificationMarker, ProvisioningSession,
   Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
   AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
   CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent,

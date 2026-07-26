@@ -71,7 +71,7 @@ function buildDeps(overrides = {}) {
     resolveConsumerForCaptureTx: jest.fn().mockResolvedValue(null),
     recordCaptureConsentEventsTx: jest.fn().mockResolvedValue(),
     canMarketTo: jest.fn().mockResolvedValue(false),
-    isPhoneRecentlyVerified: jest.fn().mockReturnValue(true),
+    isPhoneVerifiedDurable: jest.fn().mockResolvedValue(true),
     getOrCreateProspectShareLink: jest.fn().mockResolvedValue({ url: '/share/x' }),
     buildProspectWhere: jest.fn().mockResolvedValue({}),
     dispatchEvent: jest.fn().mockResolvedValue(),

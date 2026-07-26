@@ -1,7 +1,10 @@
 import { jest } from '@jest/globals';
 import '../setup.js';
 import { createHash } from 'crypto';
-import { phoneVerificationIsCurrent, phoneHashOf, E164_RE } from '../../src/services/consumerService.js';
+import {
+  phoneVerificationIsCurrent, phoneVerificationEvidence,
+  PHONE_VERIFICATION_STAMP_EPOCH, phoneHashOf, E164_RE,
+} from '../../src/services/consumerService.js';
 import {
   buildLeadCreatedPayload, buildLeadDeletedPayload, buildLeadAssignedPayload,
   buildLeadUnassignedPayload, buildLeadHeldPayload, buildLeadSuppressedPayload,
@@ -33,6 +36,46 @@ describe('phoneVerificationIsCurrent (stamp↔phone binding, Codex R1 #6)', () =
   test('phoneHashOf matches the stamp recipe', () => {
     expect(phoneHashOf(phone)).toBe(sha(phone));
     expect(E164_RE.test(phone)).toBe(true);
+  });
+});
+
+describe('phoneVerificationEvidence (missing proof ≠ failed verification)', () => {
+  const phone = '+6591234567';
+  const BEFORE = new Date(PHONE_VERIFICATION_STAMP_EPOCH.getTime() - 1);
+  const AFTER = new Date(PHONE_VERIFICATION_STAMP_EPOCH.getTime() + 1);
+
+  test('a live stamp is verified whichever side of the epoch it sits on', () => {
+    const sm = { phoneVerifiedAt: '2026-07-20T00:00:00Z', phoneVerifiedFor: sha(phone) };
+    expect(phoneVerificationEvidence({ phone, sourceMetadata: sm, createdAt: AFTER })).toBe('verified');
+    expect(phoneVerificationEvidence({ phone, sourceMetadata: sm, createdAt: BEFORE })).toBe('verified');
+  });
+
+  test('no stamp BEFORE the epoch → unrecorded, because no stamp could exist yet', () => {
+    expect(phoneVerificationEvidence({ phone, sourceMetadata: {}, createdAt: BEFORE })).toBe('unrecorded');
+    // The real row this was found on: captured 2026-07-01, consent keys only.
+    expect(phoneVerificationEvidence({
+      phone: '+6594652996',
+      sourceMetadata: { consent_contact: true, consent_terms: true },
+      createdAt: new Date('2026-07-01T15:35:19Z'),
+    })).toBe('unrecorded');
+  });
+
+  test('no stamp AFTER the epoch → unverified; the stamp would have been written', () => {
+    expect(phoneVerificationEvidence({ phone, sourceMetadata: {}, createdAt: AFTER })).toBe('unverified');
+  });
+
+  test('a BROKEN binding stays unverified even pre-epoch — a staff phone edit is real evidence', () => {
+    expect(phoneVerificationEvidence({
+      phone: '+6598765432',
+      sourceMetadata: { phoneVerifiedAt: '2026-01-01T00:00:00Z', phoneVerifiedFor: sha(phone) },
+      createdAt: BEFORE,
+    })).toBe('unverified');
+  });
+
+  test('an unknown createdAt falls to the strict answer, never the generous one', () => {
+    expect(phoneVerificationEvidence({ phone, sourceMetadata: {} })).toBe('unverified');
+    expect(phoneVerificationEvidence({ phone, sourceMetadata: {}, createdAt: 'not-a-date' })).toBe('unverified');
+    expect(phoneVerificationEvidence(null)).toBe('unverified');
   });
 });
 

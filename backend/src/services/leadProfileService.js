@@ -9,7 +9,7 @@ import { presentState } from '../utils/entitlementPresentState.js';
 import { makeLuckyDrawService } from './luckyDrawService.js';
 import { getConsentState } from './consentService.js';
 import { phoneKeyOf, LIVE_PHONE_STATUSES } from './redeemOps/entitlementService.js';
-import { phoneVerificationIsCurrent } from './consumerService.js';
+import { phoneVerificationEvidence } from './consumerService.js';
 import { loadObservations } from './consumerScoringService.js';
 import { resolveCurrentFacts } from '../utils/factResolver.js';
 import { SCREENING_REASONS } from './screeningConstants.js';
@@ -45,7 +45,7 @@ export function makeLeadProfileService(overrides = {}) {
     getConsentState,
     presentState,
     phoneKeyOf,
-    phoneVerificationIsCurrent,
+    phoneVerificationEvidence,
     loadObservations,
     resolveCurrentFacts,
     now: () => new Date(),
@@ -68,7 +68,18 @@ export function makeLeadProfileService(overrides = {}) {
     if (prospect.quarantinedAt && !SCREENING_REASONS.includes(prospect.quarantineReason)) {
       return 'quarantined';
     }
-    if (!d.phoneVerificationIsCurrent(prospect)) return 'phone_not_verified';
+    // Tri-state, not the boolean — but the GATE STAYS PUT. issueForProspect
+    // refuses on the stamp before it ever looks for an activation, and this
+    // function's whole contract is to report the gate that actually fires, so
+    // falling through to a prettier reason would make the console claim a
+    // blocker issuance never reaches. Only the NAME changes: a signup that
+    // predates the stamp epoch has no proof on file and never could have, and
+    // "phone unverified" accuses a lead the public form would not have let
+    // submit unverified.
+    const evidence = d.phoneVerificationEvidence(prospect);
+    if (evidence !== 'verified') {
+      return evidence === 'unrecorded' ? 'verification_not_recorded' : 'phone_not_verified';
+    }
     const activation = await d.Activation.findOne({
       where: { campaignId: prospect.campaignId, status: 'active' },
       include: [{ model: d.RewardOffer, as: 'rewardOffer' }],

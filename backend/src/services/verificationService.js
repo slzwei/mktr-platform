@@ -4,7 +4,7 @@ import { Campaign, Verification } from '../models/index.js';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { markPhoneVerified } from './verifiedPhoneStore.js';
+import { markPhoneVerified, persistPhoneVerification } from './verifiedPhoneStore.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 import {
   reservePhoneOtpQuota,
@@ -325,6 +325,10 @@ export async function checkVerificationCode({ phone, code, countryCode = '+65' }
   // caller controls this number without re-reading the now-destroyed row. See
   // verifiedPhoneStore.js. Then destroy the row to prevent code reuse.
   markPhoneVerified(fullPhone);
+  // Durable half — the capture path reads this when the in-process marker has
+  // expired or been lost to a restart. Awaited (so a marker is on file before
+  // the client is told it may submit) but never able to fail the check.
+  await persistPhoneVerification(fullPhone);
   await record.destroy();
 
   return {

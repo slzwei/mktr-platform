@@ -64,6 +64,26 @@ const NOT_ELIGIBLE_COPY = {
   terms_not_pinned: 'draw terms not accepted',
   signed_up_after_close: 'signed up after entries closed',
 };
+/** Tri-state OTP evidence (backend `verificationEvidence`). "UNRECORDED" is
+ * deliberately not "UNVERIFIED" — for signups before the 2026-07-09 stamp we
+ * hold no proof either way, and the form has hard-gated submit on a passed OTP
+ * since 2025-09-03. Falls back to the legacy boolean for older payloads. */
+const VERIFICATION_LABEL = {
+  verified: { text: 'VERIFIED ✓', hint: 'OTP proof is on file and still binds to this number.' },
+  unverified: { text: 'UNVERIFIED', hint: 'No OTP proof on file for the number currently on this lead.' },
+  unrecorded: { text: 'UNRECORDED', hint: 'Signed up before the server stored OTP proof (2026-07-09). The form required a passed OTP to submit, so this is a gap in our records — not a lead that skipped verification.' },
+};
+
+/** Client-side twin of the backend's `phoneVerificationEvidence` — used only
+ * for the no-linked-person fallback row, which is composed from the prospect
+ * the page already holds rather than from a person payload. */
+const STAMP_EPOCH_MS = Date.parse('2026-07-10T00:00:00Z');
+function evidenceOf(prospect) {
+  if (prospect?.sourceMetadata?.phoneVerifiedAt) return 'verified';
+  const t = prospect?.createdAt ? Date.parse(prospect.createdAt) : NaN;
+  return Number.isFinite(t) && t < STAMP_EPOCH_MS ? 'unrecorded' : 'unverified';
+}
+
 const DIAGNOSTIC_COPY = {
   no_active_activation: 'no reward attached to this campaign',
   allocation_exhausted: 'quota full',
@@ -74,6 +94,10 @@ const DIAGNOSTIC_COPY = {
   activation_ended: 'activation ended',
   quarantined: 'lead is held',
   not_issued_yet: 'issuance sweep hasn’t landed',
+  // NOT "phone unverified": this signup predates the server-side OTP stamp
+  // (2026-07-09), and the public form has never let an unverified phone
+  // submit. The proof is missing, the verification probably wasn't.
+  verification_not_recorded: 'signed up before we recorded OTP proof',
 };
 
 /**
@@ -798,6 +822,7 @@ export default function AdminV2LeadProfile() {
       createdAt: p.createdAt,
       held: !!p.quarantinedAt,
       verified: false,
+      verificationEvidence: evidenceOf(p),
       draw: p.signupProfile?.draw ?? null,
       rewardDiagnostic: p.signupProfile?.rewardDiagnostic ?? null,
       agentName: p.assignedAgent ? fullName(p.assignedAgent) : null,
@@ -1006,7 +1031,9 @@ export default function AdminV2LeadProfile() {
           <span aria-hidden="true" style={{ flex: 'none', color: 'var(--ink-3)' }}>{isVoiceLead ? '☏' : '○'}</span>
           {isVoiceLead
             ? 'Retell voice lead — the call carries no caller phone, so there is no cross-campaign identity.'
-            : 'No linked person yet (phone unverified) — showing this signup only.'}
+            : evidenceOf(p) === 'unrecorded'
+              ? 'No linked person yet — this signup predates the OTP proof the identity spine links on. Showing this signup only.'
+              : 'No linked person yet (phone unverified) — showing this signup only.'}
         </div>
       )}
 
@@ -1111,7 +1138,7 @@ export default function AdminV2LeadProfile() {
                         {nameVariant && <Chip tone="warn" glyph="⚠">name variant</Chip>}
                       </span>
                       <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-3)', marginTop: 3 }}>
-                        {fmtDateTime(s.createdAt).toUpperCase()} · {(SOURCE_LABELS[s.leadSource] || s.leadSource).toUpperCase()} · {s.verified ? 'VERIFIED ✓' : 'UNVERIFIED'}
+                        {fmtDateTime(s.createdAt).toUpperCase()} · {(SOURCE_LABELS[s.leadSource] || s.leadSource).toUpperCase()} · <span title={VERIFICATION_LABEL[s.verificationEvidence || (s.verified ? 'verified' : 'unverified')].hint}>{VERIFICATION_LABEL[s.verificationEvidence || (s.verified ? 'verified' : 'unverified')].text}</span>
                         {fullName(s) ? ` · AS ${fullName(s).toUpperCase()}` : ''}
                         {s.held ? <span style={{ color: 'var(--hold)' }}> · HELD</span> : null}
                         {' · '}

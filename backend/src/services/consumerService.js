@@ -49,6 +49,42 @@ export function phoneVerificationIsCurrent(prospect) {
   return sm.phoneVerifiedFor === phoneHashOf(String(prospect.phone || ''));
 }
 
+/**
+ * The instant the server began PERSISTING OTP proof onto a prospect (the
+ * prospectService §2.0 stamp, shipped in 059bb1c on 2026-07-09). Signups
+ * captured before this could never carry `phoneVerifiedAt` no matter how the
+ * lead behaved: the public form has hard-gated submit on
+ * `otpState !== 'verified'` since 2025-09-03, so on an older row a missing
+ * stamp is MISSING EVIDENCE, not evidence of a missing verification.
+ *
+ * Dated a clear day past the deploy — no real signup lands in the gap (the
+ * capture wave ended 1 Jul, the next signup was 20 Jul), so the exact hour is
+ * inconsequential for existing data and honest for anything backfilled later.
+ */
+export const PHONE_VERIFICATION_STAMP_EPOCH = new Date('2026-07-10T00:00:00Z');
+
+/**
+ * Tri-state verification evidence — 'verified' | 'unrecorded' | 'unverified'.
+ *
+ * The boolean `phoneVerificationIsCurrent` conflates "we know this phone was
+ * NOT verified" with "we never wrote down whether it was", and every surface
+ * that rendered it told operators the first when the truth was the second.
+ * Anything reporting verification TO A HUMAN must use this; anything gating
+ * reward value must keep using the strict boolean (absent proof is still
+ * absent proof — see entitlementService's anti-farming precondition).
+ */
+export function phoneVerificationEvidence(prospect) {
+  if (phoneVerificationIsCurrent(prospect)) return 'verified';
+  // A stamp that exists but no longer binds to the current number is a REAL
+  // signal (staff edited the phone after verification) — never soften it.
+  if (prospect?.sourceMetadata?.phoneVerifiedAt) return 'unverified';
+  const createdAt = prospect?.createdAt ? new Date(prospect.createdAt) : null;
+  if (createdAt && !Number.isNaN(createdAt.getTime()) && createdAt < PHONE_VERIFICATION_STAMP_EPOCH) {
+    return 'unrecorded';
+  }
+  return 'unverified';
+}
+
 /** Trimmed real email for consumer attributes; null for missing/synthetic. */
 function displayEmailOf(email) {
   return emailNormKey(email) ? String(email).trim() : null;
@@ -501,6 +537,9 @@ export function makeConsumerService(overrides = {}) {
         held: !!s.quarantinedAt,
         heldReason: s.quarantineReason || null,
         verified: phoneVerificationIsCurrent(s),
+        // Tri-state companion to `verified` — lets the console distinguish "we
+        // know it wasn't verified" from "this signup predates the stamp".
+        verificationEvidence: phoneVerificationEvidence(s),
         agentName: s.assignedAgent
           ? `${s.assignedAgent.firstName || ''} ${s.assignedAgent.lastName || ''}`.trim() || null
           : null,

@@ -84,7 +84,7 @@ function buildDeps({ campaign = null, phoneVerified = () => false, overrides = {
     sendCompleteRegistrationEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
     sendTikTokLeadEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
     sendTikTokCompleteRegistrationEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
-    isPhoneRecentlyVerified: jest.fn().mockImplementation(phoneVerified),
+    isPhoneVerifiedDurable: jest.fn().mockImplementation(async (...a) => phoneVerified(...a)),
     AppError: class AppError extends Error {
       constructor(m, s) { super(m); this.statusCode = s; }
     },
