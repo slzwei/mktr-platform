@@ -4,6 +4,10 @@ import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { fireCadenceHook } from './cadenceHooks.js';
 
+// Multi-select cap. Each row is its own transaction, so a huge batch would hold
+// a request open for a long time; the console's page size is well under this.
+const BULK_CLAIM_MAX = 100;
+
 /**
  * Business claiming / ownership (docs/redeem-ops/ERD.md §4.1, brief §15).
  *
@@ -88,6 +92,55 @@ export function makeClaimService(overrides = {}) {
     });
   }
 
+  /**
+   * Claim many at once (the Partners list's multi-select).
+   *
+   * Each row gets its OWN transaction, deliberately. Bulk claiming is
+   * partially-successful by nature — someone else may have taken one of them a
+   * second ago — and a single shared transaction would roll back nine good
+   * claims because of one lost race. The per-row conditional UPDATE is still
+   * the same atomic gate, so nothing here can double-claim.
+   *
+   * Reports per row rather than throwing, so the console can say "claimed 7,
+   * 3 already taken" and name who took them. An unexpected error on one row is
+   * caught and reported as a failure, never allowed to abandon the rest.
+   */
+  async function claimPartnersBulk(partnerIds, user, requestId = null) {
+    const ids = [...new Set((partnerIds || []).map(String))];
+    if (!ids.length) throw new AppError('Select at least one business to claim', 400);
+    if (ids.length > BULK_CLAIM_MAX) {
+      throw new AppError(`Claim up to ${BULK_CLAIM_MAX} businesses at a time`, 400);
+    }
+
+    const claimed = [];
+    const failed = [];
+    for (const partnerId of ids) {
+      try {
+        const row = await d.sequelize.transaction((t) => claimPartnerTx(partnerId, user, t, 'bulk_claim'));
+        if (row) {
+          claimed.push(partnerId);
+          continue;
+        }
+        const state = await conflictPayload(partnerId);
+        failed.push({
+          id: partnerId,
+          reason: !state ? 'not_found'
+            : state.claimedBy ? 'already_claimed'
+              : state.archived ? 'archived'
+                : state.merged ? 'merged' : 'unavailable',
+          claimedBy: state?.claimedBy || null,
+        });
+      } catch (err) {
+        d.logger.warn('redeem_ops.partner.bulk_claim_row_failed', { partnerId, error: err?.message });
+        failed.push({ id: partnerId, reason: 'error', claimedBy: null });
+      }
+    }
+    d.logger.info('redeem_ops.partner.bulk_claimed', {
+      requestId, actorUserId: user.id, requested: ids.length, claimed: claimed.length,
+    });
+    return { claimed, failed };
+  }
+
   /** Owner releases their claim back to the pool (row-level own check here). */
   async function releasePartner(partnerId, user, reason = null, requestId = null) {
     return d.sequelize.transaction(async (t) => {
@@ -159,10 +212,11 @@ export function makeClaimService(overrides = {}) {
     });
   }
 
-  return { claimPartner, claimPartnerTx, releasePartner, assignPartner };
+  return { claimPartner, claimPartnerTx, claimPartnersBulk, releasePartner, assignPartner };
 }
 
 const _default = makeClaimService();
 export const claimPartner = _default.claimPartner;
+export const claimPartnersBulk = _default.claimPartnersBulk;
 export const releasePartner = _default.releasePartner;
 export const assignPartner = _default.assignPartner;

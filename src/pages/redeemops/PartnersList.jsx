@@ -75,6 +75,9 @@ export default function PartnersList() {
   const [category, setCategory] = useState('all');
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounced(search);
+  // Multi-select for bulk actions. Ids only — the row objects are re-fetched
+  // constantly, and holding them would go stale the moment a claim lands.
+  const [selected, setSelected] = useState(() => new Set());
 
   const constants = useQuery({
     queryKey: ['redeem-ops', 'constants'],
@@ -153,6 +156,7 @@ export default function PartnersList() {
   // backend surface, works for the list sizes a 3-person team imports.
   const user = useAuthStore((st) => st.user);
   const canImport = hasCapability(user, 'partners.import');
+  const canClaim = hasCapability(user, 'partners.claim');
   const [importOpen, setImportOpen] = useState(false);
   const [importState, setImportState] = useState(null); // null | {running, done, total, created, skipped, failed, errors[]}
 
@@ -207,6 +211,56 @@ export default function PartnersList() {
   const partners = listQuery.data?.partners || [];
   const pagination = listQuery.data?.pagination;
   const stages = constants.data?.pipelineStages || [];
+
+  // Only unowned, live rows can be claimed — the same predicate the server's
+  // conditional UPDATE enforces, so the UI never offers what the API refuses.
+  const claimable = (p) => !p.ownerUserId && p.availability === 'available' && !p.archivedAt && !p.mergedIntoId;
+  const claimableIds = partners.filter(claimable).map((p) => p.id);
+  const selectedIds = [...selected];
+  // Selection mode: once anything is ticked, the whole row becomes the
+  // checkbox. Navigating away mid-selection would silently discard the
+  // selection, so in this mode a row click NEVER opens the detail page —
+  // Clear (or unticking the last row) hands normal clicking back.
+  const selectionMode = canClaim && selected.size > 0;
+  const allSelected = claimableIds.length > 0 && claimableIds.every((id) => selected.has(id));
+  const toggleOne = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAllOnPage = () => setSelected((prev) => {
+    // Scoped to THIS page's claimable rows — never a silent "select all 2,000".
+    const next = new Set(prev);
+    if (allSelected) claimableIds.forEach((id) => next.delete(id));
+    else claimableIds.forEach((id) => next.add(id));
+    return next;
+  });
+
+  const bulkClaimMutation = useMutation({
+    mutationFn: (ids) => redeemOpsApi.claimPartnersBulk(ids),
+    onSuccess: ({ data, message }) => {
+      const lost = data?.failed || [];
+      // Partial success is the NORMAL outcome — someone else may have taken one
+      // a second ago — so name what happened instead of a flat "done".
+      if (lost.length === 0) toast.success(message);
+      else {
+        const taken = lost.filter((f) => f.reason === 'already_claimed');
+        toast.warning(message, {
+          description: taken.length
+            ? `${taken.length} already claimed${taken[0].claimedBy ? ` (e.g. by ${taken[0].claimedBy.fullName})` : ''}.`
+            : `${lost.length} could not be claimed.`,
+        });
+      }
+      // Clear only what actually landed, so a retry keeps the ones that didn't.
+      setSelected((prev) => {
+        const next = new Set(prev);
+        (data?.claimed || []).forEach((id) => next.delete(id));
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partners'] });
+    },
+    onError: (err) => toast.error('Could not claim', { description: err.message }),
+  });
   const needsOverride = (duplicates?.exact?.length || 0) > 0;
 
   const partnerName = (p) => p.tradingName || p.brandName || p.legalName;
@@ -300,10 +354,34 @@ export default function PartnersList() {
             </p>
           )}
         </div>
+        {canClaim && selectedIds.length > 0 && (
+          <div role="status"
+            className="hidden md:flex items-center gap-3 px-5 py-2.5 border-t border-border"
+            style={{ background: 'var(--ro-subtle)' }}>
+            <span className="text-[13px] font-semibold">
+              <span className="tabular-nums">{selectedIds.length}</span> selected
+            </span>
+            <Button size="sm" className="font-semibold"
+              disabled={bulkClaimMutation.isPending}
+              onClick={() => bulkClaimMutation.mutate(selectedIds)}>
+              {bulkClaimMutation.isPending ? 'Claiming…' : 'Claim'}
+            </Button>
+            <button type="button" className="ro-link text-[12.5px] font-semibold"
+              onClick={() => setSelected(new Set())}>Clear</button>
+          </div>
+        )}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left" style={{ color: 'var(--ro-text-2)' }}>
+                {canClaim && (
+                  <th className="w-10 pl-5 pr-0 py-3">
+                    <input type="checkbox" aria-label="Select all claimable on this page"
+                      checked={allSelected} disabled={claimableIds.length === 0}
+                      onChange={toggleAllOnPage}
+                      className="w-4 h-4 align-middle cursor-pointer disabled:opacity-40" />
+                  </th>
+                )}
                 <th className="font-semibold text-[12.5px] px-5 py-3">Business</th>
                 <th className="font-semibold text-[12.5px] px-3 py-3">Category</th>
                 <th className="font-semibold text-[12.5px] px-3 py-3">Stage</th>
@@ -315,9 +393,33 @@ export default function PartnersList() {
               {partners.map((p) => (
                 <tr
                   key={p.id}
-                  className="cursor-pointer border-t border-border hover:bg-[var(--ro-subtle)] transition-colors"
-                  onClick={() => navigate(`/redeem-ops/partners/${p.id}`)}
+                  aria-selected={selectionMode ? selected.has(p.id) : undefined}
+                  className={`border-t border-border transition-colors ${
+                    selectionMode && !claimable(p)
+                      ? 'cursor-default opacity-60'
+                      : 'cursor-pointer hover:bg-[var(--ro-subtle)]'
+                  }`}
+                  style={selected.has(p.id) ? { background: 'var(--ro-subtle)' } : undefined}
+                  onClick={() => {
+                    // In selection mode an unclaimable row is inert: it cannot be
+                    // ticked, and opening it would throw away the selection.
+                    if (!selectionMode) { navigate(`/redeem-ops/partners/${p.id}`); return; }
+                    if (claimable(p)) toggleOne(p.id);
+                  }}
                 >
+                  {canClaim && (
+                    // stopPropagation: the row itself navigates to the detail
+                    // page, and selecting must never take you off the list.
+                    <td className="w-10 pl-5 pr-0 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox"
+                        aria-label={`Select ${partnerName(p)}`}
+                        checked={selected.has(p.id)}
+                        disabled={!claimable(p)}
+                        title={claimable(p) ? undefined : 'Already owned — release it first'}
+                        onChange={() => toggleOne(p.id)}
+                        className="w-4 h-4 align-middle cursor-pointer disabled:opacity-30" />
+                    </td>
+                  )}
                   <td className="px-5 py-2.5">
                     <span className="flex items-center gap-3 min-w-0">
                       <RoAvatar name={partnerName(p)} size={36} />

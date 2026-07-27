@@ -158,6 +158,11 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/partners/${id}/claim`, {});
     return res.data;
   },
+  /** Multi-select claim → { claimed: [id], failed: [{ id, reason, claimedBy }] }. */
+  async claimPartnersBulk(partnerIds) {
+    const res = await apiClient.post('/redeem-ops/partners/bulk-claim', { partnerIds });
+    return res.data;
+  },
   async releasePartner(id, reason) {
     const res = await apiClient.post(`/redeem-ops/partners/${id}/release`, { reason });
     return res.data;

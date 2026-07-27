@@ -25,6 +25,9 @@ router.get('/partners/:id', requireRedeemOps('partners.view'), ctrl.getPartner);
 router.put('/partners/:id', requireRedeemOps('partners.edit'), ctrl.updatePartner);
 
 // Ownership
+// Bulk claim sits BEFORE the :id routes — 'bulk-claim' would otherwise match
+// as an :id and 404 on a uuid lookup.
+router.post('/partners/bulk-claim', requireRedeemOps('partners.claim'), ctrl.claimPartnersBulk);
 router.post('/partners/:id/claim', requireRedeemOps('partners.claim'), ctrl.claimPartner);
 router.post('/partners/:id/release', requireRedeemOps('partners.release'), ctrl.releasePartner);
 router.post('/partners/:id/assign', requireRedeemOps('partners.reassign'), ctrl.assignPartner);
