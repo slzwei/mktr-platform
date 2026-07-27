@@ -1,5 +1,7 @@
 /**
- * PartnerDetail row-level gating: a business is worked by whoever owns it.
+ * PartnerDetail — the header's row-level gating and its outbound links.
+ *
+ * Gating: a business is worked by whoever owns it.
  * A BDM manages the board (assign, tasks, visibility) but does NOT get to move,
  * rename or restructure a colleague's business — the UI must not offer what
  * partnerService.canActOnRow would refuse with a 403.
@@ -163,5 +165,49 @@ describe('PartnerDetail — only the owner works the business', () => {
 
     await openTab('contacts');
     expect(screen.queryByPlaceholderText('Name *')).toBeNull();
+  });
+});
+
+describe('PartnerDetail — header links', () => {
+  const linked = {
+    ...basePartner,
+    website: 'https://www.tumblejoygym.com/classes',
+    websiteDomain: 'tumblejoygym.com',
+    instagramHandle: 'tumblejoygymnastics',
+  };
+
+  it('the website chip opens the site and the handle opens Instagram', async () => {
+    renderDetail({ id: OWNER_ID, role: 'redeem_ops', redeemOpsRole: 'bdm' }, linked);
+    await screen.findByText('Secret Garden Nail Boutique');
+
+    // The chip reads as the bare domain but follows the full URL the rep saved.
+    expect(screen.getByRole('link', { name: /tumblejoygym\.com/ }))
+      .toHaveAttribute('href', 'https://www.tumblejoygym.com/classes');
+    expect(screen.getByRole('link', { name: /@tumblejoygymnastics/ }))
+      .toHaveAttribute('href', 'https://instagram.com/tumblejoygymnastics');
+  });
+
+  it('falls back to the normalized domain when no full URL was saved', async () => {
+    renderDetail({ id: OWNER_ID, role: 'redeem_ops', redeemOpsRole: 'bdm' }, { ...linked, website: null });
+    await screen.findByText('Secret Garden Nail Boutique');
+
+    expect(screen.getByRole('link', { name: /tumblejoygym\.com/ }))
+      .toHaveAttribute('href', 'https://tumblejoygym.com');
+  });
+
+  it('never emits a javascript: href from stored free text', async () => {
+    renderDetail({ id: OWNER_ID, role: 'redeem_ops', redeemOpsRole: 'bdm' }, { ...linked, website: 'javascript:alert(1)' });
+    await screen.findByText('Secret Garden Nail Boutique');
+
+    const href = screen.getByRole('link', { name: /tumblejoygym\.com/ }).getAttribute('href');
+    expect(href.startsWith('https://')).toBe(true);
+    expect(href).not.toMatch(/javascript/i);
+  });
+
+  it('renders nothing clickable when the business has neither', async () => {
+    renderDetail({ id: OWNER_ID, role: 'redeem_ops', redeemOpsRole: 'bdm' });
+    await screen.findByText('Secret Garden Nail Boutique');
+
+    expect(screen.queryByRole('link', { name: /instagram|\.com/i })).toBeNull();
   });
 });

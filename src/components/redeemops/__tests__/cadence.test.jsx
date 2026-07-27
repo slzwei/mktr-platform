@@ -314,6 +314,41 @@ describe('CadencePanel', () => {
     expect(screen.getByRole('button', { name: /stop/i })).toBeInTheDocument();
   });
 
+  it('links the cadence name through to its definition for anyone who can open the editor', async () => {
+    api.getPartnerCadence.mockResolvedValue({
+      enrollment: {
+        id: 'e-1', state: 'active',
+        cadence: { id: 'c-77', name: 'Pet Grooming IG-DM', version: 2, steps: [{ id: 's-1', stepOrder: 1 }] },
+        currentStep: { id: 's-1', stepOrder: 1 },
+      },
+      openTask: null,
+    });
+    useAuthStore.setState({ user: { id: 'u-1', role: 'user', redeemOpsRole: 'bdm' } });
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+
+    // Version-pinned: the link points at the exact version being run, not the
+    // cadence's latest — the editor loads with all=true so retired ones resolve.
+    expect(await screen.findByRole('link', { name: 'Pet Grooming IG-DM' }))
+      .toHaveAttribute('href', '/redeem-ops/cadences/c-77/edit');
+  });
+
+  it('leaves the cadence name as plain text for a viewer who cannot open the editor', async () => {
+    api.getPartnerCadence.mockResolvedValue({
+      enrollment: {
+        id: 'e-1', state: 'active',
+        cadence: { id: 'c-77', name: 'Pet Grooming IG-DM', version: 2, steps: [{ id: 's-1', stepOrder: 1 }] },
+        currentStep: { id: 's-1', stepOrder: 1 },
+      },
+      openTask: null,
+    });
+    // analyst has no tasks.manage — a link would only lead to a bounce.
+    useAuthStore.setState({ user: { id: 'u-2', role: 'user', redeemOpsRole: 'analyst' } });
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+
+    expect(await screen.findByText('Pet Grooming IG-DM')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Pet Grooming IG-DM' })).not.toBeInTheDocument();
+  });
+
   it('offers enrollment when there is no live cadence', async () => {
     api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
     wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
