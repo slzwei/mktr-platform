@@ -325,5 +325,5 @@ describe('held leads are manual-only (auto-release disabled)', () => {
     const p = await Prospect.findByPk(heldId);
     expect(p.quarantinedAt).not.toBeNull();       // still held
     expect(p.assignedAgentId).not.toBe(agent.id); // never auto-assigned
-  }, 15000);
+  });
 });

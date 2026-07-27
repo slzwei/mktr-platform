@@ -21,7 +21,7 @@ let app;
 beforeAll(async () => {
   process.env.EXTERNAL_OUTCOME_WEBHOOK_SECRET = SECRET;
   app = await getApp();
-}, 15000);
+});
 
 afterAll(async () => {
   await closeDb();

@@ -21,7 +21,7 @@ beforeAll(async () => {
   campaign = await createTestCampaign(adminUser.id)
   _prospect = await createTestProspect(campaign.id, { assignedAgentId: agent1.id })
   await createTestCommission(agent1.id, campaign.id, { amount: 100 })
-}, 15000)
+})
 
 afterAll(async () => {
   await closeDb()
