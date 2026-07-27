@@ -23,6 +23,7 @@ import {
 } from '../utils/designConfigV2Clamp.js';
 import { invalidateMarketplaceCache } from './marketplaceCache.js';
 import { invalidateFeaturedDropsCache } from './featuredDropsService.js';
+import { bustScoringConfigCache } from './scoringConfigCache.js';
 import { refundCampaignCommitments } from './walletService.js';
 
 /**
@@ -837,6 +838,14 @@ export async function updateCampaign(id, body, req) {
   }
   invalidateMarketplaceCache();
   invalidateFeaturedDropsCache();
+
+  // The SECOND resolution-input writer (per-campaign-lead-scoring.md §9). A
+  // brief edit that changes `targetAudience.product` re-routes this campaign's
+  // scoring config to a DIFFERENT product chain without any config row
+  // changing, so a cached `campaign:<id>` entry holding the old inherited row
+  // would keep scoring under it for up to a TTL. Cheap and whole-map, like the
+  // config writer's own bust.
+  if (updateData.targetAudience !== undefined) bustScoringConfigCache();
 
   // Sync agent assignments to join table when assigned_agents is provided
   if (assigned_agents !== undefined) {

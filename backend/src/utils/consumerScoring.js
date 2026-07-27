@@ -582,6 +582,16 @@ const RULES = {
   screening: (facts, telemetry) => scoreScreening(telemetry),
 };
 
+/**
+ * Every component name this build can actually score — the closed vocabulary
+ * a stored config is validated against at SAVE time
+ * (utils/scoringConfigValidation.js, per-campaign-lead-scoring.md §8.1).
+ *
+ * Exported rather than re-typed there so the validator can never drift from
+ * what RULES implements: adding a rule adds it to the vocabulary for free.
+ */
+export const SCOREABLE_COMPONENTS = Object.freeze(Object.keys(RULES));
+
 /** Merge a stored config over the defaults without losing unspecified knobs. */
 export function normalizeConfig(configJson) {
   const c = configJson && typeof configJson === 'object' ? configJson : {};
@@ -629,6 +639,20 @@ export function scoreConsumer({ facts = {}, telemetry = {}, config, now = Date.n
 function computeScore({ cfg, facts, telemetry, now, algorithmVersion }) {
   const components = {};
 
+  /**
+   * Components this build has no rule for. They stay VISIBLE in the breakdown
+   * (below) but are excluded from the group denominators (rawMaxOf).
+   *
+   * Keeping their maxPoints in the denominator was a silent, population-wide
+   * deflation: a config naming `capicity` for 15 points scores nobody those
+   * points and yet divides everyone by 15 more, so a typo — or an AI proposal
+   * inventing a component — quietly lowers every score in the group with no
+   * error anywhere. §8.1 rejects unknown names at SAVE
+   * (utils/scoringConfigValidation.js); this is the read-side half, because
+   * rows written before that gate existed can already contain one.
+   */
+  const noRule = new Set();
+
   for (const [name, def] of Object.entries(cfg.components)) {
     const rule = RULES[name];
     const maxPoints = Number(def?.maxPoints) || 0;
@@ -636,6 +660,7 @@ function computeScore({ cfg, facts, telemetry, now, algorithmVersion }) {
       // A config naming a component this build doesn't implement must not
       // silently vanish from the breakdown — an unexplained gap in the parts
       // is worse than an explicit "not implemented here".
+      noRule.add(name);
       components[name] = {
         state: 'unknown', points: 0, maxPoints, basisObservationIds: [], note: 'no rule for this component',
       };
@@ -655,7 +680,7 @@ function computeScore({ cfg, facts, telemetry, now, algorithmVersion }) {
     .filter((n) => components[n])
     .reduce((s, n) => s + components[n].points, 0);
   const rawMaxOf = (names) => names
-    .filter((n) => components[n])
+    .filter((n) => components[n] && !noRule.has(n))
     .reduce((s, n) => s + Math.max(0, components[n].maxPoints), 0);
 
   const meetNames = cfg.groups.meet || [];
