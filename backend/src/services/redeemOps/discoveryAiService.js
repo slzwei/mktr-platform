@@ -20,6 +20,11 @@ import { requestStructuredJson } from '../guidedReviewAiService.js';
 // Constraint-free on purpose: providers disagree on which JSON-Schema keywords
 // structured outputs accept (array bounds, string lengths), so the contract is
 // enforced in normalizeTerms() below instead.
+// EVERY property must also be listed in `required`: the OpenAI transport sends
+// these with strict:true, which rejects an optional property with a 400 before
+// the model runs. `categories` was optional here from #171 until 27 Jul, which
+// failed every suggestion on OpenAI. IG mode still returns it — as an empty
+// array per the prompt — and suggestTerms discards it there anyway.
 const TERMS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -28,7 +33,7 @@ const TERMS_SCHEMA = {
     // Maps only — real Google category names the results can be filtered by.
     categories: { type: 'array', items: { type: 'string' } },
   },
-  required: ['terms'],
+  required: ['terms', 'categories'],
 };
 
 const SYSTEM_PROMPT = `

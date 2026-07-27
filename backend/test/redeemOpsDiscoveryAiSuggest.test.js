@@ -99,6 +99,25 @@ describe('suggestTerms', () => {
     expect(call.schema.properties.terms.items.type).toBe('string');
   });
 
+  /* The OpenAI transport sends this schema with strict:true, which 400s the
+     request — before the model runs — for any property missing from `required`.
+     Mocking the transport hides that, so assert the contract on the schema:
+     an optional `categories` broke every prod suggestion from #171 to 27 Jul. */
+  test('the schema satisfies OpenAI strict mode — every property is required', async () => {
+    const violations = (schema, path = '$') => {
+      if (!schema || typeof schema !== 'object') return [];
+      const found = [];
+      for (const name of Object.keys(schema.properties || {})) {
+        if (!(schema.required || []).includes(name)) found.push(`${path}.${name}`);
+        found.push(...violations(schema.properties[name], `${path}.${name}`));
+      }
+      return found.concat(violations(schema.items, `${path}[]`));
+    };
+    const { svc, deps } = makeSvc();
+    await svc.suggestTerms({ description: 'kids martial arts', provider: 'google_maps' }, user);
+    expect(violations(deps.requestStructuredJson.mock.calls[0][0].schema)).toEqual([]);
+  });
+
   test('maps mode returns normalized categories alongside terms', async () => {
     const { svc } = makeSvc({
       requestStructuredJson: jest.fn(async () => ({
