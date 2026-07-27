@@ -405,7 +405,10 @@ function PartnerTaskRow({
  * passive "Next: …" line is gone; the task row replaced it.
  * `variant="summary"` renders the compact actionable mobile strip.
  */
-export function CadencePanel({ partner, canManage = true, variant = 'card', onAddTask, onEditTask }) {
+// canManage = may work TASKS here. canRunCadence = may start/pause/stop the
+// cadence, which is working the deal itself and so follows business ownership
+// (#307); it defaults to canManage so other call sites keep their behavior.
+export function CadencePanel({ partner, canManage = true, canRunCadence = canManage, variant = 'card', onAddTask, onEditTask }) {
   const queryClient = useQueryClient();
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [stripExpanded, setStripExpanded] = useState(false);
@@ -509,7 +512,7 @@ export function CadencePanel({ partner, canManage = true, variant = 'card', onAd
     completingId,
   };
 
-  const enrollButton = CADENCES_ENABLED && canManage && !terminalStage && (
+  const enrollButton = CADENCES_ENABLED && canRunCadence && !terminalStage && (
     <Button
       size="sm"
       className={variant === 'summary' ? 'shrink-0' : 'w-full'}
@@ -568,7 +571,7 @@ export function CadencePanel({ partner, canManage = true, variant = 'card', onAd
               Paused — no tasks will be scheduled until resumed.
             </p>
           )}
-          {canManage && (
+          {canRunCadence && (
             <div className="flex gap-1.5 mt-3">
               {enrollment.state === 'active' ? (
                 <Button size="sm" variant="outline" disabled={pauseMutation.isPending} onClick={() => pauseMutation.mutate()}>Pause</Button>
@@ -611,7 +614,7 @@ export function CadencePanel({ partner, canManage = true, variant = 'card', onAd
       {rows.length === 0 && !tasksQuery.isLoading && (
         <p className="text-[12.5px] m-0 px-5 pb-3.5 leading-relaxed" style={{ color: 'var(--ro-text-3)' }}>
           {canManage && !terminalStage
-            ? `No open tasks — add one${CADENCES_ENABLED ? ' or start a cadence' : ''}.`
+            ? `No open tasks — add one${CADENCES_ENABLED && canRunCadence ? ' or start a cadence' : ''}.`
             : 'No open tasks.'}
         </p>
       )}

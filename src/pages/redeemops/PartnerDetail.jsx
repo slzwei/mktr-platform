@@ -707,6 +707,7 @@ export default function PartnerDetail() {
       <CadencePanel
         partner={partner}
         canManage={hasCapability(user, 'tasks.manage')}
+        canRunCadence={canActOnRow && hasCapability(user, 'tasks.manage')}
         variant="summary"
         onAddTask={() => setTaskOpen(true)}
         onEditTask={openTaskEdit}
@@ -862,6 +863,7 @@ export default function PartnerDetail() {
             <CadencePanel
               partner={partner}
               canManage={hasCapability(user, 'tasks.manage')}
+              canRunCadence={canActOnRow && hasCapability(user, 'tasks.manage')}
               onAddTask={() => setTaskOpen(true)}
               onEditTask={openTaskEdit}
             />

@@ -349,6 +349,33 @@ describe('CadencePanel', () => {
     expect(screen.queryByRole('link', { name: 'Pet Grooming IG-DM' })).not.toBeInTheDocument();
   });
 
+  it('hides the cadence controls on a business the viewer does not own, keeping task controls', async () => {
+    api.getPartnerCadence.mockResolvedValue({
+      enrollment: {
+        id: 'e-1', state: 'active',
+        cadence: { id: 'c-1', name: 'F&B call-first', version: 1, steps: [{ id: 's-1', stepOrder: 1 }] },
+        currentStep: { id: 's-1', stepOrder: 1 },
+      },
+      openTask: null,
+    });
+    useAuthStore.setState({ user: { id: 'u-1', role: 'user', redeemOpsRole: 'bdm' } });
+    // canManage (tasks) stays true; canRunCadence (the deal) is false.
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'someone-else', pipelineStage: 'NEW' }}
+        canManage
+        canRunCadence={false}
+        onAddTask={() => {}}
+      />
+    );
+
+    expect(await screen.findByText(/F&B call-first/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^pause$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^stop$/i })).not.toBeInTheDocument();
+    // Coordinating work on a colleague's business is still allowed.
+    expect(screen.getByRole('button', { name: /add task/i })).toBeInTheDocument();
+  });
+
   it('offers enrollment when there is no live cadence', async () => {
     api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
     wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
