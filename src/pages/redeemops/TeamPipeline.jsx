@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import Moon from 'lucide-react/icons/moon';
 import { RoAvatar, prettyEnum } from '@/components/redeemops/ui';
+import { canActOnPartnerRow, ROW_OVERRIDE_SUB_ROLES } from '@/lib/redeemOpsPermissions';
 
 const PIPELINE_KEY = ['redeem-ops', 'team-pipeline'];
 
@@ -50,14 +51,6 @@ function timeInStage(p) {
   if (hours < 1) return 'now';
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
-}
-
-/** Mirrors partnerService.canActOnRow — managers move any card, execs their own. */
-function canDragCard(user, p) {
-  if (!user) return false;
-  if (user.role === 'admin') return true;
-  if (['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole)) return true;
-  return p.ownerUserId === user.id;
 }
 
 function CardInner({ p, dragging }) {
@@ -245,6 +238,10 @@ export default function TeamPipeline() {
     return map;
   }, [partners]);
 
+  // Admin tier drags anyone's card; everyone else only their own, so they get
+  // an extra line of explanation for the cards that won't lift.
+  const movesAnyCard = user?.role === 'admin' || ROW_OVERRIDE_SUB_ROLES.includes(user?.redeemOpsRole);
+
   const lostItems = byStage.LOST || [];
   const legalTargets = activeCard ? (transitions[activeCard.pipelineStage] || []) : [];
   // Earlier columns than the dragged card's stage: droppable behind a
@@ -303,6 +300,7 @@ export default function TeamPipeline() {
           <h1 className="ro-title">Team pipeline</h1>
           <p className="ro-sub">
           Drag a business forward — or onto the red bar to mark it Lost. Dragging back to an earlier column asks you to confirm.
+          {!movesAnyCard && ' You can move the businesses you own; claim an unowned one to work it.'}
           <span className="md:hidden"> Press and hold a card to drag; tap to open.</span>
           <span className="hidden md:inline"> Click to open.</span>
         </p>
@@ -334,7 +332,7 @@ export default function TeamPipeline() {
                   <BoardCard
                     key={p.id}
                     p={p}
-                    draggable={canDragCard(user, p)}
+                    draggable={canActOnPartnerRow(user, p)}
                     onOpen={(pid) => navigate(`/redeem-ops/partners/${pid}`)}
                   />
                 ))}
@@ -357,7 +355,7 @@ export default function TeamPipeline() {
                 <BoardCard
                   key={p.id}
                   p={p}
-                  draggable={canDragCard(user, p)}
+                  draggable={canActOnPartnerRow(user, p)}
                   onOpen={(pid) => navigate(`/redeem-ops/partners/${pid}`)}
                 />
               ))}

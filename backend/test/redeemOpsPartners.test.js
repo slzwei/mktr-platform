@@ -329,6 +329,78 @@ describe('stage machine + activities + row-level ownership', () => {
     expect(log.status).toBe(403);
   });
 
+  test('a BDM cannot move or edit a colleague’s business, but may still log activity', async () => {
+    const res = await createPartner(admin.token, { tradingName: `Colleague Deal ${Date.now()}` });
+    const id = res.body.data.partner.id;
+    await request(app).post(`/api/redeem-ops/partners/${id}/claim`).set(auth(execA.token));
+
+    // NEW → CONTACTED is a legal transition; the refusal is purely about ownership.
+    const move = await request(app)
+      .patch(`/api/redeem-ops/partners/${id}/stage`)
+      .set(auth(bdm.token))
+      .send({ toStage: 'CONTACTED' });
+    expect(move.status).toBe(403);
+    expect(await PartnerOrganisation.findByPk(id).then((r) => r.pipelineStage)).toBe('NEW');
+
+    const edit = await request(app)
+      .put(`/api/redeem-ops/partners/${id}`)
+      .set(auth(bdm.token))
+      .send({ tradingName: 'Renamed By Someone Else' });
+    expect(edit.status).toBe(403);
+
+    const contact = await request(app)
+      .post(`/api/redeem-ops/partners/${id}/contacts`)
+      .set(auth(bdm.token))
+      .send({ name: 'Not My Contact' });
+    expect(contact.status).toBe(403);
+
+    const location = await request(app)
+      .post(`/api/redeem-ops/partners/${id}/locations`)
+      .set(auth(bdm.token))
+      .send({ name: 'Not My Outlet', postalCode: '049483' });
+    expect(location.status).toBe(403);
+
+    const snooze = await request(app)
+      .post(`/api/redeem-ops/partners/${id}/snooze`)
+      .set(auth(bdm.token))
+      .send({ until: new Date(Date.now() + 7 * 86400000).toISOString() });
+    expect(snooze.status).toBe(403);
+
+    // Visibility is not the thing being restricted — a manager may still log a touch.
+    const log = await request(app)
+      .post(`/api/redeem-ops/partners/${id}/activities`)
+      .set(auth(bdm.token))
+      .send({ type: 'internal_note', summary: 'checked in with the team', direction: 'internal' });
+    expect(log.status).toBe(201);
+
+    // …and the owner is unaffected.
+    const owned = await request(app)
+      .patch(`/api/redeem-ops/partners/${id}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'CONTACTED' });
+    expect(owned.status).toBe(200);
+  });
+
+  test('an unowned business must be claimed before anyone can move it', async () => {
+    const res = await createPartner(admin.token, { tradingName: `Nobody's Deal ${Date.now()}` });
+    const id = res.body.data.partner.id;
+    expect(await PartnerOrganisation.findByPk(id).then((r) => r.ownerUserId)).toBeNull();
+
+    const denied = await request(app)
+      .patch(`/api/redeem-ops/partners/${id}/stage`)
+      .set(auth(bdm.token))
+      .send({ toStage: 'CONTACTED' });
+    expect(denied.status).toBe(403);
+    expect(denied.body.message).toMatch(/claim/i);
+
+    await request(app).post(`/api/redeem-ops/partners/${id}/claim`).set(auth(bdm.token));
+    const allowed = await request(app)
+      .patch(`/api/redeem-ops/partners/${id}/stage`)
+      .set(auth(bdm.token))
+      .send({ toStage: 'CONTACTED' });
+    expect(allowed.status).toBe(200);
+  });
+
   test('meaningful activity stamps firstOutreachAt/lastActivityAt; internal note does not', async () => {
     const note = await request(app)
       .post(`/api/redeem-ops/partners/${partnerId}/activities`)
