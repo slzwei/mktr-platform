@@ -10,7 +10,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeDedupeService } from './dedupeService.js';
-import { hasCapability } from './permissions.js';
+import { hasCapability, canActOnPartnerRow } from './permissions.js';
 import { deriveMatchingKeys, postalDistrictOf } from './normalizers.js';
 import {
   PIPELINE_STAGES, STAGE_TRANSITIONS, PARTNER_AVAILABILITY,
@@ -51,12 +51,22 @@ export function makePartnerService(overrides = {}) {
   const LIVE = { mergedIntoId: null };
   const OWNER_INCLUDE = { model: d.User, as: 'owner', attributes: ['id', 'fullName', 'email'] };
 
-  /** Managers act on any row; everyone else must own it. */
-  function canActOnRow(user, partner) {
-    if (!user) return false;
-    if (user.role === 'admin') return true;
-    if (['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole)) return true;
-    return partner.ownerUserId === user.id;
+  /**
+   * Admin tier acts on any row; everyone else — BDMs included — must own it,
+   * and an unowned row must be claimed first. Shared with the SPA's board and
+   * detail gating via permissions.js so the UI can't offer what this refuses.
+   */
+  const canActOnRow = canActOnPartnerRow;
+
+  /** 403 for a row that isn't yours — pointing at Claim when it's nobody's yet. */
+  function assertCanMoveRow(user, partner) {
+    if (canActOnRow(user, partner)) return;
+    throw new AppError(
+      partner.ownerUserId
+        ? 'You can only move businesses you own'
+        : 'Claim this business first, then you can move it',
+      403
+    );
   }
 
   async function getLivePartner(id, options = {}) {
@@ -265,9 +275,7 @@ export function makePartnerService(overrides = {}) {
       throw new AppError('A reason is required when marking a business as Lost', 400);
     }
     const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!canActOnRow(user, partner)) {
-      throw new AppError('You can only move businesses you own', 403);
-    }
+    assertCanMoveRow(user, partner);
     const fromStage = partner.pipelineStage;
     if (fromStage === toStage) return partner;
 
@@ -334,9 +342,7 @@ export function makePartnerService(overrides = {}) {
   async function undoStageChange(id, user, requestId = null) {
     return d.sequelize.transaction(async (t) => {
       const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
-      if (!canActOnRow(user, partner)) {
-        throw new AppError('You can only move businesses you own', 403);
-      }
+      assertCanMoveRow(user, partner);
       const last = await d.PartnerStageEvent.findOne({
         where: { partnerOrganisationId: id },
         order: [['createdAt', 'DESC']],

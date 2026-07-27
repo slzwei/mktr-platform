@@ -161,3 +161,25 @@ export function hasCapability(user, capability) {
 export function isRedeemOpsUser(user) {
   return !!user && (user.role === 'admin' || user.role === 'redeem_ops' || !!user.redeemOpsRole);
 }
+
+/** The tier that may act on a business it doesn't own. BDM is deliberately NOT here. */
+export const ROW_OVERRIDE_SUB_ROLES = ['super_admin', 'ops_admin'];
+
+/**
+ * Row-level gate: may this user write to THIS business? Covers stage moves,
+ * detail edits, contacts, locations and snooze — the actions that belong to
+ * whoever is working the deal.
+ *
+ * A business is worked by exactly one person, so only its owner may act on it;
+ * BDMs get no blanket override over a colleague's row (they keep their
+ * capability-gated powers — reassign, claim, tasks, pools — and may still log
+ * activity on any row via the `partners.reassign` escape hatch in the service).
+ * Admin tier overrides everything. An UNOWNED row is nobody's: it must be
+ * claimed first, which is why a null owner never matches.
+ */
+export function canActOnPartnerRow(user, partner) {
+  if (!user || !partner) return false;
+  if (user.role === 'admin') return true;
+  if (ROW_OVERRIDE_SUB_ROLES.includes(user.redeemOpsRole)) return true;
+  return !!partner.ownerUserId && partner.ownerUserId === user.id;
+}

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
 import { useAuthStore } from '@/stores/authStore';
-import { hasCapability } from '@/lib/redeemOpsPermissions';
+import { hasCapability, canActOnPartnerRow } from '@/lib/redeemOpsPermissions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -521,6 +521,10 @@ export default function PartnerDetail() {
   const isOwner = partner.ownerUserId === user?.id;
   const isUnowned = !partner.ownerUserId;
   const canReassign = hasCapability(user, 'partners.reassign');
+  // Writes that belong to whoever is working the deal — stage, details, contacts,
+  // locations, snooze. Owner or admin tier only; `canReassign` is NOT a way in
+  // (a BDM manages the board, they don't work a colleague's business for them).
+  const canActOnRow = canActOnPartnerRow(user, partner);
   const canOnboard = hasCapability(user, 'onboarding.manage');
   const allowedNext = constants.data?.stageTransitions?.[partner.pipelineStage] || [];
   const activityTypes = constants.data?.activityTypes || [];
@@ -538,7 +542,7 @@ export default function PartnerDetail() {
           <div className="min-w-0">
             <h1 className="ro-title text-[21px] md:text-[26px] inline-flex items-center gap-2 min-w-0">
               <span className="break-words min-w-0">{name}</span>
-              {hasCapability(user, 'partners.edit') && (isOwner || canReassign) && (
+              {hasCapability(user, 'partners.edit') && canActOnRow && (
                 <button
                   type="button"
                   className="ro-icon-circle shrink-0"
@@ -589,7 +593,7 @@ export default function PartnerDetail() {
           {hasCapability(user, 'tasks.manage') && (
             <Button variant="outline" className="flex-1 h-[42px]" onClick={() => setTaskOpen(true)}>Add task</Button>
           )}
-          {(isOwner || canReassign) && (
+          {(canActOnRow || canReassign) && (
             <DropdownMenu>
               <DropdownMenuTrigger
                 className="w-[42px] h-[42px] shrink-0 rounded-full border grid place-items-center outline-none"
@@ -602,10 +606,10 @@ export default function PartnerDetail() {
                 {canReassign && (
                   <DropdownMenuItem onClick={() => setAssignOpen(true)}>Assign to…</DropdownMenuItem>
                 )}
-                {allowedNext.length > 0 && (
+                {canActOnRow && allowedNext.length > 0 && (
                   <DropdownMenuItem onClick={() => setMoveOpen(true)}>Move stage…</DropdownMenuItem>
                 )}
-                {!['PARTNERED', 'LOST'].includes(partner.pipelineStage) && (
+                {canActOnRow && !['PARTNERED', 'LOST'].includes(partner.pipelineStage) && (
                   partner.availability === 'follow_up_later' ? (
                     <DropdownMenuItem onClick={() => unsnoozeMutation.mutate()}>Wake up</DropdownMenuItem>
                   ) : (
@@ -631,7 +635,7 @@ export default function PartnerDetail() {
               </SelectContent>
             </Select>
           )}
-          {(isOwner || canReassign) && allowedNext.length > 0 && (
+          {canActOnRow && allowedNext.length > 0 && (
             <Select
               value=""
               onValueChange={(toStage) => {
@@ -647,7 +651,7 @@ export default function PartnerDetail() {
               </SelectContent>
             </Select>
           )}
-          {(isOwner || canReassign) && !['PARTNERED', 'LOST'].includes(partner.pipelineStage) && (
+          {canActOnRow && !['PARTNERED', 'LOST'].includes(partner.pipelineStage) && (
             partner.availability === 'follow_up_later' ? (
               <Button variant="outline" onClick={() => unsnoozeMutation.mutate()}>Wake up</Button>
             ) : (
@@ -660,6 +664,9 @@ export default function PartnerDetail() {
           {hasCapability(user, 'tasks.manage') && (
             <Button variant="outline" onClick={() => setTaskOpen(true)}>Add task</Button>
           )}
+          {/* Deliberately looser than canActOnRow: logging a touch on a colleague's
+              business keeps team visibility, and the service allows it via the same
+              `partners.reassign` escape hatch. */}
           {(isOwner || canReassign) && (
             <Button variant="outline" onClick={() => setActivityOpen(true)}>Log activity</Button>
           )}
@@ -722,7 +729,7 @@ export default function PartnerDetail() {
                       {[c.roleTitle, c.mobile, c.email].filter(Boolean).join(' · ') || '—'}
                     </p>
                   </div>
-                  {(isOwner || canReassign) && (
+                  {canActOnRow && (
                     <span className="flex gap-1 shrink-0">
                       <Button
                         size="sm" variant="ghost" aria-label={`Edit ${c.name}`}
@@ -747,7 +754,7 @@ export default function PartnerDetail() {
                   )}
                 </div>
               ))}
-              {(isOwner || canReassign) && (
+              {canActOnRow && (
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <Input placeholder="Name *" value={contactForm.name} onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} />
                   <Input placeholder="Role (e.g. Owner)" value={contactForm.roleTitle} onChange={(e) => setContactForm((f) => ({ ...f, roleTitle: e.target.value }))} />
@@ -781,7 +788,7 @@ export default function PartnerDetail() {
                   </div>
                 </div>
               ))}
-              {(isOwner || canReassign) && (
+              {canActOnRow && (
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <Input placeholder="Outlet name" value={locationForm.name} onChange={(e) => setLocationForm((f) => ({ ...f, name: e.target.value }))} />
                   <Input placeholder="Postal code" value={locationForm.postalCode} onChange={(e) => setLocationForm((f) => ({ ...f, postalCode: e.target.value }))} />

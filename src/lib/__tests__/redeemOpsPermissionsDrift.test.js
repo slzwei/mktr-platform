@@ -9,6 +9,28 @@ describe('redeem-ops permissions drift guard', () => {
     expect(mirror.REDEEM_OPS_SUB_ROLES).toEqual(backend.REDEEM_OPS_SUB_ROLES);
     expect(mirror.CAPABILITIES).toEqual(backend.CAPABILITIES);
     expect(mirror.ROLE_CAPABILITIES).toEqual(backend.ROLE_CAPABILITIES);
+    expect(mirror.ROW_OVERRIDE_SUB_ROLES).toEqual(backend.ROW_OVERRIDE_SUB_ROLES);
+  });
+
+  it('row-level partner gate agrees, and keeps BDM out of other people’s businesses', () => {
+    const bdm = { id: 'u-bdm', role: 'redeem_ops', redeemOpsRole: 'bdm' };
+    const rows = [
+      [{ role: 'admin', id: 'u-admin' }, { ownerUserId: 'someone-else' }, true],
+      [{ id: 'u-sa', redeemOpsRole: 'super_admin' }, { ownerUserId: 'someone-else' }, true],
+      [{ id: 'u-oa', redeemOpsRole: 'ops_admin' }, { ownerUserId: 'someone-else' }, true],
+      // A BDM manages the board but does not work a colleague's business.
+      [bdm, { ownerUserId: 'someone-else' }, false],
+      [bdm, { ownerUserId: 'u-bdm' }, true],
+      // Unowned is nobody's — it has to be claimed first.
+      [bdm, { ownerUserId: null }, false],
+      [{ id: 'u-oe', redeemOpsRole: 'outreach_exec' }, { ownerUserId: 'u-oe' }, true],
+      [{ id: 'u-oe', redeemOpsRole: 'outreach_exec' }, { ownerUserId: 'other' }, false],
+      [null, { ownerUserId: null }, false],
+    ];
+    for (const [user, partner, expected] of rows) {
+      expect(backend.canActOnPartnerRow(user, partner)).toBe(expected);
+      expect(mirror.canActOnPartnerRow(user, partner)).toBe(expected);
+    }
   });
 
   it('helper semantics agree on representative users', () => {

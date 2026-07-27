@@ -27,6 +27,7 @@ and Outreach-style cadences. **Not** customer-facing.
 ## Conventions & gotchas
 
 - **UI language = Fresha** (PR #99). Design system "Redeem Ops Design System" on claude.ai/design. DesignSync gotcha: write `_ds_manifest.json` directly — `register_assets` doesn't update it.
+- **Row-level ownership**: capabilities answer "may this sub-role ever?", `canActOnPartnerRow` (in both permissions twins) answers "on THIS business?". Only the owner + admin tier (`admin`, `super_admin`, `ops_admin`) may move a stage, edit details, or touch contacts/locations/snooze — **`bdm` deliberately has NO override** (07-27), and an unowned row must be claimed first. Activity logging stays looser on purpose via the `partners.reassign` escape hatch in `logActivityTx`. TeamPipeline + PartnerDetail both gate on the shared helper; don't reintroduce `isOwner || canReassign` for row writes.
 - **Feature flags** gate most surfaces. `REDEEM_OPS_CADENCES_ENABLED` + `VITE_REDEEM_OPS_CADENCES_ENABLED` (cadences), plus a still-off **entitlements** flag. Discover is flag- + `APIFY_TOKEN`-gated. Check flag state on the live deploy before assuming a feature is on.
 - **ops.redeem.sg** needs Render rewrites; its Cloudflare CNAME must be **DNS-only** (not proxied).
 - **Google login on the ops origin** derives `redirect_uri` from the request origin; the Google OAuth client lives in the GCloud project **"MKTR Platform"** (not "MKTR Leads").
