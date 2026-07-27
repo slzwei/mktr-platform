@@ -18,7 +18,7 @@ let app;
 beforeAll(async () => {
   process.env.WEBHOOK_ENABLED = 'false';
   app = await getApp();
-}, 20000);
+});
 
 afterAll(async () => {
   await closeDb();

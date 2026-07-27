@@ -38,7 +38,7 @@ beforeAll(async () => {
   agentToken = agent.token;
 
   campaign = await createTestCampaign(adminUser.id, { name: `Lead-Capture Test ${RUN}` });
-}, 20000);
+});
 
 afterAll(async () => {
   await closeDb();

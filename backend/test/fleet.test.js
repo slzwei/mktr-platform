@@ -10,7 +10,7 @@ beforeAll(async () => {
   const agent = await createTestUser({ role: 'agent' })
   agentToken = agent.token
   _agentUser = agent.user
-}, 15000)
+})
 
 afterAll(async () => {
   await closeDb()
