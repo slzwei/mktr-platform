@@ -7,7 +7,7 @@ shipped + §9 specified, M10 verified shipped. **Codex round 3: PASS**
 **BUILT 2026-07-27: PR A₁ and PR A₂ (§14) — §18 records what shipped and the
 three places the build had to deviate from this text.**
 **BUILT 2026-07-28: PR C and PR D (§14) — §19 records what shipped and the
-six places that build had to deviate.** PR E remains.
+seven places that build had to deviate.** PR E remains.
 **Author:** Claude, 2026-07-26, from Shawn's model:
 
 > "The admin, when creating campaigns, will say the ideal lead profile. The AI
@@ -869,8 +869,8 @@ Migration number checked against `origin/main` at naming time and again before
 merge: highest was `099-lead-score.js`, so `100`. The `083`/`096` historical
 duplicates stay frozen; nothing was added to that list.
 
-Six places the build departed from §8/§9's text. Each is a deviation the plan
-should own rather than a silent divergence in code.
+Seven places the build departed from §8/§9's text. Each is a deviation the
+plan should own rather than a silent divergence in code.
 
 ### 19.1 The cache is a LEAF MODULE, not a map inside `consumerScoringService`
 
@@ -946,7 +946,27 @@ NULL` so it is a no-op there instead of failing with "column already has a
 default". Both environments end with a column that allocates itself when a
 writer omits it — the property the runtime depends on.
 
-### 19.8 Flag, and what is NOT built
+### 19.8 What "uniqueness" means here — and the index that was NOT added
+
+The obvious reading is a partial unique index per scope: at most one
+`status = 'approved'` row per campaign, per product, and one globally. It
+cannot exist, and the reason is in this migration's own grandfathering clause.
+093 seeds v1, 094 appends v2, 095 appends v3 — three GLOBAL rows — and 100
+defaults every pre-existing row to `approved` because they are live today. A
+unique-approved-per-scope index would therefore reject its own migration on
+prod's actual data, and would permanently outlaw the append-only recalibration
+§7.2 is built on.
+
+Uniqueness is instead a property of RESOLUTION, and three things together
+guarantee it: `version` remains the primary key, so no two rows tie; the
+`chk_escfg_single_scope` CHECK stops a row belonging to two tiers at once; and
+`ORDER BY tier, version DESC LIMIT 1` picks exactly one winner from any set.
+"One approved row per scope" is maintained by `approveScoringConfig`, which
+supersedes the previous approved row at that scope in the same transaction —
+a bookkeeping convenience for reading the table, not a correctness requirement,
+since a stale approved row can never out-rank a newer one anyway.
+
+### 19.9 Flag, and what is NOT built
 
 `SCORING_CONFIG_ADMIN_ENABLED` (default `false`) gates the whole admin router;
 until it is flipped every path 404s. There is no React surface — the four
