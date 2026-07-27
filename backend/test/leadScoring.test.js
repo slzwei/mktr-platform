@@ -8,7 +8,7 @@ import {
 } from '../src/services/leadScoringService.js'
 import { markLeadsDirtyTx } from '../src/services/leadScoreDirty.js'
 import { recordWaSend } from '../src/services/redeemOps/waMessageOwnership.js'
-import { _resetConfigCache, getActiveScoringConfig } from '../src/services/consumerScoringService.js'
+import { _resetConfigCache } from '../src/services/consumerScoringService.js'
 import { eraseConsumer } from '../src/services/erasureService.js'
 import { LEAD_ALGORITHM_VERSION } from '../src/utils/consumerScoring.js'
 
@@ -314,8 +314,11 @@ describe('the write gate (§6)', () => {
     await sequelize.transaction((t) => markLeadsDirtyTx(t, [a.id]))
     expect((await rowOf(a.id)).scoreDirtyAt).not.toBeNull()
     // Dirty ⇒ provably stale ⇒ first claim on the sweep's budget.
-    expect(await findStaleLeadIds({ configVersion: (await getActiveScoringConfig()).version, limit: 500 }))
-      .toContain(a.id)
+    // No configVersion: staleness resolves each lead's own campaign → product
+    // → global chain in SQL now (§9). Full coverage of that lives in
+    // test/scoringConfigResolution.test.js; what this asserts is the dirty
+    // marker's own clause.
+    expect(await findStaleLeadIds({ limit: 500 })).toContain(a.id)
 
     expect((await scoreOneLead(a.id)).status).toBe('scored')
     expect((await rowOf(a.id)).scoreDirtyAt).toBeNull()
@@ -360,9 +363,7 @@ describe('erasure (§11)', () => {
     const { consumer, a } = await personWithTwoLeads()
     await scoreOf(a.id)
     await eraseConsumer(consumer.id, { actorUser: admin, reason: 'lead score erasure fence' })
-    const stale = await findStaleLeadIds({
-      configVersion: (await getActiveScoringConfig()).version, limit: 1000,
-    })
+    const stale = await findStaleLeadIds({ limit: 1000 })
     expect(stale).not.toContain(a.id)
   })
 })
