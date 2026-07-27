@@ -14,7 +14,7 @@ beforeAll(async () => {
   qrTag = await createTestQrTag(campaign.id, adminUser.id, {
     slug: `tracker-test-${Date.now()}`
   });
-}, 15000);
+});
 
 afterAll(async () => {
   await closeDb();

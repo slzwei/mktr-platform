@@ -5,7 +5,7 @@ let app
 
 beforeAll(async () => {
   app = await getApp()
-}, 15000)
+})
 
 afterAll(async () => {
   await closeDb()

@@ -39,7 +39,7 @@ beforeAll(async () => {
   unassignedProspect = await createTestProspect(campaign.id, {
     firstName: 'Unassigned'
   })
-}, 15000)
+})
 
 afterAll(async () => {
   await closeDb()

@@ -9,7 +9,7 @@ beforeAll(async () => {
   app = await getApp()
   const admin = await createTestUser({ role: 'admin' })
   adminUser = admin.user
-}, 15000)
+})
 
 afterAll(async () => {
   await closeDb()

@@ -7,7 +7,6 @@ import {
 } from '../src/services/redeemOps/discovery/placeCategories.js';
 import { GOOGLE_PLACE_CATEGORIES } from '../src/services/redeemOps/discovery/googlePlaceCategories.js';
 
-jest.setTimeout(20000);
 
 /**
  * The Maps actor validates `categoryFilterWords` against a closed, all-lowercase
