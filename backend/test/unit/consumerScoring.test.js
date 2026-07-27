@@ -403,6 +403,26 @@ describe('config drives weights and grouping (§7.1b)', () => {
     expect(r.breakdown.components.future_signal.note).toMatch(/no rule/)
   })
 
+  test('…but it does NOT inflate the denominator (per-campaign-lead-scoring.md §8.1)', () => {
+    // A component with no rule scores nobody its points and used to divide
+    // everyone by them anyway — a silent, population-wide deflation from a
+    // single typo. §8.1 rejects unknown names at SAVE; this is the read-side
+    // half, because rows written before that gate can already carry one.
+    const ghostInMeet = {
+      ...DEFAULT_SCORING_CONFIG,
+      groups: { ...DEFAULT_SCORING_CONFIG.groups, meet: [...DEFAULT_SCORING_CONFIG.groups.meet, 'engagment'] },
+      components: { ...DEFAULT_SCORING_CONFIG.components, engagment: { maxPoints: 15 } },
+    }
+    const clean = score({}, fullTelemetry, DEFAULT_SCORING_CONFIG)
+    const typo = score({}, fullTelemetry, ghostInMeet)
+
+    expect(typo.meetScore).toBe(clean.meetScore)
+    // rawMax is the denominator that was being inflated — it must not move.
+    expect(typo.breakdown.groups.meet.rawMax).toBe(clean.breakdown.groups.meet.rawMax)
+    // The row is still there to explain itself; only its weight is discounted.
+    expect(typo.breakdown.components.engagment.maxPoints).toBe(15)
+  })
+
   test('normalizeConfig fills gaps without discarding overrides', () => {
     const merged = normalizeConfig({ components: { capacity: { maxPoints: 99 } } })
     expect(merged.components.capacity.maxPoints).toBe(99)

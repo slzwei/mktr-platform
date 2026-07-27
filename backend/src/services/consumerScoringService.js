@@ -1,10 +1,14 @@
-import { sequelize, EnrichmentScoringConfig } from '../models/index.js';
+import { sequelize } from '../models/index.js';
 import { withConsumerLock, ErasedConsumerError } from './enrichmentFence.js';
 import { resolveCurrentFacts } from '../utils/factResolver.js';
 import { canonicalJson, sha256 } from './factMapperService.js';
 import {
   scoreConsumer, normalizeConfig, DEFAULT_SCORING_CONFIG, SCORING_ALGORITHM_VERSION,
 } from '../utils/consumerScoring.js';
+import { briefProductKey } from '../utils/campaignBrief.js';
+import {
+  cacheKeyFor, readScoringConfigCache, writeScoringConfigCache, _resetScoringConfigCache,
+} from './scoringConfigCache.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -52,37 +56,101 @@ export function scoringEnabled() {
  */
 export const MARKETING_CONSENT_KIND = 'contact';
 
-// Config is append-only and changes at most a few times a year; a short TTL
-// keeps a sweep of thousands of consumers from re-reading it per row while
-// still picking up a new calibration within the same night.
-const CONFIG_TTL_MS = 60_000;
-let configCache = null;
+/**
+ * The per-resolution-entry cache lives in its own leaf module
+ * (services/scoringConfigCache.js) because `campaignService` has to bust it
+ * too and must not import this file's model/fence/resolver chain to do so.
+ * Re-exported here so the busting contract has one documented door.
+ */
+export { bustScoringConfigCache } from './scoringConfigCache.js';
 
 export function _resetConfigCache() {
-  configCache = null;
+  _resetScoringConfigCache();
 }
 
 /**
- * Highest-versioned config row wins (§7.2). An empty table is legitimate on
- * a fresh database that hasn't run 093 yet — fall back to the code defaults
- * at version 0 so scoring degrades to "works, unstamped" rather than
- * crashing the sweep.
+ * Resolution, in one query (§9): campaign → product → global, taking the
+ * highest APPROVED version at the FIRST tier that matches.
+ *
+ * `status = 'approved'` is the whole point of §8.3: before migration 100 the
+ * reader took the highest version outright, so an AI proposal inserted into
+ * this table would have been LIVE within one cache TTL, before anyone read it.
+ *
+ * The tier CASE plus `ORDER BY tier, version DESC` is the resolution order
+ * itself — a campaign row always beats a product row, which always beats
+ * global, regardless of which has the higher version. Each disjunct is served
+ * by its own partial index from migration 100.
  */
-export async function getActiveScoringConfig({ now = Date.now() } = {}) {
-  if (configCache && now - configCache.loadedAt < CONFIG_TTL_MS) return configCache.value;
+const RESOLVE_SQL = `
+  SELECT e.version, e."configJson", e."campaignId", e."productKey",
+         CASE WHEN e."campaignId" IS NOT NULL THEN 1
+              WHEN e."productKey" IS NOT NULL THEN 2
+              ELSE 3 END AS tier
+    FROM enrichment_scoring_configs e
+   WHERE e.status = 'approved'
+     AND ( e."campaignId" = :campaignId
+        OR e."productKey" = :productKey
+        OR (e."campaignId" IS NULL AND e."productKey" IS NULL) )
+   ORDER BY tier ASC, e.version DESC
+   LIMIT 1`;
+
+/** The product this campaign's leads score under, or null. */
+async function loadCampaignProductKey(campaignId) {
+  const [[row]] = await sequelize.query(
+    'SELECT "targetAudience" FROM campaigns WHERE id = :cid',
+    { replacements: { cid: campaignId } }
+  );
+  return briefProductKey(row?.targetAudience);
+}
+
+/**
+ * The config that scores a given subject.
+ *
+ * Called with NO scope (the person grain, and the sweep's own staleness
+ * bookkeeping) it resolves the GLOBAL row — today's behaviour, deliberately
+ * unchanged. A consumer spans campaigns, so there is no campaign to key off;
+ * picking one of their leads' campaigns would be arbitrary, and the person's
+ * numbers are a projection of the winning lead anyway (§4), whose own stamp
+ * records the config that actually produced them.
+ *
+ * Called with `{ campaignId }` (the lead grain) it walks the full chain.
+ *
+ * An empty table is legitimate on a fresh database that hasn't run 093 — fall
+ * back to the code defaults at version 0 so scoring degrades to "works,
+ * unstamped" rather than crashing the sweep.
+ */
+export async function getActiveScoringConfig({
+  now = Date.now(), campaignId = null, productKey = null,
+} = {}) {
+  const cacheKey = cacheKeyFor({ campaignId, productKey });
+  const hit = readScoringConfigCache(cacheKey, now);
+  if (hit) return hit;
 
   let row = null;
   try {
-    row = await EnrichmentScoringConfig.findOne({ order: [['version', 'DESC']] });
+    // A campaign entry point resolves its own product; a caller that already
+    // knows the product (the simulator) passes it directly.
+    const product = campaignId ? await loadCampaignProductKey(campaignId) : productKey;
+    const [rows] = await sequelize.query(RESOLVE_SQL, {
+      replacements: { campaignId, productKey: product },
+    });
+    row = rows[0] || null;
   } catch (err) {
     logger.warn('[consumerScoring] config read failed — using defaults', { error: err.message });
   }
 
   const value = row
-    ? { version: row.version, config: normalizeConfig(row.configJson) }
-    : { version: 0, config: normalizeConfig(DEFAULT_SCORING_CONFIG) };
+    ? {
+      version: row.version,
+      config: normalizeConfig(row.configJson),
+      // Which tier won. Callers do not branch on it; it is what makes a
+      // support question ("why did this lead score like that?") answerable
+      // without re-deriving the resolution by hand.
+      scope: row.campaignId ? 'campaign' : row.productKey ? 'product' : 'global',
+    }
+    : { version: 0, config: normalizeConfig(DEFAULT_SCORING_CONFIG), scope: 'default' };
 
-  configCache = { value, loadedAt: now };
+  writeScoringConfigCache(cacheKey, value, now);
   return value;
 }
 

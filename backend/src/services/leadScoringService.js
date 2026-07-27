@@ -230,10 +230,16 @@ export async function projectPersonScore(t, consumerId) {
  *            score?:number|null, meetScore?:number|null, buyScore?:number|null}}
  */
 export async function scoreOneLead(prospectId, { force = false, now = Date.now() } = {}) {
-  const { version: configVersion, config } = await getActiveScoringConfig({ now });
-
+  // Telemetry FIRST: it carries the campaignId that selects the config
+  // (§9's campaign → product → global chain). The resolved row's `version` is
+  // what gets stamped, so "which config scored this lead" has exactly one
+  // answer even when the campaign inherited from product or global.
   const telemetry = await loadLeadTelemetry(prospectId);
   if (!telemetry) return { status: 'skipped', reason: 'prospect_gone' };
+
+  const { version: configVersion, config } = await getActiveScoringConfig({
+    now, campaignId: telemetry.campaignId,
+  });
 
   const observations = await loadLeadObservations({
     prospectId, consumerId: telemetry.consumerId,
@@ -311,8 +317,43 @@ export async function scoreOneLead(prospectId, { force = false, now = Date.now()
 }
 
 /**
+ * The SQL twin of getActiveScoringConfig's resolution (§9), as a scalar
+ * subquery over one prospect row.
+ *
+ * WHY IT HAS TO BE SQL. Under per-campaign configs the "expected version"
+ * differs per campaign, so a single `:configVersion` bind can no longer say
+ * what stale means. Resolving in JS would mean fetching a batch and filtering
+ * it afterwards, which breaks LIMIT: the sweep asks for 200 stale leads and
+ * would get "however many of an arbitrary 200 happened to be stale".
+ *
+ * COALESCE is the tier order — campaign, then product, then global, then 0
+ * for the empty-table case that getActiveScoringConfig reports as version 0.
+ * Each subquery hits one of migration 100's partial indexes.
+ *
+ * The product comes from `targetAudience->>'product'` with no validity check,
+ * exactly matching `briefProductKey`: a value outside the vocabulary cannot
+ * match a `productKey` row, because those are validated on the way in. The
+ * parity test pins the two resolvers against the same fixtures.
+ */
+const RESOLVED_VERSION_SQL = `COALESCE(
+  (SELECT max(e.version) FROM enrichment_scoring_configs e
+    WHERE e.status = 'approved' AND e."campaignId" = p."campaignId"),
+  (SELECT max(e.version) FROM enrichment_scoring_configs e
+    WHERE e.status = 'approved' AND e."productKey" = cam."targetAudience"->>'product'),
+  (SELECT max(e.version) FROM enrichment_scoring_configs e
+    WHERE e.status = 'approved' AND e."campaignId" IS NULL AND e."productKey" IS NULL),
+  0)`;
+
+/**
  * Leads whose score is provably stale: never scored, scored by a superseded
  * config or algorithm, or explicitly dirtied by a choke-point writer (§10).
+ *
+ * "Superseded config" is now per-campaign (§9): each lead's stamped version is
+ * compared against the version its OWN campaign currently resolves to. An
+ * approval at any scope therefore makes exactly the inheriting leads stale —
+ * a campaign-scoped row dirties that campaign's leads, a product row dirties
+ * every campaign of that product that has no row of its own, and a global row
+ * dirties everything still inheriting from global.
  *
  * Erased people are excluded — their leads keep a nulled score by design
  * (§11), and re-scoring one would write the number straight back.
@@ -320,25 +361,24 @@ export async function scoreOneLead(prospectId, { force = false, now = Date.now()
  * Hash-level staleness (facts moved, config didn't) is NOT expressible in
  * SQL; that is what the sweep's rotation is for.
  */
-export async function findStaleLeadIds({ configVersion, limit = 200, afterId = null }) {
+export async function findStaleLeadIds({ limit = 200, afterId = null } = {}) {
   const [rows] = await sequelize.query(
     `SELECT p.id
        FROM prospects p
        LEFT JOIN consumers c ON c.id = p."consumerId"
+       LEFT JOIN campaigns cam ON cam.id = p."campaignId"
       WHERE (p."consumerId" IS NULL OR c."erasedAt" IS NULL)
         AND (:afterId::uuid IS NULL OR p.id > :afterId::uuid)
         AND (
           p."scoreComputedAt" IS NULL
           OR p."scoreDirtyAt" IS NOT NULL
-          OR p."scoredConfigVersion" IS DISTINCT FROM :configVersion
           OR p."scoringAlgorithmVersion" IS DISTINCT FROM :algorithmVersion
+          OR p."scoredConfigVersion" IS DISTINCT FROM ${RESOLVED_VERSION_SQL}
         )
       ORDER BY p.id
       LIMIT :limit`,
     {
-      replacements: {
-        configVersion, algorithmVersion: LEAD_ALGORITHM_VERSION, limit, afterId,
-      },
+      replacements: { algorithmVersion: LEAD_ALGORITHM_VERSION, limit, afterId },
     }
   );
   return rows.map((r) => r.id);

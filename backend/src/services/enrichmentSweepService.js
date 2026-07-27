@@ -323,9 +323,14 @@ export async function sweepConsumers({
   const consumerStaleScored = ctx.rowsUsed;
 
   if (staleStop !== 'taken_over') {
+    // No configVersion: under per-campaign configs (§9) there is no single
+    // expected version to compare against, so findStaleLeadIds resolves each
+    // lead's own campaign → product → global chain in SQL. `configVersion`
+    // above stays the GLOBAL one and still governs the consumer phase, which
+    // has no campaign to key off.
     const leadStop = await stalePhase({
       find: findStaleLeads, scoreOne: ctx.scoreOneLeadFn, grain: 'lead',
-      findArgs: { configVersion },
+      findArgs: {},
     });
     staleStop = leadStop === 'taken_over' ? leadStop : (staleStop || leadStop);
   }

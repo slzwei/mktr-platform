@@ -105,6 +105,24 @@ export function hasBrief(targetAudience) {
 }
 
 /**
+ * The product key a campaign's scoring config scopes to
+ * (per-campaign-lead-scoring.md §9 step 2), or null when there is none.
+ *
+ * DELIBERATELY KEYED ON `product` ALONE, not on hasBrief(). §9's prose says
+ * "when a brief exists", but the objective has nothing to do with which
+ * product model applies — and the SQL twin in leadScoringService's stale query
+ * cannot call hasBrief(), so keying on the one field both sides can read
+ * keeps the JS and SQL resolvers provably identical (pinned by the parity
+ * test in test/scoringConfigResolution.test.js). Every brief written through
+ * normalizeBrief carries both fields anyway, so the two readings differ only
+ * for hand-written targetAudience JSON.
+ */
+export function briefProductKey(targetAudience) {
+  if (!isPlainObject(targetAudience)) return null;
+  return BRIEF_PRODUCT_IDS.includes(targetAudience.product) ? targetAudience.product : null;
+}
+
+/**
  * Validate + canonicalize a raw brief payload. → { ok:true, brief } or
  * { ok:false, error }. Pure and side-effect-free; the API layer turns a
  * failure into its own error type.
