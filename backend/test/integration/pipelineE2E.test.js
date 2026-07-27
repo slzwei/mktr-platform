@@ -124,7 +124,7 @@ beforeAll(async () => {
     // lyfe-provenance agent, so dispatch only reaches subscribers tagged 'lyfe'.
     metadata: { destination: 'lyfe' }
   });
-}, 30000);
+});
 
 afterAll(async () => {
   process.env.WEBHOOK_ENABLED = 'false';

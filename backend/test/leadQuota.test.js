@@ -52,7 +52,7 @@ beforeAll(async () => {
   const a = await createTestUser({ role: 'admin' });
   admin = a.user;
   adminToken = a.token;
-}, 30000);
+});
 
 afterAll(async () => {
   await closeDb();

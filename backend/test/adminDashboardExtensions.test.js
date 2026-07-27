@@ -96,7 +96,7 @@ beforeAll(async () => {
   await WebhookDelivery.create({ subscriberId: sub.id, eventType: 'lead.created', payload: {}, status: 'failed' })
 
   resetAdminStatsCache()
-}, 30000)
+})
 
 afterAll(async () => {
   await closeDb()

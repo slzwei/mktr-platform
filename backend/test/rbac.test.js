@@ -15,7 +15,7 @@ beforeAll(async () => {
     const { user, token } = await createTestUser({ role })
     tokens[role] = { user, token }
   }
-}, 20000)
+})
 
 afterAll(async () => {
   await closeDb()

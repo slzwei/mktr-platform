@@ -37,7 +37,7 @@ beforeAll(async () => {
     min_age: 18,
     max_age: 65
   });
-}, 20000);
+});
 
 afterAll(async () => {
   await closeDb();
