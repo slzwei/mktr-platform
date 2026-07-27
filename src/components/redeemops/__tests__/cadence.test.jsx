@@ -319,6 +319,35 @@ describe('CadencePanel', () => {
     wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
     expect(await screen.findByRole('button', { name: /start cadence/i })).toBeInTheDocument();
   });
+
+  it('the picker scrolls its library, keeping the heading and "New cadence" on screen', async () => {
+    api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
+    api.listCadences.mockResolvedValue({
+      cadences: Array.from({ length: 12 }, (_, i) => ({
+        id: `c-${i}`,
+        name: `Cadence ${i}`,
+        publishedAt: new Date().toISOString(),
+        steps: [{ id: `s-${i}`, stepOrder: 1, channel: 'call' }],
+      })),
+      aiEnabled: false,
+    });
+    useAuthStore.setState({ user: { id: 'u-1', role: 'user', redeemOpsRole: 'bdm' } });
+    const user = userEvent.setup();
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+    await user.click(await screen.findByRole('button', { name: /start cadence/i }));
+
+    // Every row shares one scroll container — a long library can't push the
+    // dialog past the viewport, which left it unreachable in both directions.
+    const scroller = (await screen.findByRole('button', { name: /Cadence 0/ })).parentElement;
+    expect(scroller.className).toMatch(/overflow-y-auto/);
+    expect(screen.getByRole('button', { name: /Cadence 11/ }).parentElement).toBe(scroller);
+    // The authoring escape hatch sits outside it, so it never scrolls away.
+    expect(scroller).not.toContainElement(screen.getByRole('link', { name: /New cadence/ }));
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({ user: null });
+  });
 });
 
 /* ── The Cadence & Tasks rail section (Business Detail design) ── */
