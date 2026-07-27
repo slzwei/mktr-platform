@@ -610,6 +610,72 @@ function ComponentRow({ name, c }) {
   );
 }
 
+/**
+ * What actually happened, and when (per-campaign-lead-scoring.md §6).
+ *
+ * The components above say how much each thing is worth right now; this says
+ * what the "thing" was. Weights are shown UNDECAYED — the score already has
+ * the decay baked in as of `scoredAt`, so the gap between an event's full
+ * weight and its contribution IS the age shown beside it. Rendering a decayed
+ * figure here would just repeat the score twice and explain nothing.
+ *
+ * Absent for a lead nobody has messaged or called, which is most of them —
+ * an empty section would read as "no response" rather than "no contact".
+ */
+function ScoreEvents({ events, scoredAt }) {
+  const rows = Array.isArray(events) ? events : [];
+  if (!rows.length) return null;
+
+  const label = (e) => {
+    if (e.type === 'wa_read') return 'Read a WhatsApp from this campaign';
+    if (e.type === 'screening') {
+      const bits = [
+        e.verdict === 'qualified' ? 'Screening call: qualified'
+          : e.verdict === 'not_qualified' ? 'Screening call: not qualified'
+            : 'Screening call',
+        e.interest && `interest ${e.interest}`,
+        e.sentiment && `sentiment ${e.sentiment}`,
+        e.agreedToMeet === true && 'agreed to meet',
+        e.agreedToMeet === false && 'declined to meet',
+      ].filter(Boolean);
+      return bits.join(' · ');
+    }
+    return e.type;
+  };
+
+  return (
+    <Disclosure
+      label="Response events"
+      count={`${rows.length} EVENT${rows.length === 1 ? '' : 'S'}`}
+      indent={36}
+    >
+      {rows.map((e, i) => (
+        <div
+          key={`${e.type}-${e.at || i}`}
+          style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '3px 0', fontSize: 12 }}
+        >
+          <span style={{ flex: 1, color: 'var(--ink-2)' }}>{label(e)}</span>
+          <span className="av2-mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', flex: 'none' }}>
+            {e.at ? fmtDateTime(e.at) : 'undated'}
+            {Number.isFinite(e.ageDays) && ` · ${e.ageDays}d`}
+          </span>
+          <span
+            className="av2-mono"
+            style={{ width: 44, textAlign: 'right', flex: 'none', fontSize: 10.5, color: 'var(--ink-3)' }}
+            title="Full weight before decay"
+          >
+            {e.undecayedWeight != null ? `${e.undecayedWeight > 0 ? '+' : ''}${e.undecayedWeight}` : '—'}
+          </span>
+        </div>
+      ))}
+      <div style={{ fontSize: 11, color: 'var(--ink-3)', paddingTop: 6 }}>
+        Weights are shown at full strength; the score above applies decay as of{' '}
+        {scoredAt ? fmtDateTime(scoredAt) : 'the last rescore'}.
+      </div>
+    </Disclosure>
+  );
+}
+
 function EnrichmentCard({ enrichment }) {
   const bd = enrichment?.breakdown;
   const comps = bd?.components || {};
@@ -653,6 +719,8 @@ function EnrichmentCard({ enrichment }) {
           </div>
         )}
       </div>
+
+      <ScoreEvents events={bd?.events} scoredAt={enrichment?.scoredAt} />
 
       {facts.length > 0 && (
         <Disclosure label="Fact ledger" count={`${facts.length} FACT${facts.length === 1 ? '' : 'S'}`} indent={36}>

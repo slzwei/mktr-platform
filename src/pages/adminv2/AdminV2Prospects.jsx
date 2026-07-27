@@ -63,6 +63,46 @@ function CheckboxGlyph({ checked }) {
   );
 }
 
+/**
+ * The LEAD score — (person × campaign), not the person
+ * (docs/plans/per-campaign-lead-scoring.md §4). The same number the queue
+ * sorts by, because there is only one: it is decayed at WRITE time and stored,
+ * so sort and display can never disagree (§6).
+ *
+ * NULL is not zero. It means this lead has not been scored yet, and rendering
+ * it as a low number would rank a brand-new lead below a genuinely poor one.
+ * Mirrors AdminV2People's ScoreCell idiom so the two queues read alike.
+ */
+function LeadScoreCell({ value, scoredAt }) {
+  if (value == null) {
+    return (
+      <span
+        className="av2-mono"
+        style={{ width: 52, flex: 'none', fontSize: 11, color: 'var(--ink-3)', textAlign: 'right' }}
+        title="Not scored yet"
+      >
+        —
+      </span>
+    );
+  }
+  // Weight only the top of the range: a faint ramp reads as ranking without
+  // implying precision the number doesn't have.
+  const strong = value >= 60;
+  return (
+    <span
+      className="av2-mono"
+      style={{
+        width: 52, flex: 'none', fontSize: 12, textAlign: 'right',
+        fontWeight: strong ? 700 : 500,
+        color: strong ? 'var(--ink)' : 'var(--ink-2)',
+      }}
+      title={`Lead score ${value}/100${scoredAt ? ` · as of ${fmtDateTime(scoredAt)}` : ''}`}
+    >
+      {value}
+    </span>
+  );
+}
+
 function SortHeader({ label, field, sort, onSort, width, align }) {
   const active = sort === field || sort === `-${field}`;
   const desc = sort === `-${field}`;
@@ -362,6 +402,7 @@ export default function AdminV2Prospects() {
           <span className="av2-microcaps" style={{ width: 130, flex: 'none' }}>Status</span>
           <span className="av2-microcaps" style={{ flex: 1 }}>Campaign</span>
           <span className="av2-microcaps" style={{ width: 100, flex: 'none' }}>Agent</span>
+          <SortHeader label="Score" field="score" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={52} align="right" />
           <SortHeader label="Created" field="createdAt" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={100} align="right" />
         </div>
 
@@ -469,6 +510,7 @@ export default function AdminV2Prospects() {
                     ? <Chip tone="accent">External</Chip>
                     : held ? '—' : <Chip tone="warn">none</Chip>}
               </span>
+              <LeadScoreCell value={p.score} scoredAt={p.scoreComputedAt} />
               <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10, color: 'var(--ink-3)', textAlign: 'right' }} title={fmtDateTime(p.createdAt)}>
                 {fmtRelative(p.createdAt)}
               </span>

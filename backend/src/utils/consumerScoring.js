@@ -485,6 +485,87 @@ function scoreCoverageHeadroom(facts, cfg) {
   );
 }
 
+// ── LEAD-GRAIN components (per-campaign-lead-scoring.md §3.2) ──────────────
+//
+// These read RESPONSE inputs: evidence attributed to (person, THIS campaign).
+// They exist only in the lead scorer — a response on campaign A must never
+// enter campaign B's response terms, and the way that is guaranteed is that
+// the person-grain scorer has no rule for them at all.
+
+/**
+ * Response to THIS pitch — WhatsApp reads of messages this lead owns
+ * (wa_message_sends ⋈ wa_message_statuses, §5).
+ *
+ * UNKNOWN vs ZERO is the whole subtlety. Never having messaged someone is not
+ * evidence that they ignore us, so a lead that owns no message is `unknown`.
+ * A lead we DID message and who never read is `assessed` at 0 — that is a
+ * real, negative finding.
+ *
+ * Depth then recency, mirroring scoreEngagement: reading more than once says
+ * more than reading once, and a read from last year says less than one from
+ * yesterday. Decayed at WRITE time against the caller's `now` (§6).
+ */
+function scoreResponse(telemetry, cfg, now) {
+  const sent = Number(telemetry?.ownedMessageCount) || 0;
+  if (sent <= 0) return unknown('no message owned by this lead yet');
+
+  const reads = Array.isArray(telemetry?.readAt) ? telemetry.readAt : [];
+  if (!reads.length) {
+    return assessed(0, [], `${sent} message(s) sent, none read`);
+  }
+
+  const depth = reads.length >= 3 ? 1 : { 1: 0.6, 2: 0.85 }[reads.length] ?? 1;
+  const newest = Math.max(...reads.map((r) => new Date(r).getTime()).filter(Number.isFinite));
+  const recency = Number.isFinite(newest)
+    ? decayFactor(now - newest, cfg.decay?.engagementHalfLifeDays)
+    : 1;
+
+  const fraction = clamp(depth * recency, 0, 1);
+  return assessed(fraction, [], `${reads.length} of ${sent} message(s) read`);
+}
+
+/**
+ * The AI screening call's outcome for THIS lead (§13.1).
+ *
+ * Reads ONLY the normalized signal (utils/screeningSignal.js) — never the raw
+ * provider `checks` object, whose keys are whatever an operator last typed
+ * into the Retell console.
+ *
+ * Blended so a missing sub-signal doesn't drag the component down: interest
+ * is optional in the agent config and `agreedToMeet` has no configured check
+ * at all today, so renormalizing over what is present is the difference
+ * between "we didn't ask" and "they said no".
+ */
+function scoreScreening(telemetry) {
+  const s = telemetry?.screening;
+  if (!s || (s.verdict === null && s.interest === null && s.sentiment === null && s.agreedToMeet === null)) {
+    return unknown('no screening call outcome');
+  }
+
+  // A not_qualified verdict is terminal — the lead never reaches an agent
+  // (screeningGate.markScreeningFailed) — so it dominates rather than blends.
+  if (s.verdict === 'not_qualified') {
+    return assessed(0, [], 'screening verdict: not qualified');
+  }
+
+  const fraction = blend([
+    { fraction: s.verdict === 'qualified' ? 1 : null, weight: 0.4 },
+    { fraction: s.agreedToMeet === null ? null : (s.agreedToMeet ? 1 : 0), weight: 0.3 },
+    { fraction: s.interest, weight: 0.2 },
+    { fraction: s.sentiment, weight: 0.1 },
+  ]);
+  if (fraction === null) return unknown('no scoreable screening signal');
+
+  const said = [
+    s.verdict === 'qualified' && 'qualified',
+    s.labels?.interest && `interest ${s.labels.interest}`,
+    s.labels?.sentiment && `sentiment ${s.labels.sentiment}`,
+    s.agreedToMeet === true && 'agreed to meet',
+    s.agreedToMeet === false && 'declined to meet',
+  ].filter(Boolean);
+  return assessed(clamp(fraction, 0, 1), [], said.join(', ') || 'screened');
+}
+
 const RULES = {
   engagement: (facts, telemetry, cfg, now) => scoreEngagement(telemetry, cfg, now),
   contactability: (facts, telemetry) => scoreContactability(telemetry),
@@ -494,6 +575,11 @@ const RULES = {
   capacity: (facts, telemetry, cfg) => scoreCapacity(facts, cfg),
   age: (facts, telemetry, cfg, now) => scoreAge(facts, cfg, now),
   coverage_headroom: (facts, telemetry, cfg) => scoreCoverageHeadroom(facts, cfg),
+  // Lead-grain only. Present in this shared map because computeScore looks
+  // rules up by name, but reachable only when the config carries the
+  // component — which normalizeLeadConfig does and normalizeConfig does not.
+  response: (facts, telemetry, cfg, now) => scoreResponse(telemetry, cfg, now),
+  screening: (facts, telemetry) => scoreScreening(telemetry),
 };
 
 /** Merge a stored config over the defaults without losing unspecified knobs. */
@@ -531,6 +617,16 @@ export function normalizeConfig(configJson) {
  */
 export function scoreConsumer({ facts = {}, telemetry = {}, config, now = Date.now() } = {}) {
   const cfg = normalizeConfig(config);
+  return computeScore({ cfg, facts, telemetry, now, algorithmVersion: cfg.algorithmVersion });
+}
+
+/**
+ * The shared engine behind scoreConsumer and scoreLead. `cfg.components` and
+ * `cfg.groups` decide what is computed and how it is grouped, so the two
+ * grains differ only in the config handed in — the math, the round-once rule
+ * and the unknown-vs-zero contract are the same code for both.
+ */
+function computeScore({ cfg, facts, telemetry, now, algorithmVersion }) {
   const components = {};
 
   for (const [name, def] of Object.entries(cfg.components)) {
@@ -595,9 +691,9 @@ export function scoreConsumer({ facts = {}, telemetry = {}, config, now = Date.n
     meetScore,
     buyScore,
     consumerScore,
-    algorithmVersion: cfg.algorithmVersion || SCORING_ALGORITHM_VERSION,
+    algorithmVersion: algorithmVersion || SCORING_ALGORITHM_VERSION,
     breakdown: {
-      algorithmVersion: cfg.algorithmVersion || SCORING_ALGORITHM_VERSION,
+      algorithmVersion: algorithmVersion || SCORING_ALGORITHM_VERSION,
       groups: {
         meet: { score: meetScore, rawMax: meetRawMax, components: meetNames.filter((n) => components[n]) },
         buy: { score: buyScore, rawMax: buyRawMax, components: buyNames.filter((n) => components[n]) },
@@ -613,4 +709,134 @@ export function scoreConsumer({ facts = {}, telemetry = {}, config, now = Date.n
       },
     },
   };
+}
+
+// ── THE LEAD GRAIN (per-campaign-lead-scoring.md §4) ───────────────────────
+
+/**
+ * lead/v1. Stamped on prospects.scoringAlgorithmVersion, and deliberately a
+ * SEPARATE lineage from SCORING_ALGORITHM_VERSION: the two grains answer
+ * different questions over different inputs, so a person-grain recalibration
+ * should not silently claim to have rescored every lead, nor the reverse.
+ */
+export const LEAD_ALGORITHM_VERSION = 'lead/v1';
+
+/**
+ * The response components, defaulted IN CODE rather than seeded by a config
+ * migration. There is nothing to recompute: every lead starts unscored, so
+ * the first sweep scores the whole population anyway, and a migration whose
+ * only job is to trigger a recompute that is already happening buys a frozen
+ * historical row for nothing. Recalibrating later is an ordinary append-only
+ * config row carrying `leadComponents`, exactly like any other weight change.
+ *
+ * They sit in MEET, not Buy: reading a message and taking a screening call
+ * are evidence about whether this person will engage a consultant, not about
+ * what they can afford. Buy stays fact-driven, which is what keeps the
+ * fresh-grad-vs-buyer split (§1) meaningful.
+ */
+export const DEFAULT_LEAD_COMPONENTS = {
+  response: { maxPoints: 15 },
+  screening: { maxPoints: 20 },
+};
+
+/**
+ * Merge the lead-grain components into a config. Kept separate from
+ * `components` in the stored JSON so the person-grain scorer never sees them:
+ * grouping them into `groups.meet` for everyone would put their maxPoints
+ * into the consumer's Meet denominator while the consumer can never assess
+ * them, deflating every person score by construction.
+ */
+export function normalizeLeadConfig(configJson) {
+  const base = normalizeConfig(configJson);
+  const c = configJson && typeof configJson === 'object' ? configJson : {};
+  const leadComponents = { ...DEFAULT_LEAD_COMPONENTS, ...(c.leadComponents || {}) };
+  const meet = [...(base.groups.meet || [])];
+  for (const name of Object.keys(leadComponents)) {
+    if (!meet.includes(name)) meet.push(name);
+  }
+  return {
+    ...base,
+    components: { ...base.components, ...leadComponents },
+    groups: { ...base.groups, meet },
+  };
+}
+
+/**
+ * Score one LEAD — (person × campaign).
+ *
+ * Same facts as the person (the spine exists so every lead can read them),
+ * plus telemetry that is lead-scoped where §3.4 says it must be:
+ *   - `newestSignupAt` is THIS lead's own createdAt, not the person's newest
+ *   - `marketingConsent` is canMarketTo semantics at (consumer, campaign)
+ *   - `ownedMessageCount` / `readAt` cover only messages this lead owns (§5)
+ *   - `screening` is this lead's own normalized call outcome (§13.1)
+ * Person-wide capability terms (signup counts, email, WhatsApp frontier) are
+ * shared by every lead BY DESIGN — capability travels, responses do not.
+ *
+ * @returns {{meetScore:number|null, buyScore:number|null, score:number|null,
+ *            breakdown:Object, algorithmVersion:string}}
+ */
+export function scoreLead({ facts = {}, telemetry = {}, config, now = Date.now() } = {}) {
+  const cfg = normalizeLeadConfig(config);
+  const r = computeScore({ cfg, facts, telemetry, now, algorithmVersion: LEAD_ALGORITHM_VERSION });
+  // `score` rather than `consumerScore`: same number, named for the column it
+  // lands in (prospects.score).
+  return {
+    meetScore: r.meetScore,
+    buyScore: r.buyScore,
+    score: r.consumerScore,
+    algorithmVersion: r.algorithmVersion,
+    breakdown: { ...r.breakdown, events: leadEvents(telemetry, cfg, now) },
+  };
+}
+
+/**
+ * The response events behind the score, with their timestamps and UNDECAYED
+ * weights (§6). Undecayed on purpose: the stored number already has the decay
+ * baked in as of scoreComputedAt, so repeating a decayed figure here would
+ * just be the same number twice. What a reader needs is what happened, when,
+ * and how much it was worth at full strength — from which the decay between
+ * `at` and `scoreComputedAt` explains the difference.
+ *
+ * Newest first, and bounded: a lead with hundreds of reads must not turn the
+ * breakdown into an unbounded jsonb column.
+ */
+const MAX_STORED_EVENTS = 50;
+
+function leadEvents(telemetry, cfg, now) {
+  const events = [];
+
+  for (const at of (Array.isArray(telemetry?.readAt) ? telemetry.readAt : [])) {
+    const ms = new Date(at).getTime();
+    if (!Number.isFinite(ms)) continue;
+    events.push({
+      type: 'wa_read',
+      at: new Date(ms).toISOString(),
+      component: 'response',
+      undecayedWeight: Number(cfg.components?.response?.maxPoints) || 0,
+      ageDays: Math.max(0, Math.round((now - ms) / DAY_MS)),
+    });
+  }
+
+  const s = telemetry?.screening;
+  if (s && (s.verdict || s.interest !== null || s.sentiment !== null || s.agreedToMeet !== null)) {
+    const ms = s.decidedAt ? new Date(s.decidedAt).getTime() : NaN;
+    events.push({
+      type: 'screening',
+      at: Number.isFinite(ms) ? new Date(ms).toISOString() : null,
+      component: 'screening',
+      undecayedWeight: Number(cfg.components?.screening?.maxPoints) || 0,
+      verdict: s.verdict,
+      // Labels, not the raw provider keys — §13.1's whole point.
+      interest: s.labels?.interest || null,
+      sentiment: s.labels?.sentiment || null,
+      agreedToMeet: s.agreedToMeet,
+      schemaVersion: s.schemaVersion || null,
+      ...(Number.isFinite(ms) ? { ageDays: Math.max(0, Math.round((now - ms) / DAY_MS)) } : {}),
+    });
+  }
+
+  return events
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+    .slice(0, MAX_STORED_EVENTS);
 }

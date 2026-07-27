@@ -447,9 +447,22 @@ describe('the band reaches the Buy score (score/v3 — PR B seam)', () => {
     // boot) or the code defaults (reused DB — migrations skip, table empty);
     // the 095 row's own content is pinned by migration095ScoringAgeConfig.
     expect(profile.scoringAlgorithmVersion).toBe('score/v3')
-    expect(profile.scoreBreakdown.groups.buy.components).toContain('age')
 
-    const comps = profile.scoreBreakdown.components
+    // THE BREAKDOWN NOW LIVES ON THE LEAD (per-campaign-lead-scoring.md §4).
+    // scoreOneConsumer still resolves the facts and stamps what scored them —
+    // that is what the assertion above checks — but the numbers and the
+    // breakdown they must agree with are written by the lead scorer and
+    // PROJECTED up, so that is where this contract is now pinned.
+    const { scoreOneLead } = await import('../src/services/leadScoringService.js')
+    const leadResult = await scoreOneLead(prospect.id, { force: true })
+    expect(leadResult.status).toBe('scored')
+    expect(leadResult.buyScore).not.toBeNull()
+
+    const lead = await Prospect.findByPk(prospect.id)
+    expect(lead.scoringAlgorithmVersion).toBe('lead/v1')
+    expect(lead.scoreBreakdown.groups.buy.components).toContain('age')
+
+    const comps = lead.scoreBreakdown.components
     expect(comps.age.state).toBe('assessed')
     const band = await ConsumerObservation.findOne({
       where: { sourceProspectId: prospect.id, key: 'identity.birth_year_band', supersededAt: null },
@@ -457,10 +470,20 @@ describe('the band reaches the Buy score (score/v3 — PR B seam)', () => {
     expect(comps.age.basisObservationIds).toContain(band.id)
 
     // Almost-everyone-scoreable must still read THIN: age is the only
-    // assessed Buy fact, and completeness says so.
+    // assessed Buy fact, and completeness says so. Ten components now, not
+    // eight — the lead grain adds `response` and `screening`, both unknown
+    // for a lead nobody has messaged or called.
     expect(comps.capacity.state).toBe('unknown')
     expect(comps.family_gap.state).toBe('unknown')
-    expect(profile.scoreBreakdown.completeness.total).toBe(8)
-    expect(profile.scoreBreakdown.completeness.assessed).toBeLessThan(4)
+    expect(comps.response.state).toBe('unknown')
+    expect(comps.screening.state).toBe('unknown')
+    expect(lead.scoreBreakdown.completeness.total).toBe(10)
+    expect(lead.scoreBreakdown.completeness.assessed).toBeLessThan(4)
+
+    // §4's projection: the person's numbers ARE the winning lead's numbers.
+    await profile.reload()
+    expect(profile.buyScore).toBe(leadResult.buyScore)
+    expect(profile.meetScore).toBe(leadResult.meetScore)
+    expect(profile.consumerScore).toBe(leadResult.score)
   })
 })

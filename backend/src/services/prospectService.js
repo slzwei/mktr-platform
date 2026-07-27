@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'crypto';
-import { Op, Transaction, fn as sqlFn, col as sqlCol, where as sqlWhere } from 'sequelize';
+import { Op, Transaction, fn as sqlFn, col as sqlCol, where as sqlWhere, literal as sqlLiteral } from 'sequelize';
 import {
   Prospect,
   User,
@@ -104,8 +104,17 @@ const VALID_LEAD_SOURCES = ['qr_code', 'website', 'referral', 'social_media', 'a
 // List-endpoint sort whitelist (admin rebuild Phase B). `-` prefix = DESC.
 // Anything outside the map falls back to the default — never a 500, never an
 // unindexed free-form ORDER BY.
-const PROSPECT_SORT_FIELDS = ['firstName', 'leadStatus', 'createdAt'];
+const PROSPECT_SORT_FIELDS = ['firstName', 'leadStatus', 'createdAt', 'score'];
 const DEFAULT_PROSPECT_SORT = '-createdAt';
+
+/**
+ * Sorts where NULL means "not scored yet" rather than "lowest". Postgres
+ * orders NULLs FIRST on DESC, so `-score` would lead every page with the
+ * unscored leads — the exact opposite of what "sort by best lead" means. Both
+ * directions get NULLS LAST, the same rule and the same reasoning as the
+ * People list's score sorts (consumerService.js:561-571).
+ */
+const NULLS_LAST_SORT_FIELDS = new Set(['score']);
 
 /**
  * Comma-list enum filter: split, trim, dedupe, whitelist. Returns
@@ -129,7 +138,12 @@ function parseProspectSort(sort) {
   const desc = raw.startsWith('-');
   const field = desc ? raw.slice(1) : raw;
   if (!PROSPECT_SORT_FIELDS.includes(field)) return [['createdAt', 'DESC']];
-  return [[field, desc ? 'DESC' : 'ASC']];
+  const dir = desc ? 'DESC' : 'ASC';
+  if (NULLS_LAST_SORT_FIELDS.has(field)) {
+    // Column name comes from the whitelist above, never from the request.
+    return [[sqlLiteral(`"Prospect"."${field}" ${dir} NULLS LAST`)]];
+  }
+  return [[field, dir]];
 }
 
 // Hold reasons a MANUAL admin (re)assign may release. Everything else is fenced:

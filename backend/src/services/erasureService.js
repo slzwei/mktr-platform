@@ -19,7 +19,7 @@ import { evictDncCheckCache } from './dncCheckService.js';
  * PDPA person-level erasure (PR C, docs/plans/consumer-spine-and-consent-ledger.md §4).
  *
  * ERASURE = ALLOWLIST REBUILD, NOT A SCRUB LIST: a prospect row keeps only its
- * non-personal skeleton (ids, campaign, status/priority/score, quarantine,
+ * non-personal skeleton (ids, campaign, status/priority, quarantine,
  * conversionDate, utm source labels) and EVERYTHING else goes — including the
  * copies PII leaked into over its lifetime: activity update-snapshots,
  * commission descriptions, webhook delivery payloads, draw-entry masked-name
@@ -304,11 +304,27 @@ export function makeErasureService(overrides = {}) {
         }
 
         // 7. Prospect allowlist rebuild. KEPT: id, campaignId, consumerId,
-        // leadSource, leadStatus, priority, score, conversionDate, agent/qr
+        // leadSource, leadStatus, priority, conversionDate, agent/qr
         // refs, quarantine fields, timestamps (business-records basis).
         // Everything else is PII or a PII pointer and goes.
+        //
+        // THE SCORE NOW GOES TOO (per-campaign-lead-scoring.md §11). It used
+        // to be retained — named in the skeleton above and never touched here
+        // — which was defensible while it was a dead column written by
+        // nothing. Since 099 it is a live judgement about the person, and its
+        // breakdown is materially worse than the bare integer: the response
+        // events carry the timestamps of when they read our messages, the
+        // normalized screening signal carries inferred sentiment and interest,
+        // and basisObservationIds point straight at fact rows this same
+        // erasure deletes. Nulling the stamps alongside is what stops the
+        // sweep re-scoring the row straight back — though findStaleLeadIds
+        // excludes erased people too, so this is belt and braces.
         const [, pMeta] = await d.sequelize.query(
           `UPDATE prospects SET
+              score = NULL, "meetScore" = NULL, "buyScore" = NULL,
+              "scoreBreakdown" = NULL, "scoreComputedAt" = NULL,
+              "scoredConfigVersion" = NULL, "scoringAlgorithmVersion" = NULL,
+              "scoreInputHash" = NULL, "scoreDirtyAt" = NULL,
               "firstName" = 'Erased', "lastName" = NULL, email = NULL, phone = NULL,
               company = NULL, "jobTitle" = NULL, industry = NULL,
               interests = '[]', budget = NULL, location = NULL, demographics = NULL,

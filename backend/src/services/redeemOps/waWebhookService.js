@@ -4,6 +4,8 @@ import Consumer from '../../models/Consumer.js';
 import { applyUnsubscribe } from '../consentService.js';
 import { phoneHashOf } from '../consumerService.js';
 import { normalizePhone } from '../prospectHelpers.js';
+import { markLeadDirtyByWamidTx } from '../leadScoreDirty.js';
+import { rescoreLeadSoon } from '../leadScoringService.js';
 import { logger } from '../../utils/logger.js';
 
 /**
@@ -41,6 +43,25 @@ const STOP_FORMS = new Set(['stop', 'stop promotions', 'unsubscribe', 'cancel'])
 // than this is hostile or malformed and the tail is dropped (logged).
 const MAX_ITEMS = 200;
 
+/**
+ * Default lead-score reaction to a status. Dirty the owning lead (durable),
+ * then attempt an immediate rescore (best effort). Returns how many leads were
+ * dirtied so the caller can count them. Swallows its own errors: losing a
+ * rescore costs freshness, losing the status costs delivery truth, and only
+ * one of those is this webhook's job.
+ */
+async function defaultOnMessageRead(wamid, status) {
+  if (status !== 'read' || !wamid) return 0;
+  try {
+    const ids = await sequelize.transaction((t) => markLeadDirtyByWamidTx(t, wamid));
+    for (const id of ids) rescoreLeadSoon(id);
+    return ids.length;
+  } catch (err) {
+    logger.warn('redeem_ops.wa.read_invalidation_failed', { wamid, error: err?.message });
+    return 0;
+  }
+}
+
 export function makeWaWebhookService(overrides = {}) {
   const d = {
     sequelize,
@@ -48,6 +69,7 @@ export function makeWaWebhookService(overrides = {}) {
     applyUnsubscribe,
     phoneHashOf,
     normalizePhone,
+    onMessageRead: defaultOnMessageRead,
     logger,
     ...overrides,
   };
@@ -130,7 +152,7 @@ export function makeWaWebhookService(overrides = {}) {
    * persisted is safe because every write here is idempotent.
    */
   async function processPayload(body) {
-    const counts = { statuses: 0, stops: 0, skippedEntries: 0, unmatchedForeign: 0 };
+    const counts = { statuses: 0, stops: 0, skippedEntries: 0, unmatchedForeign: 0, leadsDirtied: 0 };
     if (body?.object !== 'whatsapp_business_account' || !Array.isArray(body?.entry)) return counts;
 
     const wantWaba = process.env.WHATSAPP_WABA_ID || null;
@@ -168,6 +190,15 @@ export function makeWaWebhookService(overrides = {}) {
               wamid: s?.id, status: s?.status,
               ...(err ? { errorCode: err.code, errorTitle: err.title || err.message } : {}),
             });
+            // A read is a RESPONSE to the lead that owns this message
+            // (per-campaign-lead-scoring.md §3.2/§10). Dirty that lead and
+            // fire a post-commit rescore, so the score moves within seconds
+            // rather than waiting for the nightly rotation. Only 'read':
+            // sent/delivered feed the person's capability frontier, which the
+            // scorer reads live and needs no invalidation. Never fatal — the
+            // webhook's job is to persist the status, and Meta's retry is our
+            // durability for THAT.
+            counts.leadsDirtied += await d.onMessageRead(s?.id, s?.status);
           }
         }
 

@@ -1,4 +1,5 @@
 import { sequelize, Consumer, Prospect, ConsumerProfile } from '../models/index.js';
+import { markConsumerLeadsDirtyTx } from './leadScoreDirty.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -37,6 +38,12 @@ export class ErasedConsumerError extends Error {
  */
 export async function bumpEnrichmentInputTx(t, consumerId) {
   if (!consumerId) return;
+  // Lead-grain invalidation rides the SAME call (per-campaign-lead-scoring.md
+  // §10). Every writer that feeds the score already calls this, so dirtying
+  // here is what makes the lead grain inherit the whole existing invalidation
+  // surface instead of needing each writer taught separately. A fact is
+  // person-wide, so it dirties every one of that person's leads.
+  await markConsumerLeadsDirtyTx(t, [consumerId]);
   // INSERT…SELECT guarded on the live consumer: a bump must never mint a
   // profile row for an erased (or vanished) person — erasure deletes the
   // profile and this would quietly resurrect it.

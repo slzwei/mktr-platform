@@ -237,20 +237,26 @@ export async function scoreOneConsumer(consumerId, { force = false, now = Date.n
 
       // UPSERT guarded on a live consumer — scoring must never resurrect a
       // profile row for someone erased between the fence and this write.
+      //
+      // THE NUMBERS ARE NOT WRITTEN HERE ANY MORE (per-campaign-lead-scoring.md
+      // §4). consumerScore/meetScore/buyScore — and the breakdown they have to
+      // agree with — are a PROJECTION of the person's highest-scoring lead,
+      // written by leadScoringService.projectPersonScore. Two writers for one
+      // number is two authorities that are guaranteed to disagree, which is
+      // exactly what this pass used to do: overwrite every night from the
+      // global model while the lead grain said something else.
+      //
+      // What remains is this pass's real job: resolve the facts, keep the
+      // profile row alive, and stamp what scored it — the stamps are what stop
+      // findStaleConsumerIds re-examining the same unscoreable people forever.
       await sequelize.query(
         `INSERT INTO consumer_profiles
-           ("consumerId", "consumerScore", "meetScore", "buyScore", "scoreBreakdown",
-            "scoredConfigVersion", "scoringAlgorithmVersion", "scoreInputHash",
+           ("consumerId", "scoredConfigVersion", "scoringAlgorithmVersion", "scoreInputHash",
             "scoreComputedAt", "inputVersion", "syncedInputVersion", "createdAt", "updatedAt")
-         SELECT c.id, :consumerScore, :meetScore, :buyScore, :breakdown::jsonb,
-                :configVersion, :algorithmVersion, :inputHash, now(), 0, 0, now(), now()
+         SELECT c.id, :configVersion, :algorithmVersion, :inputHash, now(), 0, 0, now(), now()
            FROM consumers c
           WHERE c.id = :cid AND c."erasedAt" IS NULL
          ON CONFLICT ("consumerId") DO UPDATE SET
-           "consumerScore" = EXCLUDED."consumerScore",
-           "meetScore" = EXCLUDED."meetScore",
-           "buyScore" = EXCLUDED."buyScore",
-           "scoreBreakdown" = EXCLUDED."scoreBreakdown",
            "scoredConfigVersion" = EXCLUDED."scoredConfigVersion",
            "scoringAlgorithmVersion" = EXCLUDED."scoringAlgorithmVersion",
            "scoreInputHash" = EXCLUDED."scoreInputHash",
@@ -259,10 +265,6 @@ export async function scoreOneConsumer(consumerId, { force = false, now = Date.n
         {
           replacements: {
             cid: consumerId,
-            consumerScore: result.consumerScore,
-            meetScore: result.meetScore,
-            buyScore: result.buyScore,
-            breakdown: JSON.stringify(result.breakdown),
             configVersion,
             algorithmVersion,
             inputHash,
@@ -271,6 +273,8 @@ export async function scoreOneConsumer(consumerId, { force = false, now = Date.n
         }
       );
 
+      // Returned, not stored: callers and tests still want to see what the
+      // person-grain model computed, and the projection is what lands.
       return {
         status: 'scored',
         meetScore: result.meetScore,
