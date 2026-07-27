@@ -5,7 +5,9 @@
 shipped + §9 specified, M10 verified shipped. **Codex round 3: PASS**
 (3a REWORK → 3b REWORK → 3c PASS, log in §17). Phase 3 build UNGATED.
 **BUILT 2026-07-27: PR A₁ and PR A₂ (§14) — §18 records what shipped and the
-three places the build had to deviate from this text.** PR C/D/E remain.
+three places the build had to deviate from this text.**
+**BUILT 2026-07-28: PR C and PR D (§14) — §19 records what shipped and the
+seven places that build had to deviate.** PR E remains.
 **Author:** Claude, 2026-07-26, from Shawn's model:
 
 > "The admin, when creating campaigns, will say the ideal lead profile. The AI
@@ -602,8 +604,14 @@ the band-straddle equal-weight rule at `:442-450`; migration
    (score/v3 #296, migration `095-scoring-age-curve.js`; prod remap minted
    135 band observations and the same night's backfill scored 130 with Buy
    non-null for 129 — the one NULL has no DOB).
-5. **PR C — per-campaign configs** (§7, §9).
-6. **PR D — AI authoring** (§2, §8).
+5. **PR C — per-campaign configs** (§7, §9). **SHIPPED 2026-07-28** —
+   migration `100-scoring-config-scope.js`, `services/scoringConfigCache.js`,
+   `utils/scoringConfigValidation.js`, campaign → product → global resolution
+   in `getActiveScoringConfig` with the SQL twin in `findStaleLeadIds`; §19 for
+   the deviations.
+6. **PR D — AI authoring** (§2, §8). **SHIPPED 2026-07-28** —
+   `services/scoringConfigService.js`, `routes/scoringConfigs.js` behind
+   `SCORING_CONFIG_ADMIN_ENABLED` (dark by default).
 7. **PR E — email opens.** Tracking pixel first; not captured today
    (`EmailBroadcastRecipient` carries delivery only).
 
@@ -849,3 +857,118 @@ typed into the Retell console.
 - **§9's per-campaign config store is untouched** — that is PR C, and nothing
   in A₂ depends on it. Lead scoring resolves the same single global config the
   person grain does.
+
+## 19. PR C + PR D: what shipped, and where the build deviated (2026-07-28)
+
+Built off `origin/main` at `f21c02f`. Backend unit (107 suites / 1980 tests,
+run with **no database reachable** — the condition CI's empty `ci` database
+imposes and a local Postgres hides) + integration (137 suites / 2679 tests) +
+migration suites green; `npx eslint src/ --quiet` clean at both roots.
+
+Migration number checked against `origin/main` at naming time and again before
+merge: highest was `099-lead-score.js`, so `100`. The `083`/`096` historical
+duplicates stay frozen; nothing was added to that list.
+
+Seven places the build departed from §8/§9's text. Each is a deviation the
+plan should own rather than a silent divergence in code.
+
+### 19.1 The cache is a LEAF MODULE, not a map inside `consumerScoringService`
+
+§9 says "replace the single slot with a map" and leaves it where the slot was.
+It could not stay there. §9's own second invalidation writer is
+`campaignService.updateCampaign` (a brief edit re-routes a campaign to a
+different product chain), and importing `consumerScoringService` from
+`campaignService` drags in the models index, the erasure fence and the fact
+resolver — which breaks every suite that mocks `models/index.js` with a partial
+export set, on a transitive `Consumer` import. `services/scoringConfigCache.js`
+holds the Map and imports nothing.
+
+### 19.2 Resolution keys on `product` ALONE, not on `hasBrief`
+
+§9 says the product is "read from `campaigns.targetAudience.product` when a
+brief exists (`hasBrief`)". `hasBrief` also requires a valid `objective`, and
+the SQL twin in `findStaleLeadIds` cannot call it. Keying both resolvers on the
+one field each side can read (`briefProductKey`) is what makes them provably
+identical; a parity test pins them. The objective has no bearing on which
+product model applies, and every brief written through `normalizeBrief` carries
+both fields anyway — the two readings differ only for hand-written JSON.
+
+### 19.3 `findStaleLeadIds` LOST its `configVersion` parameter
+
+§9 describes the sweep comparing each lead's stamp against "the version its
+campaign CURRENTLY resolves to — one indexed resolution per distinct
+`campaignId` in the batch, cached like any other read". Resolving in JS breaks
+`LIMIT`: the sweep asks for 200 stale leads and would instead get however many
+of an arbitrary 200 happened to be stale. The resolution is a `COALESCE` of
+three indexed scalar subqueries inside the existing predicate, so the function
+no longer takes an expected version at all. The sweep passes `findArgs: {}` for
+the lead phase; the consumer phase still passes the global version, unchanged.
+
+### 19.4 Unknown components are rejected at SAVE and DISCOUNTED at read
+
+§8.1 says "unknown component names REJECTED not zeroed (a fix to
+`normalizeConfig`)". Making `normalizeConfig` throw would break reading rows
+already stored, and it is the read path for every historical breakdown. So the
+rejection lives in `validateScoringConfig`, which every write goes through, and
+the read path keeps the component VISIBLE in the breakdown while excluding its
+`maxPoints` from the group denominator. That fixes the actual damage — a
+no-rule component used to deflate every score in its group — without making an
+old row unreadable.
+
+### 19.5 The person grain deliberately still resolves GLOBAL
+
+§9 does not say which grain resolves what, and both grains share
+`getActiveScoringConfig`, so this had to be decided rather than inherited. A
+consumer spans campaigns: there is no campaign to key off, and picking one of
+their leads' campaigns would be arbitrary. Called with no scope the resolver
+returns the global row — today's behaviour, plus the new `status = 'approved'`
+filter. `findStaleConsumerIds` is untouched. The person's numbers are a
+projection of the winning lead (§4) whose own stamp records what produced them.
+
+### 19.6 Simulation is BOUNDED, and says so
+
+§8.2 says "run the proposed config over the existing scored population". At
+`SIMULATION_SAMPLE_MAX = 500` it stops, because the simulator re-derives facts
+and telemetry per lead (two queries each) and an admin-triggered request must
+not turn into an unbounded scan. The response carries `population.examined`,
+`population.truncated` and `population.sampleMax` rather than presenting a
+slice as the whole picture.
+
+### 19.7 One thing §9 called for that the substrate already provided
+
+`GENERATED BY DEFAULT AS IDENTITY` is attached in prod, but the test database
+never sees it: `bootstrap.js` runs `sequelize.sync({force:true})` from the
+models BEFORE migrations, and `_migrations` survives that sync, so a reused
+test DB skips migration 100 entirely. The model therefore declares
+`autoIncrement: true`, which makes `sync()` build the column as `SERIAL`, and
+the migration's identity attach is guarded on `pg_get_serial_sequence(...) IS
+NULL` so it is a no-op there instead of failing with "column already has a
+default". Both environments end with a column that allocates itself when a
+writer omits it — the property the runtime depends on.
+
+### 19.8 What "uniqueness" means here — and the index that was NOT added
+
+The obvious reading is a partial unique index per scope: at most one
+`status = 'approved'` row per campaign, per product, and one globally. It
+cannot exist, and the reason is in this migration's own grandfathering clause.
+093 seeds v1, 094 appends v2, 095 appends v3 — three GLOBAL rows — and 100
+defaults every pre-existing row to `approved` because they are live today. A
+unique-approved-per-scope index would therefore reject its own migration on
+prod's actual data, and would permanently outlaw the append-only recalibration
+§7.2 is built on.
+
+Uniqueness is instead a property of RESOLUTION, and three things together
+guarantee it: `version` remains the primary key, so no two rows tie; the
+`chk_escfg_single_scope` CHECK stops a row belonging to two tiers at once; and
+`ORDER BY tier, version DESC LIMIT 1` picks exactly one winner from any set.
+"One approved row per scope" is maintained by `approveScoringConfig`, which
+supersedes the previous approved row at that scope in the same transaction —
+a bookkeeping convenience for reading the table, not a correctness requirement,
+since a stale approved row can never out-rank a newer one anyway.
+
+### 19.9 Flag, and what is NOT built
+
+`SCORING_CONFIG_ADMIN_ENABLED` (default `false`) gates the whole admin router;
+until it is flipped every path 404s. There is no React surface — the four
+controls are API-reachable and the existing admin UI can call them later. PR E
+(email opens) is untouched.
