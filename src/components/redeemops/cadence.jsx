@@ -209,18 +209,20 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
       </Dialog>
 
       <Dialog open={scriptOpen} onOpenChange={setScriptOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        {/* A drafted script can run long — it scrolls inside the dialog so
+            Copy message never gets pushed off the bottom of the screen. */}
+        <DialogContent className="max-w-md flex flex-col max-h-[85dvh]">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{task.title}</DialogTitle>
             {task.snapshotRecipient && (
               <DialogDescription>To: {task.snapshotRecipient}</DialogDescription>
             )}
           </DialogHeader>
-          <p className="text-sm whitespace-pre-wrap m-0" style={{ color: 'var(--ro-text-2)' }}>
+          <p className="text-sm whitespace-pre-wrap m-0 min-h-0 overflow-y-auto" style={{ color: 'var(--ro-text-2)' }}>
             {task.description || 'No script for this step.'}
           </p>
           {task.description && (
-            <DialogFooter>
+            <DialogFooter className="shrink-0">
               <Button variant="outline" onClick={() => copyTaskMessage(task.description)}>
                 <Copy className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Copy message
               </Button>
@@ -700,14 +702,17 @@ export function CadencePanel({ partner, canManage = true, variant = 'card', onAd
       )}
 
       <Dialog open={enrollOpen} onOpenChange={setEnrollOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        {/* The library grows without bound, so the dialog is capped to the
+            viewport and only the list scrolls — the heading and the "New
+            cadence" escape hatch stay on screen at any library size. */}
+        <DialogContent className="max-w-md flex flex-col max-h-[85dvh]">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Start a cadence</DialogTitle>
             <DialogDescription>
               Every step becomes a task in the owner's queue at the right time — replies and stage moves stop it automatically.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
+          <div className="space-y-2 min-h-0 overflow-y-auto">
             {cadenceDefs.map((c) => (
               <button
                 key={c.id}
@@ -737,15 +742,15 @@ export function CadencePanel({ partner, canManage = true, variant = 'card', onAd
             {!defsQuery.isLoading && cadenceDefs.length === 0 && (
               <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>No cadences defined yet.</p>
             )}
-            {canAuthor && (
-              <Button size="sm" variant="ghost" className="w-full" asChild>
-                <Link to="/redeem-ops/cadences/new">
-                  <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" />
-                  New cadence — yours stays a private draft until you publish it
-                </Link>
-              </Button>
-            )}
           </div>
+          {canAuthor && (
+            <Button size="sm" variant="ghost" className="w-full shrink-0" asChild>
+              <Link to="/redeem-ops/cadences/new">
+                <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" />
+                New cadence — yours stays a private draft until you publish it
+              </Link>
+            </Button>
+          )}
         </DialogContent>
       </Dialog>
     </>
