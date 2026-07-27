@@ -157,6 +157,29 @@ export function makeInventoryService(overrides = {}) {
     });
   }
 
+  /**
+   * Give back a redeemed unit. Only a physical-voucher handover can need this:
+   * a partner redemption is a real-world event nobody can un-happen, but a
+   * consultant can tap "handed over" with the voucher still in their pocket,
+   * and leaving that counted permanently inflates the one number this whole
+   * feature exists to produce. Guarded so the counter can never go negative.
+   * Callers MUST run this BEFORE reverseIssued — that guard reads
+   * `issuedQuantity - 1 >= redeemedQuantity`, so reversing in the other order
+   * fails on a row whose two counters moved together.
+   */
+  function reverseRedeemed({ offerId, activationId, entitlementId, redemptionId, actorType = 'staff', actorUser, reason, transaction }) {
+    return guardedMove({
+      offerId, quantity: 1, transaction,
+      guardSql: `UPDATE reward_offers
+                    SET "redeemedQuantity" = "redeemedQuantity" - 1, "updatedAt" = NOW()
+                  WHERE id = :offerId
+                    AND "redeemedQuantity" >= 1
+                  RETURNING id, "redeemedQuantity"`,
+      ledger: { type: 'redeem_reversed', activationId, entitlementId, redemptionId, actorType, actorUser, reason },
+      failMessage: 'No redeemed units available to reverse',
+    });
+  }
+
   /** Ledger ⇄ counter reconciliation (test-time assertion; future cron). */
   async function reconcile(offerId) {
     const offer = await d.RewardOffer.findByPk(offerId);
@@ -181,7 +204,7 @@ export function makeInventoryService(overrides = {}) {
 
   return {
     increaseCommitted, decreaseCommitted, allocate, deallocate,
-    recordIssued, reverseIssued, recordRedeemed, reconcile, writeLedger,
+    recordIssued, reverseIssued, recordRedeemed, reverseRedeemed, reconcile, writeLedger,
   };
 }
 

@@ -264,6 +264,9 @@ router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
       // Whether a voucher email was scheduled by THIS unlock — false on
       // replay and for no-email leads (client should tell the consultant).
       emailQueued: result.emailQueued === true,
+      // Physical voucher handed over in person: terminal, no token, nothing to
+      // share. The client must not show voucher/QR affordances for these.
+      handover: result.handover ? { redemptionId: result.handover.redemptionId } : null,
       entitlementId: result.entitlement.id,
       status: result.entitlement.status,
       tokenHint: result.entitlement.tokenHint,

@@ -92,11 +92,18 @@ router.post('/entitlement-unlock', asyncHandler(async (req, res) => {
     );
     // Truthful messaging: only claim an email went out when one was actually
     // scheduled (Retell leads have no real address — staff must share the link).
+    // A physical handover has no voucher and no link to share — the paper is
+    // already in the customer's hand, so voucher copy here would be a lie.
+    const handover = Boolean(result.handover);
     const message = result.already
-      ? 'Already unlocked'
-      : result.emailQueued
-        ? 'Voucher unlocked — the customer has been emailed their voucher'
-        : 'Voucher unlocked — no email on file; share the customer\'s pass link with them';
+      ? (handover ? 'Already recorded as handed over' : 'Already unlocked')
+      : handover
+        ? (result.emailQueued
+          ? 'Handover recorded — the customer has been emailed their confirmation'
+          : 'Handover recorded — no email on file, so no confirmation was sent')
+        : result.emailQueued
+          ? 'Voucher unlocked — the customer has been emailed their voucher'
+          : 'Voucher unlocked — no email on file; share the customer\'s pass link with them';
     return res.json({
       success: true,
       message,

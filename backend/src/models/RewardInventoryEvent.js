@@ -20,7 +20,7 @@ const RewardInventoryEvent = sequelize.define('RewardInventoryEvent', {
   type: {
     type: DataTypes.STRING(24),
     allowNull: false,
-    comment: 'committed|increased|decreased|allocated|deallocated|issued|issue_reversed|redeemed|expired|cancelled|manual_adjustment'
+    comment: 'committed|increased|decreased|allocated|deallocated|issued|issue_reversed|redeemed|redeem_reversed|expired|cancelled|manual_adjustment'
   },
   quantity: {
     type: DataTypes.INTEGER,

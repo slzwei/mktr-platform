@@ -265,6 +265,39 @@ export function makeRedemptionService(overrides = {}) {
         { status: 'cancelled' },
         { where: { id: redemption.entitlementId }, transaction: t }
       );
+      // A physical handover is the ONE redemption that can be reversed because
+      // it never happened: the consultant tapped "handed over" with the voucher
+      // still in their pocket, or tapped on the wrong lead. Unlike a partner
+      // redemption — a real-world event whose counters must stand — this one
+      // has to give the units back, or the "how many leads actually got their
+      // reward" number stays permanently inflated, and that number is the
+      // entire reason handover is recorded at all.
+      //
+      // Both counters move: `redeemedQuantity` (the handover) and
+      // `issuedQuantity` (the reservation, consumed back at issueForProspect),
+      // because the entitlement is now cancelled. Order is load-bearing —
+      // reverseIssued guards on `issuedQuantity - 1 >= redeemedQuantity`, so
+      // the redeemed side must come first.
+      if (redemption.method === 'agent_handover') {
+        await d.inventory.reverseRedeemed({
+          offerId: redemption.rewardOfferId, activationId: redemption.activationId,
+          entitlementId: redemption.entitlementId, redemptionId,
+          actorType: 'staff', actorUser: user, reason, transaction: t,
+        });
+        await d.inventory.reverseIssued({
+          offerId: redemption.rewardOfferId, activationId: redemption.activationId,
+          entitlementId: redemption.entitlementId, type: 'cancelled',
+          actorType: 'staff', reason, transaction: t,
+        });
+        await d.sequelize.query(
+          `UPDATE activations
+              SET "redeemedCount" = GREATEST("redeemedCount" - 1, 0),
+                  "issuedCount" = GREATEST("issuedCount" - 1, 0),
+                  "updatedAt" = NOW()
+            WHERE id = :id`,
+          { replacements: { id: redemption.activationId }, transaction: t }
+        );
+      }
       await writeEvent(t, {
         entitlementId: redemption.entitlementId, redemptionId, type: 'reversed',
         actorType: 'staff', actorUserId: user.id, metadata: { reason },

@@ -24,6 +24,23 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 export const LIVE_PHONE_STATUSES = ['eligible', 'issued', 'redeemed'];
 
 /**
+ * kind → the notify deps that send it. EXHAUSTIVE on purpose: the old
+ * inline ternaries ended in `: d.notifyReservation`, so any kind the engine
+ * did not recognise was silently delivered as a reservation pass. An unknown
+ * kind now sends NOTHING and logs — a wrong email to a real customer is worse
+ * than a missing one, and the reconciler/Resend exist to recover a gap.
+ */
+const KIND_SENDERS = {
+  pass: { email: 'notifyReservation', wa: 'notifyReservationWa' },
+  voucher: { email: 'notifyUnlock', wa: 'notifyUnlockWa' },
+  boost_receipt: { email: 'notifyBoostReceipt', wa: 'notifyBoostReceiptWa' },
+  handover_receipt: { email: 'notifyHandover', wa: 'notifyHandoverWa' },
+};
+
+/** A reward the consultant buys and hands over themselves — no token, no partner leg. */
+export const PHYSICAL_FULFILMENT = 'physical_voucher';
+
+/**
  * Anti-farming dedupe key: digits-only phone (`+65 9123 4567` → `6591234567`).
  * Null for missing/garbage values so junk can never occupy a slot.
  */
@@ -73,6 +90,15 @@ export function makeEntitlementService(overrides = {}) {
     notifyReservationWa: null, // injected by entitlementWiring (reservation-pass WhatsApp, PR E) — null-safe
     notifyBoostReceipt: null, // injected by entitlementWiring (PR-4 "×N confirmed" email) — null-safe
     notifyBoostReceiptWa: null, // injected by entitlementWiring ("×N confirmed" WhatsApp) — null-safe
+    // Physical-voucher handover receipt — the consultant already put the paper
+    // voucher in the lead's hand, so this confirms that happened. It carries NO
+    // token and NO claim link (there is nothing to present). Null-safe.
+    notifyHandover: null,
+    notifyHandoverWa: null,
+    // Down-funnel CAPI for a physical handover (wired by entitlementWiring).
+    // Null-safe: a bare service dispatches nothing, and the redemption sweep
+    // still picks the row up.
+    onRedemption: null,
     drawLink: null, // PR-4: built AFTER the merge from the service's OWN models (DI-hermetic)
     builders: null, // share/claim-URL builders; defaults lazily to makeFulfilmentNotify()
     isSendBlocked, // PR C: erasure stop at the send choke point (transactional purpose)
@@ -157,11 +183,17 @@ export function makeEntitlementService(overrides = {}) {
     drawCtx = null,
     channels = ['whatsapp', 'email'],
   }) {
+    if (!KIND_SENDERS[kind]) {
+      d.logger.error('redeem_ops.delivery.unknown_kind', { entitlementId: entitlement?.id, kind });
+      return false;
+    }
     const args = kind === 'voucher'
       ? { entitlement, voucherToken }
       : kind === 'boost_receipt'
         ? { entitlement, drawCtx }
-        : { entitlement, presentationToken, drawCtx };
+        : kind === 'handover_receipt'
+          ? { entitlement }
+          : { entitlement, presentationToken, drawCtx };
     const fire = (fn, channel) => {
       const delivery = Promise.resolve()
         .then(async () => {
@@ -197,12 +229,12 @@ export function makeEntitlementService(overrides = {}) {
     };
 
     if (channels.includes('whatsapp')) {
-      const waFn = kind === 'voucher' ? d.notifyUnlockWa : kind === 'boost_receipt' ? d.notifyBoostReceiptWa : d.notifyReservationWa;
+      const waFn = d[KIND_SENDERS[kind].wa];
       if (typeof waFn === 'function') fire(waFn, 'whatsapp');
     }
 
     if (!channels.includes('email')) return false;
-    const fn = kind === 'voucher' ? d.notifyUnlock : kind === 'boost_receipt' ? d.notifyBoostReceipt : d.notifyReservation;
+    const fn = d[KIND_SENDERS[kind].email];
     if (typeof fn !== 'function' || !canEmailProspect(prospect)) return false;
     fire(fn, 'email');
     return true;
@@ -305,6 +337,18 @@ export function makeEntitlementService(overrides = {}) {
       // transaction predicates below stay authoritative under races.
       if (!offer || offer.status !== 'active') return fail('offer_not_active');
       if (activation.endDate && new Date(activation.endDate) <= new Date()) return fail('activation_ended');
+
+      // A physical voucher only exists once a consultant physically hands it
+      // over, so `on_capture` — which mints a voucher token and mails it the
+      // instant the lead signs up — would promise a credential nobody can
+      // honour and skip the handover entirely. Fail CLOSED and name the fix;
+      // this is a misconfiguration, not a lead problem.
+      if (offer.fulfilmentMethod === PHYSICAL_FULFILMENT && activation.unlockPolicy === 'on_capture') {
+        d.logger.error('redeem_ops.activation.physical_on_capture', {
+          activationId: activation.id, offerId: offer.id,
+        });
+        return fail('physical_requires_agent_unlock');
+      }
 
       const onCapture = activation.unlockPolicy === 'on_capture';
       const reservationDays = offer.claimExpiryDays || DEFAULT_RESERVATION_DAYS;
@@ -457,6 +501,23 @@ export function makeEntitlementService(overrides = {}) {
         where: { prospectId: by.prospectId, status: { [Op.in]: ['eligible', 'issued'] } },
         order: [['createdAt', 'DESC']],
       });
+      // A physical handover lands TERMINAL ('redeemed'), so the live-first
+      // query above finds nothing on a double-tap and this would 404 before
+      // ever reaching the replay carve-out below. Fall back to the most recent
+      // handover so the retry replays idempotently. Deliberately a SECOND
+      // query rather than widening the first: adding 'redeemed' to that
+      // `[Op.in]` would let an old redeemed row outrank a newer LIVE
+      // reservation on createdAt and hijack a legitimate unlock.
+      if (!entitlement) {
+        entitlement = await d.RewardEntitlement.findOne({
+          where: { prospectId: by.prospectId, status: 'redeemed', unlockedVia: { [Op.ne]: null } },
+          include: [{ model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'fulfilmentMethod'] }],
+          order: [['createdAt', 'DESC']],
+        });
+        if (entitlement && entitlement.rewardOffer?.fulfilmentMethod !== PHYSICAL_FULFILMENT) {
+          entitlement = null; // a partner-redeemed voucher is not a handover replay
+        }
+      }
     }
     if (!entitlement) throw new AppError('Entitlement not found', 404);
 
@@ -485,7 +546,11 @@ export function makeEntitlementService(overrides = {}) {
     // Liveness gate (PR C — the funnel doc promised this; now it's true):
     // pause is a full brake, completed/cancelled are terminal. Typed 409s
     // here are UX; the transaction predicate below is authoritative.
-    const activation = await d.Activation.findByPk(entitlement.activationId, { attributes: ['id', 'status'] });
+    // partnerOrganisationId is needed for the physical-handover Redemption row
+    // (models/Redemption.js:20 — NOT NULL).
+    const activation = await d.Activation.findByPk(entitlement.activationId, {
+      attributes: ['id', 'status', 'partnerOrganisationId'],
+    });
     if (!activation || activation.status !== 'active') {
       const st = activation?.status || 'missing';
       throw new AppError(
@@ -513,21 +578,30 @@ export function makeEntitlementService(overrides = {}) {
 
     const offer = await d.RewardOffer.findByPk(entitlement.rewardOfferId);
     const redemptionDays = offer?.redemptionExpiryDays || DEFAULT_REDEMPTION_DAYS;
-    const voucher = drawCtx ? null : mintToken();
+    // Physical handover: the consultant bought the voucher and is putting it in
+    // the lead's hand right now, so THIS is the fulfilment — there is no later
+    // partner leg to wait for (FairPrice will never call our redemption API).
+    // Draw rails win the priority contest: a draw session is boost evidence and
+    // must never mint or complete reward value.
+    const physical = !drawCtx && offer?.fulfilmentMethod === PHYSICAL_FULFILMENT;
+    const voucher = drawCtx || physical ? null : mintToken();
 
     let raced = false;
+    let redemption = null;
     await d.sequelize.transaction(async (t) => {
       const [count] = await d.RewardEntitlement.update(
         {
-          status: 'issued',
+          // Physical handover is TERMINAL — nothing further can happen to it.
+          status: physical ? 'redeemed' : 'issued',
           unlockedAt: new Date(),
           unlockedByUserId: agentUser.id,
           unlockedVia: isAdmin && !prospect ? 'manual' : via,
-          // Trial rails mint the redemption voucher + window; draw rails keep
-          // token fields null and the RESERVATION expiry untouched (there is
-          // no partner redemption to time-box — CX22, and the untouched
-          // expiry is what makes undoSessionUnlock restoration-free).
-          ...(drawCtx
+          // Trial rails mint the redemption voucher + window; draw rails AND
+          // physical handovers keep token fields null and the RESERVATION
+          // expiry untouched (neither has a partner redemption to time-box —
+          // CX22, and for draws the untouched expiry is what makes
+          // undoSessionUnlock restoration-free).
+          ...(drawCtx || physical
             ? {}
             : {
                 tokenHash: voucher.hash,
@@ -560,6 +634,45 @@ export function makeEntitlementService(overrides = {}) {
         actorType: 'agent', actorUserId: agentUser.id,
         metadata: { via, ...(drawCtx ? { draw: true, multiplier: drawCtx.multiplier } : {}) },
       });
+      if (physical) {
+        // Redemption accounting rides the SAME transaction as the unlock, so a
+        // handover is never half-recorded. Only the REDEEMED side is moved:
+        // issuance was already consumed at reservation (issueForProspect —
+        // inventory.recordIssued + issuedCount+1 while status was 'eligible'),
+        // so the `issuedQuantity - redeemedQuantity >= 1` guard in
+        // inventory.recordRedeemed is already satisfied and the
+        // committed >= allocated >= issued >= redeemed invariant holds.
+        // Re-recording issuance here would double-count it.
+        redemption = await d.Redemption.create(
+          {
+            entitlementId: entitlement.id,
+            rewardOfferId: entitlement.rewardOfferId,
+            activationId: entitlement.activationId,
+            partnerOrganisationId: activation.partnerOrganisationId,
+            locationId: null, // handed over by the consultant, not at a partner site
+            method: 'agent_handover',
+            actorType: 'agent',
+            actorUserId: agentUser.id,
+            notes: null,
+          },
+          { transaction: t }
+        );
+        await d.inventory.recordRedeemed({
+          offerId: entitlement.rewardOfferId, activationId: entitlement.activationId,
+          entitlementId: entitlement.id, redemptionId: redemption.id,
+          actorType: 'agent', actorUser: agentUser, transaction: t,
+        });
+        await d.sequelize.query(
+          `UPDATE activations SET "redeemedCount" = "redeemedCount" + 1, "updatedAt" = NOW()
+            WHERE id = :id`,
+          { replacements: { id: entitlement.activationId }, transaction: t }
+        );
+        await writeEvent(t, {
+          entitlementId: entitlement.id, redemptionId: redemption.id, type: 'redeemed',
+          actorType: 'agent', actorUserId: agentUser.id,
+          metadata: { method: 'agent_handover', locationId: null },
+        });
+      }
     });
     if (raced) {
       // The conditional transition lost. A concurrent unlock WINNING is the
@@ -579,9 +692,24 @@ export function makeEntitlementService(overrides = {}) {
     // redemption voucher email a draw entrant can do nothing with).
     const emailQueued = drawCtx
       ? queueDelivery({ entitlement, prospect, kind: 'boost_receipt', drawCtx })
-      : queueDelivery({ entitlement, prospect, kind: 'voucher', voucherToken: voucher.raw });
+      : physical
+        ? queueDelivery({ entitlement, prospect, kind: 'handover_receipt' })
+        : queueDelivery({ entitlement, prospect, kind: 'voucher', voucherToken: voucher.raw });
+    // A handover IS the conversion. The CAPI sweep already selects every
+    // status='redeemed' row (redemptionOutcomeService.sweepUnmarkedRedemptions),
+    // so this event fires with or without us — dispatching here just makes it
+    // prompt instead of up-to-a-sweep late. Deterministic event id ⇒ the two
+    // paths dedupe. Fire-and-forget: ad reporting never blocks a handover.
+    if (physical && typeof d.onRedemption === 'function') {
+      Promise.resolve(d.onRedemption({ entitlement, redemption })).catch((err) => {
+        d.logger.warn('redeem_ops.handover.capi_dispatch_failed', {
+          entitlementId: entitlement.id, error: err?.message,
+        });
+      });
+    }
     return {
-      entitlement, already: false, voucherToken: drawCtx ? null : voucher.raw, emailQueued,
+      entitlement, already: false, voucherToken: drawCtx || physical ? null : voucher.raw, emailQueued,
+      handover: physical ? { redemptionId: redemption?.id || null } : null,
       drawBoost: drawCtx ? { multiplier: drawCtx.multiplier, boostClosesAt: drawCtx.boostClosesAt } : null,
     };
   }
@@ -697,8 +825,19 @@ export function makeEntitlementService(overrides = {}) {
     const entitlement = await d.RewardEntitlement.findByPk(id);
     if (!entitlement) throw new AppError('Entitlement not found', 404);
 
+    // A physical handover is terminal, so without this it could never be
+    // re-sent — and it is the one kind the reconciler cannot recover either
+    // (reconcileMissedDeliveries sweeps only eligible/issued), which makes
+    // Resend its ONLY recovery path. Rotates no token: there isn't one.
+    const resendOffer = await d.RewardOffer.findByPk(entitlement.rewardOfferId, {
+      attributes: ['id', 'fulfilmentMethod'],
+    });
+    const isHandover = entitlement.status === 'redeemed'
+      && resendOffer?.fulfilmentMethod === PHYSICAL_FULFILMENT
+      && entitlement.unlockedVia !== null;
     let kind = entitlement.status === 'eligible' ? 'pass'
-      : entitlement.status === 'issued' ? 'voucher' : null;
+      : entitlement.status === 'issued' ? 'voucher'
+        : isHandover ? 'handover_receipt' : null;
     if (!kind) throw new AppError(`Entitlement is ${entitlement.status}`, 409);
     // Draw rails (PR-4/CX22): a recorded session holds NO voucher — rotating
     // tokenHash and mailing partner-redemption copy would mint the credential
@@ -714,10 +853,18 @@ export function makeEntitlementService(overrides = {}) {
       return null;
     });
     if (kind === 'voucher' && resendDrawCtx) kind = 'boost_receipt';
-    if (kind === 'boost_receipt' && channel === 'link') {
-      throw new AppError('A recorded draw session has no credential to share — resend the receipt by email or WhatsApp', 409);
+    if ((kind === 'boost_receipt' || kind === 'handover_receipt') && channel === 'link') {
+      throw new AppError(
+        kind === 'handover_receipt'
+          ? 'A handed-over physical voucher has no credential to share — resend the receipt by email or WhatsApp'
+          : 'A recorded draw session has no credential to share — resend the receipt by email or WhatsApp',
+        409
+      );
     }
-    if (entitlement.expiresAt && new Date(entitlement.expiresAt) <= new Date()) {
+    // handover_receipt is exempt: expiresAt on a handed-over row is the old
+    // RESERVATION window (left untouched at handover), so it goes stale while
+    // the receipt stays perfectly valid — the voucher is already in their hand.
+    if (kind !== 'handover_receipt' && entitlement.expiresAt && new Date(entitlement.expiresAt) <= new Date()) {
       throw new AppError('Reward has expired — nothing to resend', 409);
     }
 
@@ -745,7 +892,9 @@ export function makeEntitlementService(overrides = {}) {
       order: [['createdAt', 'DESC']],
       limit: 10,
     });
-    const resendAction = kind === 'pass' ? 'resend_pass' : kind === 'boost_receipt' ? 'resend_boost' : 'resend_voucher';
+    const resendAction = kind === 'pass' ? 'resend_pass'
+      : kind === 'boost_receipt' ? 'resend_boost'
+        : kind === 'handover_receipt' ? 'resend_handover' : 'resend_voucher';
     const clash = recent.some((e) => {
       const m = e.metadata || {};
       if (e.type === 'manual_override') return m.action === resendAction || (m.action === 'auto_resend' && m.kind === kind);
@@ -757,7 +906,9 @@ export function makeEntitlementService(overrides = {}) {
 
     // boost_receipt carries NO credential — nothing to mint or rotate; the
     // audit trail still gets its manual_override + audit rows.
-    const fresh = kind === 'boost_receipt' ? null : mintToken();
+    // Neither receipt kind carries a credential — nothing to mint or rotate;
+    // the audit trail still gets its manual_override + audit rows.
+    const fresh = kind === 'boost_receipt' || kind === 'handover_receipt' ? null : mintToken();
     await d.sequelize.transaction(async (t) => {
       if (fresh) {
         const fields = kind === 'pass'

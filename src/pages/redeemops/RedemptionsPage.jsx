@@ -40,7 +40,10 @@ function parseRewardQr(raw) {
   return null;
 }
 
-const RECEIPT_NOUNS = { voucher: 'Voucher', boost_receipt: 'Boost receipt', pass: 'Pass' };
+const RECEIPT_NOUNS = {
+  voucher: 'Voucher', boost_receipt: 'Boost receipt', pass: 'Pass',
+  handover_receipt: 'Handover confirmation',
+};
 
 /** Per-row delivery truth from the receipts the backend now records. */
 function deliveryStatus(e) {
@@ -199,11 +202,15 @@ export default function RedemptionsPage() {
           ? (data?.already
             ? 'Session already recorded'
             : `Session recorded — ×${data.drawBoost.multiplier} confirmed${data?.emailQueued ? ' (receipt emailed)' : ''}`)
-          : data?.already
-            ? 'Already unlocked'
-            : data?.emailQueued
-              ? 'Voucher unlocked — email with QR sent to the customer'
-              : 'Voucher unlocked — no email on file; use Copy link to share the voucher'
+          : data?.handover
+            ? (data?.already
+              ? 'Already recorded as handed over'
+              : `Handover recorded${data?.emailQueued ? ' — confirmation emailed' : ' — no email on file'}`)
+            : data?.already
+              ? 'Already unlocked'
+              : data?.emailQueued
+                ? 'Voucher unlocked — email with QR sent to the customer'
+                : 'Voucher unlocked — no email on file; use Copy link to share the voucher'
       );
       setActivateToken(null);
       setVerified(null);

@@ -19,7 +19,9 @@ const offerSchema = Joi.object({
   rewardType: Joi.string().max(24),
   retailValue: Joi.number().min(0).allow(null),
   fulfilmentCost: Joi.number().min(0).allow(null),
-  fundingSource: Joi.string().valid('partner', 'mktr', 'shared'),
+  // 'agent' = the consultant buys the reward themselves (physical vouchers).
+  // Without it their spend is reported as MKTR's or a partner's.
+  fundingSource: Joi.string().valid('partner', 'mktr', 'shared', 'agent'),
   committedQuantity: Joi.number().integer().min(0),
   validityStart: Joi.date().iso().allow(null),
   validityEnd: Joi.date().iso().allow(null),
