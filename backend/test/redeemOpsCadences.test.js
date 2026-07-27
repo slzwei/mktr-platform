@@ -21,7 +21,7 @@ import { makeTaskService } from '../src/services/redeemOps/taskService.js';
 import { runRedeemOpsStaleSweep } from '../src/services/redeemOps/staleSweep.js';
 
 let app;
-let admin, execA, execB, analyst;
+let admin, execA, execB, analyst, bdm;
 const svc = makeCadenceService();
 const partnerSvc = makePartnerService();
 const claimSvc = makeClaimService();
@@ -36,6 +36,7 @@ beforeAll(async () => {
   execA = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
   execB = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
   analyst = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'analyst' }); // no tasks.manage
+  bdm = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'bdm' });
   // the app boot may have created the system agent already — don't collide
   await User.findOrCreate({
     where: { email: 'system@mktr.local' },
@@ -125,6 +126,26 @@ describe('enroll', () => {
     await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
     await expect(svc.enrollPartner(p.id, { cadenceKey: 'revival_60d' }, execA.user))
       .rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  test('a BDM cannot run a cadence on a colleague\u2019s business', async () => {
+    // Running a cadence queues outreach and sends scripted messages under the
+    // owner's name — it is working the deal, so it follows business ownership.
+    const p = await ownedPartner('Not My Cafe', execA);
+    await expect(svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, bdm.user))
+      .rejects.toMatchObject({ statusCode: 403 });
+
+    // …and the owner still can.
+    const { enrollment } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+    expect(enrollment.state).toBe('active');
+
+    // A live cadence on someone else's business is equally off limits.
+    await expect(svc.pauseEnrollment(p.id, bdm.user)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(svc.stopEnrollment(p.id, bdm.user)).rejects.toMatchObject({ statusCode: 403 });
+
+    // Admin tier keeps its override.
+    const paused = await svc.pauseEnrollment(p.id, admin.user);
+    expect(paused.state).toBe('paused');
   });
 
   test('per-owner capacity cap: refused at cap, manager may override', async () => {
