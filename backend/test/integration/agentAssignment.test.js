@@ -46,7 +46,7 @@ beforeAll(async () => {
   inactiveAgent = inactiveResult.user;
 
   campaign = await createTestCampaign(adminUser.id, { name: `Assignment Test ${RUN}` });
-}, 20000);
+});
 
 afterAll(async () => {
   await closeDb();

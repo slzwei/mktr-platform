@@ -27,7 +27,7 @@ beforeAll(async () => {
 
   assignA = await createTestLeadPackageAssignment(agent.id, pkgA.id, { leadsRemaining: 2, leadsTotal: 2 });
   assignB = await createTestLeadPackageAssignment(agent.id, pkgB.id, { leadsRemaining: 3, leadsTotal: 3 });
-}, 30000);
+});
 
 afterAll(async () => {
   await closeDb();

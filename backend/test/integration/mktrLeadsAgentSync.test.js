@@ -89,7 +89,7 @@ beforeAll(async () => {
 
   adapterRegistry.replace(fakeAdapter);
   result = await syncAgentsFromMktrLeads();
-}, 30000);
+});
 
 afterAll(async () => {
   await closeDb();
@@ -168,5 +168,5 @@ describe('syncAgentsFromMktrLeads', () => {
     await holder.commit(); // releases the xact lock
     const res = await waiting;
     expect(res.locked).not.toBe(false);
-  }, 20000);
+  });
 });

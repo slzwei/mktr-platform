@@ -15,7 +15,7 @@ beforeAll(async () => {
   const campaign = await createTestCampaign(admin.user.id)
   await createTestProspect(campaign.id, { assignedAgentId: agentUser.id })
   await createTestProspect(campaign.id, { assignedAgentId: agentUser.id, leadStatus: 'contacted' })
-}, 15000)
+})
 
 afterAll(async () => {
   await closeDb()

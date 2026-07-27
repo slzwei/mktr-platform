@@ -10,7 +10,7 @@ let app
 beforeAll(async () => {
   process.env.RETELL_WEBHOOK_SECRET = WEBHOOK_SECRET
   app = await getApp()
-}, 15000)
+})
 
 afterAll(async () => {
   await closeDb()

@@ -119,7 +119,7 @@ beforeAll(async () => {
   await createTestProspect(campaign.id, { consumerId: C.bs.id, phone: '+6598111010' })
   await mkConsumer('bsCtl', { phone: '+6598111011', firstName: 'backslash', lastName: 'Peopledir' })
   await createTestProspect(campaign.id, { consumerId: C.bsCtl.id, phone: '+6598111011' })
-}, 30000)
+})
 
 afterAll(async () => {
   await closeDb()
