@@ -168,6 +168,36 @@ describe('DiscoverPage', () => {
     expect(screen.getByText(/1 hidden by type/)).toBeInTheDocument();
   });
 
+  it('says which category words were ignored instead of quietly narrowing the search', async () => {
+    // The backend drops words Google has no category for and echoes them back —
+    // an unannounced drop makes a partly-applied filter look like the one asked for.
+    api.startDiscovery.mockResolvedValue({
+      id: 'rNew', rawPayload: { categoryFilterWords: ['gymnastics center'], categoryFilterWordsDropped: ['kids gym'] },
+    });
+    api.getDiscoveryRun.mockResolvedValue({
+      run: {
+        id: 'rNew', status: 'completed', area: 'Tampines', requestedLimit: 30,
+        rawPayload: {
+          searchTerms: ['gymnastics'],
+          categoryFilterWords: ['gymnastics center'],
+          categoryFilterWordsDropped: ['kids gym'],
+        },
+      },
+      candidates: [],
+    });
+    renderPage();
+    await userEvent.type(await screen.findByPlaceholderText(/nail salon, taekwondo/), 'gymnastics');
+    await userEvent.type(screen.getByPlaceholderText('Neighbourhood or district…'), 'Tampines');
+    await userEvent.type(screen.getByPlaceholderText('learning center, education center'), 'Gymnastics center, kids gym');
+    await userEvent.click(screen.getByRole('button', { name: /Search Google Maps/i }));
+    await waitFor(() => expect(toastMock.info).toHaveBeenCalledWith(
+      'Searching without "kids gym"',
+      expect.objectContaining({ description: expect.stringContaining('Not a Google category') }),
+    ));
+    // …and the results header keeps the receipt.
+    expect(await screen.findByText('Ignored')).toBeInTheDocument();
+  });
+
   it('shows remaining results when the atomic quota response is present', async () => {
     api.listDiscoveryRuns.mockResolvedValue({
       runs: [],

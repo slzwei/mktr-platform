@@ -831,12 +831,39 @@ describe('categoryFilterWords (Maps category allowlist)', () => {
     const svc = makeDiscoveryService({ apify });
     const { user } = await createTestUser({ role: 'admin' });
     const run = await svc.startDiscovery({ area: 'Tampines', limit: 60, ...body }, user);
-    return { input: apify.startRun.mock.calls[0][1], run };
+    return { input: apify.startRun.mock.calls[0][1], run, apify, svc, user };
   }
 
-  test('ad-hoc categoryFilterWords are passed straight to the actor input', async () => {
-    const { input } = await startWith({ searchTerms: ['nail salon'], categoryFilterWords: ['Nail salon', 'Beauty salon'] });
-    expect(input.categoryFilterWords).toEqual(['Nail salon', 'Beauty salon']);
+  // The actor's enum is closed and all-lowercase: prose casing 400s the run start
+  // before a single place is crawled (prod, 2026-07-27).
+  test('ad-hoc categoryFilterWords reach the actor canonicalised, never as typed', async () => {
+    const { input, run } = await startWith({
+      searchTerms: ['nail salon'], categoryFilterWords: ['Nail salon', 'Beauty salon'],
+    });
+    expect(input.categoryFilterWords).toEqual(['nail salon', 'beauty salon']);
+    expect(run.rawPayload.categoryFilterWords).toEqual(['nail salon', 'beauty salon']);
+  });
+
+  test('a word Google has no category for is dropped — the rest still filter', async () => {
+    const { input, run } = await startWith({
+      searchTerms: ['gymnastics'], categoryFilterWords: ['Gymnastics center', 'kids gym'],
+    });
+    expect(input.categoryFilterWords).toEqual(['gymnastics center']);
+    // Echoed back in the operator's own spelling so the UI can say what it ignored.
+    expect(run.rawPayload.categoryFilterWordsDropped).toEqual(['kids gym']);
+  });
+
+  test('an all-unknown filter 422s BEFORE the run row and any Apify spend', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const { user } = await createTestUser({ role: 'admin' });
+    const before = await DiscoveryRun.count();
+    await expect(svc.startDiscovery({
+      area: 'Tampines', limit: 60, searchTerms: ['tuition'],
+      categoryFilterWords: ['tuition centre', 'kids gym'],
+    }, user)).rejects.toMatchObject({ statusCode: 422 });
+    expect(apify.startRun).not.toHaveBeenCalled();
+    expect(await DiscoveryRun.count()).toBe(before);
   });
 
   test('no categoryFilterWords key when none supplied (default stays byte-identical)', async () => {
@@ -858,15 +885,17 @@ describe('categoryFilterWords (Maps category allowlist)', () => {
   });
 
   test("a category's saved categoryFilterWords are used and snapshotted on the run", async () => {
+    // Seeded straight onto the model, as rows saved before the settings-time
+    // validation existed look — the run start canonicalises them anyway.
     await seedRedeemOpsCategory('Cafe', { categoryFilterWords: ['Cafe', 'Coffee shop'] });
     const { input, run } = await startWith({ category: 'Cafe' });
-    expect(input.categoryFilterWords).toEqual(['Cafe', 'Coffee shop']);
-    expect(run.rawPayload.categoryFilterWords).toEqual(['Cafe', 'Coffee shop']);
+    expect(input.categoryFilterWords).toEqual(['cafe', 'coffee shop']);
+    expect(run.rawPayload.categoryFilterWords).toEqual(['cafe', 'coffee shop']);
   });
 
   test('ad-hoc words override the category saved words', async () => {
     await seedRedeemOpsCategory('Restaurant', { categoryFilterWords: ['Restaurant'] });
     const { input } = await startWith({ category: 'Restaurant', categoryFilterWords: ['Bakery'] });
-    expect(input.categoryFilterWords).toEqual(['Bakery']);
+    expect(input.categoryFilterWords).toEqual(['bakery']);
   });
 });

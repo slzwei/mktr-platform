@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import { RedeemOpsCategory, sequelize } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
+import { resolvePlaceCategoryWords, unknownCategoriesMessage } from './discovery/placeCategories.js';
 
 /**
  * Admin-managed category taxonomy (migration 052). The three consuming columns
@@ -73,22 +74,24 @@ export function makeCategoryService(overrides = {}) {
   /** Google Maps category-filter words (migration 074). Like cleanHashtags there
    *  is NO name fallback — a CRM category name is rarely a real Google category,
    *  so an emptied list stores NULL ("no category filter"; the actor input stays
-   *  byte-identical to before). Case is preserved for display; the actor matches
-   *  categories case-insensitively either way. */
-  function cleanCategoryFilterWords(raw) {
+   *  byte-identical to before).
+   *
+   *  Stored canonicalised (lowercase, exactly as the actor's closed enum spells
+   *  it) and REJECTED when a word isn't a real Google category: this list is sent
+   *  verbatim on every future run, so a word that would 400 the actor is caught
+   *  here — at settings time, by the person who can fix it — not months later on
+   *  someone else's search. */
+  function cleanCategoryFilterWords(raw, { rejectUnknown = true } = {}) {
     if (raw === undefined) return undefined;
     const values = Array.isArray(raw) ? raw : [raw];
-    const seen = new Set();
-    const cleaned = [];
-    for (const value of values) {
-      const word = String(value ?? '').trim().slice(0, 64);
-      const key = word.toLowerCase();
-      if (!word || seen.has(key)) continue;
-      seen.add(key);
-      cleaned.push(word);
-      if (cleaned.length === 20) break;
-    }
-    return cleaned.length > 0 ? cleaned : null;
+    const { kept, dropped } = resolvePlaceCategoryWords(
+      values.map((value) => String(value ?? '').trim().slice(0, 64)),
+    );
+    // Merges union two ALREADY-SAVED lists, which may predate this validation —
+    // an old unusable word must not block an unrelated consolidation, so it is
+    // just dropped there. Operator input (create/update) still fails loudly.
+    if (dropped.length && rejectUnknown) throw new AppError(unknownCategoriesMessage(dropped), 422);
+    return kept.length > 0 ? kept.slice(0, 20) : null;
   }
 
   function whereNameCi(name) {
@@ -251,7 +254,7 @@ export function makeCategoryService(overrides = {}) {
       const mergedFilterWords = cleanCategoryFilterWords([
         ...(target.categoryFilterWords || []),
         ...(source.categoryFilterWords || []),
-      ]);
+      ], { rejectUnknown: false });
       await target.update(
         { providerSearchTerms: mergedSearchTerms, categoryFilterWords: mergedFilterWords },
         { transaction: t },
