@@ -59,10 +59,19 @@ describe('normalizeTerms — LLM output → Discover input contract', () => {
 });
 
 describe('normalizeCategories — Maps category-filter contract', () => {
-  test('trims, dedupes case-insensitively, PRESERVES case, caps at 6', () => {
+  // These land in a field sent verbatim to the actor, whose enum is closed and
+  // all-lowercase — so suggestions are canonicalised, not merely tidied.
+  test('trims, canonicalises, dedupes, caps at 6', () => {
     expect(normalizeCategories([' Learning center ', 'learning CENTER', 'Nail salon', 42, '']))
-      .toEqual(['Learning center', 'Nail salon']);
-    expect(normalizeCategories(Array.from({ length: 9 }, (_, i) => `Cat ${i}`))).toHaveLength(6);
+      .toEqual(['learning center', 'nail salon']);
+    expect(normalizeCategories([
+      'Cafe', 'Bakery', 'Restaurant', 'Bar', 'Spa', 'Gym', 'Florist', 'Dentist', 'Barber shop',
+    ])).toHaveLength(6);
+  });
+  test('a category the AI invented is discarded, not passed to the actor', () => {
+    expect(normalizeCategories(['Learning center', 'robotics academy', 'kids gym']))
+      .toEqual(['learning center']);
+    expect(normalizeCategories(['tuition centre'])).toEqual([]);
   });
   test('non-array input yields []', () => {
     expect(normalizeCategories(undefined)).toEqual([]);
@@ -127,7 +136,7 @@ describe('suggestTerms', () => {
     });
     const { terms, categories } = await svc.suggestTerms({ description: 'nails', provider: 'google_maps' }, user);
     expect(terms).toEqual(['nail salon', 'lash studio']);
-    expect(categories).toEqual(['Nail salon', 'Beauty salon']); // case preserved, deduped
+    expect(categories).toEqual(['nail salon', 'beauty salon']); // canonicalised, deduped
   });
 
   test('instagram mode never returns categories', async () => {

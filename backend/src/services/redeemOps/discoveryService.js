@@ -9,6 +9,7 @@ import { makeCategoryService } from './categoryService.js';
 import { makeDiscoveryUsageService } from './discoveryUsageService.js';
 import { makeDedupeService } from './dedupeService.js';
 import { makeApifyClient } from './discovery/apifyClient.js';
+import { resolvePlaceCategoryWords, unknownCategoriesMessage } from './discovery/placeCategories.js';
 import {
   normalizeMapsItem, normalizeInstagramItem, isSingaporeMapsItem,
   normalizeInstagramHashtagPost, pruneInstagramHashtagRaw,
@@ -244,9 +245,22 @@ export function makeDiscoveryService(overrides = {}) {
     // Category allowlist (actor `categoryFilterWords`): ad-hoc words override the
     // category's saved list; either may be empty → no filter, so the actor input
     // stays byte-identical to before (opt-in, like minStars/skipClosed). Maps-only.
-    const filterWordsUsed = isInstagram ? []
+    const filterWordsAsked = isInstagram ? []
       : (overrideFilterWords.length ? overrideFilterWords
         : (resolved?.categoryFilterWords || []));
+    // The actor's enum is closed and all-lowercase, so prose casing ("Gymnastics
+    // center") 400s the run start. Fold every word onto a real Google category
+    // first; a word Google has no category for is dropped (the rest still filter),
+    // and an ALL-unknown list 422s here — before the run row, the quota reservation
+    // and any Apify spend — rather than quietly searching unfiltered.
+    const { kept: filterWordsUsed, dropped: filterWordsDropped } =
+      resolvePlaceCategoryWords(filterWordsAsked);
+    if (filterWordsAsked.length > 0 && filterWordsUsed.length === 0) {
+      throw new AppError(
+        `${unknownCategoriesMessage(filterWordsDropped)} Fix or clear the category filter to search everything.`,
+        422,
+      );
+    }
     // The Maps actor applies this cap to EACH search string, so divide the requested
     // total across terms to avoid multiplying crawl cost by N (a single term = full limit).
     const perSearchLimit = isInstagram ? null
@@ -264,7 +278,13 @@ export function makeDiscoveryService(overrides = {}) {
     // materialization's soft filter; both never re-resolve a mid-run category edit.
     const searchPayload = isInstagram
       ? { hashtags: igHashtagsUsed, territory: runValues.area }
-      : { searchTerms: searchTermsUsed, ...(filterWordsUsed.length ? { categoryFilterWords: filterWordsUsed } : {}) };
+      : {
+        searchTerms: searchTermsUsed,
+        ...(filterWordsUsed.length ? { categoryFilterWords: filterWordsUsed } : {}),
+        // Echoed back so the results view can say which words Google didn't know
+        // — a partly-applied filter must never look like the one that was asked for.
+        ...(filterWordsDropped.length ? { categoryFilterWordsDropped: filterWordsDropped } : {}),
+      };
     let run;
     if (c.resultQuotaEnabled) {
       const sgDate = sgDateKey();
@@ -350,7 +370,11 @@ export function makeDiscoveryService(overrides = {}) {
           // igHashtagsUsed, NOT resolved.hashtags — ad-hoc IG runs have no category,
           // so `resolved` is null and reading it here crashed AFTER Apify spend began.
           ? { provider: 'apify_instagram_hashtag', hashtags: igHashtagsUsed }
-          : { searchTerms: searchTermsUsed, ...(filterWordsUsed.length ? { categoryFilterWords: filterWordsUsed } : {}) }),
+          : {
+            searchTerms: searchTermsUsed,
+            ...(filterWordsUsed.length ? { categoryFilterWords: filterWordsUsed } : {}),
+            ...(filterWordsDropped.length ? { categoryFilterWordsDropped: filterWordsDropped } : {}),
+          }),
       },
       requestId,
     });

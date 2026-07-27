@@ -230,6 +230,14 @@ export default function DiscoverPage() {
       // Arm the one-time facet auto-clean for THIS run iff it was searched from an
       // AI suggestion — opening an old run later must never be auto-cleaned.
       setAiArmedRunId(aiCats.length ? r.id : null);
+      // A category word Google doesn't have is dropped so the rest of the filter
+      // still applies — say so, or the run looks narrower than it is.
+      const ignored = r.rawPayload?.categoryFilterWordsDropped || [];
+      if (ignored.length) {
+        toast.info(`Searching without ${ignored.map((w) => `"${w}"`).join(', ')}`, {
+          description: `Not ${ignored.length === 1 ? 'a Google category' : 'Google categories'} — the rest of your category filter still applies.`,
+        });
+      }
       queryClient.invalidateQueries({ queryKey: RUNS_KEY });
     },
     onError: (err) => toast.error('Could not start search', { description: err.message }),
@@ -474,7 +482,7 @@ export default function DiscoverPage() {
                       placeholder="learning center, education center"
                       onChange={(e) => setForm((f) => ({ ...f, filterWords: e.target.value }))} />
                     <p className="text-[11.5px] mt-1.5 mb-0" style={{ color: 'var(--ro-text-3)' }}>
-                      Cost control for big sweeps. Matches the Google <b>category</b>, not the name — may miss valid targets. Usually better to filter <b>after</b> the search, below.
+                      Cost control for big sweeps. Matches the Google <b>category</b>, not the name — may miss valid targets. Must be one of Google&apos;s own category names (a made-up one is ignored). Usually better to filter <b>after</b> the search, below.
                     </p>
                   </div>
                 </div>
@@ -550,6 +558,8 @@ export default function DiscoverPage() {
               ...(run?.category ? [['Category', run.category, false]] : []),
               ...(run?.rawPayload?.categoryFilterWords?.length
                 ? [['Categories', run.rawPayload.categoryFilterWords.join(', '), true]] : []),
+              ...(run?.rawPayload?.categoryFilterWordsDropped?.length
+                ? [['Ignored', run.rawPayload.categoryFilterWordsDropped.join(', '), true]] : []),
               ['Area', run?.area, false], ['Results', run?.requestedLimit, false],
               ...(run?.actualCostUsd != null ? [['Cost', `$${Number(run.actualCostUsd).toFixed(2)}`, false]] : []),
             ].map(([k, v, truncate]) => (

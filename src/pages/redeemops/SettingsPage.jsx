@@ -523,8 +523,9 @@ export default function SettingsPage() {
             <DialogTitle>Categories to keep</DialogTitle>
             <DialogDescription>
               Google Maps categories Discover keeps for this category — e.g. hair salon,
-              nail salon, spa. Comma-separated; matched loosely and case-insensitively.
-              Leave empty to keep every result (no filter).
+              nail salon, spa. Comma-separated, and each must be one of Google&apos;s own
+              category names (spelling and plurals are forgiven; invented ones are
+              refused). Leave empty to keep every result (no filter).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2">

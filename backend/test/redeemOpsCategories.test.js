@@ -9,7 +9,7 @@
 process.env.REDEEM_OPS_ENABLED = 'true'; // must be set before getApp() mounts routes
 
 import request from 'supertest';
-import { getApp, closeDb, createTestUser } from './helpers.js';
+import { getApp, closeDb, createTestUser, seedRedeemOpsCategory } from './helpers.js';
 import { RedeemOpsCategory, PartnerOrganisation } from '../src/models/index.js';
 import { makeCategoryService } from '../src/services/redeemOps/categoryService.js';
 
@@ -278,16 +278,27 @@ describe('resolveCategoryForSearch', () => {
 describe('categoryFilterWords (Maps category allowlist)', () => {
   const categoryService = makeCategoryService();
 
-  test('create persists categoryFilterWords and the resolver returns them', async () => {
+  // Stored the way the Maps actor's closed enum spells them — this list is sent
+  // verbatim on every future run, and one word it doesn't know 400s the whole run.
+  test('create persists categoryFilterWords canonicalised and the resolver returns them', async () => {
     const name = uniq('Filtered Salon');
     const res = await request(app).post('/api/redeem-ops/categories').set(auth(admin.token))
-      .send({ name, categoryFilterWords: ['Nail salon', 'Beauty salon'] });
+      .send({ name, categoryFilterWords: ['Nail salon', 'Beauty salons'] });
     expect(res.body?.data?.category?.id).toBeTruthy();
     const stored = await RedeemOpsCategory.findByPk(res.body.data.category.id);
-    expect(stored.categoryFilterWords).toEqual(['Nail salon', 'Beauty salon']);
+    expect(stored.categoryFilterWords).toEqual(['nail salon', 'beauty salon']);
     await expect(categoryService.resolveCategoryForSearch(name)).resolves.toEqual({
-      name, searchTerms: [name], categoryFilterWords: ['Nail salon', 'Beauty salon'],
+      name, searchTerms: [name], categoryFilterWords: ['nail salon', 'beauty salon'],
     });
+  });
+
+  test('a word Google has no category for → 422 at settings time, naming it', async () => {
+    const name = uniq('Invented Cat');
+    const res = await request(app).post('/api/redeem-ops/categories').set(auth(admin.token))
+      .send({ name, categoryFilterWords: ['Nail salon', 'kids gym'] });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toContain('kids gym');
+    expect(await RedeemOpsCategory.findOne({ where: { name } })).toBeNull(); // nothing saved
   });
 
   test('updating categoryFilterWords to [] clears it and the resolver omits the key', async () => {
@@ -309,7 +320,21 @@ describe('categoryFilterWords (Maps category allowlist)', () => {
     const res = await request(app).post('/api/redeem-ops/categories').set(auth(admin.token))
       .send({ name, categoryFilterWords: ['Spa', 'spa', '  SPA  ', 'Gym'] });
     expect((await RedeemOpsCategory.findByPk(res.body.data.category.id)).categoryFilterWords)
-      .toEqual(['Spa', 'Gym']);
+      .toEqual(['spa', 'gym']);
+  });
+
+  test('merging rows saved before the validation drops the dead word, never 422s', async () => {
+    // Consolidating a taxonomy must not be held hostage by a word someone saved
+    // years earlier — merge is lenient where create/update is strict.
+    const source = await seedRedeemOpsCategory(uniq('Legacy Src'), { categoryFilterWords: ['Cafe', 'kids gym'] });
+    const target = await seedRedeemOpsCategory(uniq('Legacy Tgt'), { categoryFilterWords: ['Bakery'] });
+    const res = await request(app)
+      .post(`/api/redeem-ops/categories/${source.id}/merge`)
+      .set(auth(admin.token))
+      .send({ targetId: target.id });
+    expect(res.status).toBe(200);
+    expect((await RedeemOpsCategory.findByPk(target.id)).categoryFilterWords)
+      .toEqual(['bakery', 'cafe']);
   });
 });
 
