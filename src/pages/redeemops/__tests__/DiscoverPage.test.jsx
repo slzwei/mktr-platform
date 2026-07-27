@@ -1,6 +1,6 @@
 /**
  * DiscoverPage — the three behaviors that guard real money / real data:
- * 1. suggestion cards PREFILL the form and never fire a paid search;
+ * 1. AI suggestions PREFILL the form and never fire a paid search;
  * 2. a candidate mid-enrichment shows "Enriching…" (not another paid action);
  * 3. dismiss hits the API and the undo toast's action restores.
  * redeemOpsApi is fully mocked — no network, no backend.
@@ -13,7 +13,6 @@ import { MemoryRouter } from 'react-router-dom';
 
 const api = vi.hoisted(() => ({
   listDiscoveryRuns: vi.fn(),
-  listCategories: vi.fn(),
   listTerritories: vi.fn(),
   getDiscoveryRun: vi.fn(),
   startDiscovery: vi.fn(),
@@ -71,18 +70,20 @@ async function openResults() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.listCategories.mockResolvedValue([{ name: 'Nail Salon' }]);
   api.listTerritories.mockResolvedValue({ enabled: false, territories: [] });
   api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota });
 });
 
 describe('DiscoverPage', () => {
-  it('suggestion cards prefill the form and never start a paid search', async () => {
+  it('shows every filter up front — nothing hidden behind an expander', async () => {
     renderPage();
-    const card = await screen.findByRole('button', { name: /Nail Salon · Tampines/i });
-    await userEvent.click(card);
-    expect(api.startDiscovery).not.toHaveBeenCalled();
-    expect(screen.getByPlaceholderText('Neighbourhood or district…')).toHaveValue('Tampines');
+    // No click: rating, closed-businesses and the category restriction are all
+    // on screen as soon as the form is.
+    expect(await screen.findByText('Filters')).toBeInTheDocument();
+    expect(screen.getByText('Min rating')).toBeInTheDocument();
+    expect(screen.getByText('Exclude closed businesses')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('learning center, education center')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /More filters/i })).not.toBeInTheDocument();
   });
 
   it('uses the territory picker with All Singapore only when the runtime flag is enabled', async () => {
@@ -111,7 +112,7 @@ describe('DiscoverPage', () => {
 
   it('hides the AI-assist row unless the backend reports aiEnabled', async () => {
     renderPage(); // beforeEach response has no aiEnabled
-    await screen.findByRole('button', { name: /Nail Salon · Tampines/i }); // page settled
+    await screen.findByRole('button', { name: /Search Google Maps/i }); // page settled
     expect(screen.queryByLabelText('Describe what you want to find')).not.toBeInTheDocument();
   });
 
@@ -134,7 +135,7 @@ describe('DiscoverPage', () => {
     expect(screen.getByPlaceholderText(/nail salon, taekwondo/)).toHaveValue(
       'taekwondo, martial arts school, kids karate',
     );
-    // categories are pre-filled into the now-revealed Restrict-categories field
+    // categories are pre-filled into the always-visible Restrict-categories field
     expect(screen.getByPlaceholderText('learning center, education center')).toHaveValue(
       'Martial arts school, Gym',
     );

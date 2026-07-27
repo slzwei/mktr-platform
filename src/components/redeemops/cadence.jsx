@@ -90,6 +90,33 @@ async function copyTaskMessage(text) {
   }
 }
 
+/**
+ * A cadence's name, linking through to its definition for anyone who can open
+ * the editor (`tasks.manage` — non-authors land on its read-only view, so this
+ * is a "see the script" affordance, not an edit one).
+ *
+ * Enrollments are version-pinned, so this points at the EXACT version being
+ * run. That version may since have been retired by an edit; the editor loads
+ * its list with all=true, so a retired version still resolves.
+ */
+export function CadenceName({ cadence, className = '', style }) {
+  const authUser = useAuthStore((s) => s.user);
+  const label = cadence?.name || 'Cadence';
+  if (!CADENCES_ENABLED || !cadence?.id || !hasCapability(authUser, 'tasks.manage')) {
+    return <span className={className} style={style}>{label}</span>;
+  }
+  return (
+    <Link
+      to={`/redeem-ops/cadences/${cadence.id}/edit`}
+      title={`Open “${label}”`}
+      className={`hover:underline ${className}`}
+      style={{ color: 'inherit', ...style }}
+    >
+      {label}
+    </Link>
+  );
+}
+
 /** Small pill marking a task as cadence-driven: "⚡ F&B call-first · 3". */
 export function CadenceChip({ task }) {
   const step = task?.cadenceStep;
@@ -511,7 +538,7 @@ export function CadencePanel({ partner, canManage = true, variant = 'card', onAd
         <>
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-[13.5px] font-semibold m-0 truncate">
-              {enrollment.cadence?.name}
+              <CadenceName cadence={enrollment.cadence} />
               <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}> · v{enrollment.cadence?.version}</span>
             </p>
             {steps.length > 0 && (
@@ -677,7 +704,7 @@ export function CadencePanel({ partner, canManage = true, variant = 'card', onAd
     <p className="text-[13px] m-0" style={{ color: 'var(--ro-text-2)' }}>
       <Zap className="w-3.5 h-3.5 inline mr-1 -mt-0.5" aria-hidden="true" />
       <span className="font-semibold" style={{ color: 'var(--ro-bunker)' }}>
-        {enrollment.cadence?.name} · step {currentOrder}/{steps.length}
+        <CadenceName cadence={enrollment.cadence} /> · step {currentOrder}/{steps.length}
       </span>
       {paused ? ' · paused' : ' · scheduling next step…'}
     </p>
