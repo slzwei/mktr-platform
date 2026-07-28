@@ -559,12 +559,37 @@ describe('scoring panel', () => {
     fetchProspectProfile.mockResolvedValue(ENRICHED());
     setup('/admin/leads/p1?view=profile');
     await screen.findByText('Scoring');
-    // market_fit is unknown: its note explains why, and it shows no points.
-    expect(screen.getByText('no language or ethnicity fact')).toBeInTheDocument();
-    expect(screen.getByText('no recent life event on record')).toBeInTheDocument();
+    // The reason lives on the LABEL now, not in a trailing column that ellipsed
+    // it. It must still be reachable WITHOUT a mouse — the accessible name is
+    // the contract, because for several components this is the only place the
+    // explanation exists at all.
+    expect(screen.getByLabelText(/market fit: no language or ethnicity fact/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/life events: no recent life event on record/)).toBeInTheDocument();
     // The assessed ones DO show their points.
     expect(screen.getByText('7.5')).toBeInTheDocument();
     expect(screen.getByText('1.5')).toBeInTheDocument();
+  });
+
+  it('the reason opens on hover, and on keyboard focus', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    const hint = screen.getByLabelText(/market fit: no language or ethnicity fact/);
+
+    // Nothing on screen until asked — that is the whole point of the change.
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(hint);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('no language or ethnicity fact');
+    fireEvent.mouseLeave(hint);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    // A mouse-only hint would hide these reasons from a keyboard reader
+    // entirely, now that they are not printed on the row.
+    fireEvent.focus(hint);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('no language or ethnicity fact');
+    fireEvent.keyDown(hint, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
   it('names the unknowns as unasked questions, not as low scores', async () => {
