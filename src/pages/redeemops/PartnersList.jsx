@@ -78,6 +78,13 @@ export default function PartnersList() {
   // Multi-select for bulk actions. Ids only — the row objects are re-fetched
   // constantly, and holding them would go stale the moment a claim lands.
   const [selected, setSelected] = useState(() => new Set());
+  // Bulk actions that need a target or a reason ask for it first.
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [stageOpen, setStageOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [stagePick, setStagePick] = useState(null);
+  const [bulkLostReason, setBulkLostReason] = useState(null);
+  const [bulkReason, setBulkReason] = useState('');
 
   const constants = useQuery({
     queryKey: ['redeem-ops', 'constants'],
@@ -156,7 +163,13 @@ export default function PartnersList() {
   // backend surface, works for the list sizes a 3-person team imports.
   const user = useAuthStore((st) => st.user);
   const canImport = hasCapability(user, 'partners.import');
+  // One capability per bulk action, each the same one its single-row button
+  // answers to — an outreach exec claims and releases, only a BDM+ reassigns.
   const canClaim = hasCapability(user, 'partners.claim');
+  const canRelease = hasCapability(user, 'partners.release');
+  const canReassign = hasCapability(user, 'partners.reassign');
+  const canMoveStage = hasCapability(user, 'pipeline.move');
+  const canBulk = canClaim || canRelease || canReassign || canMoveStage;
   const [importOpen, setImportOpen] = useState(false);
   const [importState, setImportState] = useState(null); // null | {running, done, total, created, skipped, failed, errors[]}
 
@@ -212,55 +225,144 @@ export default function PartnersList() {
   const pagination = listQuery.data?.pagination;
   const stages = constants.data?.pipelineStages || [];
 
-  // Only unowned, live rows can be claimed — the same predicate the server's
-  // conditional UPDATE enforces, so the UI never offers what the API refuses.
-  const claimable = (p) => !p.ownerUserId && p.availability === 'available' && !p.archivedAt && !p.mergedIntoId;
-  const claimableIds = partners.filter(claimable).map((p) => p.id);
+  // A live row is selectable. Claiming is still gated on being UNOWNED — the
+  // same predicate the server's conditional UPDATE enforces — but the other
+  // three actions apply precisely to rows that ARE owned, so "unclaimable" can
+  // no longer mean "unselectable": releasing and reassigning would be
+  // unreachable from the list otherwise.
+  const selectable = (p) => !p.archivedAt && !p.mergedIntoId;
+  const claimable = (p) => selectable(p) && !p.ownerUserId && p.availability === 'available';
+  const selectableIds = partners.filter(selectable).map((p) => p.id);
   const selectedIds = [...selected];
   // Selection mode: once anything is ticked, the whole row becomes the
   // checkbox. Navigating away mid-selection would silently discard the
   // selection, so in this mode a row click NEVER opens the detail page —
   // Clear (or unticking the last row) hands normal clicking back.
-  const selectionMode = canClaim && selected.size > 0;
-  const allSelected = claimableIds.length > 0 && claimableIds.every((id) => selected.has(id));
+  const selectionMode = canBulk && selected.size > 0;
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
   const toggleOne = (id) => setSelected((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
   const toggleAllOnPage = () => setSelected((prev) => {
-    // Scoped to THIS page's claimable rows — never a silent "select all 2,000".
+    // Scoped to THIS page — never a silent "select all 2,000".
     const next = new Set(prev);
-    if (allSelected) claimableIds.forEach((id) => next.delete(id));
-    else claimableIds.forEach((id) => next.add(id));
+    if (allSelected) selectableIds.forEach((id) => next.delete(id));
+    else selectableIds.forEach((id) => next.add(id));
     return next;
   });
 
+  // How many of the selection each action can actually touch. Rows selected on
+  // an earlier page aren't held in memory (ids only), so they're counted as
+  // eligible and the server reports back on them — the alternative is greying
+  // out a button over rows it would have happily acted on.
+  const selectedOnPage = partners.filter((p) => selected.has(p.id));
+  const offPage = selected.size - selectedOnPage.length;
+  const countFor = (pred) => selectedOnPage.filter(pred).length + offPage;
+  const claimCount = countFor(claimable);
+  const releaseCount = countFor((p) => p.ownerUserId && p.ownerUserId === user?.id);
+
+  /**
+   * Every bulk action lands here. A batch is routinely PARTIAL — someone else
+   * took one a second ago, one isn't yours to move — so the toast names what
+   * happened and only the ids that ACTUALLY landed are deselected, leaving a
+   * retry holding exactly the ones that didn't.
+   */
+  const bulkOutcome = ({ done, failed, verb, describe }) => {
+    const n = done.length;
+    const headline = failed.length === 0
+      ? `${n} business${n === 1 ? '' : 'es'} ${verb}`
+      : `${n} of ${n + failed.length} ${verb}`;
+    if (failed.length === 0) toast.success(headline);
+    else toast.warning(headline, { description: describe(failed) });
+    setSelected((prev) => {
+      const next = new Set(prev);
+      done.forEach((id) => next.delete(id));
+      return next;
+    });
+    queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partners'] });
+  };
+
   const bulkClaimMutation = useMutation({
     mutationFn: (ids) => redeemOpsApi.claimPartnersBulk(ids),
-    onSuccess: ({ data, message }) => {
-      const lost = data?.failed || [];
-      // Partial success is the NORMAL outcome — someone else may have taken one
-      // a second ago — so name what happened instead of a flat "done".
-      if (lost.length === 0) toast.success(message);
-      else {
+    // NOTE: the api method hands back the INNER data object, so the result is
+    // { claimed, failed } — reading a nested `.data`/`.message` here silently
+    // left the toast blank and never cleared the selection.
+    onSuccess: ({ claimed = [], failed = [] }) => bulkOutcome({
+      done: claimed, failed, verb: 'claimed',
+      describe: (lost) => {
         const taken = lost.filter((f) => f.reason === 'already_claimed');
-        toast.warning(message, {
-          description: taken.length
-            ? `${taken.length} already claimed${taken[0].claimedBy ? ` (e.g. by ${taken[0].claimedBy.fullName})` : ''}.`
-            : `${lost.length} could not be claimed.`,
-        });
-      }
-      // Clear only what actually landed, so a retry keeps the ones that didn't.
-      setSelected((prev) => {
-        const next = new Set(prev);
-        (data?.claimed || []).forEach((id) => next.delete(id));
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partners'] });
-    },
+        return taken.length
+          ? `${taken.length} already claimed${taken[0].claimedBy ? ` (e.g. by ${taken[0].claimedBy.fullName})` : ''}.`
+          : `${lost.length} could not be claimed.`;
+      },
+    }),
     onError: (err) => toast.error('Could not claim', { description: err.message }),
   });
+
+  const bulkReleaseMutation = useMutation({
+    mutationFn: ({ ids, reason }) => redeemOpsApi.releasePartnersBulk(ids, reason),
+    onSuccess: ({ released = [], failed = [] }) => {
+      bulkOutcome({
+        done: released, failed, verb: 'released',
+        describe: (lost) => {
+          const notYours = lost.filter((f) => f.reason === 'owned_by_other' || f.reason === 'not_owned');
+          return notYours.length
+            ? `${notYours.length} not yours to release — reassign those instead.`
+            : `${lost.length} could not be released.`;
+        },
+      });
+      setReleaseOpen(false);
+      setBulkReason('');
+    },
+    onError: (err) => toast.error('Could not release', { description: err.message }),
+  });
+
+  const bulkAssignMutation = useMutation({
+    mutationFn: ({ ids, toUserId, reason }) => redeemOpsApi.assignPartnersBulk(ids, toUserId, reason),
+    onSuccess: ({ assigned = [], failed = [] }) => {
+      bulkOutcome({
+        done: assigned, failed, verb: 'assigned',
+        describe: (lost) => `${lost.length} could not be assigned.`,
+      });
+      setAssignOpen(false);
+      setBulkReason('');
+    },
+    onError: (err) => toast.error('Could not assign', { description: err.message }),
+  });
+
+  const bulkStageMutation = useMutation({
+    mutationFn: ({ ids, toStage, reason, lostReason }) => (
+      redeemOpsApi.changeStageBulk(ids, toStage, { reason, lostReason })
+    ),
+    onSuccess: ({ moved = [], failed = [] }) => {
+      bulkOutcome({
+        done: moved, failed, verb: 'moved',
+        // The stage machine refuses rows for four different reasons, each with
+        // wording the operator can act on — so quote it rather than count it.
+        describe: (lost) => {
+          const first = lost.find((f) => f.message)?.message;
+          return first ? `${lost.length} stayed put — ${first}` : `${lost.length} could not be moved.`;
+        },
+      });
+      setStageOpen(false);
+      setStagePick(null);
+      setBulkLostReason(null);
+      setBulkReason('');
+    },
+    onError: (err) => toast.error('Could not move', { description: err.message }),
+  });
+
+  const bulkBusy = bulkClaimMutation.isPending || bulkReleaseMutation.isPending
+    || bulkAssignMutation.isPending || bulkStageMutation.isPending;
+
+  const teamQuery = useQuery({
+    queryKey: ['redeem-ops', 'team'],
+    queryFn: redeemOpsApi.getTeam,
+    enabled: canReassign,
+  });
+  const assignees = (teamQuery.data || []).filter((m) => m.isActive);
   const needsOverride = (duplicates?.exact?.length || 0) > 0;
 
   const partnerName = (p) => p.tradingName || p.brandName || p.legalName;
@@ -354,18 +456,45 @@ export default function PartnersList() {
             </p>
           )}
         </div>
-        {canClaim && selectedIds.length > 0 && (
+        {canBulk && selectedIds.length > 0 && (
           <div role="status"
-            className="hidden md:flex items-center gap-3 px-5 py-2.5 border-t border-border"
+            className="hidden md:flex items-center gap-3 flex-wrap px-5 py-2.5 border-t border-border"
             style={{ background: 'var(--ro-subtle)' }}>
             <span className="text-[13px] font-semibold">
               <span className="tabular-nums">{selectedIds.length}</span> selected
             </span>
-            <Button size="sm" className="font-semibold"
-              disabled={bulkClaimMutation.isPending}
-              onClick={() => bulkClaimMutation.mutate(selectedIds)}>
-              {bulkClaimMutation.isPending ? 'Claiming…' : 'Claim'}
-            </Button>
+            {canClaim && (
+              // The count is the honest one: claiming skips rows that already
+              // have an owner, so the button says how many it can take.
+              <Button size="sm" className="font-semibold"
+                disabled={bulkBusy || claimCount === 0}
+                onClick={() => bulkClaimMutation.mutate(selectedIds)}>
+                {bulkClaimMutation.isPending ? 'Claiming…' : `Claim ${claimCount}`}
+              </Button>
+            )}
+            {canReassign && (
+              <Button size="sm" variant="outline" className="font-semibold"
+                disabled={bulkBusy}
+                onClick={() => { setBulkReason(''); setAssignOpen(true); }}>
+                Assign to…
+              </Button>
+            )}
+            {canMoveStage && (
+              <Button size="sm" variant="outline" className="font-semibold"
+                disabled={bulkBusy}
+                onClick={() => {
+                  setStagePick(null); setBulkLostReason(null); setBulkReason(''); setStageOpen(true);
+                }}>
+                Move stage
+              </Button>
+            )}
+            {canRelease && (
+              <Button size="sm" variant="outline" className="font-semibold"
+                disabled={bulkBusy || releaseCount === 0}
+                onClick={() => { setBulkReason(''); setReleaseOpen(true); }}>
+                {`Release ${releaseCount}`}
+              </Button>
+            )}
             <button type="button" className="ro-link text-[12.5px] font-semibold"
               onClick={() => setSelected(new Set())}>Clear</button>
           </div>
@@ -374,10 +503,10 @@ export default function PartnersList() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left" style={{ color: 'var(--ro-text-2)' }}>
-                {canClaim && (
+                {canBulk && (
                   <th className="w-10 pl-5 pr-0 py-3">
-                    <input type="checkbox" aria-label="Select all claimable on this page"
-                      checked={allSelected} disabled={claimableIds.length === 0}
+                    <input type="checkbox" aria-label="Select all on this page"
+                      checked={allSelected} disabled={selectableIds.length === 0}
                       onChange={toggleAllOnPage}
                       className="w-4 h-4 align-middle cursor-pointer disabled:opacity-40" />
                   </th>
@@ -395,27 +524,26 @@ export default function PartnersList() {
                   key={p.id}
                   aria-selected={selectionMode ? selected.has(p.id) : undefined}
                   className={`border-t border-border transition-colors ${
-                    selectionMode && !claimable(p)
+                    selectionMode && !selectable(p)
                       ? 'cursor-default opacity-60'
                       : 'cursor-pointer hover:bg-[var(--ro-subtle)]'
                   }`}
                   style={selected.has(p.id) ? { background: 'var(--ro-subtle)' } : undefined}
                   onClick={() => {
-                    // In selection mode an unclaimable row is inert: it cannot be
-                    // ticked, and opening it would throw away the selection.
+                    // In selection mode a non-selectable row is inert: it cannot
+                    // be ticked, and opening it would throw away the selection.
                     if (!selectionMode) { navigate(`/redeem-ops/partners/${p.id}`); return; }
-                    if (claimable(p)) toggleOne(p.id);
+                    if (selectable(p)) toggleOne(p.id);
                   }}
                 >
-                  {canClaim && (
+                  {canBulk && (
                     // stopPropagation: the row itself navigates to the detail
                     // page, and selecting must never take you off the list.
                     <td className="w-10 pl-5 pr-0 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox"
                         aria-label={`Select ${partnerName(p)}`}
                         checked={selected.has(p.id)}
-                        disabled={!claimable(p)}
-                        title={claimable(p) ? undefined : 'Already owned — release it first'}
+                        disabled={!selectable(p)}
                         onChange={() => toggleOne(p.id)}
                         className="w-4 h-4 align-middle cursor-pointer disabled:opacity-30" />
                     </td>
@@ -470,6 +598,148 @@ export default function PartnersList() {
           </div>
         )}
       </div>
+
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Assign {selectedIds.length} business{selectedIds.length === 1 ? '' : 'es'}
+            </DialogTitle>
+            <DialogDescription>
+              Hands ownership over, whoever holds them now. Each row gets its own
+              timeline entry naming who it came from.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Reason (optional)</Label>
+            <Input value={bulkReason} onChange={(e) => setBulkReason(e.target.value)}
+              placeholder="e.g. territory swap" />
+          </div>
+          <div className="flex flex-col gap-1.5 max-h-[45dvh] overflow-y-auto">
+            {assignees.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                disabled={bulkBusy}
+                className="h-[44px] px-4 rounded-xl text-[13.5px] font-semibold border text-left cursor-pointer flex items-center gap-2.5 disabled:opacity-50"
+                style={{ background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+                onClick={() => bulkAssignMutation.mutate({
+                  ids: selectedIds, toUserId: m.id, reason: bulkReason.trim() || null,
+                })}
+              >
+                <RoAvatar name={m.fullName || m.email} size={26} />
+                <span className="truncate">{m.fullName || m.email}</span>
+              </button>
+            ))}
+            {assignees.length === 0 && (
+              <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>
+                No active team members to assign to.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={stageOpen} onOpenChange={setStageOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Move {selectedIds.length} business{selectedIds.length === 1 ? '' : 'es'}
+            </DialogTitle>
+            <DialogDescription>
+              Each row is checked against the stage it sits in now. Anything that
+              can’t make the jump — or isn’t yours to move — stays put and is named.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            {stages.map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => { setStagePick(st); if (st !== 'LOST') setBulkLostReason(null); }}
+                className="h-[42px] px-4 rounded-xl text-[13px] font-semibold border text-left cursor-pointer"
+                style={st === stagePick
+                  ? { background: 'var(--ro-bunker)', borderColor: 'var(--ro-bunker)', color: '#fff' }
+                  : st === 'LOST'
+                    ? { background: '#fff', borderColor: 'var(--ro-tag-red-fg)', color: 'var(--ro-tag-red-fg)' }
+                    : { background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+              >
+                {prettyEnum(st)}
+              </button>
+            ))}
+          </div>
+          {stagePick === 'LOST' && (
+            <div className="space-y-1.5">
+              <Label>Why lost? (required)</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {(constants.data?.lostReasons || []).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setBulkLostReason(r)}
+                    className="h-[34px] px-3 rounded-full text-[12.5px] font-semibold border cursor-pointer"
+                    style={r === bulkLostReason
+                      ? { background: 'var(--ro-bunker)', borderColor: 'var(--ro-bunker)', color: '#fff' }
+                      : { background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+                  >
+                    {prettyEnum(r)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label>Reason (required for a backward move)</Label>
+            <Input value={bulkReason} onChange={(e) => setBulkReason(e.target.value)}
+              placeholder="e.g. mis-dropped after the roadshow" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStageOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!stagePick || bulkBusy || (stagePick === 'LOST' && !bulkLostReason)}
+              onClick={() => bulkStageMutation.mutate({
+                ids: selectedIds,
+                toStage: stagePick,
+                reason: bulkReason.trim() || null,
+                lostReason: stagePick === 'LOST' ? bulkLostReason : null,
+              })}
+            >
+              {bulkStageMutation.isPending ? 'Moving…' : `Move ${selectedIds.length}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={releaseOpen} onOpenChange={setReleaseOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Release {releaseCount} business{releaseCount === 1 ? '' : 'es'}
+            </DialogTitle>
+            <DialogDescription>
+              Hands them back to the unowned pool for anyone to claim. Only rows you
+              own can be released — a teammate’s stay with them.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Reason (optional)</Label>
+            <Input value={bulkReason} onChange={(e) => setBulkReason(e.target.value)}
+              placeholder="e.g. handing the estate over" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReleaseOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={bulkBusy}
+              onClick={() => bulkReleaseMutation.mutate({
+                ids: selectedIds, reason: bulkReason.trim() || null,
+              })}
+            >
+              {bulkReleaseMutation.isPending ? 'Releasing…' : 'Release'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={importOpen} onOpenChange={(open) => { if (!open && !importState?.running) { setImportOpen(false); setImportState(null); } }}>
         <DialogContent className="max-w-md">

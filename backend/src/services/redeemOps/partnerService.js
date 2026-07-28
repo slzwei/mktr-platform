@@ -12,6 +12,7 @@ import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeDedupeService } from './dedupeService.js';
 import { hasCapability, canActOnPartnerRow } from './permissions.js';
 import { deriveMatchingKeys, postalDistrictOf } from './normalizers.js';
+import { normaliseBulkIds } from './bulkIds.js';
 import {
   PIPELINE_STAGES, STAGE_TRANSITIONS, PARTNER_AVAILABILITY,
   ACTIVITY_TYPES, MEANINGFUL_ACTIVITY_TYPES, LOST_REASONS,
@@ -328,6 +329,45 @@ export function makePartnerService(overrides = {}) {
   async function changeStage(id, toStage, user, reason = null, requestId = null, lostReason = null) {
     return d.sequelize.transaction(async (t) =>
       changeStageTx(id, toStage, user, t, { reason, requestId, lostReason }));
+  }
+
+  /**
+   * Move many rows to one stage — the list's multi-select after a roadshow,
+   * where twenty businesses were all contacted in one afternoon.
+   *
+   * Per-row transactions, like every other bulk action, but the refusals matter
+   * more here than anywhere else: the stage machine legitimately rejects rows
+   * for FOUR different reasons (not the caller's row, illegal jump from where it
+   * happens to sit, a backward move with no reason given, PARTNERED entry
+   * requirements unmet), and each carries a message the operator can act on. So
+   * every failure keeps the machine's own words rather than being flattened to
+   * a code — a batch that moves 12 of 20 has to say why the other 8 stayed.
+   */
+  async function changeStageBulk(partnerIds, toStage, user, opts = {}) {
+    const { reason = null, lostReason = null, requestId = null } = opts;
+    const ids = normaliseBulkIds(partnerIds, 'move');
+    const moved = [];
+    const failed = [];
+    for (const id of ids) {
+      try {
+        await changeStage(id, toStage, user, reason, requestId, lostReason);
+        moved.push(id);
+      } catch (err) {
+        const code = err?.statusCode;
+        const reasonCode = code === 403 ? 'not_owner'
+          : code === 404 ? 'not_found'
+            : code === 422 ? 'entry_requirements'
+              : code === 400 ? 'rejected' : 'error';
+        if (reasonCode === 'error') {
+          d.logger.warn('redeem_ops.partner.bulk_stage_row_failed', { partnerId: id, error: err?.message });
+        }
+        failed.push({ id, reason: reasonCode, message: reasonCode === 'error' ? null : err?.message || null });
+      }
+    }
+    d.logger.info('redeem_ops.partner.bulk_stage_changed', {
+      requestId, actorUserId: user.id, toStage, requested: ids.length, moved: moved.length,
+    });
+    return { moved, failed };
   }
 
   // ── Timeline & activities ────────────────────────────────────────────────
@@ -929,7 +969,7 @@ export function makePartnerService(overrides = {}) {
   }
 
   return {
-    listPartners, getPartner, createPartner, updatePartner, changeStage, undoStageChange,
+    listPartners, getPartner, createPartner, updatePartner, changeStage, changeStageBulk, undoStageChange,
     snoozePartner, unsnoozePartner,
     importPartners, getTimeline, logActivity, editActivity, voidActivity,
     addContact, updateContact, archiveContact, addLocation, updateLocation,

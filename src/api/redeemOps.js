@@ -158,10 +158,30 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/partners/${id}/claim`, {});
     return res.data;
   },
-  /** Multi-select claim → { claimed: [id], failed: [{ id, reason, claimedBy }] }. */
+  /**
+   * The multi-select family. Every one of these returns the INNER data object
+   * (apiClient resolves `{ success, message, data }` and we hand back `data`),
+   * so a caller reads `{ claimed }` / `{ released }` directly — there is no
+   * `.data` or `.message` inside what comes back. A batch is routinely partial:
+   * read both lists, never assume everything applied.
+   */
   async claimPartnersBulk(partnerIds) {
     const res = await apiClient.post('/redeem-ops/partners/bulk-claim', { partnerIds });
-    return res.data;
+    return res.data; // { claimed: [id], failed: [{ id, reason, claimedBy }] }
+  },
+  async releasePartnersBulk(partnerIds, reason) {
+    const res = await apiClient.post('/redeem-ops/partners/bulk-release', { partnerIds, reason });
+    return res.data; // { released: [id], failed: [{ id, reason, claimedBy }] }
+  },
+  async assignPartnersBulk(partnerIds, toUserId, reason) {
+    const res = await apiClient.post('/redeem-ops/partners/bulk-assign', { partnerIds, toUserId, reason });
+    return res.data; // { assigned: [id], failed: [{ id, reason }] }
+  },
+  async changeStageBulk(partnerIds, toStage, { reason, lostReason } = {}) {
+    const res = await apiClient.post('/redeem-ops/partners/bulk-stage', {
+      partnerIds, toStage, reason, lostReason,
+    });
+    return res.data; // { moved: [id], failed: [{ id, reason, message }] }
   },
   async releasePartner(id, reason) {
     const res = await apiClient.post(`/redeem-ops/partners/${id}/release`, { reason });

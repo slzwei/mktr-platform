@@ -11,6 +11,7 @@ import request from 'supertest';
 import { getApp, closeDb, createTestUser, seedRedeemOpsCategory } from './helpers.js';
 import {
   PartnerOrganisation, PartnerContact, OutreachActivity,
+  PartnerAssignmentEvent, PartnerStageEvent,
   RewardOffer, Activation, RewardEntitlement, Redemption, RewardInventoryEvent,
   RedeemOpsAuditEvent,
 } from '../src/models/index.js';
@@ -214,6 +215,187 @@ describe('claiming (concurrency-safe)', () => {
     expect(ok.status).toBe(200);
     const row = await PartnerOrganisation.findByPk(partnerId);
     expect(row.ownerUserId).toBe(execB.user.id);
+  });
+});
+
+/**
+ * The rest of the multi-select family. Same contract as the bulk claim: a
+ * PARTIAL batch is a success reported per row, the row-level gates are the same
+ * ones the single-row routes enforce, and every applied row still writes its own
+ * assignment/stage event.
+ */
+describe('bulk release / assign / stage', () => {
+  const bulkUrl = (action) => `/api/redeem-ops/partners/bulk-${action}`;
+  const byId = (rows) => Object.fromEntries(rows.map((r) => [r.id, r]));
+
+  /** A fresh unowned row (random name so the dedupe gate never fires). */
+  async function freshPartner(label) {
+    const res = await createPartner(admin.token, {
+      tradingName: `${label} ${randomBytes(4).toString('hex')}`,
+    });
+    expect(res.status).toBe(201);
+    return res.body.data.partner.id;
+  }
+  const claimAs = (id, who) => request(app)
+    .post(`/api/redeem-ops/partners/${id}/claim`).set(auth(who.token));
+
+  test('BULK release: only the caller’s own rows go back to the pool', async () => {
+    const mine = await freshPartner('Bulk Release Mine');
+    const theirs = await freshPartner('Bulk Release Theirs');
+    const unowned = await freshPartner('Bulk Release Unowned');
+    await claimAs(mine, execA);
+    await claimAs(theirs, execB);
+
+    const res = await request(app).post(bulkUrl('release')).set(auth(execA.token))
+      .send({ partnerIds: [mine, theirs, unowned], reason: 'handover' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.released).toEqual([mine]);
+    expect(res.body.message).toMatch(/1 of 3/);
+    const failed = byId(res.body.data.failed);
+    // A teammate's row names the teammate; an unowned one just isn't owned.
+    expect(failed[theirs]).toMatchObject({ reason: 'owned_by_other' });
+    expect(failed[theirs].claimedBy.fullName).toBe(execB.user.fullName);
+    expect(failed[unowned]).toMatchObject({ reason: 'not_owned' });
+
+    const mineRow = await PartnerOrganisation.findByPk(mine);
+    expect(mineRow.ownerUserId).toBeNull();
+    expect(mineRow.availability).toBe('available');
+    expect((await PartnerAssignmentEvent.findOne({
+      where: { partnerOrganisationId: mine, kind: 'release' },
+    })).reason).toBe('handover');
+    // The one that wasn't the caller's is untouched.
+    expect((await PartnerOrganisation.findByPk(theirs)).ownerUserId).toBe(execB.user.id);
+  });
+
+  test('BULK assign: a mixed batch lands on one person, each row recording from → to', async () => {
+    const owned = await freshPartner('Bulk Assign Owned');
+    const free = await freshPartner('Bulk Assign Free');
+    await claimAs(owned, execA);
+
+    const res = await request(app).post(bulkUrl('assign')).set(auth(bdm.token))
+      .send({ partnerIds: [owned, free], toUserId: execB.user.id, reason: 'territory swap' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.assigned.sort()).toEqual([owned, free].sort());
+    expect(res.body.data.failed).toHaveLength(0);
+    for (const id of [owned, free]) {
+      expect((await PartnerOrganisation.findByPk(id)).ownerUserId).toBe(execB.user.id);
+    }
+    const reassign = await PartnerAssignmentEvent.findOne({
+      where: { partnerOrganisationId: owned, kind: 'reassign' },
+    });
+    expect(reassign.fromUserId).toBe(execA.user.id);
+    expect(reassign.toUserId).toBe(execB.user.id);
+    // The unowned one is an assign, not a reassign — there was no 'from'.
+    expect((await PartnerAssignmentEvent.findOne({
+      where: { partnerOrganisationId: free, kind: 'assign' },
+    })).fromUserId).toBeNull();
+  });
+
+  test('BULK assign to someone who is not ops staff fails the request, writing nothing', async () => {
+    const id = await freshPartner('Bulk Assign Outsider');
+    const outsider = await createTestUser({ role: 'agent' });
+    const res = await request(app).post(bulkUrl('assign')).set(auth(bdm.token))
+      .send({ partnerIds: [id], toUserId: outsider.user.id });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/active Redeem Ops staff/i);
+    expect((await PartnerOrganisation.findByPk(id)).ownerUserId).toBeNull();
+  });
+
+  test('BULK stage: legal moves land, refusals keep the machine’s own words', async () => {
+    const moves = await freshPartner('Bulk Stage Moves');
+    const already = await freshPartner('Bulk Stage Already');
+    const notMine = await freshPartner('Bulk Stage Not Mine');
+    await claimAs(moves, execA);
+    await claimAs(already, execA);
+    await claimAs(notMine, execB);
+    await request(app).patch(`/api/redeem-ops/partners/${already}/stage`)
+      .set(auth(execA.token)).send({ toStage: 'CONTACTED' });
+
+    const res = await request(app).post(bulkUrl('stage')).set(auth(execA.token))
+      .send({ partnerIds: [moves, already, notMine], toStage: 'CONTACTED' });
+
+    expect(res.status).toBe(200);
+    // The already-there row is a no-op, not a failure.
+    expect(res.body.data.moved.sort()).toEqual([moves, already].sort());
+    const failed = byId(res.body.data.failed);
+    expect(failed[notMine].reason).toBe('not_owner');
+    expect(failed[notMine].message).toMatch(/only move businesses you own/i);
+
+    expect((await PartnerOrganisation.findByPk(moves)).pipelineStage).toBe('CONTACTED');
+    expect((await PartnerStageEvent.findOne({
+      where: { partnerOrganisationId: moves, toStage: 'CONTACTED' },
+    })).actorUserId).toBe(execA.user.id);
+    expect((await PartnerOrganisation.findByPk(notMine)).pipelineStage).toBe('NEW');
+  });
+
+  test('BULK stage: an illegal jump is a reported skip, never a 500', async () => {
+    const id = await freshPartner('Bulk Stage Leap');
+    await claimAs(id, execA);
+    const res = await request(app).post(bulkUrl('stage')).set(auth(execA.token))
+      .send({ partnerIds: [id], toStage: 'PARTNERED' }); // NEW → PARTNERED
+    expect(res.status).toBe(200);
+    expect(res.body.data.moved).toHaveLength(0);
+    expect(res.body.data.failed[0].reason).toBe('rejected');
+    expect((await PartnerOrganisation.findByPk(id)).pipelineStage).toBe('NEW');
+  });
+
+  test('BULK stage → LOST needs a reason, and records it', async () => {
+    const id = await freshPartner('Bulk Stage Lost');
+    await claimAs(id, execA);
+
+    const bad = await request(app).post(bulkUrl('stage')).set(auth(execA.token))
+      .send({ partnerIds: [id], toStage: 'LOST' });
+    expect(bad.status).toBe(400); // refused BEFORE any row is written
+    expect((await PartnerOrganisation.findByPk(id)).pipelineStage).toBe('NEW');
+
+    const ok = await request(app).post(bulkUrl('stage')).set(auth(execA.token))
+      .send({ partnerIds: [id], toStage: 'LOST', lostReason: 'not_interested' });
+    expect(ok.status).toBe(200);
+    const row = await PartnerOrganisation.findByPk(id);
+    expect(row.pipelineStage).toBe('LOST');
+    expect(row.lostReason).toBe('not_interested');
+    expect(row.availability).toBe('disqualified'); // leaves the working pool
+  });
+
+  test('each bulk route carries its single-row sibling’s capability', async () => {
+    const id = await freshPartner('Bulk Caps');
+    await claimAs(id, execA);
+    // An outreach exec claims and releases but never reassigns.
+    expect((await request(app).post(bulkUrl('release')).set(auth(execA.token))
+      .send({ partnerIds: [id] })).status).toBe(200);
+    expect((await request(app).post(bulkUrl('assign')).set(auth(execA.token))
+      .send({ partnerIds: [id], toUserId: execB.user.id })).status).toBe(403);
+    // An analyst can see partners and do none of it.
+    const analyst = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'analyst' });
+    for (const [action, body] of [
+      ['release', { partnerIds: [id] }],
+      ['assign', { partnerIds: [id], toUserId: execB.user.id }],
+      ['stage', { partnerIds: [id], toStage: 'CONTACTED' }],
+    ]) {
+      expect((await request(app).post(bulkUrl(action)).set(auth(analyst.token))
+        .send(body)).status).toBe(403);
+    }
+  });
+
+  test('every bulk route refuses an empty or oversized batch', async () => {
+    const id = await freshPartner('Bulk Shape');
+    for (const [action, extra] of [
+      ['release', {}],
+      ['assign', { toUserId: bdm.user.id }],
+      ['stage', { toStage: 'CONTACTED' }],
+    ]) {
+      const empty = await request(app).post(bulkUrl(action)).set(auth(admin.token))
+        .send({ partnerIds: [], ...extra });
+      expect(empty.status).toBe(400);
+      const huge = await request(app).post(bulkUrl(action)).set(auth(admin.token))
+        .send({ partnerIds: Array.from({ length: 101 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`), ...extra });
+      expect(huge.status).toBe(400);
+    }
+    // …and the ids must be uuids.
+    expect((await request(app).post(bulkUrl('release')).set(auth(admin.token))
+      .send({ partnerIds: [id, 'not-a-uuid'] })).status).toBe(400);
   });
 });
 
