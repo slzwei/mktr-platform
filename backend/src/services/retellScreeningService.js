@@ -726,6 +726,9 @@ export function makeRetellScreeningService(overrides = {}) {
           summary: analysis.call_summary || null,
           sentiment: analysis.user_sentiment || null,
           recordingUrl: call.recording_url || null,
+          // Retell's split recording: ch0 = callee, ch1 = agent. The admin player
+          // lifts the callee leg with it — in the mono mix they sit ~6 dB down.
+          recordingMultiChannelUrl: call.recording_multi_channel_url || null,
           // Verbatim turn-by-turn script Retell returns ("Agent: …\nUser: …").
           // Capped so a pathologically long call can't bloat the jsonb row; the
           // recording remains the unabridged source of truth. Admin-only surface.
@@ -758,6 +761,9 @@ export function makeRetellScreeningService(overrides = {}) {
         endedAt: call.end_timestamp ? new Date(call.end_timestamp).toISOString() : new Date().toISOString(),
         disconnectionReason: disconnection,
         ...(call.recording_url ? { recordingUrl: call.recording_url } : {}),
+        ...(call.recording_multi_channel_url
+          ? { recordingMultiChannelUrl: call.recording_multi_channel_url }
+          : {}),
         ...(Number.isFinite(cost.combined_cost) ? { costCents: cost.combined_cost } : {}),
         ...(durationSeconds != null ? { durationSeconds } : {}),
         ...(call.agent_id ? { agentId: call.agent_id } : {}),

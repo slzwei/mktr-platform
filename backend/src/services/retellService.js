@@ -49,6 +49,7 @@ const defaultDeps = {
   dncCheckAndRecord,
   gateHeldDncLead,
   buildProspectWhere,
+  setSourceMetadataPath,
   // Lazy (dynamic import) so existing unit suites that mock this module's
   // graph don't have to know the screening services. DI-overridable.
   handleScreeningWebhook: async (payload, event) =>
@@ -185,7 +186,8 @@ export function makeRetellService(overrides = {}) {
       disconnection_reason,
       agent_id,
       agent_name,
-      recording_url
+      recording_url,
+      recording_multi_channel_url
     } = payload;
 
     // ── Log incoming payload shape for debugging ──
@@ -357,7 +359,8 @@ export function makeRetellService(overrides = {}) {
           disconnectionReason: disconnection_reason,
           sentiment: call_analysis?.user_sentiment,
           callSuccessful: call_analysis?.call_successful,
-          recordingUrl: recording_url || null
+          recordingUrl: recording_url || null,
+          recordingMultiChannelUrl: recording_multi_channel_url || null
         },
         retellCallId: call_id
       }, { transaction: t });
@@ -490,7 +493,7 @@ export function makeRetellService(overrides = {}) {
    *
    * @param {string} prospectId
    * @param {object} user — the authenticated caller
-   * @returns {{ recordingUrl: string|null }}
+   * @returns {{ recordingUrl: string|null, recordingMultiChannelUrl: string|null }}
    */
   async function getRecordingUrl(prospectId, user) {
     if (!user) {
@@ -507,9 +510,15 @@ export function makeRetellService(overrides = {}) {
       throw new d.AppError('Not a Retell prospect', 404);
     }
 
-    // Return stored URL if available
-    if (meta.recordingUrl) {
-      return { recordingUrl: meta.recordingUrl };
+    // Return stored URLs once BOTH legs have been resolved. Prospects captured
+    // before the split-recording capture have a mono URL and no multi-channel
+    // key at all, so they earn exactly one refetch to backfill it — the key is
+    // written even when Retell has no split file, which stops that looping.
+    if (meta.recordingUrl && Object.prototype.hasOwnProperty.call(meta, 'recordingMultiChannelUrl')) {
+      return {
+        recordingUrl: meta.recordingUrl,
+        recordingMultiChannelUrl: meta.recordingMultiChannelUrl || null
+      };
     }
 
     // Fetch from Retell API (via circuit breaker)
@@ -532,16 +541,20 @@ export function makeRetellService(overrides = {}) {
     }
 
     const recordingUrl = call.recording_url || null;
+    const recordingMultiChannelUrl = call.recording_multi_channel_url || null;
 
-    // Cache it in sourceMetadata for next time — atomic single-key write
+    // Cache both in sourceMetadata for next time — atomic single-key writes
     // (prospectJsonPatch): the old whole-object update could delete marker/
     // fact keys other writers landed after `meta` was read
-    // (plan google-ads-signal-levers §4.3).
+    // (plan google-ads-signal-levers §4.3). recordingMultiChannelUrl is written
+    // even when null — the key's PRESENCE is what settles the backfill branch
+    // above after one hit, and setPath JSON-encodes null into a real key.
     if (recordingUrl) {
-      await setSourceMetadataPath(prospect.id, ['recordingUrl'], recordingUrl);
+      await d.setSourceMetadataPath(prospect.id, ['recordingUrl'], recordingUrl);
+      await d.setSourceMetadataPath(prospect.id, ['recordingMultiChannelUrl'], recordingMultiChannelUrl);
     }
 
-    return { recordingUrl };
+    return { recordingUrl, recordingMultiChannelUrl };
   }
 
   return { processRetellCall, getRecordingUrl };

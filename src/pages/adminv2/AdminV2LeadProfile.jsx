@@ -25,6 +25,7 @@ import { STATUS_LABELS, SOURCE_LABELS, heldLabel } from '@/lib/adminV2/constants
 import { fmtDateTime, fmtDate, fmtDay, fmtSGDExact } from '@/lib/adminV2/format';
 import { Card, Chip, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 import { rowChipFor } from '@/lib/adminV2/outcome';
+import CallRecordingPlayer from '@/components/prospects/CallRecordingPlayer';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
@@ -822,7 +823,11 @@ export default function AdminV2LeadProfile() {
                           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-3)', marginRight: 8 }}>{fmtDateTime(a.startedAt).toUpperCase()}</span>
                           Attempt {i + 1} — {(a.outcome || 'attempted').replace(/_/g, ' ')}
                           {a.recordingUrl && (
-                            <audio controls preload="none" src={a.recordingUrl} style={{ width: '100%', height: 32, marginTop: 4 }} />
+                            <CallRecordingPlayer
+                              src={a.recordingUrl}
+                              multiChannelSrc={a.recordingMultiChannelUrl}
+                              style={{ marginTop: 4 }}
+                            />
                           )}
                         </div>
                       ))}
@@ -859,7 +864,11 @@ export default function AdminV2LeadProfile() {
                     </div>
                   )}
                   {p.sourceMetadata?.recordingUrl && (
-                    <audio controls preload="none" src={p.sourceMetadata.recordingUrl} style={{ width: '100%', height: 34, marginTop: 8 }} />
+                    <CallRecordingPlayer
+                      src={p.sourceMetadata.recordingUrl}
+                      multiChannelSrc={p.sourceMetadata.recordingMultiChannelUrl}
+                      style={{ marginTop: 8 }}
+                    />
                   )}
                 </div>
               </Card>
