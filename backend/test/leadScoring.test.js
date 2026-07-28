@@ -399,3 +399,36 @@ describe('the score reaches the page that is about the lead', () => {
     expect(signup.scoredAt).toBeNull()
   })
 })
+
+describe('the person score says WHICH lead it was copied from', () => {
+  test('the projection records the winning lead, and follows it when it changes', async () => {
+    const { consumer, a, b } = await personWithTwoLeads()
+    // Give b the higher score: a read it owns is a response a cannot borrow.
+    await sendAndStatus(b, consumer, 'read')
+    await scoreOf(a.id)
+    await scoreOf(b.id)
+
+    const winner = await sequelize.query(
+      `SELECT cp."scoreSourceProspectId" AS src, cp."consumerScore" AS score
+         FROM consumer_profiles cp WHERE cp."consumerId" = :cid`,
+      { replacements: { cid: consumer.id }, type: sequelize.QueryTypes.SELECT }
+    )
+    const bRow = await rowOf(b.id)
+    expect(bRow.score).toBeGreaterThan((await rowOf(a.id)).score)
+    // The receipt points at the lead whose numbers were actually copied — not
+    // merely "some lead of this person".
+    expect(String(winner[0].src)).toBe(String(b.id))
+    expect(winner[0].score).toBe(bRow.score)
+  })
+
+  test('a person with no scoreable lead records no source', async () => {
+    const { consumer } = await personWithTwoLeads()
+    const [[row]] = await sequelize.query(
+      'SELECT "scoreSourceProspectId" AS src FROM consumer_profiles WHERE "consumerId" = :cid',
+      { replacements: { cid: consumer.id } }
+    )
+    // Either no profile row yet, or one that names nobody — never a lead that
+    // did not win.
+    expect(row?.src ?? null).toBeNull()
+  })
+})

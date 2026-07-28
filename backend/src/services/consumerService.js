@@ -667,7 +667,13 @@ export function makeConsumerService(overrides = {}) {
                   c."firstSeenAt", c."lastSeenAt", c."erasedAt",
                   lp.id AS "latestProspectId",
                   cp."meetScore", cp."buyScore", cp."consumerScore",
-                  cp."scoredConfigVersion"
+                  cp."scoredConfigVersion",
+                  -- These Meet/Buy columns are SORTABLE and name no campaign,
+                  -- while the numbers are the person's BEST lead's (§4). Once a
+                  -- campaign has weights of its own that is a ranking nobody
+                  -- can act on — "70" could be 70 for recruitment and 5 for
+                  -- what the reader actually sells. So the row says which.
+                  sc.name AS "scoreSourceCampaignName"
              FROM consumers c
              JOIN LATERAL (
                SELECT p.id FROM prospects p
@@ -676,6 +682,8 @@ export function makeConsumerService(overrides = {}) {
                 LIMIT 1
              ) lp ON true
              LEFT JOIN consumer_profiles cp ON cp."consumerId" = c.id
+             LEFT JOIN prospects sp ON sp.id = cp."scoreSourceProspectId"
+             LEFT JOIN campaigns sc ON sc.id = sp."campaignId"
             WHERE true ${qClause}
             ORDER BY ${orderBy}, c.id DESC
             LIMIT :limit OFFSET :offset`,

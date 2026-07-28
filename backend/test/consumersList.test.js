@@ -150,10 +150,19 @@ describe('GET /api/consumers — membership is row existence', () => {
     // + the four MEET × BUY projections (§8). Pinned deliberately: this row
     // shape is the People page's contract, so widening it is a decision, not
     // a side effect.
+    //
+    // WIDENED 2026-07-28 by one key, and this is that decision: Meet and Buy
+    // here are the person's BEST lead's scores (per-campaign-lead-scoring.md
+    // §4) and this column sorts on them while naming no campaign. Harmless
+    // while every campaign shared one rulebook — prod's six multi-signup
+    // people scored 0-1 points apart — but migration 100 lets a campaign carry
+    // its own weights, at which point "70" could be 70 for recruitment and 5
+    // for whatever the reader sells. `scoreSourceCampaignName` is what stops
+    // that ranking being unreadable.
     expect(Object.keys(a).sort()).toEqual([
       'buyScore', 'consumerScore', 'email', 'erasedAt', 'firstName', 'firstSeenAt',
       'id', 'lastName', 'lastSeenAt', 'latestProspectId', 'meetScore', 'phone',
-      'scoredConfigVersion', 'signupCount', 'verifiedSignupCount',
+      'scoreSourceCampaignName', 'scoredConfigVersion', 'signupCount', 'verifiedSignupCount',
     ])
     expect(a).toMatchObject({
       firstName: 'Zephyrine', lastName: 'Peopledir', phone: '+6598111001',

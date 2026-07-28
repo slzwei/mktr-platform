@@ -570,6 +570,29 @@ describe('scoring panel', () => {
     expect(screen.getByText('1.5')).toBeInTheDocument();
   });
 
+  it('names the campaign the person\'s numbers were copied from', async () => {
+    const d = ENRICHED();
+    d.consumer.enrichment.scoreSource = {
+      prospectId: 'p2', campaignId: 'camp-2', campaignName: 'NTUC Trial Reward',
+    };
+    fetchProspectProfile.mockResolvedValue(d);
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    // "50" alone invites the reader to treat it as a verdict on the PERSON.
+    // It is their best campaign's number, and which campaign is the difference
+    // between actionable and misleading once weights differ per campaign.
+    expect(screen.getByText(/their best campaign/)).toBeInTheDocument();
+  });
+
+  it('says nothing when the winning lead is not known yet', async () => {
+    // Migration 101 deliberately did not backfill, so every person carries no
+    // source until their next rescore. Silence beats naming the wrong campaign.
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    expect(screen.queryByText(/their best campaign/)).not.toBeInTheDocument();
+  });
+
   it('the reason opens on hover, and on keyboard focus', async () => {
     fetchProspectProfile.mockResolvedValue(ENRICHED());
     setup('/admin/leads/p1?view=profile');

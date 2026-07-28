@@ -50,7 +50,7 @@ function SortHeader({ label, field, sort, onSort, width, align }) {
  * says which kind of nothing it is. Buy is NULL for anyone with no fact
  * component assessed, which today is nearly everyone.
  */
-function ScoreCell({ value, scored, kind }) {
+function ScoreCell({ value, scored, kind, source }) {
   if (value == null) {
     return (
       <span
@@ -75,7 +75,10 @@ function ScoreCell({ value, scored, kind }) {
         fontWeight: strong ? 700 : 500,
         color: strong ? 'var(--ink)' : 'var(--ink-2)',
       }}
-      title={`${kind} ${value}/100`}
+      // Always names the campaign when it is known, even for a single-signup
+      // person where the row above stays quiet — the number is a projection
+      // either way, and a reader asking "of what?" should not have to leave.
+      title={source ? `${kind} ${value}/100 — their best campaign: ${source}` : `${kind} ${value}/100`}
     >
       {value}
     </span>
@@ -224,11 +227,21 @@ export default function AdminV2People() {
               </span>
               <span style={{ width: 150, flex: 'none', fontSize: 12, color: 'var(--ink-2)' }}>
                 {r.signupCount} signup{r.signupCount === 1 ? '' : 's'} ({r.verifiedSignupCount} verified)
+                {/* Meet and Buy below are this person's BEST lead's scores
+                    (§4), and this column SORTS on them while naming no
+                    campaign. With one signup there is nothing to disambiguate;
+                    with several, "70" might be 70 for recruitment and 5 for
+                    what the reader sells, so the winner is named. */}
+                {!erased && r.signupCount > 1 && r.scoreSourceCampaignName && (
+                  <span style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    scored on {r.scoreSourceCampaignName}
+                  </span>
+                )}
               </span>
               {/* Erased people keep no profile row (§9) — show nothing rather
                   than a stale number. */}
-              <ScoreCell value={erased ? null : r.meetScore} scored={!erased && r.scoredConfigVersion != null} kind="Meet" />
-              <ScoreCell value={erased ? null : r.buyScore} scored={!erased && r.scoredConfigVersion != null} kind="Buy" />
+              <ScoreCell value={erased ? null : r.meetScore} scored={!erased && r.scoredConfigVersion != null} kind="Meet" source={r.scoreSourceCampaignName} />
+              <ScoreCell value={erased ? null : r.buyScore} scored={!erased && r.scoredConfigVersion != null} kind="Buy" source={r.scoreSourceCampaignName} />
               <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10, color: 'var(--ink-3)', textAlign: 'right' }} title={fmtDateTime(r.lastSeenAt)}>
                 {fmtRelative(r.lastSeenAt)}
               </span>
