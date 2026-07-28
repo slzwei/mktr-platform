@@ -200,12 +200,14 @@ export async function projectPersonScore(t, consumerId) {
   await sequelize.query(
     `INSERT INTO consumer_profiles
        ("consumerId", "consumerScore", "meetScore", "buyScore", "scoreBreakdown",
+        "scoreSourceProspectId",
         "inputVersion", "syncedInputVersion", "createdAt", "updatedAt")
      SELECT c.id, best.score, best."meetScore", best."buyScore", best."scoreBreakdown",
+            best.id,
             0, 0, now(), now()
        FROM consumers c
        LEFT JOIN LATERAL (
-         SELECT p.score, p."meetScore", p."buyScore", p."scoreBreakdown"
+         SELECT p.id, p.score, p."meetScore", p."buyScore", p."scoreBreakdown"
            FROM prospects p
           WHERE p."consumerId" = c.id AND p.score IS NOT NULL
           ORDER BY p.score DESC, p."createdAt" DESC, p.id DESC
@@ -217,6 +219,10 @@ export async function projectPersonScore(t, consumerId) {
        "meetScore" = EXCLUDED."meetScore",
        "buyScore" = EXCLUDED."buyScore",
        "scoreBreakdown" = EXCLUDED."scoreBreakdown",
+       -- The receipt travels with the numbers it explains (migration 101).
+       -- Written by the SAME statement that picks the winner, so there is no
+       -- second copy of the tie-break to drift out of step with this one.
+       "scoreSourceProspectId" = EXCLUDED."scoreSourceProspectId",
        "updatedAt" = now()`,
     { replacements: { cid: consumerId }, transaction: t }
   );

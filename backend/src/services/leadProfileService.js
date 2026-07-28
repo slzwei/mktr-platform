@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import {
   Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
   EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent,
-  RedemptionEvent, ConsentEvent, ConsumerProfile, sequelize,
+  RedemptionEvent, ConsentEvent, ConsumerProfile, Prospect, sequelize,
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { presentState } from '../utils/entitlementPresentState.js';
@@ -40,7 +40,7 @@ export function makeLeadProfileService(overrides = {}) {
   const d = {
     Draw, RewardEntitlement, Activation, RewardOffer, ConsumerSuppression,
     EmailBroadcastRecipient, SessionVisit, ProspectActivity, User, ExternalAgent,
-    RedemptionEvent, ConsentEvent, ConsumerProfile, sequelize, logger,
+    RedemptionEvent, ConsentEvent, ConsumerProfile, Prospect, sequelize, logger,
     getProspectDrawStatus: null, // defaults to a lucky-draw service built below
     getConsentState,
     presentState,
@@ -556,6 +556,31 @@ export function makeLeadProfileService(overrides = {}) {
         d.logger.warn('[leadProfile] fact ledger read failed (omitted)', { error: err?.message });
       }
 
+      // WHICH lead these numbers were copied from (§4). They are the person's
+      // BEST lead's scores, and once a campaign carries its own weights "their
+      // best" without "at what" is a number nobody can act on. Absent until
+      // that person's next rescore — migration 101 deliberately did not
+      // backfill it rather than re-derive the tie-break in one-shot SQL.
+      let scoreSource = null;
+      if (row.scoreSourceProspectId) {
+        try {
+          const src = await d.Prospect.findByPk(row.scoreSourceProspectId, {
+            attributes: ['id', 'campaignId'],
+            include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+          });
+          if (src) {
+            scoreSource = {
+              prospectId: String(src.id),
+              campaignId: src.campaignId ? String(src.campaignId) : null,
+              campaignName: src.campaign?.name || null,
+            };
+          }
+        } catch (err) {
+          // A missing label must never blank the scores beside it.
+          d.logger.warn('[leadProfile] score source read failed (omitted)', { error: err?.message });
+        }
+      }
+
       return {
         meetScore: row.meetScore ?? null,
         buyScore: row.buyScore ?? null,
@@ -564,6 +589,7 @@ export function makeLeadProfileService(overrides = {}) {
         scoredAt: row.scoreComputedAt || null,
         configVersion: row.scoredConfigVersion ?? null,
         algorithmVersion: row.scoringAlgorithmVersion || null,
+        scoreSource,
         facts,
       };
     } catch (err) {

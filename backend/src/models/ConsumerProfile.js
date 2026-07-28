@@ -61,6 +61,11 @@ const ConsumerProfile = sequelize.define('ConsumerProfile', {
     allowNull: true,
     comment: 'Per component: {state: unknown|assessed, points, maxPoints, basisObservationIds, note}'
   },
+  // WHICH lead the three scores above were copied from (§4's projection,
+  // migration 101). The numbers are their best lead's; without this the UI can
+  // only say "their best" and never "their best at WHAT" — which stops being a
+  // detail the moment a campaign has weights of its own.
+  scoreSourceProspectId: { type: DataTypes.UUID, allowNull: true },
   scoredConfigVersion: { type: DataTypes.INTEGER, allowNull: true },
   scoringAlgorithmVersion: { type: DataTypes.STRING(16), allowNull: true },
   scoreInputHash: { type: DataTypes.STRING(64), allowNull: true },

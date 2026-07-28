@@ -756,6 +756,20 @@ function EnrichmentCard({ enrichment }) {
         />
       </div>
 
+      {/* A person does not have one worth — a fresh grad is a strong recruit
+          and a weak policyholder. These numbers are their BEST lead's (§4's
+          projection), so naming that lead is the difference between a number a
+          reader can act on and one they will misread the moment two campaigns
+          score the same person differently. */}
+      {enrichment?.scoreSource?.campaignName && (
+        <div style={{ padding: '0 18px 8px', fontSize: 11.5, color: 'var(--ink-3)' }}>
+          their best campaign —{' '}
+          <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>
+            {enrichment.scoreSource.campaignName}
+          </span>
+        </div>
+      )}
+
       <div style={{ padding: '4px 18px 12px' }}>
         {meetNames.length > 0 && (
           <>
