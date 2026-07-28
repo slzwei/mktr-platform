@@ -79,6 +79,27 @@ export const claimPartner = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Business claimed', data: result });
 });
 
+/**
+ * Multi-select claim. Answers 200 with a per-row breakdown rather than a 409:
+ * losing a race on 3 of 10 is a normal outcome the console reports, not a
+ * failed request that should discard the 7 that worked.
+ */
+export const claimPartnersBulk = asyncHandler(async (req, res) => {
+  const schema = Joi.object({
+    partnerIds: Joi.array().items(Joi.string().uuid()).min(1).max(100).required(),
+  });
+  const body = validateBody(schema, req.body);
+  const result = await claimService.claimPartnersBulk(body.partnerIds, req.user, req.id);
+  const n = result.claimed.length;
+  res.json({
+    success: true,
+    message: n === body.partnerIds.length
+      ? `${n} business${n === 1 ? '' : 'es'} claimed`
+      : `${n} of ${body.partnerIds.length} claimed`,
+    data: result,
+  });
+});
+
 export const releasePartner = asyncHandler(async (req, res) => {
   await claimService.releasePartner(req.params.id, req.user, req.body?.reason || null, req.id);
   res.json({ success: true, message: 'Business released' });

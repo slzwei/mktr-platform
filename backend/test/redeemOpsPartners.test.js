@@ -123,6 +123,57 @@ describe('claiming (concurrency-safe)', () => {
     expect(row.pipelineStage).toBe('NEW'); // ownership is not pipeline progress
   });
 
+  test('BULK claim: partial success — the taken one never rolls back the rest', async () => {
+    const free = [];
+    for (let i = 0; i < 3; i += 1) {
+      const r = await createPartner(admin.token, { tradingName: `Bulk Free ${i} ${randomBytes(3).toString('hex')}` });
+      free.push(r.body.data.partner.id);
+    }
+    // One of the batch is already owned (partnerId, claimed above) — a shared
+    // transaction would have discarded the three good claims with it.
+    const res = await request(app)
+      .post('/api/redeem-ops/partners/bulk-claim')
+      .set(auth(execB.token))
+      .send({ partnerIds: [...free, partnerId] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.claimed.sort()).toEqual([...free].sort());
+    expect(res.body.data.failed).toHaveLength(1);
+    expect(res.body.data.failed[0]).toMatchObject({ id: partnerId, reason: 'already_claimed' });
+    expect(res.body.data.failed[0].claimedBy).toBeTruthy(); // says WHO has it
+    expect(res.body.message).toMatch(/3 of 4/);
+
+    for (const id of free) {
+      const row = await PartnerOrganisation.findByPk(id);
+      expect(row.ownerUserId).toBe(execB.user.id);
+      expect(row.availability).toBe('owned');
+    }
+  });
+
+  test('BULK claim is concurrency-safe: two reps, one row, exactly one owner', async () => {
+    const r = await createPartner(admin.token, { tradingName: `Bulk Race ${randomBytes(3).toString('hex')}` });
+    const id = r.body.data.partner.id;
+    const svc = makeClaimService();
+    const [a, b] = await Promise.all([
+      svc.claimPartnersBulk([id], execA.user),
+      svc.claimPartnersBulk([id], bdm.user),
+    ]);
+    const winners = [a, b].filter((x) => x.claimed.length === 1);
+    expect(winners).toHaveLength(1); // the conditional UPDATE still arbitrates
+    const row = await PartnerOrganisation.findByPk(id);
+    expect([execA.user.id, bdm.user.id]).toContain(row.ownerUserId);
+  });
+
+  test('BULK claim rejects an empty or oversized batch', async () => {
+    const empty = await request(app).post('/api/redeem-ops/partners/bulk-claim')
+      .set(auth(execB.token)).send({ partnerIds: [] });
+    expect(empty.status).toBe(400);
+    const huge = await request(app).post('/api/redeem-ops/partners/bulk-claim')
+      .set(auth(execB.token))
+      .send({ partnerIds: Array.from({ length: 101 }, () => '00000000-0000-4000-8000-000000000000') });
+    expect(huge.status).toBe(400);
+  });
+
   test('claiming an owned business over HTTP → 409', async () => {
     const res = await request(app)
       .post(`/api/redeem-ops/partners/${partnerId}/claim`)
