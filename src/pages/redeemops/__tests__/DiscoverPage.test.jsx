@@ -110,10 +110,31 @@ describe('DiscoverPage', () => {
     expect(screen.getByText('Popular areas')).toBeInTheDocument();
   });
 
-  it('hides the AI-assist row unless the backend reports aiEnabled', async () => {
+  it('falls back to keyword search when the backend reports no aiEnabled', async () => {
     renderPage(); // beforeEach response has no aiEnabled
     await screen.findByRole('button', { name: /Search Google Maps/i }); // page settled
-    expect(screen.queryByLabelText('Describe what you want to find')).not.toBeInTheDocument();
+    // No LLM configured must never leave the page unable to run a search.
+    expect(screen.queryByLabelText(/Describe who you're looking for/i)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/nail salon, taekwondo/)).toBeInTheDocument();
+  });
+
+  it('AI is the DEFAULT mode once the backend reports aiEnabled — no reveal needed', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota, aiEnabled: true });
+    renderPage();
+    // Present on first paint, not behind a "Get AI suggestions" toggle. The
+    // flag arrives async with the runs list, so this also pins that the default
+    // follows it rather than latching the first (undefined) render.
+    expect(await screen.findByLabelText(/Describe who you're looking for/i)).toBeInTheDocument();
+    // ...and the terms that will actually run are still on screen and editable.
+    expect(screen.getByLabelText(/Search phrases to run/i)).toBeInTheDocument();
+  });
+
+  it('an operator can still switch to typing phrases themselves', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota, aiEnabled: true });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Type phrases myself/i }));
+    expect(screen.queryByLabelText(/Describe who you're looking for/i)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/nail salon, taekwondo/)).toBeInTheDocument();
   });
 
   it('AI suggest populates the terms field and never starts a paid search', async () => {
@@ -123,16 +144,17 @@ describe('DiscoverPage', () => {
       categories: ['Martial arts school', 'Gym'],
     });
     renderPage();
-    // AI is now a reveal — open it first.
-    await userEvent.click(await screen.findByRole('button', { name: /Get AI suggestions/i }));
-    const aiInput = await screen.findByLabelText('Describe what you want to find');
+    // AI is the DEFAULT mode — the description box is there without revealing it.
+    const aiInput = await screen.findByLabelText('Describe who you\'re looking for');
     await userEvent.type(aiInput, 'martial arts for kids');
-    await userEvent.click(screen.getByRole('button', { name: 'Suggest' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Find terms' }));
     await waitFor(() => expect(api.suggestDiscoveryTerms).toHaveBeenCalledWith({
       description: 'martial arts for kids',
       provider: 'google_maps',
     }));
-    expect(screen.getByPlaceholderText(/nail salon, taekwondo/)).toHaveValue(
+    // The terms that will actually run stay visible and editable in AI mode —
+    // a search spends Apify budget, so it is never a black box.
+    expect(screen.getByLabelText(/Search phrases to run/i)).toHaveValue(
       'taekwondo, martial arts school, kids karate',
     );
     // categories are pre-filled into the always-visible Restrict-categories field
@@ -156,9 +178,8 @@ describe('DiscoverPage', () => {
       ],
     });
     renderPage();
-    await userEvent.click(await screen.findByRole('button', { name: /Get AI suggestions/i }));
-    await userEvent.type(await screen.findByLabelText('Describe what you want to find'), 'robotics for kids');
-    await userEvent.click(screen.getByRole('button', { name: 'Suggest' }));
+    await userEvent.type(await screen.findByLabelText('Describe who you\'re looking for'), 'robotics for kids');
+    await userEvent.click(screen.getByRole('button', { name: 'Find terms' }));
     await screen.findByDisplayValue('children robotics, coding enrichment');
     await userEvent.type(screen.getByPlaceholderText('Neighbourhood or district…'), 'All Singapore');
     await userEvent.click(screen.getByRole('button', { name: /Search Google Maps/i }));

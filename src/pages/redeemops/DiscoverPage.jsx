@@ -73,7 +73,16 @@ export default function DiscoverPage() {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('followers');
   const [aiDesc, setAiDesc] = useState('');
-  const [showAi, setShowAi] = useState(false);
+  // Search mode. AI is the DEFAULT way to search: describing who you want finds
+  // better niches than guessing Google's own phrasing, and the derived terms
+  // stay visible + editable below so nothing is spent on a black box.
+  //
+  // null = "operator hasn't chosen", which matters because `aiEnabled` arrives
+  // asynchronously with the runs list — seeding useState from it would latch
+  // the first (undefined → false) render into keyword mode forever. Resolving
+  // at render instead means the default follows the flag whenever it lands,
+  // and an explicit choice still wins. AI off ⇒ always keyword mode.
+  const [modeChoice, setModeChoice] = useState(null);
   // AI-suggested Google categories (Maps) — fill the pre-search filter AND arm a
   // one-time post-results facet cleanup for the run they were searched into.
   const [aiCats, setAiCats] = useState([]);
@@ -95,6 +104,9 @@ export default function DiscoverPage() {
   const resultsQuota = quota?.resultsRemaining != null;
   const igEnabled = listQuery.data?.igEnabled === true;
   const aiEnabled = listQuery.data?.aiEnabled === true;
+  // Keyword mode is the unconditional fallback when AI isn't configured — the
+  // page must never depend on an LLM being reachable to run a search.
+  const aiMode = aiEnabled && (modeChoice ?? 'ai') === 'ai';
   const isIg = form.provider === IG_PROVIDER;
   const territoriesQuery = useQuery({
     queryKey: ['redeem-ops', 'territories'],
@@ -380,41 +392,67 @@ export default function DiscoverPage() {
             )}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="disc-terms">{isIg ? 'Hashtags' : 'Search phrases'}</Label>
+                <Label htmlFor={aiMode ? 'disc-ai-desc' : 'disc-terms'}>
+                  {aiMode
+                    ? 'Describe who you\'re looking for'
+                    : (isIg ? 'Hashtags' : 'Search phrases')}
+                </Label>
                 {aiEnabled && (
-                  <button type="button" onClick={() => setShowAi((v) => !v)} aria-expanded={showAi}
+                  <button type="button" onClick={() => setModeChoice(aiMode ? 'terms' : 'ai')}
                     className="ro-link inline-flex items-center gap-1 text-[12.5px] font-semibold">
-                    <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />{showAi ? 'Hide AI' : 'Get AI suggestions'}
+                    {aiMode
+                      ? <>Type {isIg ? 'hashtags' : 'phrases'} myself</>
+                      : <><Sparkles className="w-3.5 h-3.5" aria-hidden="true" />Describe it instead</>}
                   </button>
                 )}
               </div>
-              <Input id="disc-terms" value={form.adhoc}
-                placeholder={isIg ? 'sgnails, biabsg, homebasednailssg' : 'nail salon, taekwondo, kopitiam'}
-                onChange={(e) => { setForm((f) => ({ ...f, adhoc: e.target.value })); if (aiCats.length) setAiCats([]); }}
-                onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
-              <p className="text-[12px] m-0" style={{ color: 'var(--ro-text-3)' }}>
-                {isIg
-                  ? 'Each hashtag is scanned on Instagram. The # is optional. Separate with commas.'
-                  : 'Each phrase is sent to Google Maps as its own search. Separate with commas.'}
-              </p>
-              {aiEnabled && showAi && (
-                <div className="flex items-center gap-2 mt-1 rounded-xl px-3 py-1.5"
-                  style={{ background: 'var(--ro-subtle)', border: '1px dashed var(--ro-border)' }}>
-                  <Sparkles className="w-4 h-4 shrink-0" aria-hidden="true" style={{ color: 'var(--ro-text-2)' }} />
-                  <Input value={aiDesc}
-                    placeholder={isIg
-                      ? 'Describe the niche — e.g. "home-based bakers"'
-                      : 'Describe who you\'re looking for — e.g. "after-school activities for kids"'}
-                    aria-label="Describe what you want to find"
-                    className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0 px-0"
-                    onChange={(e) => setAiDesc(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && canSuggest) suggestMutation.mutate(); }} />
-                  <Button variant="ghost" size="sm" className="shrink-0 font-semibold" disabled={!canSuggest}
-                    onClick={() => suggestMutation.mutate()}>
-                    {suggestMutation.isPending ? 'Suggesting…' : 'Suggest'}
-                  </Button>
-                </div>
+
+              {aiMode && (
+                <>
+                  <div className="flex items-center gap-2 rounded-xl px-3 py-1.5"
+                    style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
+                    <Sparkles className="w-4 h-4 shrink-0" aria-hidden="true" style={{ color: 'var(--ro-text-2)' }} />
+                    <Input id="disc-ai-desc" value={aiDesc}
+                      placeholder={isIg
+                        ? 'e.g. home-based bakers who post their menu'
+                        : 'e.g. after-school activities for primary school kids'}
+                      className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0 px-0"
+                      onChange={(e) => setAiDesc(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && canSuggest) suggestMutation.mutate(); }} />
+                    <Button variant="ghost" size="sm" className="shrink-0 font-semibold" disabled={!canSuggest}
+                      onClick={() => suggestMutation.mutate()}>
+                      {suggestMutation.isPending ? 'Thinking…' : 'Find terms'}
+                    </Button>
+                  </div>
+                  <p className="text-[12px] m-0" style={{ color: 'var(--ro-text-3)' }}>
+                    Plain English. We turn it into {isIg ? 'hashtags' : 'Google Maps phrases'} you can check before spending anything.
+                  </p>
+                </>
               )}
+
+              {/* The terms that ACTUALLY run stay visible and editable in both
+                  modes — a search spends real Apify budget and result quota, so
+                  it must never be a black box the operator can't inspect. */}
+              <div className={aiMode ? 'pt-1' : ''}>
+                {aiMode && (
+                  <Label htmlFor="disc-terms" className="text-[12px] font-semibold"
+                    style={{ color: 'var(--ro-text-2)' }}>
+                    {isIg ? 'Hashtags' : 'Search phrases'} to run
+                  </Label>
+                )}
+                <Input id="disc-terms" value={form.adhoc}
+                  className={aiMode ? 'mt-1' : ''}
+                  placeholder={aiMode
+                    ? (isIg ? 'Describe a niche above, or type hashtags here' : 'Describe who you want above, or type phrases here')
+                    : (isIg ? 'sgnails, biabsg, homebasednailssg' : 'nail salon, taekwondo, kopitiam')}
+                  onChange={(e) => { setForm((f) => ({ ...f, adhoc: e.target.value })); if (aiCats.length) setAiCats([]); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
+                <p className="text-[12px] m-0 mt-1" style={{ color: 'var(--ro-text-3)' }}>
+                  {isIg
+                    ? 'Each hashtag is scanned on Instagram. The # is optional. Separate with commas.'
+                    : 'Each phrase is sent to Google Maps as its own search. Separate with commas.'}
+                </p>
+              </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-[1fr_120px_auto] md:items-end mt-4">
