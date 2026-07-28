@@ -12,6 +12,15 @@ export default {
   testTimeout: 60000,
   // maxWorkers=1 avoids DB contention between test suites
   maxWorkers: 1,
+  // ...but one worker means ONE heap for every suite in the run: each suite's
+  // models, Express app and module graph stay resident, so peak memory grows
+  // monotonically with the suite count. That is how the integration step
+  // (test/integration/ + every top-level test/*.test.js) reached "Ineffective
+  // mark-compacts near heap limit" and killed CI with exit 134 on 2026-07-28 —
+  // no test failed, the process died. Recycling the worker once it passes this
+  // threshold releases the accumulated heap between suites, which BOUNDS the
+  // growth instead of just raising the ceiling until the next suite breaks it.
+  workerIdleMemoryLimit: '1GB',
   // forceExit needed: Express + morgan + process.on handlers keep Node alive
   forceExit: true,
   // Set env vars before any modules are loaded (JWT_SECRET, NODE_ENV)
