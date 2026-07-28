@@ -492,6 +492,10 @@ export function makeConsumerService(overrides = {}) {
           'id', 'firstName', 'lastName', 'phone', 'campaignId', 'leadStatus', 'leadSource',
           'createdAt', 'conversionDate', 'quarantinedAt', 'quarantineReason', 'sourceMetadata',
           'externalAgentId',
+          // The LEAD score — a property of (person × campaign), so it belongs on
+          // the signup and not beside the person's name. Without it the campaign
+          // drill-in is the one page that cannot show the number it is about.
+          'score', 'scoreComputedAt',
           // consentMetadata carries the pinned draw-terms acceptance the draw
           // eligibility preview reads — profile mode only.
           ...(includeRaw ? ['consentMetadata'] : []),
@@ -552,6 +556,12 @@ export function makeConsumerService(overrides = {}) {
           ? `${s.assignedAgent.firstName || ''} ${s.assignedAgent.lastName || ''}`.trim() || null
           : null,
         externalBuyer: Boolean(s.externalAgentId),
+        // NULL means "not scored yet", which the UI must show differently from
+        // a zero — the sweep stamps scoreComputedAt even when the score itself
+        // comes back null, so the two together distinguish "no opinion yet"
+        // from "scored, and the answer is nothing".
+        score: s.score ?? null,
+        scoredAt: s.scoreComputedAt || null,
       })),
       entitlements: entitlements.map((e) => ({
         id: e.id,

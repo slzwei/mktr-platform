@@ -367,3 +367,35 @@ describe('erasure (§11)', () => {
     expect(stale).not.toContain(a.id)
   })
 })
+
+describe('the score reaches the page that is about the lead', () => {
+  test('each signup in the journey carries its OWN score, not the person\'s best', async () => {
+    const { consumer, a, b } = await personWithTwoLeads()
+    await scoreOf(a.id)
+    await scoreOf(b.id)
+
+    const { getConsumerJourney } = await import('../src/services/consumerService.js')
+    const journey = await getConsumerJourney(consumer.id)
+
+    const byId = new Map(journey.signups.map((s) => [String(s.prospectId), s]))
+    expect(byId.size).toBe(2)
+
+    for (const id of [a.id, b.id]) {
+      const signup = byId.get(String(id))
+      const row = await rowOf(id)
+      // The whole point: the drill-in for THIS campaign can show THIS
+      // campaign's number. A person-grain projection cannot express two.
+      expect(signup.score).toBe(row.score)
+      expect(signup.scoredAt).toBeTruthy()
+    }
+  })
+
+  test('an unscored lead reports null, never 0 — the UI must tell them apart', async () => {
+    const { consumer, a } = await personWithTwoLeads()
+    const { getConsumerJourney } = await import('../src/services/consumerService.js')
+    const journey = await getConsumerJourney(consumer.id)
+    const signup = journey.signups.find((s) => String(s.prospectId) === String(a.id))
+    expect(signup.score).toBeNull()
+    expect(signup.scoredAt).toBeNull()
+  })
+})

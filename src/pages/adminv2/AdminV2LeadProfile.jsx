@@ -611,6 +611,48 @@ function ComponentRow({ name, c }) {
 }
 
 /**
+ * THIS campaign's score for THIS person (per-campaign-lead-scoring.md §4).
+ *
+ * The scoring card on the person profile shows the WINNING lead's numbers — the
+ * projection. For anyone with a single signup those are the same number, but a
+ * person with two campaigns has two scores and only one of them surfaces there.
+ * The drill-in is the page about one lead, so it is where that lead's own score
+ * belongs.
+ *
+ * NULL is not zero. A lead the sweep has not reached yet says so in words
+ * rather than showing a 0 nobody computed.
+ */
+function LeadScoreBadge({ signup }) {
+  if (!signup) return null;
+  const scored = signup.score !== null && signup.score !== undefined;
+  if (!scored) {
+    return (
+      <span
+        className="av2-mono"
+        style={{ fontSize: 10.5, color: 'var(--ink-3)', flex: 'none' }}
+        title="The nightly sweep has not reached this lead yet."
+      >
+        NOT SCORED YET
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flex: 'none' }}
+      title={signup.scoredAt ? `Scored ${fmtDateTime(signup.scoredAt)}` : 'Lead score'}
+    >
+      <span className="av2-microcaps" style={{ color: 'var(--ink-3)' }}>lead score</span>
+      <span
+        className="av2-mono"
+        style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}
+      >
+        {signup.score}
+      </span>
+    </span>
+  );
+}
+
+/**
  * What actually happened, and when (per-campaign-lead-scoring.md §6).
  *
  * The components above say how much each thing is worth right now; this says
@@ -895,6 +937,11 @@ export default function AdminV2LeadProfile() {
       rewardDiagnostic: p.signupProfile?.rewardDiagnostic ?? null,
       agentName: p.assignedAgent ? fullName(p.assignedAgent) : null,
       externalBuyer: Boolean(p.externalAgentId),
+      // Consumer-less leads ARE scored — findStaleLeadIds admits them
+      // explicitly — so the fallback must carry the score too, or the one
+      // page about a Retell voice lead claims it was never scored.
+      score: p.score ?? null,
+      scoredAt: p.scoreComputedAt ?? null,
       _fallback: true,
     }];
   }, [journey, p]);
@@ -1218,6 +1265,9 @@ export default function AdminV2LeadProfile() {
                       </span>
                     </span>
                     {chip && <Chip tone={chip.tone}>{chip.label}</Chip>}
+                    {/* Per-row, because each signup carries its OWN score and the
+                        card above this one can only ever show the winning lead's. */}
+                    <LeadScoreBadge signup={s} />
                     <span aria-hidden="true" style={{ color: 'var(--ink-3)', fontSize: 14, flex: 'none' }}>›</span>
                   </button>
                 );
@@ -1278,6 +1328,7 @@ export default function AdminV2LeadProfile() {
                 <Link to={`/admin/campaigns/${currentSignup?.campaign?.id || p.campaign.id}`} style={{ fontSize: 11.5, fontWeight: 700 }}>campaign page ↗</Link>
               )}
               <span style={{ flex: 1 }} />
+              <LeadScoreBadge signup={currentSignup} />
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-3)' }}>
                 SIGNED UP {fmtDateTime(p.createdAt).toUpperCase()} · {(SOURCE_LABELS[p.leadSource] || p.leadSource).toUpperCase()}
               </span>
