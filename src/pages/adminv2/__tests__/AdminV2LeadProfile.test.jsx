@@ -225,6 +225,57 @@ describe('AdminV2LeadProfile — person profile view', () => {
   });
 });
 
+describe('AdminV2LeadProfile — the lead score belongs to the campaign', () => {
+  /** The fixture's two signups, given DIFFERENT scores — the case the person
+   *  card cannot express, because it can only show the winning lead's number. */
+  const twoScored = () => {
+    const d = JSON.parse(JSON.stringify(PROFILE));
+    Object.assign(d.consumer.signups[0], { score: 48, scoredAt: '2026-07-27T16:14:35Z' });
+    Object.assign(d.consumer.signups[1], { score: 12, scoredAt: '2026-07-27T16:14:35Z' });
+    return d;
+  };
+
+  it('the drill-in shows THIS campaign\'s score, not the person\'s best', async () => {
+    fetchProspectProfile.mockResolvedValue(twoScored());
+    setup('/admin/leads/p2');
+    await screen.findByText('NTUC Trial Reward');
+    // 12 is this lead's own score; 48 belongs to the other campaign and must
+    // not be what a reader sees on this page.
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.queryByText('48')).not.toBeInTheDocument();
+  });
+
+  it('the campaign rail scores every row, so both signups are comparable', async () => {
+    fetchProspectProfile.mockResolvedValue(twoScored());
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('NTUC Trial Reward');
+    expect(screen.getByText('48')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+  });
+
+  it('an unscored lead says so — NULL is never rendered as a zero', async () => {
+    const d = JSON.parse(JSON.stringify(PROFILE));
+    d.consumer.signups[0].score = null;
+    fetchProspectProfile.mockResolvedValue(d);
+    setup();
+    expect(await screen.findByText('NOT SCORED YET')).toBeInTheDocument();
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
+  });
+
+  it('a consumer-less lead still shows its score — those are scored too', async () => {
+    fetchProspectProfile.mockResolvedValue({
+      ...JSON.parse(JSON.stringify(PROFILE)),
+      consumer: null,
+      score: 33,
+      scoreComputedAt: '2026-07-27T16:14:35Z',
+      signupProfile: { draw: null, entitlements: [], rewardDiagnostic: null },
+    });
+    setup();
+    expect(await screen.findByText('33')).toBeInTheDocument();
+    expect(screen.queryByText('NOT SCORED YET')).not.toBeInTheDocument();
+  });
+});
+
 describe('AdminV2LeadProfile — states', () => {
   it('consumer-less Retell lead: banner, single signup, voice-call card', async () => {
     fetchProspectProfile.mockResolvedValue({
