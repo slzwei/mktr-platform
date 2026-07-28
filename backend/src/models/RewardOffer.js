@@ -28,7 +28,7 @@ const RewardOffer = sequelize.define('RewardOffer', {
   retailValue: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
   fulfilmentCost: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
   currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'SGD' },
-  fundingSource: { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'partner', comment: 'partner|mktr|shared' },
+  fundingSource: { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'partner', comment: 'partner|mktr|shared|agent' },
 
   committedQuantity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   allocatedQuantity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },

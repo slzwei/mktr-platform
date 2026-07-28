@@ -234,6 +234,35 @@ export function makeFulfilmentNotify(overrides = {}) {
     }, prospect.email);
   }
 
+  /**
+   * Handover receipt — a PHYSICAL voucher the consultant bought themselves and
+   * has just put in the lead's hand. Deliberately carries NO token, NO QR and
+   * NO claim link: there is nothing to present, and a credential here would
+   * send people to a till waving a phone at a cashier who cannot scan it. It
+   * is a confirmation of something that already happened, which is also why
+   * it stays useful long after the old reservation window has lapsed.
+   */
+  async function sendHandoverEmail({ entitlement, prospect }) {
+    if (!canEmailProspect(prospect)) return { sent: false, skipped: 'no_email' };
+    const { rewardName } = await loadOfferContext(entitlement);
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+        <h2 style="margin:0 0 8px">You've received your ${escapeHtml(rewardName)}</h2>
+        <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
+        <p>Your consultant handed you your <strong>${escapeHtml(rewardName)}</strong> when you met.
+        This is just your confirmation — the voucher itself is the one already in your hands.</p>
+        <p style="color:#6b7280;font-size:12px">Nothing to redeem here and no code to keep:
+        use the physical voucher as normal. If you did not receive it, reply to this email.</p>
+      </div>`;
+    return deliver({
+      to: prospect.email,
+      subject: `Confirmed — your ${rewardName}`,
+      html,
+      text: `Your consultant handed you your ${rewardName} when you met. This is your confirmation — use the physical voucher as normal. If you did not receive it, reply to this email.`,
+      context: 'redeem',
+    }, prospect.email);
+  }
+
   /** Voucher email at unlock. */
   async function sendVoucherEmail({ entitlement, prospect, voucherToken }) {
     if (!canEmailProspect(prospect)) return { sent: false, skipped: 'no_email' };
@@ -287,7 +316,7 @@ export function makeFulfilmentNotify(overrides = {}) {
     return { link, waMessage, waUrl, waUnavailableReason: waUrl ? null : 'no_phone' };
   }
 
-  return { sendReservationEmail, sendVoucherEmail, sendBoostReceiptEmail, buildClaimUrl, buildShareBundle };
+  return { sendReservationEmail, sendVoucherEmail, sendBoostReceiptEmail, sendHandoverEmail, buildClaimUrl, buildShareBundle };
 }
 
 function escapeHtml(s) {

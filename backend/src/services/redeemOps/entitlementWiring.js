@@ -1,6 +1,7 @@
 import { makeEntitlementService } from './entitlementService.js';
 import { makeFulfilmentNotify } from './fulfilmentNotify.js';
 import { makeWhatsappService } from './whatsappService.js';
+import { makeRedemptionOutcomeService } from '../redemptionOutcomeService.js';
 
 /**
  * The ONE place a fully-delivering entitlement service is assembled
@@ -31,6 +32,12 @@ export function makeWiredEntitlementService(overrides = {}) {
     // leg self-guards on the flag and fails receipted).
     notifyBoostReceipt: (args) => notify.sendBoostReceiptEmail(args),
     notifyBoostReceiptWa: (args) => wa.sendBoostReceiptWhatsApp(args),
+    // Physical-voucher handover receipt. Email only for now: the WhatsApp leg
+    // needs its own approved template, and until one exists a null dep is the
+    // honest state (queueDelivery skips a non-function silently).
+    notifyHandover: (args) => notify.sendHandoverEmail(args),
+    // Down-funnel CAPI so a handover reports as the conversion it is.
+    onRedemption: ({ entitlement }) => makeRedemptionOutcomeService().processRedemption({ entitlement }),
     ...overrides,
   });
 }
