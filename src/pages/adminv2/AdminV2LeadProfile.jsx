@@ -208,6 +208,15 @@ function HoverHint({ label, hint, underline = true, color, ariaLabel }) {
       aria-label={ariaLabel || undefined}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
+      // Focusable because the hint is now the ONLY place several of these
+      // reasons exist — the scoring card moved them off the row. A hint you
+      // can only reach with a mouse is a hint a keyboard user cannot read at
+      // all. Escape closes it without moving focus, so a reader who opened one
+      // by tabbing is not trapped reading it.
+      tabIndex={hint ? 0 : undefined}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      onKeyDown={(e) => { if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false); } }}
       style={{ position: 'relative', display: 'inline-block' }}
     >
       <span
@@ -590,21 +599,27 @@ function ComponentRow({ name, c }) {
   // the number. Unknown draws no bar at all — an empty bar would read as zero.
   const pct = assessed && max !== 0 ? Math.min(100, Math.abs(c.points / max) * 100) : 0;
   const penalty = max < 0;
+  const label = COMPONENT_LABELS[name] || name.replace(/_/g, ' ');
+  // The reason moved ONTO the label (dotted = there is more here). It used to
+  // ride in a trailing column that ellipsed nearly every row — "reachable via
+  // marketi…", "no recent life event…" — so the one part that explains the
+  // number was the one part you could not read. Nothing is lost: the full text
+  // is one hover away, and the space it freed goes to the bar, which is what
+  // makes two components comparable at a glance.
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '3px 0', fontSize: 12 }}>
       <span style={{ width: 116, flex: 'none', color: assessed ? 'var(--ink-2)' : 'var(--ink-3)' }}>
-        {COMPONENT_LABELS[name] || name.replace(/_/g, ' ')}
+        {c.note
+          ? <HoverHint label={label} hint={c.note} ariaLabel={`${label}: ${c.note}`} />
+          : label}
       </span>
       <span style={{ width: 58, flex: 'none', fontFamily: 'var(--font-mono)', fontSize: 11, textAlign: 'right', color: assessed ? 'var(--ink)' : 'var(--ink-3)' }}>
         {assessed ? `${c.points}` : '—'}<span style={{ color: 'var(--ink-3)' }}>/{max}</span>
       </span>
-      <span aria-hidden="true" style={{ width: 46, flex: 'none', height: 4, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
+      <span aria-hidden="true" style={{ flex: 1, minWidth: 46, height: 4, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
         {assessed && pct > 0 && (
           <span style={{ display: 'block', width: `${pct}%`, height: '100%', background: penalty ? 'var(--bad)' : 'var(--accent-text)' }} />
         )}
-      </span>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.note || ''}>
-        {c.note || (assessed ? '' : 'unknown')}
       </span>
     </div>
   );
