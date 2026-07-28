@@ -3,7 +3,8 @@ import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
 import partnerService from '../../services/redeemOps/partnerService.js';
 import { makeClaimService } from '../../services/redeemOps/claimService.js';
 import { makeDedupeService } from '../../services/redeemOps/dedupeService.js';
-import { LOST_REASONS } from '../../services/redeemOps/constants.js';
+import { BULK_MAX } from '../../services/redeemOps/bulkIds.js';
+import { LOST_REASONS, PIPELINE_STAGES } from '../../services/redeemOps/constants.js';
 
 const claimService = makeClaimService();
 const dedupeService = makeDedupeService();
@@ -113,6 +114,77 @@ export const assignPartner = asyncHandler(async (req, res) => {
   const body = validateBody(schema, req.body);
   const partner = await claimService.assignPartner(req.params.id, body.toUserId, req.user, body.reason || null, req.id);
   res.json({ success: true, data: { partner } });
+});
+
+/**
+ * The rest of the multi-select family. Each mirrors its single-row sibling's
+ * capability at the route and answers 200 with a per-row breakdown: a batch
+ * where some rows moved on since the page loaded is a normal outcome to report,
+ * not a failed request that should discard the rows that did work.
+ */
+const bulkIdsSchema = Joi.array().items(Joi.string().uuid()).min(1).max(BULK_MAX).required();
+
+/** "7 businesses released" / "7 of 10 released" — one phrasing for all of them. */
+function bulkMessage(done, requested, verb) {
+  return done === requested
+    ? `${done} business${done === 1 ? '' : 'es'} ${verb}`
+    : `${done} of ${requested} ${verb}`;
+}
+
+export const releasePartnersBulk = asyncHandler(async (req, res) => {
+  const schema = Joi.object({
+    partnerIds: bulkIdsSchema,
+    reason: Joi.string().max(255).allow('', null),
+  });
+  const body = validateBody(schema, req.body);
+  const result = await claimService.releasePartnersBulk(
+    body.partnerIds, req.user, body.reason || null, req.id
+  );
+  res.json({
+    success: true,
+    message: bulkMessage(result.released.length, body.partnerIds.length, 'released'),
+    data: result,
+  });
+});
+
+export const assignPartnersBulk = asyncHandler(async (req, res) => {
+  const schema = Joi.object({
+    partnerIds: bulkIdsSchema,
+    toUserId: Joi.string().uuid().required(),
+    reason: Joi.string().max(255).allow('', null),
+  });
+  const body = validateBody(schema, req.body);
+  const result = await claimService.assignPartnersBulk(
+    body.partnerIds, body.toUserId, req.user, body.reason || null, req.id
+  );
+  res.json({
+    success: true,
+    message: bulkMessage(result.assigned.length, body.partnerIds.length, 'assigned'),
+    data: result,
+  });
+});
+
+export const changeStageBulk = asyncHandler(async (req, res) => {
+  const schema = Joi.object({
+    partnerIds: bulkIdsSchema,
+    toStage: Joi.string().valid(...PIPELINE_STAGES).required(),
+    reason: Joi.string().max(255).allow('', null),
+    // Same rule as the single-row move, enforced BEFORE the loop so a LOST
+    // batch can't half-apply and then trip on a missing reason.
+    lostReason: Joi.string().valid(...LOST_REASONS).allow(null)
+      .when('toStage', { is: 'LOST', then: Joi.required() }),
+  });
+  const body = validateBody(schema, req.body);
+  const result = await partnerService.changeStageBulk(body.partnerIds, body.toStage, req.user, {
+    reason: body.reason || null,
+    lostReason: body.lostReason || null,
+    requestId: req.id,
+  });
+  res.json({
+    success: true,
+    message: bulkMessage(result.moved.length, body.partnerIds.length, 'moved'),
+    data: result,
+  });
 });
 
 export const changeStage = asyncHandler(async (req, res) => {

@@ -3,10 +3,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { fireCadenceHook } from './cadenceHooks.js';
-
-// Multi-select cap. Each row is its own transaction, so a huge batch would hold
-// a request open for a long time; the console's page size is well under this.
-const BULK_CLAIM_MAX = 100;
+import { normaliseBulkIds } from './bulkIds.js';
 
 /**
  * Business claiming / ownership (docs/redeem-ops/ERD.md §4.1, brief §15).
@@ -106,11 +103,7 @@ export function makeClaimService(overrides = {}) {
    * caught and reported as a failure, never allowed to abandon the rest.
    */
   async function claimPartnersBulk(partnerIds, user, requestId = null) {
-    const ids = [...new Set((partnerIds || []).map(String))];
-    if (!ids.length) throw new AppError('Select at least one business to claim', 400);
-    if (ids.length > BULK_CLAIM_MAX) {
-      throw new AppError(`Claim up to ${BULK_CLAIM_MAX} businesses at a time`, 400);
-    }
+    const ids = normaliseBulkIds(partnerIds, 'claim');
 
     const claimed = [];
     const failed = [];
@@ -173,12 +166,64 @@ export function makeClaimService(overrides = {}) {
     });
   }
 
-  /** Manager assign/reassign to any active staff member (capability-gated at the route). */
-  async function assignPartner(partnerId, toUserId, actor, reason = null, requestId = null) {
+  /**
+   * Release many at once. Same per-row-transaction reasoning as the bulk claim:
+   * a rep handing back an estate will have rows that moved on since the page
+   * loaded, and one 403 must not undo the releases that were legitimate.
+   *
+   * The row-level gate is unchanged (`ownerUserId = :userId`), so this can only
+   * ever release the caller's OWN rows — a manager clearing someone else's book
+   * still has to reassign, exactly as on the detail page.
+   */
+  async function releasePartnersBulk(partnerIds, user, reason = null, requestId = null) {
+    const ids = normaliseBulkIds(partnerIds, 'release');
+    const released = [];
+    const failed = [];
+    for (const partnerId of ids) {
+      try {
+        await releasePartner(partnerId, user, reason, requestId);
+        released.push(partnerId);
+      } catch (err) {
+        if (err?.statusCode === 403) {
+          // releasePartner cannot tell "gone" from "not yours" — its UPDATE
+          // matches neither — so read the state to report the real reason.
+          const state = await conflictPayload(partnerId);
+          failed.push({
+            id: partnerId,
+            reason: !state ? 'not_found'
+              : state.claimedBy ? 'owned_by_other'
+                : state.archived ? 'archived'
+                  : state.merged ? 'merged' : 'not_owned',
+            claimedBy: state?.claimedBy || null,
+          });
+        } else {
+          d.logger.warn('redeem_ops.partner.bulk_release_row_failed', { partnerId, error: err?.message });
+          failed.push({ id: partnerId, reason: 'error', claimedBy: null });
+        }
+      }
+    }
+    d.logger.info('redeem_ops.partner.bulk_released', {
+      requestId, actorUserId: user.id, requested: ids.length, released: released.length,
+    });
+    return { released, failed };
+  }
+
+  /**
+   * The assignee rule, shared by the single-row assign and the bulk one so a
+   * batch can reject a bad target ONCE, before any row is written, instead of
+   * failing every row with the same message.
+   */
+  async function assertAssignableUser(toUserId) {
     const target = await d.User.findByPk(toUserId);
     if (!target || !target.isActive || !(target.role === 'redeem_ops' || target.role === 'admin' || target.redeemOpsRole)) {
       throw new AppError('Assignee must be an active Redeem Ops staff member', 400);
     }
+    return target;
+  }
+
+  /** Manager assign/reassign to any active staff member (capability-gated at the route). */
+  async function assignPartner(partnerId, toUserId, actor, reason = null, requestId = null) {
+    await assertAssignableUser(toUserId);
     return d.sequelize.transaction(async (t) => {
       const partner = await d.PartnerOrganisation.findByPk(partnerId, { transaction: t, lock: t.LOCK.UPDATE });
       if (!partner || partner.archivedAt || partner.mergedIntoId) {
@@ -212,11 +257,46 @@ export function makeClaimService(overrides = {}) {
     });
   }
 
-  return { claimPartner, claimPartnerTx, claimPartnersBulk, releasePartner, assignPartner };
+  /**
+   * Hand many businesses to one person — the manager's move when a rep leaves
+   * or a territory changes hands. The assignee is validated once up front (a
+   * bad target is the manager's mistake, not the rows'), then each row is its
+   * own transaction like every other bulk action.
+   */
+  async function assignPartnersBulk(partnerIds, toUserId, actor, reason = null, requestId = null) {
+    const ids = normaliseBulkIds(partnerIds, 'assign');
+    await assertAssignableUser(toUserId);
+    const assigned = [];
+    const failed = [];
+    for (const partnerId of ids) {
+      try {
+        await assignPartner(partnerId, toUserId, actor, reason, requestId);
+        assigned.push(partnerId);
+      } catch (err) {
+        const notFound = err?.statusCode === 404;
+        if (!notFound) {
+          d.logger.warn('redeem_ops.partner.bulk_assign_row_failed', { partnerId, error: err?.message });
+        }
+        failed.push({ id: partnerId, reason: notFound ? 'not_found' : 'error', claimedBy: null });
+      }
+    }
+    d.logger.info('redeem_ops.partner.bulk_assigned', {
+      requestId, actorUserId: actor.id, toUserId, requested: ids.length, assigned: assigned.length,
+    });
+    return { assigned, failed };
+  }
+
+  return {
+    claimPartner, claimPartnerTx, claimPartnersBulk,
+    releasePartner, releasePartnersBulk,
+    assignPartner, assignPartnersBulk, assertAssignableUser,
+  };
 }
 
 const _default = makeClaimService();
 export const claimPartner = _default.claimPartner;
 export const claimPartnersBulk = _default.claimPartnersBulk;
 export const releasePartner = _default.releasePartner;
+export const releasePartnersBulk = _default.releasePartnersBulk;
 export const assignPartner = _default.assignPartner;
+export const assignPartnersBulk = _default.assignPartnersBulk;
