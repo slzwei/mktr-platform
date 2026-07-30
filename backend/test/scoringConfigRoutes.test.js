@@ -141,6 +141,16 @@ describe('authoring and listing', () => {
   test('GET /:version 404s on a version that does not exist', async () => {
     expect((await asAdmin(request(app).get(`${meta.path}/999999`))).status).toBe(404)
   })
+
+  test('GET /:version carries the houseDefault ghosts the lead-page sheet peek renders', async () => {
+    const draft = await createDraftConfig({ config: config(7), campaignId: campaign.id })
+    const res = await asAdmin(request(app).get(`${meta.path}/${draft.version}`))
+    expect(res.status).toBe(200)
+    expect(res.body.data.houseDefault.components.age.maxPoints)
+      .toBe(DEFAULT_SCORING_CONFIG.components.age.maxPoints)
+    // leadComponents defaulted the way the scorer defaults them.
+    expect(res.body.data.houseDefault.leadComponents.screening.maxPoints).toBe(20)
+  })
 })
 
 /** The observed live baseline for a scope — what the editor sends (§4.5). */

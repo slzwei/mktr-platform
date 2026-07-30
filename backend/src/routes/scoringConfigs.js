@@ -182,7 +182,19 @@ router.get('/progress', asyncHandler(async (req, res) => {
 }));
 
 router.get('/:version', asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await getScoringConfig(versionOf(req)) });
+  // houseDefault rides along (campaign-scoring-editor: the lead page's
+  // sheet-peek ghosts "house N" beside every weight, exactly like the
+  // editor) — server-owned values, never a frontend twin.
+  res.json({
+    success: true,
+    data: {
+      ...(await getScoringConfig(versionOf(req))),
+      houseDefault: {
+        ...normalizeConfig(DEFAULT_SCORING_CONFIG),
+        leadComponents: DEFAULT_LEAD_COMPONENTS,
+      },
+    },
+  });
 }));
 
 /** Hand-authored draft. Same validation path as the AI's output — there is no

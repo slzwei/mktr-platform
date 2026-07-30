@@ -13,6 +13,7 @@ import AdminV2LeadProfile from '../AdminV2LeadProfile';
 
 vi.mock('@/api/adminV2', () => ({
   fetchProspectProfile: vi.fn(),
+  fetchScoringEdition: vi.fn(),
   fetchAgentOptions: vi.fn(async () => [{ id: 'agent-1', name: 'Marcus Wong' }]),
   bulkAssign: vi.fn(async () => ({ data: { affectedCount: 1 } })),
   bulkReturnToHeld: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock('@/api/adminV2', () => ({
   })),
 }));
 
-import { fetchProspectProfile, bulkAssign, bulkReturnToHeld, bulkDelete, fetchConsentCopy } from '@/api/adminV2';
+import { fetchProspectProfile, fetchScoringEdition, bulkAssign, bulkReturnToHeld, bulkDelete, fetchConsentCopy } from '@/api/adminV2';
 
 const PROFILE = {
   id: 'p1',
@@ -826,5 +827,93 @@ describe('lead score breakdown (drill-in)', () => {
     setup();
     await screen.findByText(/This person was erased/);
     expect(screen.queryByText('Lead score')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The sheet peek: THIS campaign's customised metrics on the lead — the exact
+ * EDITION the stamp names, fetched lazily, never the currently-resolved sheet.
+ */
+describe('campaign sheet peek (drill-in)', () => {
+  const EDITION_3 = {
+    version: 3,
+    status: 'approved',
+    configJson: {
+      components: {
+        engagement: { maxPoints: 15 }, contactability: { maxPoints: 10 }, market_fit: { maxPoints: 15 },
+        life_events: { maxPoints: 25 }, family_gap: { maxPoints: 20 }, capacity: { maxPoints: 15 },
+        age: { maxPoints: 10 }, coverage_headroom: { maxPoints: -10 },
+      },
+      leadComponents: { response: { maxPoints: 10 }, screening: { maxPoints: 40 } },
+      ageCurve: [
+        { upTo: 24, value: 0.25 }, { upTo: 29, value: 0.55 }, { upTo: 34, value: 0.8 },
+        { upTo: 44, value: 1 }, { upTo: 49, value: 0.8 }, { upTo: 59, value: 0.55 }, { upTo: null, value: 0.3 },
+      ],
+      targetSegments: [{ language: 'zh', ethnicity: 'chinese', weight: 1 }],
+    },
+    houseDefault: {
+      components: {
+        engagement: { maxPoints: 15 }, contactability: { maxPoints: 10 }, market_fit: { maxPoints: 15 },
+        life_events: { maxPoints: 25 }, family_gap: { maxPoints: 20 }, capacity: { maxPoints: 15 },
+        age: { maxPoints: 10 }, coverage_headroom: { maxPoints: -10 },
+      },
+      leadComponents: { response: { maxPoints: 15 }, screening: { maxPoints: 20 } },
+    },
+  };
+  const SCORED_LEAD = () => {
+    const d = JSON.parse(JSON.stringify(PROFILE));
+    Object.assign(d.consumer.signups[0], { score: 48, scoredAt: '2026-07-27T16:14:35Z' });
+    return Object.assign(d, {
+      score: 48, meetScore: 50, buyScore: 16,
+      scoredConfigVersion: 3, scoringAlgorithmVersion: 'lead/v1',
+      scoreComputedAt: '2026-07-27T16:14:35Z',
+      scoreBreakdown: {
+        groups: { meet: { components: ['screening'] }, buy: { components: ['age'] } },
+        components: {
+          screening: { state: 'assessed', points: 40, maxPoints: 40 },
+          age: { state: 'assessed', points: 6.5, maxPoints: 10 },
+        },
+        completeness: { assessed: 2, total: 10 },
+        events: [],
+      },
+    });
+  };
+
+  it('is lazy: named collapsed with the edition, nothing fetched until opened', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED_LEAD());
+    setup();
+    await screen.findByText('Lead score');
+    expect(screen.getByText("This campaign's scoring sheet")).toBeInTheDocument();
+    expect(fetchScoringEdition).not.toHaveBeenCalled();
+  });
+
+  it('opens to the EDITION document: weights vs house with deviation markers, curve peak, target market', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED_LEAD());
+    fetchScoringEdition.mockResolvedValue(EDITION_3);
+    setup();
+    await screen.findByText('Lead score');
+    fireEvent.click(screen.getByText("This campaign's scoring sheet"));
+
+    await waitFor(() => expect(fetchScoringEdition).toHaveBeenCalledWith(3));
+    // The one big bet, marked: screening 40 vs house 20. ('40' also appears
+    // as the breakdown row's points, so the MARKER is the unique assertion.)
+    expect(await screen.findByText(/↑ \+20/)).toBeInTheDocument();
+    // The trim too: response 10 vs house 15.
+    expect(screen.getByText(/↓ -5/)).toBeInTheDocument();
+    // The curve as a sentence, not a JSON dump.
+    expect(screen.getByText('35–44')).toBeInTheDocument();
+    // Target market row + the door back to the editor.
+    expect(screen.getByText(/Mandarin \/ chinese/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Tune this sheet on the campaign page/ }))
+      .toHaveAttribute('href', '/admin/campaigns/camp-1');
+  });
+
+  it('a failed edition read falls back to the breakdown’s own maxima, stated plainly', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED_LEAD());
+    fetchScoringEdition.mockRejectedValue(new Error('nope'));
+    setup();
+    await screen.findByText('Lead score');
+    fireEvent.click(screen.getByText("This campaign's scoring sheet"));
+    expect(await screen.findByText(/the weights in the breakdown above/)).toBeInTheDocument();
   });
 });
