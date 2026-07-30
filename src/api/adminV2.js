@@ -336,3 +336,15 @@ export async function approveScoringDraft(version, expectedLiveVersion) {
   const resp = await apiClient.post(`/admin/scoring-configs/${version}/approve`, { expectedLiveVersion });
   return resp?.data ?? null;
 }
+
+/** The AI author (campaign-scoring-editor Phase 1.6): reads the campaign's
+ *  brief server-side, writes a full sheet, returns {draft, rationale,
+ *  simulation}. The draft is inert like any other — same preview + approve
+ *  gates; the AI never makes anything live. `description` is the optional
+ *  one-line steer (sanitized + length-capped server-side). */
+export async function proposeScoringSheet(campaignId, description = '') {
+  const resp = await apiClient.post('/admin/scoring-configs/propose', {
+    campaignId, description,
+  });
+  return resp?.data ?? null;
+}
