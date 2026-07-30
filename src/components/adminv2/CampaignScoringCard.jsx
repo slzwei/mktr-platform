@@ -16,7 +16,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useScoringSheet, useScoringHistory, useScoringProgress } from '@/hooks/queries/useAdminV2';
-import { createScoringDraft, simulateScoringDraft, approveScoringDraft, fetchScoringEdition } from '@/api/adminV2';
+import { createScoringDraft, simulateScoringDraft, approveScoringDraft, fetchScoringEdition, proposeScoringSheet } from '@/api/adminV2';
 import { Card, Chip, Skeleton, ErrorState } from '@/components/adminv2/primitives';
 import { fmtDateTime } from '@/lib/adminV2/format';
 import ScoringSheetEditor from '@/components/adminv2/ScoringSheetEditor';
@@ -96,6 +96,12 @@ export default function CampaignScoringCard({ campaignId }) {
   const [draft, setDraft] = useState(null);
   const [sim, setSim] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  // AI authoring (Phase 1.6): the optional one-line steer + the returned
+  // rationale. The AI path lands in EXACTLY the manual flow's state — a
+  // draft with a preview — so approve stays the single gate.
+  const [aiAsking, setAiAsking] = useState(false);
+  const [aiNote, setAiNote] = useState('');
+  const [rationale, setRationale] = useState(null);
   const progress = useScoringProgress(campaignId, { enabled: !sheet.isError });
   const history = useScoringHistory(campaignId, historyOpen);
 
@@ -103,6 +109,18 @@ export default function CampaignScoringCard({ campaignId }) {
     qc.invalidateQueries({ queryKey: ['adminV2', 'scoringSheet', campaignId] });
     qc.invalidateQueries({ queryKey: ['adminV2', 'scoringHistory', campaignId] });
     qc.invalidateQueries({ queryKey: ['adminV2', 'scoringProgress', campaignId] });
+  };
+
+  // Callable only from rendered UI, so sheet.data is always present by then.
+  const openEditor = (seedDoc, from = null) => {
+    setDoc(seedDoc);
+    setBaseline(sheet.data.version);
+    setRestoredFrom(from);
+    setDraft(null);
+    setSim(null);
+    setConfirming(false);
+    setRationale(null);
+    setEditing(true);
   };
 
   const saveDraft = useMutation({
@@ -121,6 +139,28 @@ export default function CampaignScoringCard({ campaignId }) {
     onError: (e) => toast.error(e?.message || 'Save failed'),
   });
 
+  const propose = useMutation({
+    mutationFn: () => proposeScoringSheet(campaignId, aiNote.trim()),
+    onSuccess: async (res) => {
+      // Land in the SAME state the manual flow produces: editor open on the
+      // AI's document, a pending draft, and a resolved-comparison preview
+      // (we re-simulate with compareTo:'resolved' rather than trusting the
+      // propose response's stored-comparison sim — same semantics as manual).
+      openEditor(docFromSheet({ config: { ...sheet.data.config, ...res.draft.configJson } }), null);
+      setDraft(res.draft);
+      setRationale(res.rationale || null);
+      setAiAsking(false);
+      toast.success(`AI drafted edition #${res.draft.version} — preview it before it can go live`);
+      invalidate();
+      try {
+        setSim(await simulateScoringDraft(res.draft.version));
+      } catch (e) {
+        toast.error(e?.message || 'Preview failed — you can retry it');
+      }
+    },
+    onError: (e) => toast.error(e?.message || 'The AI author is unavailable — check AI Settings, or edit manually'),
+  });
+
   const approve = useMutation({
     mutationFn: ({ version }) => approveScoringDraft(version, baseline ?? sheet.data?.version ?? 0),
     onSuccess: (res) => {
@@ -134,6 +174,8 @@ export default function CampaignScoringCard({ campaignId }) {
       setSim(null);
       setConfirming(false);
       setRestoredFrom(null);
+      setRationale(null);
+      setAiAsking(false);
       invalidate();
     },
     onError: (e) => {
@@ -159,15 +201,6 @@ export default function CampaignScoringCard({ campaignId }) {
 
   const s = sheet.data;
   const p = progress.data;
-  const openEditor = (seedDoc, from = null) => {
-    setDoc(seedDoc);
-    setBaseline(s.version);
-    setRestoredFrom(from);
-    setDraft(null);
-    setSim(null);
-    setConfirming(false);
-    setEditing(true);
-  };
 
   return (
     <Card
@@ -175,9 +208,19 @@ export default function CampaignScoringCard({ campaignId }) {
       title="Lead scoring"
       meta={s.version > 0 ? `EDITION #${s.version}${s.activatedAt ? ` · LIVE SINCE ${fmtDateTime(s.activatedAt).toUpperCase()}` : ''}` : 'HOUSE DEFAULT'}
       action={!editing ? (
-        <button type="button" className="av2-btn av2-btn--sm" onClick={() => openEditor(docFromSheet(s))}>
-          Customise
-        </button>
+        <span style={{ display: 'inline-flex', gap: 6 }}>
+          <button
+            type="button" className="av2-btn av2-btn--sm"
+            disabled={propose.isPending}
+            title="The AI writes a full sheet from this campaign's brief — you still preview and approve"
+            onClick={() => setAiAsking((v) => !v)}
+          >
+            {propose.isPending ? 'Drafting…' : '✨ Draft with AI'}
+          </button>
+          <button type="button" className="av2-btn av2-btn--sm" onClick={() => openEditor(docFromSheet(s))}>
+            Customise
+          </button>
+        </span>
       ) : undefined}
     >
       <div style={{ padding: '12px 16px' }}>
@@ -192,6 +235,33 @@ export default function CampaignScoringCard({ campaignId }) {
                 : 'Scoring by the house rules — customising pins a sheet to this campaign only.'}
           </span>
         </div>
+
+        {/* The AI ask row: one optional steer sentence, then the same
+            draft → preview → approve flow as the manual path. */}
+        {aiAsking && !editing && (
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              aria-label="steer the AI (optional)"
+              placeholder="optional steer — e.g. “young families; the screening call matters most”"
+              value={aiNote}
+              maxLength={300}
+              onChange={(e) => setAiNote(e.target.value)}
+              style={{ flex: 1, minWidth: 260, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line-strong)', background: 'var(--surface)', color: 'var(--ink)', fontSize: 12.5 }}
+            />
+            <button
+              type="button" className="av2-btn av2-btn--primary av2-btn--sm"
+              disabled={propose.isPending}
+              onClick={() => propose.mutate()}
+            >
+              {propose.isPending ? 'Drafting…' : 'Write the sheet'}
+            </button>
+            <button type="button" className="av2-btn av2-btn--sm" onClick={() => setAiAsking(false)}>Cancel</button>
+            <span style={{ width: '100%', fontSize: 11, color: 'var(--ink-3)' }}>
+              Reads this campaign's brief (objective, product, audience). The result is a draft — nothing goes live without your approval.
+            </span>
+          </div>
+        )}
 
         {/* Regrade progress — visible only while the sweep still owes leads. */}
         {p && !p.complete && (
@@ -211,9 +281,26 @@ export default function CampaignScoringCard({ campaignId }) {
             <ScoringSheetEditor
               doc={doc}
               houseDefault={s.houseDefault}
-              onChange={setDoc}
+              onChange={(next) => {
+                setDoc(next);
+                // An edit INVALIDATES the pending draft — otherwise Approve
+                // would ship the pre-edit document while the screen shows the
+                // edited one. Editing sends you back through Save & preview.
+                if (draft) {
+                  setDraft(null);
+                  setSim(null);
+                  setConfirming(false);
+                  setRationale(null);
+                }
+              }}
               disabled={saveDraft.isPending || approve.isPending}
             />
+            {rationale && (
+              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: 'var(--accent-soft)', border: '1px solid var(--line)' }}>
+                <div className="av2-microcaps">Why the AI chose this</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-2)', marginTop: 4 }}>{rationale}</div>
+              </div>
+            )}
             <PreviewPanel sim={sim} />
             <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
               {!draft ? (
@@ -252,7 +339,7 @@ export default function CampaignScoringCard({ campaignId }) {
               )}
               <button
                 type="button" className="av2-btn av2-btn--sm"
-                onClick={() => { setEditing(false); setDraft(null); setSim(null); setConfirming(false); setRestoredFrom(null); }}
+                onClick={() => { setEditing(false); setDraft(null); setSim(null); setConfirming(false); setRestoredFrom(null); setRationale(null); }}
               >Close</button>
               {draft && <span className="av2-caption">draft #{draft.version} — inert until approved</span>}
             </div>

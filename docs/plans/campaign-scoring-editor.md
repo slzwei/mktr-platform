@@ -342,7 +342,8 @@ single authority.
 | **1** | Editor + campaign card + history + §4.1–4.8 + tests |
 | **1.5** | Rescore-now (bounded, explicit button; re-resolves version inside the fence; M7 race self-heals via version-mismatch staleness) |
 | **2** | Creation-time block (both surfaces) + duplicate-flow note + optional `discarded` status migration |
-| out | Product/global sheet screens · AI-propose UI (endpoint exists) · decay knobs · batch preview loaders unless §4.3's budget trips · agent-facing anything |
+| **1.6** | AI-propose button (SHIPPED 2026-07-31): "Draft with AI" on the card — optional steer sentence → /propose reads the brief and writes the sheet → the SAME draft/preview/approve gates; card re-simulates compareTo:'resolved' (never the propose response's stored-comparison sim) and renders the rationale; ANY edit invalidates the pending draft so approve can never ship a pre-edit doc |
+| out | Product/global sheet screens · decay knobs · batch preview loaders unless §4.3's budget trips · agent-facing anything |
 
 ## 10. Codex round-1 log (gpt-5.6-sol xhigh — FAIL)
 

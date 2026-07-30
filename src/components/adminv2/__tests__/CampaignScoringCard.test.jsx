@@ -18,12 +18,13 @@ vi.mock('@/api/adminV2', () => ({
   createScoringDraft: vi.fn(),
   simulateScoringDraft: vi.fn(),
   approveScoringDraft: vi.fn(),
+  proposeScoringSheet: vi.fn(),
 }));
 
 import { toast } from 'sonner';
 import {
   fetchScoringSheet, fetchScoringHistory, fetchScoringProgress, fetchScoringEdition,
-  createScoringDraft, simulateScoringDraft, approveScoringDraft,
+  createScoringDraft, simulateScoringDraft, approveScoringDraft, proposeScoringSheet,
 } from '@/api/adminV2';
 
 const HOUSE = {
@@ -207,5 +208,71 @@ describe('history', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Approve & apply' }));
     expect(screen.getByText(/This rolls back past edition #7/)).toBeInTheDocument();
+  });
+});
+
+describe('the AI author (Phase 1.6)', () => {
+  const AI_DRAFT = {
+    version: 11, status: 'draft',
+    configJson: {
+      components: {
+        engagement: { maxPoints: 15 }, contactability: { maxPoints: 12 }, market_fit: { maxPoints: 10 },
+        life_events: { maxPoints: 20 }, family_gap: { maxPoints: 18 }, capacity: { maxPoints: 10 },
+        age: { maxPoints: 8 }, coverage_headroom: { maxPoints: -6 },
+      },
+      leadComponents: { response: { maxPoints: 12 }, screening: { maxPoints: 24 } },
+    },
+  };
+
+  it('one click + one optional sentence → the SAME draft/preview/approve flow as manual', async () => {
+    fetchScoringSheet.mockResolvedValue(SHEET_CAMPAIGN);
+    proposeScoringSheet.mockResolvedValue({
+      draft: AI_DRAFT,
+      rationale: 'Screening is this campaign’s richest signal; capacity matters less for a draw audience.',
+      simulation: { comparedTo: 'stored' }, // deliberately ignored by the card
+    });
+    simulateScoringDraft.mockResolvedValue({ population: { examined: 12 }, diff: { meanDelta: 2, movedOver20: 1, becameNull: 0 } });
+    setup();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Draft with AI/ }));
+    fireEvent.change(screen.getByLabelText('steer the AI (optional)'), { target: { value: 'screening matters most' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Write the sheet' }));
+
+    await waitFor(() => expect(proposeScoringSheet).toHaveBeenCalledWith('camp-1', 'screening matters most'));
+    // The editor opens ON the AI's document…
+    expect(await screen.findByText('Why the AI chose this')).toBeInTheDocument();
+    expect(screen.getByLabelText('screening call weight')).toHaveValue(24);
+    // …the preview re-runs with the resolved comparison (never the propose sim)…
+    await waitFor(() => expect(simulateScoringDraft).toHaveBeenCalledWith(11));
+    // …and approve is the same gate, carrying the same baseline.
+    approveScoringDraft.mockResolvedValue({ version: 11, status: 'approved' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve & apply' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, make it live' }));
+    await waitFor(() => expect(approveScoringDraft).toHaveBeenCalledWith(11, 7));
+  });
+
+  it('touching any knob INVALIDATES the pending draft — approve can never ship a pre-edit doc', async () => {
+    fetchScoringSheet.mockResolvedValue(SHEET_CAMPAIGN);
+    proposeScoringSheet.mockResolvedValue({ draft: AI_DRAFT, rationale: 'r' });
+    simulateScoringDraft.mockResolvedValue({ population: { examined: 3 }, diff: { meanDelta: 0, movedOver20: 0, becameNull: 0 } });
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /Draft with AI/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Write the sheet' }));
+    await screen.findByRole('button', { name: 'Approve & apply' });
+
+    fireEvent.change(screen.getByLabelText('engagement weight'), { target: { value: '18' } });
+    // Back through Save & preview — the stale draft and its rationale are gone.
+    expect(screen.getByRole('button', { name: 'Save draft & preview' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve & apply' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Why the AI chose this')).not.toBeInTheDocument();
+  });
+
+  it('an unavailable AI degrades to a toast that points at AI Settings and the manual path', async () => {
+    fetchScoringSheet.mockResolvedValue(SHEET_CAMPAIGN);
+    proposeScoringSheet.mockRejectedValue(new Error('AI provider is not configured.'));
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: /Draft with AI/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Write the sheet' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('AI provider is not configured.'));
   });
 });
