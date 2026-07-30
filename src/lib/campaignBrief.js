@@ -48,6 +48,12 @@ export const BRIEF_PRODUCTS = [
   { id: 'insurance', label: 'Insurance / financial planning', hint: 'The reader is a potential policyholder' },
   { id: 'recruitment', label: 'Recruitment', hint: 'The reader is a potential hire, not a customer' },
   { id: 'partner_offer', label: 'Partner offer', hint: 'A partner’s product or venue is the draw' },
+  // Vocabulary grows DELIBERATELY (2026-07-31): each value below is wired
+  // end-to-end on arrival — a PRODUCT_PROMPT phrase, suggestProfileQuestions
+  // rules, and eligibility as a scoring product tier — never added as a bare
+  // label. That wiring is the whole argument against an "Other" free-text.
+  { id: 'education', label: 'Tuition / enrichment classes', hint: 'The reader is a parent (or learner) choosing classes' },
+  { id: 'property', label: 'Property / real estate', hint: 'The reader is a potential buyer, seller or tenant' },
 ];
 export const BRIEF_PRODUCT_IDS = BRIEF_PRODUCTS.map((p) => p.id);
 
@@ -300,6 +306,8 @@ const PRODUCT_PROMPT = {
   insurance: 'The offer is insurance / financial planning — the reader is a potential policyholder; credibility and clarity beat hype.',
   recruitment: 'This is a recruitment campaign — the reader is a potential recruit weighing a career move, NOT a customer buying a product.',
   partner_offer: 'A partner’s product or venue is the offer — the partner experience is the hero of the page.',
+  education: 'The offer is tuition / enrichment classes — the reader is usually a parent deciding for their child; speak to outcomes and trust, not urgency.',
+  property: 'The offer is property / real estate — the reader is weighing a major purchase, sale or tenancy; substance and local specifics beat hype.',
 };
 const LANGUAGE_PROMPT = {
   en: 'English',
@@ -347,6 +355,9 @@ export function briefPromptFacts(targetAudience) {
  *  - insurance wants `annual_income` (income qualifies a lead before a call)
  *  - insurance aimed at 45-59/60+ wants `retirement_age`
  *  - insurance aimed at 30-44 wants `children` (dependants drive coverage)
+ *  - education wants `children` (the buyer is almost always a parent) and
+ *    `annual_income` (class fees are a recurring purchase)
+ *  - property wants `annual_income` (affordability is the qualifying fact)
  *  - recruitment/partner_offer suggest nothing beyond the language rules —
  *    asking a recruit or a voucher redeemer their income is pure friction
  *  - `pets` is never suggested (no brief axis maps to it)
@@ -374,6 +385,13 @@ export function suggestProfileQuestions(targetAudience) {
     if (bands.includes('30-44')) {
       add('children', 'A family-age audience — dependants drive coverage needs.');
     }
+  }
+  if (b.product === 'education') {
+    add('children', 'The buyer is almost always a parent — how many children decides how many enrolments.');
+    add('annual_income', 'Class fees are a recurring purchase — income qualifies the enquiry.');
+  }
+  if (b.product === 'property') {
+    add('annual_income', 'Affordability is the qualifying fact for any property enquiry.');
   }
   // Canonical library order (language, annual_income, children, pets, retirement_age).
   const order = ['language', 'annual_income', 'children', 'pets', 'retirement_age'];

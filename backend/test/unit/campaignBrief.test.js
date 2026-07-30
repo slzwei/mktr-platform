@@ -9,7 +9,7 @@ import {
   BRIEF_AGE_BANDS,
   BRIEF_INCOME_BANDS, BRIEF_INCOME_BAND_IDS,
   BRIEF_ARCHETYPES,
-  hasBrief, normalizeBrief, deriveArchetype,
+  hasBrief, normalizeBrief, deriveArchetype, briefProductKey,
   briefPromptFacts, suggestProfileQuestions, summarizeBrief,
 } from '../../src/utils/campaignBrief.js';
 import { validateFact } from '../../src/utils/factTaxonomy.js';
@@ -65,7 +65,7 @@ describe('campaignBrief', () => {
       expect(ids).toEqual(defs.map((d) => d.id));
     }
     expect(BRIEF_OBJECTIVE_IDS).toEqual(['agent_leads', 'screened_leads', 'audience_build', 'partner_footfall']);
-    expect(BRIEF_PRODUCT_IDS).toEqual(['insurance', 'recruitment', 'partner_offer']);
+    expect(BRIEF_PRODUCT_IDS).toEqual(['insurance', 'recruitment', 'partner_offer', 'education', 'property']);
     expect(BRIEF_AGE_BANDS).toEqual(['18-29', '30-44', '45-59', '60+']);
     expect(BRIEF_ARCHETYPES).toEqual(['draw', 'quiz', 'screening', 'reward', 'plain_form']);
   });
@@ -233,6 +233,41 @@ describe('campaignBrief', () => {
     test('no brief → no suggestions', () => {
       expect(suggestProfileQuestions(undefined)).toEqual([]);
       expect(suggestProfileQuestions({})).toEqual([]);
+    });
+
+    // ── the 2026-07-31 vocabulary growth: every new product pulls levers ──
+
+    test('education → children + income (the buyer is a parent, fees are a purchase)', () => {
+      const ids = suggestProfileQuestions({
+        objective: 'agent_leads', product: 'education',
+      }).map((s) => s.id);
+      expect(ids).toEqual(['annual_income', 'children']);
+    });
+
+    test('property → income only; language rule still composes on top', () => {
+      expect(suggestProfileQuestions({
+        objective: 'agent_leads', product: 'property',
+      }).map((s) => s.id)).toEqual(['annual_income']);
+      expect(suggestProfileQuestions({
+        objective: 'agent_leads', product: 'property', audience: { language: 'zh' },
+      }).map((s) => s.id)).toEqual(['language', 'annual_income']);
+    });
+
+    test('new products normalize, round-trip, and key a scoring product tier', () => {
+      for (const product of ['education', 'property']) {
+        const n = normalizeBrief({ objective: 'agent_leads', product });
+        expect(n.ok).toBe(true);
+        expect(normalizeBrief(n.brief).brief).toEqual(n.brief);
+        expect(briefProductKey({ product })).toBe(product);
+        expect(hasBrief({ objective: 'agent_leads', product })).toBe(true);
+      }
+    });
+
+    test('new products carry fixed AI phrases — never a stored string', () => {
+      expect(briefPromptFacts({ objective: 'agent_leads', product: 'education' }).product)
+        .toMatch(/tuition \/ enrichment classes/);
+      expect(briefPromptFacts({ objective: 'agent_leads', product: 'property' }).product)
+        .toMatch(/property \/ real estate/);
     });
   });
 
