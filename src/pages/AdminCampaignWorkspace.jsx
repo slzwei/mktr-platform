@@ -243,8 +243,12 @@ export default function AdminCampaignWorkspace() {
         })}
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      {/* Tab content. `relative` is load-bearing: Radix Switch renders a hidden
+          position:absolute bubble input, and with no positioned ancestor its
+          containing block was the viewport — so overflow-y-auto never clipped
+          it and it stretched the DOCUMENT to the switch's offset (~800px of
+          dead scroll below the shell). */}
+      <div className="relative flex-1 min-h-0 overflow-y-auto">
         {activeTab === 'details' && (
           <div className="p-4 lg:p-6">
             <CampaignDetailsTab
