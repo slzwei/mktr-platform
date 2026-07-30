@@ -124,3 +124,39 @@ export function buildAgeCurveFromBands(selectedIds) {
   merged[merged.length - 1].upTo = null;
   return merged;
 }
+
+/** Sheet-tier chip labels, shared by the campaign card and the create block. */
+export const TIER_LABEL = {
+  campaign: 'campaign sheet',
+  product: 'product sheet',
+  global: 'house sheet',
+  default: 'house default',
+};
+
+/** The full exposed set as a patch — an editor doc always writes every
+ *  exposed knob (campaign-scoring-editor §4.1: exposed knobs never float),
+ *  UI-only keys stripped. */
+export function patchFromDoc(doc, houseDefault) {
+  const components = {};
+  const leadComponents = {};
+  for (const comp of EXPOSED_COMPONENTS) {
+    const value = weightOf(doc, comp) ?? weightOf(houseDefault, comp) ?? 0;
+    (comp.leadGrain ? leadComponents : components)[comp.name] = { maxPoints: value };
+  }
+  const patch = { components, leadComponents };
+  if (Array.isArray(doc?.ageCurve) && doc.ageCurve.length) patch.ageCurve = doc.ageCurve;
+  if (Array.isArray(doc?.targetSegments)) patch.targetSegments = doc.targetSegments;
+  return patch;
+}
+
+/** Seed an editor doc from a strict-resolve payload: effective values only. */
+export function docFromSheet(sheet) {
+  const cfg = sheet?.config || {};
+  return {
+    components: { ...(cfg.components || {}) },
+    leadComponents: { ...(cfg.leadComponents || {}) },
+    ageCurve: Array.isArray(cfg.ageCurve) ? cfg.ageCurve.map((s) => ({ ...s })) : [],
+    targetSegments: Array.isArray(cfg.targetSegments) ? cfg.targetSegments.map((s) => ({ ...s })) : [],
+    _ageBands: [],
+  };
+}

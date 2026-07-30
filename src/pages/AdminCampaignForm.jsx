@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Campaign } from '@/api/entities';
 import { integrations } from '@/api/client';
@@ -13,6 +13,7 @@ import { format, parseISO } from 'date-fns';
 import { Calendar as CalendarIcon, ArrowLeft, Upload, Trash2, Loader2, Video, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import CampaignBriefFields, { briefDraftFromCampaign, briefDraftComplete, briefDraftToPayload } from '@/components/campaigns/workspace/CampaignBriefFields';
+import CreateScoringBlock from '@/components/adminv2/CreateScoringBlock';
 
 export default function AdminCampaignForm() {
  const { id } = useParams();
@@ -43,6 +44,7 @@ export default function AdminCampaignForm() {
  const [uploading, setUploading] = useState(false);
  // Campaign brief — objective + product gate creation (the server 422s without them).
  const [brief, setBrief] = useState(() => briefDraftFromCampaign(null));
+ const scoringRef = useRef(null);
 
  useEffect(() => {
  if (isEditMode) {
@@ -169,8 +171,21 @@ export default function AdminCampaignForm() {
  await Campaign.update(id, formattedData);
  toast.success('Campaign updated successfully');
  } else {
- await Campaign.create(formattedData);
+ const created = await Campaign.create(formattedData);
  toast.success('Campaign created successfully');
+ // The tailored scoring sheet (campaign-scoring-editor §3.3): awaited
+ // BEFORE navigation, non-fatal — scoring never blocks a created campaign.
+ const newId = created?.id || created?.campaign?.id;
+ if (newId && scoringRef.current) {
+ try {
+ await scoringRef.current.submit(newId);
+ } catch (err) {
+ // Partial success is its own message (review B3) — see CreateScoringBlock.
+ toast.warning(err?.draftVersion
+ ? `Campaign created — scoring sheet saved as draft #${err.draftVersion}, but activation didn’t confirm. Check the campaign page.`
+ : 'Campaign created — the scoring sheet wasn’t confirmed. Check the campaign page’s scoring card.');
+ }
+ }
  }
  navigate('/AdminCampaigns');
  } catch (error) {
@@ -290,6 +305,16 @@ export default function AdminCampaignForm() {
  </Card>
 
  <CampaignBriefFields draft={brief} onChange={setBrief} isEdit={isEditMode} />
+
+ {/* Phase 2 (campaign-scoring-editor §3.3) — create only. */}
+ {!isEditMode && (
+ <CreateScoringBlock
+ ref={scoringRef}
+ product={brief.product || null}
+ ageBands={brief.ageBands}
+ language={brief.language || null}
+ />
+ )}
 
  <Card>
  <CardHeader>

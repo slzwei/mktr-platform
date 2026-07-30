@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { buildDrawTermsHtml, formatLongDate } from './drawTermsTemplate';
 import CampaignBriefFields, { briefDraftFromCampaign, briefDraftComplete, briefDraftToPayload } from './CampaignBriefFields';
+import CreateScoringBlock from '@/components/adminv2/CreateScoringBlock';
 
 const toDateInput = (v) => {
   if (!v) return '';
@@ -78,6 +79,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
   // Campaign brief (campaign-brief.md): objective + product gate creation;
   // on edit the pickers show the stored brief and save with the details.
   const [brief, setBrief] = useState(() => briefDraftFromCampaign(initial?.targetAudience));
+  const scoringRef = useRef(null);
 
   // "Fill it for me" — one brief drafts every field below (create mode only).
   // The server clamps the model output (dates/ages/prize rows); this merge
@@ -244,7 +246,11 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
       })(),
       metaPixelId: form.metaPixelId.trim() || null,
       tiktokPixelId: form.tiktokPixelId.trim() || null,
-    }, aiBrief.trim());
+    }, aiBrief.trim(),
+    // Third arg (create only): the scoring block's submit, for the workspace
+    // to AWAIT after the campaign row commits and BEFORE navigating (§3.3) —
+    // a failure is the caller's toast, never a blocked create.
+    (campaignId) => scoringRef.current?.submit(campaignId));
   };
 
   return (
@@ -276,6 +282,18 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
       )}
 
       <CampaignBriefFields draft={brief} onChange={setBrief} isEdit={isEdit} />
+
+      {/* Phase 2 (campaign-scoring-editor §3.3): which sheet a new campaign
+          with these picks would score under, and the door to tailor one —
+          create only; existing campaigns tune from their campaign page. */}
+      {!isEdit && (
+        <CreateScoringBlock
+          ref={scoringRef}
+          product={brief.product || null}
+          ageBands={brief.ageBands}
+          language={brief.language || null}
+        />
+      )}
 
       <Card>
         <CardHeader>

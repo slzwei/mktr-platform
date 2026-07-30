@@ -348,3 +348,21 @@ export async function proposeScoringSheet(campaignId, description = '') {
   });
   return resp?.data ?? null;
 }
+
+/** Rescore-now (Phase 1.5): re-grade this campaign's stale leads inside one
+ *  bounded request. The response says exactly how far it got — `remaining`
+ *  and `more` are the honest leftovers for another press or the sweep. */
+export async function rescoreCampaignScoring(campaignId) {
+  const resp = await apiClient.post('/admin/scoring-configs/rescore', { campaignId });
+  return resp?.data ?? null;
+}
+
+/** Pre-create resolve (Phase 2): what a NEW campaign with this product would
+ *  score under — no campaign id exists yet, so the walk starts at the
+ *  product tier (or global when no product is picked). Strict, like every
+ *  editor read. */
+export async function fetchScoringSheetForProduct(productKey) {
+  const qs = productKey ? `productKey=${encodeURIComponent(productKey)}&strict=1` : 'strict=1';
+  const resp = await apiClient.get(`/admin/scoring-configs/resolve?${qs}`);
+  return resp?.data ?? null;
+}

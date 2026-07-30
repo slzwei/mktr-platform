@@ -348,3 +348,19 @@ describe("simulate's compareTo rides the route", () => {
     expect(res.body.data).toHaveProperty('stored')
   })
 })
+
+describe('POST /rescore (Phase 1.5)', () => {
+  test('runs bounded and reports the honest counts', async () => {
+    const res = await asAdmin(request(app).post(`${meta.path}/rescore`))
+      .send({ campaignId: campaign.id })
+    expect(res.status).toBe(200)
+    expect(res.body.data).toHaveProperty('rescored')
+    expect(res.body.data).toHaveProperty('remaining')
+    expect(res.body.data).toHaveProperty('complete')
+  })
+
+  test('campaignId is required and must be a UUID', async () => {
+    expect((await asAdmin(request(app).post(`${meta.path}/rescore`)).send({})).status).toBe(400)
+    expect((await asAdmin(request(app).post(`${meta.path}/rescore`)).send({ campaignId: 'nope' })).status).toBe(400)
+  })
+})
