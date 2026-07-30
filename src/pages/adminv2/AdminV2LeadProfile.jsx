@@ -526,6 +526,13 @@ const COMPONENT_LABELS = {
   family_gap: 'family gap',
   capacity: 'capacity',
   coverage_headroom: 'coverage headroom',
+  age: 'age',
+  // The two LEAD-grain components (per-campaign-lead-scoring §4). Named here
+  // for both grains, not just the drill-in: the person's numbers are a copy of
+  // their winning lead's, breakdown included, so "response" and "screening"
+  // already surface on the profile card and were reading as bare column keys.
+  response: 'message response',
+  screening: 'screening call',
 };
 
 const FACT_LABELS = {
@@ -621,6 +628,42 @@ function ComponentRow({ name, c }) {
           <span style={{ display: 'block', width: `${pct}%`, height: '100%', background: penalty ? 'var(--bad)' : 'var(--accent-text)' }} />
         )}
       </span>
+    </div>
+  );
+}
+
+/**
+ * The parts, grouped the way the config groups them. Shared by both grains
+ * BECAUSE the two breakdowns are the same shape — the person's is literally a
+ * copy of their winning lead's (`projectPersonScore`), so a reader who learns
+ * to read one has learned to read the other.
+ */
+function ScoreComponents({ breakdown }) {
+  const comps = breakdown?.components || {};
+  const groups = breakdown?.groups || {};
+  const completeness = breakdown?.completeness;
+  const meetNames = groups.meet?.components || [];
+  const buyNames = groups.buy?.components || [];
+  return (
+    <div style={{ padding: '4px 18px 12px' }}>
+      {meetNames.length > 0 && (
+        <>
+          <div className="av2-microcaps" style={{ padding: '6px 0 2px' }}>Reachability</div>
+          {meetNames.map((n) => comps[n] && <ComponentRow key={n} name={n} c={comps[n]} />)}
+        </>
+      )}
+      {buyNames.length > 0 && (
+        <>
+          <div className="av2-microcaps" style={{ padding: '10px 0 2px' }}>Potential</div>
+          {buyNames.map((n) => comps[n] && <ComponentRow key={n} name={n} c={comps[n]} />)}
+        </>
+      )}
+      {completeness && (
+        <div style={{ fontSize: 11.5, color: 'var(--ink-3)', paddingTop: 10 }}>
+          {completeness.assessed} of {completeness.total} components assessed
+          {completeness.assessed < completeness.total && ' — the unknowns above are questions nobody has been asked'}
+        </div>
+      )}
     </div>
   );
 }
@@ -735,11 +778,6 @@ function ScoreEvents({ events, scoredAt }) {
 
 function EnrichmentCard({ enrichment }) {
   const bd = enrichment?.breakdown;
-  const comps = bd?.components || {};
-  const groups = bd?.groups || {};
-  const completeness = bd?.completeness;
-  const meetNames = groups.meet?.components || [];
-  const buyNames = groups.buy?.components || [];
   const facts = enrichment?.facts || [];
 
   return (
@@ -770,26 +808,7 @@ function EnrichmentCard({ enrichment }) {
         </div>
       )}
 
-      <div style={{ padding: '4px 18px 12px' }}>
-        {meetNames.length > 0 && (
-          <>
-            <div className="av2-microcaps" style={{ padding: '6px 0 2px' }}>Reachability</div>
-            {meetNames.map((n) => comps[n] && <ComponentRow key={n} name={n} c={comps[n]} />)}
-          </>
-        )}
-        {buyNames.length > 0 && (
-          <>
-            <div className="av2-microcaps" style={{ padding: '10px 0 2px' }}>Potential</div>
-            {buyNames.map((n) => comps[n] && <ComponentRow key={n} name={n} c={comps[n]} />)}
-          </>
-        )}
-        {completeness && (
-          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', paddingTop: 10 }}>
-            {completeness.assessed} of {completeness.total} components assessed
-            {completeness.assessed < completeness.total && ' — the unknowns above are questions nobody has been asked'}
-          </div>
-        )}
-      </div>
+      <ScoreComponents breakdown={bd} />
 
       <ScoreEvents events={bd?.events} scoredAt={enrichment?.scoredAt} />
 
@@ -812,6 +831,70 @@ function EnrichmentCard({ enrichment }) {
           ))}
         </Disclosure>
       )}
+    </Card>
+  );
+}
+
+/**
+ * WHY this lead scored what it scored — the drill-in's own breakdown.
+ *
+ * The hero line states the number; this states the working, in the same parts
+ * and the same order as the person card, because the two breakdowns are the
+ * same shape.
+ *
+ * It reads the PROSPECT ROW, which is the only per-lead source on this page:
+ * `journey.enrichment` is the person's projection of their best lead (§4), so
+ * on anyone's second campaign it would explain a number this page is not
+ * showing. `?include=profile` already serializes the whole prospect model, so
+ * the breakdown, both halves and the config stamp arrive with no extra request.
+ *
+ * Absent until the sweep has scored this lead — `scoredConfigVersion` is the
+ * stamp that means "scored", and an empty card would imply a verdict nobody
+ * has reached.
+ */
+function LeadScoreCard({ prospect, campaignName, hasPersonCard }) {
+  const bd = prospect?.scoreBreakdown || null;
+  if (!bd || prospect.scoredConfigVersion == null) return null;
+  const stamp = [
+    `CONFIG v${prospect.scoredConfigVersion}`,
+    prospect.scoreComputedAt ? `SCORED ${fmtDateTime(prospect.scoreComputedAt).toUpperCase()}` : null,
+  ].filter(Boolean).join(' · ');
+  return (
+    <Card title="Lead score" meta={stamp}>
+      <div style={{ padding: '12px 18px 6px', display: 'flex', gap: 18 }}>
+        <ScoreDial label="Meet" value={prospect.meetScore} hint="no signal yet" />
+        <ScoreDial label="Buy" value={prospect.buyScore} hint="no facts to judge" />
+      </div>
+
+      {/* The total is NOT an average of the two halves — average 50 and 16 and
+          you get 33, not the 48 in the hero. It is the points below, added up
+          and capped. Stated here because this is the one place the parts and
+          the whole are on screen together, which is exactly where a reader
+          tries the arithmetic and concludes the page is lying. */}
+      {prospect.score != null && (
+        <div style={{ padding: '0 18px 4px', fontSize: 11.5, color: 'var(--ink-3)' }}>
+          <span className="av2-mono" style={{ color: 'var(--ink-2)', fontWeight: 700 }}>{prospect.score}</span>
+          {' = the points below, added up and capped at 100 — not an average of the two halves.'}
+        </div>
+      )}
+
+      {/* §4: the profile card shows this person's BEST lead. On a second
+          campaign that is a different lead with different numbers, so the two
+          cards disagreeing is the system working — say so before a reader
+          reads it as a bug. But only when that card exists: a consumer-less
+          (or never-person-scored) lead has no profile scoring card, and
+          pointing at one would send the reader hunting for a surface that
+          isn't there. */}
+      <div style={{ padding: '0 18px 8px', fontSize: 11.5, color: 'var(--ink-3)' }}>
+        {campaignName
+          ? <><span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>{campaignName}</span>{' only'}</>
+          : 'This campaign only'}
+        {hasPersonCard ? ' — the profile card scores their best campaign.' : '.'}
+      </div>
+
+      <ScoreComponents breakdown={bd} />
+
+      <ScoreEvents events={bd.events} scoredAt={prospect.scoreComputedAt} />
     </Card>
   );
 }
@@ -1547,6 +1630,18 @@ export default function AdminV2LeadProfile() {
                   )}
                 </div>
               </Card>
+            )}
+
+            {/* Last in the grid on purpose: this is the page's explanation, not
+                its news. Gone for an erased person, whose lead-score columns are
+                nulled by the erasure rebuild — the guard is belt-and-braces, so
+                a later change to that rebuild cannot turn this into a leak. */}
+            {!erased && (
+              <LeadScoreCard
+                prospect={p}
+                campaignName={currentSignup?.campaign?.name || p.campaign?.name || null}
+                hasPersonCard={Boolean(journey?.enrichment)}
+              />
             )}
           </div>
         </>
