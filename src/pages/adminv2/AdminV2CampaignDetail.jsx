@@ -15,6 +15,7 @@ import { fmtNumber, fmtSGD, fmtDate, fmtDateTime, fmtRelative, daysUntil } from 
 import { STATUS_LABELS, STATUS_CHIP_CLASS, heldLabel } from '@/lib/adminV2/constants';
 import { Card, Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 import { SeriesBarChart } from '@/components/adminv2/charts';
+import CampaignScoringCard from '@/components/adminv2/CampaignScoringCard';
 
 const WORKSPACE_ON = import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true';
 
@@ -176,6 +177,11 @@ export default function AdminV2CampaignDetail() {
             ))
           )}
         </Card>
+
+        {/* Which sheet grades this campaign's leads, and the door to tune it
+            (campaign-scoring-editor §3.2). Renders its own unavailable state
+            while the backend flag is off. */}
+        <CampaignScoringCard campaignId={c.id} />
       </div>
     </div>
   );

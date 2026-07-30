@@ -285,3 +285,54 @@ export async function fetchEmailBroadcastRecipients(id, { status = 'all', limit 
   const resp = await apiClient.get(`/email-broadcasts/${id}/recipients?${qs.toString()}`);
   return resp?.data ?? { total: 0, recipients: [] };
 }
+
+// ── campaign scoring sheets (campaign-scoring-editor §3-§4) ─────────────────
+// All ride /api/admin/scoring-configs, which is UNMOUNTED until the backend
+// flips SCORING_CONFIG_ADMIN_ENABLED — a 404 here therefore means "scoring
+// controls unavailable on this backend" (flag off OR an old deploy; the two
+// are indistinguishable and the UI must not claim to know which — B10).
+
+/** Strict resolve: the editor's read path. Never cached, never fail-open. */
+export async function fetchScoringSheet(campaignId) {
+  const resp = await apiClient.get(`/admin/scoring-configs/resolve?campaignId=${encodeURIComponent(campaignId)}&strict=1`);
+  return resp?.data ?? null;
+}
+
+export async function fetchScoringHistory(campaignId, { limit = 50 } = {}) {
+  const resp = await apiClient.get(`/admin/scoring-configs/?campaignId=${encodeURIComponent(campaignId)}&limit=${limit}`);
+  return resp?.data ?? [];
+}
+
+export async function fetchScoringEdition(version) {
+  const resp = await apiClient.get(`/admin/scoring-configs/${version}`);
+  return resp?.data ?? null;
+}
+
+export async function fetchScoringProgress(campaignId) {
+  const resp = await apiClient.get(`/admin/scoring-configs/progress?campaignId=${encodeURIComponent(campaignId)}`);
+  return resp?.data ?? null;
+}
+
+/** The editor's save door: the patch composes server-side onto the winning
+ *  RAW doc (§4.1) — the client never merges tiers itself. */
+export async function createScoringDraft(campaignId, patch) {
+  const resp = await apiClient.post('/admin/scoring-configs/', {
+    campaignId, config: patch, composeOnResolved: true,
+  });
+  return resp?.data ?? null;
+}
+
+export async function simulateScoringDraft(version, { sampleMax = 100 } = {}) {
+  const resp = await apiClient.post(`/admin/scoring-configs/${version}/simulate`, {
+    compareTo: 'resolved', sampleMax,
+  });
+  return resp?.data ?? null;
+}
+
+/** `expectedLiveVersion` is the §4.5 concurrency guard: the version the
+ *  editor SAW as live. A 409 means someone else moved the sheet meanwhile.
+ *  A 200 may still be `{noOp:true}` — content already live, no regrade. */
+export async function approveScoringDraft(version, expectedLiveVersion) {
+  const resp = await apiClient.post(`/admin/scoring-configs/${version}/approve`, { expectedLiveVersion });
+  return resp?.data ?? null;
+}

@@ -5,9 +5,11 @@ import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect
 import { sequelize, Consumer, Prospect } from '../src/models/index.js'
 import {
   createDraftConfig, approveScoringConfig, simulateConfig, proposeScoringConfig,
-  listScoringConfigs, sanitizeDescription, MAX_DESCRIPTION_CHARS,
+  listScoringConfigs, getScoringConfig, sanitizeDescription, MAX_DESCRIPTION_CHARS,
 } from '../src/services/scoringConfigService.js'
-import { getActiveScoringConfig, _resetConfigCache } from '../src/services/consumerScoringService.js'
+import {
+  getActiveScoringConfig, resolveScoringConfigStrict, _resetConfigCache,
+} from '../src/services/consumerScoringService.js'
 import { bustScoringConfigCache } from '../src/services/scoringConfigCache.js'
 import { scoreOneLead } from '../src/services/leadScoringService.js'
 import { DEFAULT_SCORING_CONFIG } from '../src/utils/consumerScoring.js'
@@ -43,6 +45,19 @@ const configWith = (agePoints) => ({
   ...DEFAULT_SCORING_CONFIG,
   components: { ...DEFAULT_SCORING_CONFIG.components, age: { maxPoints: agePoints } },
 })
+
+/**
+ * Approve against the CURRENT live baseline for the row's own scope — what the
+ * editor does (§4.5): resolve strictly, hand the observed version back. Tests
+ * that probe the concurrency guard itself pass expectedLiveVersion directly.
+ */
+async function approveLive(version, opts = {}) {
+  const row = await getScoringConfig(version)
+  const live = await resolveScoringConfigStrict({
+    campaignId: row.campaignId, productKey: row.productKey,
+  })
+  return approveScoringConfig(version, { expectedLiveVersion: live.version, ...opts })
+}
 
 /** The shape the provider is contracted to return. */
 const modelProposal = (over = {}) => ({
@@ -126,7 +141,7 @@ afterAll(async () => {
 
 describe('a proposal is a DRAFT, and a draft is not live (§8.3)', () => {
   test('proposing stores a draft that the resolver cannot see', async () => {
-    await createDraftConfig({ config: configWith(3) }).then((d) => approveScoringConfig(d.version))
+    await createDraftConfig({ config: configWith(3) }).then((d) => approveLive(d.version))
 
     const { draft } = await propose({ campaignId: campInsurance.id }, modelProposal())
     expect(draft.status).toBe('draft')
@@ -141,10 +156,10 @@ describe('a proposal is a DRAFT, and a draft is not live (§8.3)', () => {
 
   test('approving it is the single act that makes it live', async () => {
     const globalRow = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(globalRow.version)
+    await approveLive(globalRow.version)
 
     const { draft } = await propose({ campaignId: campInsurance.id }, modelProposal())
-    await approveScoringConfig(draft.version, { actorUserId: admin.id })
+    await approveLive(draft.version, { actorUserId: admin.id })
 
     bustScoringConfigCache()
     const live = await getActiveScoringConfig({ campaignId: campInsurance.id })
@@ -154,12 +169,12 @@ describe('a proposal is a DRAFT, and a draft is not live (§8.3)', () => {
 
   test('approving supersedes the previous approved row AT THE SAME SCOPE only', async () => {
     const oldGlobal = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(oldGlobal.version)
+    await approveLive(oldGlobal.version)
     const scoped = await createDraftConfig({ config: configWith(9), campaignId: campInsurance.id })
-    await approveScoringConfig(scoped.version)
+    await approveLive(scoped.version)
 
     const newGlobal = await createDraftConfig({ config: configWith(4) })
-    await approveScoringConfig(newGlobal.version)
+    await approveLive(newGlobal.version)
 
     const byVersion = Object.fromEntries(
       (await listScoringConfigs({ limit: 200 })).map((r) => [r.version, r.status])
@@ -172,23 +187,23 @@ describe('a proposal is a DRAFT, and a draft is not live (§8.3)', () => {
 
   test('a superseded row cannot be re-approved, and an approved one cannot be re-approved', async () => {
     const a = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(a.version)
-    await expect(approveScoringConfig(a.version)).rejects.toThrow(/already approved/)
+    await approveLive(a.version)
+    await expect(approveLive(a.version)).rejects.toThrow(/already approved/)
 
     const b = await createDraftConfig({ config: configWith(4) })
-    await approveScoringConfig(b.version)
-    await expect(approveScoringConfig(a.version)).rejects.toThrow(/superseded config cannot be re-approved/)
+    await approveLive(b.version)
+    await expect(approveLive(a.version)).rejects.toThrow(/superseded config cannot be re-approved/)
   })
 
   test('approving busts the cache, so the next lead scores under the new rules', async () => {
     const g = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(g.version)
+    await approveLive(g.version)
     const lead = await leadOn(campInsurance)
     await scoreOneLead(lead.id, { force: true })
     expect((await Prospect.findByPk(lead.id)).scoredConfigVersion).toBe(g.version)
 
     const scoped = await createDraftConfig({ config: configWith(22), campaignId: campInsurance.id })
-    await approveScoringConfig(scoped.version)
+    await approveLive(scoped.version)
 
     // No explicit _resetConfigCache: approve is contracted to bust it.
     await scoreOneLead(lead.id, { force: true })
@@ -280,7 +295,7 @@ describe('the AI never scores a lead — it only writes weights', () => {
   test('the prompt carries the brief and current weights, and no lead data at all', async () => {
     const capture = []
     const g = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(g.version)
+    await approveLive(g.version)
     const lead = await leadOn(campInsurance)
     await scoreOneLead(lead.id, { force: true })
 
@@ -297,7 +312,7 @@ describe('the AI never scores a lead — it only writes weights', () => {
 
   test('scoring the same lead twice under one config gives the same number', async () => {
     const { draft } = await propose({ campaignId: campInsurance.id }, modelProposal())
-    await approveScoringConfig(draft.version)
+    await approveLive(draft.version)
     const lead = await leadOn(campInsurance)
 
     const first = await scoreOneLead(lead.id, { force: true })
@@ -310,7 +325,7 @@ describe('the AI never scores a lead — it only writes weights', () => {
 describe('simulation before activation (§8.2)', () => {
   test('reports the distribution diff a schema check cannot see', async () => {
     const g = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(g.version)
+    await approveLive(g.version)
 
     const leads = [await leadOn(campInsurance), await leadOn(campInsurance)]
     for (const l of leads) await scoreOneLead(l.id, { force: true })
@@ -328,7 +343,7 @@ describe('simulation before activation (§8.2)', () => {
 
   test('a config that scores everyone high is visible as a mean shift', async () => {
     const g = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(g.version)
+    await approveLive(g.version)
     for (let i = 0; i < 3; i += 1) {
       const l = await leadOn(campRecruitment)
       await scoreOneLead(l.id, { force: true })
@@ -364,7 +379,7 @@ describe('simulation before activation (§8.2)', () => {
 
   test('it writes nothing — the stored scores are untouched afterwards', async () => {
     const g = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(g.version)
+    await approveLive(g.version)
     const lead = await leadOn(campInsurance)
     await scoreOneLead(lead.id, { force: true })
     const before = await Prospect.findByPk(lead.id)
@@ -379,7 +394,7 @@ describe('simulation before activation (§8.2)', () => {
 
   test('a truncated sample SAYS it is truncated rather than reading as the whole picture', async () => {
     const g = await createDraftConfig({ config: configWith(3) })
-    await approveScoringConfig(g.version)
+    await approveLive(g.version)
     for (let i = 0; i < 3; i += 1) await leadOn(campInsurance)
 
     const sim = await simulateConfig({
@@ -415,5 +430,197 @@ describe('scope hygiene', () => {
       { campaignId: '00000000-0000-4000-8000-000000000000' }, modelProposal(), capture
     )).rejects.toThrow(/Campaign not found/)
     expect(capture).toHaveLength(0)
+  })
+})
+
+// ── the editor's amendments (campaign-scoring-editor §4) ────────────────────
+
+describe('§4.1 composition: a campaign patch lands on the WINNING raw doc', () => {
+  test('explicit product-sheet extras survive; arrays replace wholesale', async () => {
+    // A product sheet that carries an EXPLICIT decay override — the kind of
+    // hidden knob a naive campaign override would silently reset to defaults.
+    const product = await createDraftConfig({
+      config: { ...configWith(5), decay: { engagementHalfLifeDays: 90, lifeEventHalfLifeDays: 365 } },
+      productKey: 'insurance',
+    })
+    await approveLive(product.version)
+
+    const curve = [{ upTo: 34, value: 0.6 }, { upTo: 44, value: 1 }, { upTo: null, value: 0.6 }]
+    const draft = await createDraftConfig({
+      config: { ageCurve: curve },
+      campaignId: campInsurance.id,
+      composeOnResolved: true,
+    })
+
+    // The stored document is the COMPOSED one: patch applied, extras kept.
+    expect(draft.configJson.decay.engagementHalfLifeDays).toBe(90)
+    expect(draft.configJson.components.age.maxPoints).toBe(5)
+    // Arrays replace wholesale — never element-merged into nonsense.
+    expect(draft.configJson.ageCurve).toEqual(curve)
+  })
+
+  test('version-0 base composes the patch alone', async () => {
+    const draft = await createDraftConfig({
+      config: { components: { age: { maxPoints: 8 } } },
+      campaignId: campInsurance.id,
+      composeOnResolved: true,
+    })
+    expect(draft.configJson.components.age.maxPoints).toBe(8)
+    // Nothing else was pinned — the base was {}, not a frozen default dump.
+    expect(draft.configJson.decay).toBeUndefined()
+  })
+
+  test('a draft for a campaign that does not exist is a 422, not a stray row', async () => {
+    await expect(createDraftConfig({
+      config: configWith(5), campaignId: '00000000-0000-4000-8000-000000000001',
+    })).rejects.toThrow(/Campaign not found/)
+  })
+})
+
+describe('§4.5/§4.6 approve: race guards and the content-equal no-op', () => {
+  test('a stale expectedLiveVersion is a 409 sentence', async () => {
+    const draft = await createDraftConfig({ config: configWith(6), campaignId: campInsurance.id })
+    await expect(approveScoringConfig(draft.version, { expectedLiveVersion: 999999 }))
+      .rejects.toThrow(/changed while you were editing/)
+  })
+
+  test('the baseline is the RESOLVED winner — a campaign inheriting global compares against global', async () => {
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+    const draft = await createDraftConfig({ config: configWith(9), campaignId: campInsurance.id })
+    // The campaign has no row of its own; what the editor saw as live was the
+    // GLOBAL version. That is the number that must pass the guard.
+    const approved = await approveScoringConfig(draft.version, { expectedLiveVersion: g.version })
+    expect(approved.status).toBe('approved')
+  })
+
+  test('content-equal approve is a stated no-op: no new live version, candidate stays a draft', async () => {
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+    // Same CONTENT at the same effective scope-resolution — jsonb equality.
+    const dup = await createDraftConfig({ config: configWith(3), campaignId: campInsurance.id })
+    const res = await approveScoringConfig(dup.version, { expectedLiveVersion: g.version })
+
+    expect(res.noOp).toBe(true)
+    expect(res.live.version).toBe(g.version)
+    expect(res.candidateVersion).toBe(dup.version)
+    // The candidate is STILL a draft — not superseded, which would make it
+    // indistinguishable from a formerly-live edition (round-3 M2).
+    expect((await getScoringConfig(dup.version)).status).toBe('draft')
+    // And the resolved version did not move → no regrade was triggered.
+    bustScoringConfigCache()
+    const live = await getActiveScoringConfig({ campaignId: campInsurance.id })
+    expect(live.version).toBe(g.version)
+  })
+
+  test('a row that stopped being a draft under the lock loses loudly', async () => {
+    const draft = await createDraftConfig({ config: configWith(7), campaignId: campInsurance.id })
+    // Simulate a concurrent transition committing first.
+    await sequelize.query(
+      `UPDATE enrichment_scoring_configs SET status = 'superseded' WHERE version = :v`,
+      { replacements: { v: draft.version } }
+    )
+    await expect(approveScoringConfig(draft.version, { expectedLiveVersion: 0 }))
+      .rejects.toThrow(/superseded config cannot be re-approved/)
+  })
+})
+
+describe('§4.7 validator strengthening', () => {
+  test('a flipped penalty sign is rejected, both directions', async () => {
+    await expect(createDraftConfig({
+      config: { ...configWith(5), components: { ...configWith(5).components, coverage_headroom: { maxPoints: 10 } } },
+    })).rejects.toThrow(/penalty/)
+    await expect(createDraftConfig({
+      config: configWith(-5),
+    })).rejects.toThrow(/only penalties/)
+  })
+
+  test('targetSegments are vocabulary-clamped, axis-required, duplicate-free', async () => {
+    const base = configWith(5)
+    await expect(createDraftConfig({ config: { ...base, targetSegments: [{ weight: 1 }] } }))
+      .rejects.toThrow(/must name a language or an ethnicity/)
+    await expect(createDraftConfig({ config: { ...base, targetSegments: [{ language: 'fr' }] } }))
+      .rejects.toThrow(/language must be one of/)
+    await expect(createDraftConfig({ config: { ...base, targetSegments: [{ language: 'zh', typo: 1 }] } }))
+      .rejects.toThrow(/unknown keys/)
+    await expect(createDraftConfig({
+      config: { ...base, targetSegments: [{ language: 'zh' }, { language: 'zh' }] },
+    })).rejects.toThrow(/duplicates/)
+  })
+
+  test('decay rejects unknown sibling keys; oversized configs are a 422', async () => {
+    await expect(createDraftConfig({
+      config: { ...configWith(5), decay: { engagementHalfLifeDays: 90, lifeEventHalfLifeDays: 365, typo: 1 } },
+    })).rejects.toThrow(/decay has unknown keys/)
+    await expect(createDraftConfig({
+      config: { ...configWith(5), targetSegments: [{ language: 'zh', ethnicity: 'chinese'.repeat(20000) }] },
+    })).rejects.toThrow(/bytes/)
+  })
+})
+
+describe("§4.3 simulate compareTo:'resolved' isolates the config's own impact", () => {
+  test('refuses non-campaign scopes while their populations include overridden leads', async () => {
+    await expect(simulateConfig({ config: configWith(5), productKey: 'insurance', compareTo: 'resolved' }))
+      .rejects.toThrow(/campaign-scope only/)
+  })
+
+  test('a candidate identical to the resolved config moves nobody, whatever drift the stored scores carry', async () => {
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+    const lead = await leadOn(campInsurance)
+    await scoreOneLead(lead.id, { force: true })
+    // Poison the STORED score so a stored-comparison would show a huge move.
+    await sequelize.query('UPDATE prospects SET score = 1 WHERE id = :id', { replacements: { id: lead.id } })
+
+    const sim = await simulateConfig({
+      config: configWith(3), campaignId: campInsurance.id, compareTo: 'resolved',
+    })
+    expect(sim.comparedTo).toBe('resolved')
+    expect(sim.resolvedVersion).toBe(g.version)
+    // Config-only delta: identical config → zero movement, despite the poison.
+    expect(sim.diff.meanDelta === 0 || sim.diff.meanDelta === null).toBe(true)
+    expect(sim.diff.movedOver20).toBe(0)
+    // The drifted stored score is CONTEXT, not the comparison base.
+    expect(sim.stored.scored).toBeGreaterThan(0)
+  })
+
+  test('writes nothing', async () => {
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+    const lead = await leadOn(campInsurance)
+    await scoreOneLead(lead.id, { force: true })
+    const beforeRow = (await sequelize.query('SELECT score, "scoreBreakdown" FROM prospects WHERE id = :id', { replacements: { id: lead.id } }))[0][0]
+    await simulateConfig({ config: configWith(9), campaignId: campInsurance.id, compareTo: 'resolved' })
+    const afterRow = (await sequelize.query('SELECT score, "scoreBreakdown" FROM prospects WHERE id = :id', { replacements: { id: lead.id } }))[0][0]
+    expect(afterRow).toEqual(beforeRow)
+  })
+})
+
+describe('§4.8 regrade progress is the complement of the sweep, never a version match alone', () => {
+  test('counts stamped-current leads; dirty and never-scored rows are NOT current; empty is complete', async () => {
+    const { scoringProgressForCampaign } = await import('../src/services/scoringConfigService.js')
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+
+    const camp = await createTestCampaign(admin.id, {
+      name: `Progress ${Date.now()}`,
+      targetAudience: { objective: 'agent_leads', product: 'insurance' },
+    })
+    // Empty campaign: complete, not forever-pending (round-3 B3).
+    expect((await scoringProgressForCampaign(camp.id)).complete).toBe(true)
+
+    const a = await leadOn(camp) // scored current
+    const b = await leadOn(camp) // scored current but DIRTY → stale
+    const c = await leadOn(camp) // never scored → stale
+    await scoreOneLead(a.id, { force: true })
+    await scoreOneLead(b.id, { force: true })
+    await sequelize.query('UPDATE prospects SET "scoreDirtyAt" = now() WHERE id = :id', { replacements: { id: b.id } })
+
+    const p = await scoringProgressForCampaign(camp.id)
+    expect(p.total).toBe(3)
+    expect(p.current).toBe(1)
+    expect(p.resolvedVersion).toBe(g.version)
+    expect(p.complete).toBe(false)
+    expect(String(c.id)).toBeTruthy()
   })
 })

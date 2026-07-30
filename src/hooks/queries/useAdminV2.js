@@ -7,6 +7,7 @@ import {
   fetchOverview, fetchAttention, fetchSeries, fetchFunnel,
   fetchProspects, fetchProspectDetail, fetchProspectProfile, fetchConsumers, fetchCampaignsList, fetchAgentOptions,
   fetchAgentsRoster, fetchCampaignSummary, fetchWallets, fetchWalletLedger, fetchAgentGroups,
+  fetchScoringSheet, fetchScoringHistory, fetchScoringProgress,
 } from '@/api/adminV2';
 
 const STALE_MS = 30_000;
@@ -99,4 +100,37 @@ export function useWalletLedger(agentId, page = 1) {
 
 export function useAgentGroups() {
   return useQuery({ queryKey: ['adminV2', 'agentGroups'], queryFn: fetchAgentGroups, staleTime: STALE_MS });
+}
+
+export function useScoringSheet(campaignId) {
+  return useQuery({
+    queryKey: ['adminV2', 'scoringSheet', campaignId],
+    queryFn: () => fetchScoringSheet(campaignId),
+    staleTime: STALE_MS,
+    enabled: !!campaignId,
+    // 404 = the surface is switched off — an answer, not a transient.
+    retry: (count, err) => err?.status !== 404 && count < 2,
+  });
+}
+
+export function useScoringHistory(campaignId, enabled) {
+  return useQuery({
+    queryKey: ['adminV2', 'scoringHistory', campaignId],
+    queryFn: () => fetchScoringHistory(campaignId),
+    staleTime: STALE_MS,
+    enabled: !!campaignId && enabled !== false,
+    retry: (count, err) => err?.status !== 404 && count < 2,
+  });
+}
+
+export function useScoringProgress(campaignId, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['adminV2', 'scoringProgress', campaignId],
+    queryFn: () => fetchScoringProgress(campaignId),
+    enabled: !!campaignId && enabled,
+    // Poll only while the card is mounted AND the regrade is incomplete —
+    // the interval callback sees the latest payload and shuts itself off.
+    refetchInterval: (query) => (query.state.data && !query.state.data.complete ? 30_000 : false),
+    retry: (count, err) => err?.status !== 404 && count < 2,
+  });
 }
