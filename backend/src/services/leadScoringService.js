@@ -183,10 +183,11 @@ export function computeLeadInputHash({ facts, telemetry, configVersion, algorith
  *
  * The BREAKDOWN travels with the numbers, extending §4's three columns by
  * one. It has to: the profile card renders `groups.meet`/`groups.buy`
- * component rows straight out of scoreBreakdown
- * (AdminV2LeadProfile.jsx:589-624), so numbers from the winning lead beside a
- * breakdown from the retired person-grain pass would render components that
- * visibly do not sum to the score shown above them.
+ * component rows straight out of scoreBreakdown (AdminV2LeadProfile.jsx,
+ * ScoreComponents — the renderer the person card and the lead card share),
+ * so numbers from the winning lead beside a breakdown from the retired
+ * person-grain pass would render components that visibly do not sum to the
+ * score shown above them.
  *
  * SERIALISATION: every caller holds the Consumer row FOR UPDATE (the fence,
  * enrichmentFence.js:87-93), so two of this person's leads can never project

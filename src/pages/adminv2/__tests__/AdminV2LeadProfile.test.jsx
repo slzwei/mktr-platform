@@ -651,3 +651,148 @@ describe('scoring panel', () => {
     expect(screen.queryByText('Scoring')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * The LEAD score's own breakdown (per-campaign-lead-scoring §4/§6).
+ *
+ * The drill-in used to state the number and stop there, so the one page about
+ * one lead was the one page that could not say why. The breakdown it shows is
+ * the LEAD's — read off the prospect row — because the person's card is a copy
+ * of their winning lead's and would explain a different number entirely.
+ */
+describe('lead score breakdown (drill-in)', () => {
+  /** Shaped on a real prod row: two lead-grain components, one screening event,
+   *  a negative-max penalty, and four unknowns. */
+  const SCORED = (over = {}) => {
+    const d = JSON.parse(JSON.stringify(PROFILE));
+    Object.assign(d.consumer.signups[0], { score: 48, scoredAt: '2026-07-27T16:14:35Z' });
+    return Object.assign(d, {
+      score: 48,
+      meetScore: 50,
+      buyScore: 16,
+      scoredConfigVersion: 3,
+      scoringAlgorithmVersion: 'lead/v1',
+      scoreComputedAt: '2026-07-27T16:14:35Z',
+      scoreBreakdown: {
+        algorithmVersion: 'lead/v1',
+        groups: {
+          meet: { score: 50, rawMax: 75, components: ['engagement', 'contactability', 'market_fit', 'response', 'screening'] },
+          buy: { score: 16, rawMax: 70, components: ['life_events', 'family_gap', 'capacity', 'coverage_headroom', 'age'] },
+        },
+        components: {
+          engagement: { state: 'assessed', points: 7.47, maxPoints: 15, basisObservationIds: [], note: '1 signup(s), 1 verified' },
+          contactability: { state: 'assessed', points: 10, maxPoints: 10, basisObservationIds: [], note: 'reachable via marketing consent, verified phone, email, WhatsApp' },
+          market_fit: { state: 'unknown', points: 0, maxPoints: 15, basisObservationIds: [], note: 'no language or ethnicity fact' },
+          response: { state: 'unknown', points: 0, maxPoints: 15, basisObservationIds: [], note: 'no message owned by this lead yet' },
+          screening: { state: 'assessed', points: 20, maxPoints: 20, basisObservationIds: [], note: 'qualified, sentiment positive' },
+          life_events: { state: 'unknown', points: 0, maxPoints: 25, basisObservationIds: [], note: 'no recent life event on record' },
+          family_gap: { state: 'assessed', points: 3, maxPoints: 20, basisObservationIds: ['o2'], note: 'children 0' },
+          capacity: { state: 'assessed', points: 1.5, maxPoints: 15, basisObservationIds: ['o1'], note: 'income <40k' },
+          coverage_headroom: { state: 'unknown', points: 0, maxPoints: -10, basisObservationIds: [], note: 'no coverage fact' },
+          age: { state: 'assessed', points: 6.5, maxPoints: 10, basisObservationIds: ['o3'], note: 'born 1995-1999 — age 27-31 in 2026' },
+        },
+        completeness: { assessed: 6, total: 10 },
+        events: [{
+          type: 'screening', at: '2026-07-26T09:25:51Z', ageDays: 1, component: 'screening',
+          verdict: 'qualified', interest: null, sentiment: 'positive', agreedToMeet: null,
+          undecayedWeight: 20, schemaVersion: 'screening/v1',
+        }],
+      },
+      ...over,
+    });
+  };
+
+  it('states the working, not just the number: both halves, config, campaign', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED());
+    setup();
+    expect(await screen.findByText('Lead score')).toBeInTheDocument();
+    expect(screen.getByTitle('Meet 50/100')).toHaveTextContent('50');
+    expect(screen.getByTitle('Buy 16/100')).toHaveTextContent('16');
+    // SGT, like every other timestamp on the page: 16:14Z is 00:14 on the 28th.
+    expect(screen.getByText('CONFIG v3 · SCORED 28 JUL 00:14')).toBeInTheDocument();
+    // This fixture's person has never been person-scored (no enrichment), so
+    // the page has no profile scoring card — the copy must not point the
+    // reader at a comparison surface that is not there. Function matcher:
+    // the campaign name is a nested span, so the sentence spans elements.
+    expect(screen.getByText((_, el) => el?.textContent === 'Tokyo Getaway Lucky Draw only.')).toBeInTheDocument();
+    expect(screen.queryByText(/profile card scores their best campaign/)).not.toBeInTheDocument();
+  });
+
+  it('says the total is a capped sum — a reader who averages 50 and 16 gets 33', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED());
+    setup();
+    await screen.findByText('Lead score');
+    expect(screen.getByText(/= the points below, added up and capped at 100/)).toBeInTheDocument();
+    expect(screen.getByText(/not an average of the two halves/)).toBeInTheDocument();
+    // The hero's number and the number the parts add to are the SAME number.
+    expect(screen.getAllByText('48')).toHaveLength(2);
+  });
+
+  it('groups the parts and prices each one against its own maximum', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED());
+    setup();
+    await screen.findByText('Lead score');
+    expect(screen.getByText('Reachability')).toBeInTheDocument();
+    expect(screen.getByText('Potential')).toBeInTheDocument();
+    expect(screen.getByText('7.47')).toBeInTheDocument();
+    expect(screen.getByText('6.5')).toBeInTheDocument();
+    expect(screen.getByText(/6 of 10 components assessed/)).toBeInTheDocument();
+    // The penalty keeps its negative maximum — a reader must be able to see
+    // that coverage headroom can only ever subtract.
+    expect(screen.getByText('/-10')).toBeInTheDocument();
+  });
+
+  it('names the two lead-grain components instead of printing column keys', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED());
+    setup();
+    await screen.findByText('Lead score');
+    expect(screen.getByLabelText(/screening call: qualified, sentiment positive/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/message response: no message owned by this lead yet/)).toBeInTheDocument();
+    expect(screen.queryByText('screening')).not.toBeInTheDocument();
+  });
+
+  it('lists what happened, when, and what it was worth at full strength', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED());
+    setup();
+    await screen.findByText('Lead score');
+    expect(screen.getByText('Response events')).toBeInTheDocument();
+    expect(screen.getByText('Screening call: qualified · sentiment positive')).toBeInTheDocument();
+    expect(screen.getByText('+20')).toBeInTheDocument();
+    expect(screen.getByText(/Weights are shown at full strength/)).toBeInTheDocument();
+  });
+
+  it('explains THIS lead, never the person\'s projection of their best one', async () => {
+    const d = SCORED();
+    // The person's card would say Meet 32 — their best lead's, which on a
+    // second campaign is a different lead entirely.
+    d.consumer.enrichment = {
+      meetScore: 32, buyScore: 8, consumerScore: 17, configVersion: 3,
+      scoredAt: '2026-07-27T16:14:35Z', breakdown: { groups: {}, components: {} }, facts: [],
+    };
+    fetchProspectProfile.mockResolvedValue(d);
+    setup();
+    await screen.findByText('Lead score');
+    expect(screen.getByTitle('Meet 50/100')).toBeInTheDocument();
+    expect(screen.queryByTitle('Meet 32/100')).not.toBeInTheDocument();
+    // The person's own card belongs to the person's own view.
+    expect(screen.queryByText('Scoring')).not.toBeInTheDocument();
+    // But since that card EXISTS for this person, the drill-in names the §4
+    // relationship, so the two cards disagreeing does not read as a bug.
+    expect(screen.getByText(/only — the profile card scores their best campaign\./)).toBeInTheDocument();
+  });
+
+  it('is absent until the sweep has scored this lead', async () => {
+    setup();
+    await screen.findByText('Signup detail');
+    expect(screen.queryByText('Lead score')).not.toBeInTheDocument();
+  });
+
+  it('is absent for an erased person, whose score columns are nulled', async () => {
+    const d = SCORED();
+    d.consumer.consumer.erasedAt = '2026-07-28T02:00:00Z';
+    fetchProspectProfile.mockResolvedValue(d);
+    setup();
+    await screen.findByText(/This person was erased/);
+    expect(screen.queryByText('Lead score')).not.toBeInTheDocument();
+  });
+});

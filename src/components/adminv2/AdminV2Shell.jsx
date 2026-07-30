@@ -30,7 +30,10 @@ export function useAdminV2Theme() {
 }
 
 function sgtClock() {
-  return new Intl.DateTimeFormat('en-SG', { timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+  // hourCycle 'h23', not hour12:false — old-ICU runtimes map the latter to
+  // h24, which would tick this clock "24:00" at midnight (fmtDateTime has the
+  // full story).
+  return new Intl.DateTimeFormat('en-SG', { timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
 }
 
 function initialsOf(user) {

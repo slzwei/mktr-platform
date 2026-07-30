@@ -1134,3 +1134,46 @@ describe('Prospect CAPI meta-fields (Phase 2)', () => {
     expect(p.sourceMetadata?.fbp).toBe('fbp-strip')
   })
 })
+
+describe('Lead score on the detail payload — the drill-in card\'s wire contract', () => {
+  // The Lead Profile page renders prospects.scoreBreakdown / meetScore /
+  // buyScore straight off GET /api/prospects/:id?include=profile
+  // (AdminV2LeadProfile.jsx, LeadScoreCard). That worked by omission — the
+  // detail read serializes the whole model because nothing excludes anything —
+  // and every UI test mocks the fetch, so a future "slim the detail payload"
+  // attributes exclusion (the list read already has one for screeningMetadata)
+  // would blank the card with the whole frontend suite still green. This is
+  // the fence.
+  it('GET /api/prospects/:id?include=profile ships the score columns', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const p = await createTestProspect(campaign.id, {
+      score: 48,
+      meetScore: 50,
+      buyScore: 16,
+      scoreBreakdown: {
+        algorithmVersion: 'lead/v1',
+        groups: { meet: { score: 50, rawMax: 75, components: ['screening'] } },
+        components: { screening: { state: 'assessed', points: 20, maxPoints: 20, note: 'qualified' } },
+        completeness: { assessed: 1, total: 1 },
+        events: [],
+      },
+      scoredConfigVersion: 3,
+      scoringAlgorithmVersion: 'lead/v1',
+      scoreComputedAt: new Date('2026-07-27T16:14:35Z'),
+    })
+
+    const res = await request(app)
+      .get(`/api/prospects/${p.id}?include=profile`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const got = res.body.data.prospect
+    expect(got.score).toBe(48)
+    expect(got.meetScore).toBe(50)
+    expect(got.buyScore).toBe(16)
+    expect(got.scoredConfigVersion).toBe(3)
+    expect(got.scoreComputedAt).toBeTruthy()
+    expect(got.scoreBreakdown.groups.meet.components).toEqual(['screening'])
+    expect(got.scoreBreakdown.components.screening.points).toBe(20)
+  })
+})
