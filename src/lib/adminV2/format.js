@@ -29,7 +29,11 @@ export function fmtDateTime(value) {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   const date = d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', timeZone: SGT });
-  const time = d.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SGT });
+  // hourCycle 'h23', NOT hour12:false — ICU versions disagree on what
+  // hour12:false means for en-SG (Node 20 resolves it to h24, Node 24 to
+  // h23), so midnight rendered "24:14" or "00:14" depending on the runtime.
+  // h23 pins it: midnight is 00:xx everywhere, CI included.
+  const time = d.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: SGT });
   return `${date} ${time}`;
 }
 

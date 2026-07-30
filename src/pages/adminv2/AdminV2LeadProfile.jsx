@@ -35,7 +35,10 @@ import {
 const SGT = 'Asia/Singapore';
 const fullName = (o) => `${o?.firstName || ''} ${o?.lastName || ''}`.trim();
 const sameName = (a, b) => fullName(a).toLowerCase() === fullName(b).toLowerCase();
-const sgtTime = (v) => new Date(v).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SGT });
+// hourCycle 'h23', not hour12:false — ICU versions map the latter to h24 or
+// h23 depending on runtime, so midnight was "24:xx" on some (fmtDateTime has
+// the full story).
+const sgtTime = (v) => new Date(v).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: SGT });
 const sgtDayKey = (v) => new Intl.DateTimeFormat('en-CA', { timeZone: SGT }).format(new Date(v));
 const drawWindowDayUpper = (v) => drawWindowDay(v).toUpperCase();
 /** House phone display: +6591234567 → "+65 9123 4567" (root CLAUDE.md rule). */
