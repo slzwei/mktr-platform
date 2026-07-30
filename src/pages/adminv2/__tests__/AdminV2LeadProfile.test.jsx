@@ -642,6 +642,14 @@ describe('scoring panel', () => {
     expect(screen.getByText('screening_transcript')).toBeInTheDocument();
   });
 
+  it('the person card carries the same mechanics explainer', async () => {
+    fetchProspectProfile.mockResolvedValue(ENRICHED());
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    expect(screen.getByText('How this score works')).toBeInTheDocument();
+    expect(screen.getByText(/edition #1/)).toBeInTheDocument();
+  });
+
   it('is absent entirely when the person has never been scored', async () => {
     const p = JSON.parse(JSON.stringify(PROFILE));
     p.consumer.enrichment = null;
@@ -797,6 +805,18 @@ describe('lead score breakdown (drill-in)', () => {
     setup();
     await screen.findByText('Signup detail');
     expect(screen.queryByText('Lead score')).not.toBeInTheDocument();
+  });
+
+  it('carries the mechanics explainer, naming the edition that scored it', async () => {
+    fetchProspectProfile.mockResolvedValue(SCORED());
+    setup();
+    await screen.findByText('Lead score');
+    // Collapsed by default — it teaches without shouting.
+    expect(screen.getByText('How this score works')).toBeInTheDocument();
+    expect(screen.getByText(/A points checklist, not a grade/)).toBeInTheDocument();
+    expect(screen.getByText(/unknown is never treated as low/)).toBeInTheDocument();
+    expect(screen.getByText(/edition #3/)).toBeInTheDocument();
+    expect(screen.getByText(/Old signals fade/)).toBeInTheDocument();
   });
 
   it('is absent for an erased person, whose score columns are nulled', async () => {
