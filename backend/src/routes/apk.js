@@ -5,7 +5,9 @@ import fs from 'fs';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
-export const meta = { path: '/api/apk' };
+// Paused DOOH OTA channel — GET /latest is a public unauthenticated binary
+// download for the retired tablet app, so keep the whole surface off by default.
+export const meta = { path: '/api/apk', flag: 'APK_ENABLED', flagDefault: 'false' };
 
 const router = express.Router();
 

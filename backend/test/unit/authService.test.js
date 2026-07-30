@@ -533,6 +533,104 @@ describe('authService (unit)', () => {
       expect(existingUser.fullName).toBe('Filled Name');
       expect(existingUser.avatarUrl).toBe('https://avatar.url');
     });
+
+    it('rejects with 401 and no token when the stored googleSub differs from the incoming sub', async () => {
+      const existingUser = {
+        ...mocks.mockUser,
+        isActive: true,
+        googleSub: 'stored-sub-A',
+        save: jest.fn().mockResolvedValue(true),
+      };
+      mocks.User.findOne.mockResolvedValue(existingUser);
+
+      await expect(
+        authService.googleIdTokenLogin({
+          email: 'test@example.com',
+          googleSub: 'incoming-sub-B',
+          name: 'Test User',
+        })
+      ).rejects.toMatchObject({ statusCode: 401, message: 'Authentication failed' });
+
+      expect(mocks.generateToken).not.toHaveBeenCalled();
+      expect(existingUser.save).not.toHaveBeenCalled();
+      expect(existingUser.googleSub).toBe('stored-sub-A');
+      expect(mocks.logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  // ────────────────────────────────────────────────
+  // googleOAuthCallback
+  // ────────────────────────────────────────────────
+
+  describe('googleOAuthCallback', () => {
+    const originalFetch = global.fetch;
+
+    // Stubs the two Google calls the service makes: the code→token exchange
+    // and the userinfo fetch that returns the Google profile.
+    function stubGoogle(profile) {
+      global.fetch = jest.fn((url) => {
+        if (String(url).includes('oauth2.googleapis.com/token')) {
+          return Promise.resolve({ ok: true, json: async () => ({ access_token: 'google-access-token' }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => profile });
+      });
+    }
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('links googleSub on first Google login for a user with no stored sub', async () => {
+      stubGoogle({ id: 'incoming-sub-A', email: 'test@example.com', name: 'Test User', picture: '' });
+      const existingUser = {
+        ...mocks.mockUser,
+        googleSub: null,
+        update: jest.fn().mockResolvedValue(true),
+      };
+      mocks.User.findOne.mockResolvedValue(existingUser);
+
+      const result = await authService.googleOAuthCallback('auth-code', 'http://localhost:5173');
+
+      expect(existingUser.update).toHaveBeenCalledWith({ googleSub: 'incoming-sub-A' });
+      expect(result.token).toBe('jwt-token-123');
+    });
+
+    it('issues a token when the stored sub matches the incoming sub', async () => {
+      stubGoogle({ id: 'sub-match', email: 'test@example.com', name: 'Test User', picture: '' });
+      const existingUser = {
+        ...mocks.mockUser,
+        googleSub: 'sub-match',
+        update: jest.fn().mockResolvedValue(true),
+      };
+      mocks.User.findOne.mockResolvedValue(existingUser);
+
+      const result = await authService.googleOAuthCallback('auth-code', 'http://localhost:5173');
+
+      expect(existingUser.update).not.toHaveBeenCalled();
+      expect(result.token).toBe('jwt-token-123');
+    });
+
+    it('rejects with 401 and no token when the stored sub differs from the incoming sub', async () => {
+      stubGoogle({ id: 'incoming-sub-B', email: 'test@example.com', name: 'Test User', picture: '' });
+      const existingUser = {
+        ...mocks.mockUser,
+        googleSub: 'stored-sub-A',
+        update: jest.fn().mockResolvedValue(true),
+      };
+      mocks.User.findOne.mockResolvedValue(existingUser);
+
+      await expect(
+        authService.googleOAuthCallback('auth-code', 'http://localhost:5173')
+      ).rejects.toMatchObject({ statusCode: 401, message: 'Authentication failed' });
+
+      expect(mocks.generateToken).not.toHaveBeenCalled();
+      expect(existingUser.update).not.toHaveBeenCalled();
+      expect(existingUser.googleSub).toBe('stored-sub-A');
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Google ID mismatch'),
+        { userId: existingUser.id }
+      );
+    });
   });
 
   // ────────────────────────────────────────────────

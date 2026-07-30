@@ -1,4 +1,8 @@
 import request from 'supertest'
+
+// Set feature flags BEFORE importing getApp, since route mounting is conditional at init time
+process.env.PROVISIONING_ENABLED = 'true'
+
 import { getApp, closeDb, createTestUser } from './helpers.js'
 
 let app

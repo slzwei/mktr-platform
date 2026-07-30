@@ -1,6 +1,10 @@
 import './setup.js'
 import crypto from 'crypto'
 import request from 'supertest'
+
+// Set feature flags BEFORE importing getApp, since route mounting is conditional at init time
+process.env.PROVISIONING_ENABLED = 'true'
+
 import { getApp, closeDb, createTestUser } from './helpers.js'
 import { Device, ProvisioningSession } from '../src/models/index.js'
 import { v4 as uuidv4 } from 'uuid'
