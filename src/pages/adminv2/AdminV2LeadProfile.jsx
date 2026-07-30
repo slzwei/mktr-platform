@@ -829,7 +829,59 @@ function EnrichmentCard({ enrichment }) {
           ))}
         </Disclosure>
       )}
+
+      <ScoringMechanicsNote edition={enrichment?.stampsUnavailable ? null : enrichment?.configVersion} />
     </Card>
+  );
+}
+
+/**
+ * The MECHANICS, on the page (asked for directly: "can you put somewhere,
+ * the scoring mechanics on the lead?"). The same plain language the console
+ * uses everywhere, tucked behind a disclosure so it teaches without
+ * shouting. Shared by BOTH score cards — the person card renders a copy of a
+ * lead's breakdown, so one explanation is the truth for both.
+ *
+ * Wordings are deliberately DISTINCT from the cards' own microcopy (the sum
+ * line, the completeness line) so nothing on screen repeats itself verbatim.
+ */
+function ScoringMechanicsNote({ edition }) {
+  const p = { margin: 0 };
+  const b = (text) => <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{text}</span>;
+  return (
+    <Disclosure label="How this score works" indent={36}>
+      <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.6, display: 'grid', gap: 8, maxWidth: 660, paddingTop: 2 }}>
+        <p style={p}>
+          {b('A points checklist, not a grade.')} Ten questions we would ask about any
+          lead, each worth a set number of points. Evidence earns points; a question
+          never asked shows “—” and earns nothing — {b('unknown is never treated as low')}.
+        </p>
+        <p style={p}>
+          {b('Two kinds of evidence.')} What the person {b('did')} — signed up, verified
+          their phone, read our WhatsApp, took the screening call — and what we
+          {' '}{b('know')} about them — age, children, income — from form answers and
+          call transcripts. Each row’s dotted label explains its own points on hover.
+        </p>
+        <p style={p}>
+          {b('The three numbers.')} The headline is every earned point added together
+          (capped at 100). Meet is the reachability rows against their own maximum —
+          “will they take a consultant’s call”. Buy is the potential rows against
+          theirs — “would they actually buy”. Buy stays “—” until at least one real
+          fact is known, so ignorance can never fake a number.
+        </p>
+        <p style={p}>
+          {b('Old signals fade.')} Activity counts for about half after six months,
+          life events after a year. The score is recomputed nightly and when
+          something new happens; “scored” above is its as-of stamp.
+        </p>
+        <p style={p}>
+          {b('The rulebook is per campaign.')} These weights come from
+          {edition != null ? <> this campaign’s scoring sheet — edition #{edition}</> : ' the campaign’s scoring sheet'},
+          tunable from the campaign page (draft → preview on real leads → approve;
+          every edition is kept, with who approved it).
+        </p>
+      </div>
+    </Disclosure>
   );
 }
 
@@ -893,6 +945,8 @@ function LeadScoreCard({ prospect, campaignName, hasPersonCard }) {
       <ScoreComponents breakdown={bd} />
 
       <ScoreEvents events={bd.events} scoredAt={prospect.scoreComputedAt} />
+
+      <ScoringMechanicsNote edition={prospect.scoredConfigVersion} />
     </Card>
   );
 }
