@@ -13,6 +13,13 @@ globalThis.ResizeObserver =
 
 // Mock dependencies
 const mockNavigate = vi.fn();
+
+// Out of scope here: the create-flow scoring block owns its own queries and
+// QueryClient needs; its contract is covered by CreateScoringBlock.test.jsx.
+vi.mock('@/components/adminv2/CreateScoringBlock', () => ({
+  default: () => <div data-testid="create-scoring-stub" />,
+}));
+
 vi.mock('react-router-dom', async () => {
  const actual = await vi.importActual('react-router-dom');
  return {

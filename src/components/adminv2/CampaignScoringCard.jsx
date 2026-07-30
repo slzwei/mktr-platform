@@ -16,45 +16,14 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useScoringSheet, useScoringHistory, useScoringProgress } from '@/hooks/queries/useAdminV2';
-import { createScoringDraft, simulateScoringDraft, approveScoringDraft, fetchScoringEdition, proposeScoringSheet } from '@/api/adminV2';
+import { createScoringDraft, simulateScoringDraft, approveScoringDraft, fetchScoringEdition, proposeScoringSheet, rescoreCampaignScoring } from '@/api/adminV2';
 import { Card, Chip, Skeleton, ErrorState } from '@/components/adminv2/primitives';
 import { fmtDateTime } from '@/lib/adminV2/format';
 import ScoringSheetEditor from '@/components/adminv2/ScoringSheetEditor';
-import { EXPOSED_COMPONENTS, weightOf } from '@/lib/adminV2/scoringLabels';
+import { TIER_LABEL, patchFromDoc, docFromSheet } from '@/lib/adminV2/scoringLabels';
 
-const TIER_LABEL = {
-  campaign: 'campaign sheet',
-  product: 'product sheet',
-  global: 'house sheet',
-  default: 'house default',
-};
-
-/** The full exposed set as a patch — the editor always writes every exposed
- *  knob (§4.1: exposed knobs never float), UI-only keys stripped. */
-function patchFromDoc(doc, houseDefault) {
-  const components = {};
-  const leadComponents = {};
-  for (const comp of EXPOSED_COMPONENTS) {
-    const value = weightOf(doc, comp) ?? weightOf(houseDefault, comp) ?? 0;
-    (comp.leadGrain ? leadComponents : components)[comp.name] = { maxPoints: value };
-  }
-  const patch = { components, leadComponents };
-  if (Array.isArray(doc?.ageCurve) && doc.ageCurve.length) patch.ageCurve = doc.ageCurve;
-  if (Array.isArray(doc?.targetSegments)) patch.targetSegments = doc.targetSegments;
-  return patch;
-}
-
-/** Seed the editor from the strict resolve: effective values only. */
-function docFromSheet(sheet) {
-  const cfg = sheet?.config || {};
-  return {
-    components: { ...(cfg.components || {}) },
-    leadComponents: { ...(cfg.leadComponents || {}) },
-    ageCurve: Array.isArray(cfg.ageCurve) ? cfg.ageCurve.map((s) => ({ ...s })) : [],
-    targetSegments: Array.isArray(cfg.targetSegments) ? cfg.targetSegments.map((s) => ({ ...s })) : [],
-    _ageBands: [],
-  };
-}
+// TIER_LABEL / patchFromDoc / docFromSheet moved to @/lib/adminV2/scoringLabels
+// — shared with the create-flow scoring block (Phase 2).
 
 function PreviewPanel({ sim }) {
   if (!sim) return null;
@@ -161,6 +130,18 @@ export default function CampaignScoringCard({ campaignId }) {
     onError: (e) => toast.error(e?.message || 'The AI author is unavailable — check AI Settings, or edit manually'),
   });
 
+  const rescore = useMutation({
+    mutationFn: () => rescoreCampaignScoring(campaignId),
+    onSuccess: (r) => {
+      const bits = [`Re-graded ${r.rescored} lead${r.rescored === 1 ? '' : 's'}`];
+      if (r.unchanged) bits.push(`${r.unchanged} already current`);
+      if (r.remaining > 0 || r.more) bits.push(`${r.more ? 'more' : r.remaining} still queued — press again or let tonight's sweep finish`);
+      toast.success(bits.join(' · '));
+      invalidate();
+    },
+    onError: (e) => toast.error(e?.message || 'Rescore failed — the nightly sweep will still catch up'),
+  });
+
   const approve = useMutation({
     mutationFn: ({ version }) => approveScoringDraft(version, baseline ?? sheet.data?.version ?? 0),
     onSuccess: (res) => {
@@ -263,11 +244,23 @@ export default function CampaignScoringCard({ campaignId }) {
           </div>
         )}
 
-        {/* Regrade progress — visible only while the sweep still owes leads. */}
+        {/* Regrade progress — visible only while the sweep still owes leads.
+            "Rescore now" (Phase 1.5) is the same-day alternative to waiting
+            for 2am: bounded, honest about leftovers, safe to press again. */}
         {p && !p.complete && (
-          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-2)' }} data-testid="scoring-progress">
-            Regrading: <span className="av2-mono" style={{ fontWeight: 700 }}>{p.current} of {p.total}</span> leads
-            are on edition #{p.resolvedVersion} — the rest roll through the nightly runs.
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }} data-testid="scoring-progress">
+            <span>
+              Regrading: <span className="av2-mono" style={{ fontWeight: 700 }}>{p.current} of {p.total}</span> leads
+              are on edition #{p.resolvedVersion}.
+            </span>
+            <button
+              type="button" className="av2-btn av2-btn--sm"
+              disabled={rescore.isPending}
+              title="Re-grade this campaign's stale leads now instead of waiting for the nightly run"
+              onClick={() => rescore.mutate()}
+            >
+              {rescore.isPending ? 'Rescoring…' : 'Rescore now'}
+            </button>
           </div>
         )}
 

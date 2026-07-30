@@ -19,12 +19,14 @@ vi.mock('@/api/adminV2', () => ({
   simulateScoringDraft: vi.fn(),
   approveScoringDraft: vi.fn(),
   proposeScoringSheet: vi.fn(),
+  rescoreCampaignScoring: vi.fn(),
 }));
 
 import { toast } from 'sonner';
 import {
   fetchScoringSheet, fetchScoringHistory, fetchScoringProgress, fetchScoringEdition,
   createScoringDraft, simulateScoringDraft, approveScoringDraft, proposeScoringSheet,
+  rescoreCampaignScoring,
 } from '@/api/adminV2';
 
 const HOUSE = {
@@ -274,5 +276,34 @@ describe('the AI author (Phase 1.6)', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Draft with AI/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Write the sheet' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('AI provider is not configured.'));
+  });
+});
+
+describe('rescore now (Phase 1.5)', () => {
+  it('rides the progress line while a regrade is owed, and reports the honest counts', async () => {
+    fetchScoringSheet.mockResolvedValue(SHEET_CAMPAIGN);
+    fetchScoringProgress.mockResolvedValue({ total: 40, current: 12, resolvedVersion: 7, complete: false });
+    rescoreCampaignScoring.mockResolvedValue({ examined: 28, rescored: 25, unchanged: 3, skipped: 0, remaining: 0, more: false, complete: true });
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Rescore now' }));
+    await waitFor(() => expect(rescoreCampaignScoring).toHaveBeenCalledWith('camp-1'));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/Re-graded 25 leads · 3 already current/)));
+  });
+
+  it('says when the bounds left work behind — press again or wait for the sweep', async () => {
+    fetchScoringSheet.mockResolvedValue(SHEET_CAMPAIGN);
+    fetchScoringProgress.mockResolvedValue({ total: 900, current: 0, resolvedVersion: 7, complete: false });
+    rescoreCampaignScoring.mockResolvedValue({ examined: 500, rescored: 500, unchanged: 0, skipped: 0, remaining: 0, more: true, complete: false });
+    setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Rescore now' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/still queued — press again or let tonight's sweep finish/)));
+  });
+
+  it('is absent once the regrade is complete', async () => {
+    fetchScoringSheet.mockResolvedValue(SHEET_CAMPAIGN);
+    fetchScoringProgress.mockResolvedValue({ total: 40, current: 40, resolvedVersion: 7, complete: true });
+    setup();
+    await screen.findByText('campaign sheet');
+    expect(screen.queryByRole('button', { name: 'Rescore now' })).not.toBeInTheDocument();
   });
 });

@@ -10,8 +10,8 @@ import { DEFAULT_SCORING_CONFIG, DEFAULT_LEAD_COMPONENTS, normalizeConfig } from
 import { sequelize } from '../models/index.js';
 import {
   listScoringConfigs, getScoringConfig, createDraftConfig, approveScoringConfig,
-  simulateConfig, proposeScoringConfig, scoringProgressForCampaign, MAX_DESCRIPTION_CHARS,
-  SIMULATION_SAMPLE_MAX,
+  simulateConfig, proposeScoringConfig, scoringProgressForCampaign, rescoreCampaignNow,
+  MAX_DESCRIPTION_CHARS, SIMULATION_SAMPLE_MAX,
 } from '../services/scoringConfigService.js';
 
 /**
@@ -223,6 +223,17 @@ router.post('/propose', validate(proposeSchema), asyncHandler(async (req, res) =
     actorUserId: req.user?.id || null,
   });
   res.status(201).json({ success: true, data: result });
+}));
+
+/**
+ * Rescore-now (Phase 1.5): the campaign's stale leads, re-graded inside this
+ * one response — bounded by rows AND time; whatever is left belongs to the
+ * sweep or another press. Registered before the /:version subtree like every
+ * other single-segment POST.
+ */
+const rescoreSchema = Joi.object({ campaignId: uuid.required() });
+router.post('/rescore', validate(rescoreSchema), asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await rescoreCampaignNow(req.body.campaignId) });
 }));
 
 /**

@@ -6,6 +6,23 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 const mockUseCampaign = vi.fn(() => ({ data: undefined, isLoading: false }));
 const mockUseSetLaunchState = vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false }));
 
+
+// The scoring block's INTERNALS are covered by CreateScoringBlock.test.jsx;
+// here it is stubbed to a ref that delegates submit to a controllable mock —
+// exactly enough surface to pin the WIRING (round-2 B2): submit(newId) is
+// awaited BEFORE navigation, and its failures produce the differentiated
+// toasts without ever blocking the create.
+const mockScoringSubmit = vi.fn();
+vi.mock('@/components/adminv2/CreateScoringBlock', async () => {
+  const React = await import('react');
+  return {
+    default: React.forwardRef(function CreateScoringStub(_props, ref) {
+      React.useImperativeHandle(ref, () => ({ submit: mockScoringSubmit }));
+      return <div data-testid="create-scoring-stub" />;
+    }),
+  };
+});
+
 vi.mock('@/hooks/queries/useCampaignsQuery', () => ({
   useCampaign: (...a) => mockUseCampaign(...a),
   useSetCampaignLaunchState: (...a) => mockUseSetLaunchState(...a),
@@ -144,5 +161,39 @@ describe('AdminCampaignWorkspace — auto-design on create', () => {
     expect(Campaign.create).toHaveBeenCalledTimes(1);
     expect(apiClient.post).not.toHaveBeenCalled(); // never touched copy-draft or details-draft
     expect(Campaign.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminCampaignWorkspace — the scoring block wiring (§3.3)', () => {
+  it('awaits scoring submit for the NEW campaign before navigating', async () => {
+    let release;
+    mockScoringSubmit.mockImplementation(() => new Promise((res) => { release = res; }));
+    renderCreate();
+    await createWith({});
+
+    await waitFor(() => expect(mockScoringSubmit).toHaveBeenCalledWith('new-1'));
+    // Navigation is HELD while the scoring submit is in flight…
+    expect(screen.queryByTestId('loc')).not.toBeInTheDocument();
+    release(null);
+    // …and proceeds the moment it settles.
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/admin/campaigns/new-1/workspace?tab=design'));
+  });
+
+  it('a partial success (draft saved, activation unconfirmed) gets its own toast — and still navigates', async () => {
+    mockScoringSubmit.mockRejectedValue(Object.assign(new Error('409'), { draftVersion: 7 }));
+    renderCreate();
+    await createWith({});
+
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/admin/campaigns/new-1/workspace?tab=design'));
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringMatching(/saved as draft #7, but activation didn’t confirm/));
+  });
+
+  it('an unknown-state failure warns without claiming anything — and still navigates', async () => {
+    mockScoringSubmit.mockRejectedValue(new Error('network'));
+    renderCreate();
+    await createWith({});
+
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/admin/campaigns/new-1/workspace?tab=design'));
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringMatching(/wasn’t confirmed. Check the campaign page/));
   });
 });

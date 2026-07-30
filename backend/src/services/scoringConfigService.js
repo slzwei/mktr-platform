@@ -4,7 +4,9 @@ import { logger } from '../utils/logger.js';
 import { getRuntimeAiSettings } from './aiSettingsService.js';
 import { requestStructuredJson } from './guidedReviewAiService.js';
 import { getActiveScoringConfig, resolveScoringConfigStrict } from './consumerScoringService.js';
-import { loadLeadTelemetry, loadLeadObservations } from './leadScoringService.js';
+import {
+  loadLeadTelemetry, loadLeadObservations, findStaleLeadIds, scoreOneLead,
+} from './leadScoringService.js';
 import { bustScoringConfigCache } from './scoringConfigCache.js';
 import { resolveCurrentFacts } from '../utils/factResolver.js';
 import {
@@ -573,6 +575,95 @@ export async function simulateConfig({
       becameNull,
       becameScored,
     },
+  };
+}
+
+// ─────────────────────────── rescore now (Phase 1.5) ───────────────────────
+
+/** Rescore-now is a REQUEST, not a job system — both bounds keep it inside
+ *  one honest HTTP response. Whatever is left stays stale-marked and belongs
+ *  to the nightly sweep (or another press of the button). */
+export const RESCORE_NOW_MAX = 500;
+const RESCORE_NOW_DEADLINE_MS = 25_000;
+
+/**
+ * "See the new sheet's numbers now, not after 2am." Synchronous and DOUBLY
+ * bounded (rows + time) — the M10 review killed the outbox/job design, and a
+ * response that says exactly how far it got beats a toast pointing at a job
+ * id. Selection reuses findStaleLeadIds' predicate verbatim (campaign-
+ * filtered), so this and the sweep can never disagree about what needed
+ * doing; scoring goes through scoreOneLead, so every write takes the same
+ * consumer fence and the same write-gate as the sweep's.
+ *
+ * The cache is busted FIRST: the M7 race (a worker scoring under a config
+ * cached moments before an approve) self-heals via version-mismatch
+ * staleness, but the whole point of this button is "the sheet I just
+ * approved" — starting from a warm stale cache would rescore onto the OLD
+ * edition and report success.
+ */
+export async function rescoreCampaignNow(campaignId, {
+  limit = RESCORE_NOW_MAX, deadlineMs = RESCORE_NOW_DEADLINE_MS, now = Date.now,
+} = {}) {
+  // The clock starts HERE — lookup and selection spend the same budget the
+  // scoring loop does, or a slow selection could push the response past the
+  // advertised bound before a single lead was admitted. The bound's honest
+  // shape: no NEW lead is admitted after the deadline; the one in flight may
+  // overrun it (per-lead transactions, no cancellation) — that is the widest
+  // overrun possible, one lead, not a tail of them.
+  const startedAt = now();
+  if (!campaignId) throw new AppError('campaignId is required.', 422);
+  const [[campaign]] = await sequelize.query(
+    'SELECT 1 AS ok FROM campaigns WHERE id = :cid',
+    { replacements: { cid: campaignId } }
+  );
+  if (!campaign) throw new AppError('Campaign not found.', 422);
+
+  bustScoringConfigCache();
+
+  // DELIBERATELY NOT taking the nightly sweep's advisory lock (review B4):
+  // the sweep TRY-locks and skips its run when the lock is held, so holding
+  // it here for up to 25s at exactly 02:00 could cost the whole night. The
+  // accepted overlap cost runs the other way and is bounded: if both select
+  // the same rows, the second scorer's write-gate answers `unchanged` with
+  // no write — a few budget rows spent re-checking, never corruption.
+  const cap = Math.min(RESCORE_NOW_MAX, Math.max(1, limit));
+  // One extra row is the whole evidence for "there are more than the cap" —
+  // the populationFor pattern.
+  const ids = await findStaleLeadIds({ campaignId, limit: cap + 1 });
+  const overCap = ids.length > cap;
+  const queue = ids.slice(0, cap);
+  let rescored = 0;
+  let unchanged = 0;
+  let skipped = 0;
+  let examined = 0;
+  for (const id of queue) {
+    if (now() - startedAt >= deadlineMs) break;
+    examined += 1;
+    // Sequential ON PURPOSE: every rescore takes that lead's consumer fence;
+    // a pool here would just queue on the locks while holding HTTP open.
+    const result = await scoreOneLead(id, { now: now() });
+    if (result.status === 'scored') rescored += 1;
+    else if (result.status === 'unchanged') unchanged += 1;
+    else skipped += 1;
+  }
+
+  const remaining = queue.length - examined;
+  logger.info(
+    { campaignId, examined, rescored, unchanged, skipped, remaining, more: overCap, ms: now() - startedAt },
+    'scoring.rescore_now'
+  );
+  return {
+    examined,
+    rescored,
+    unchanged,
+    skipped,
+    // NO SILENT CAPS: `remaining` is what the deadline left un-examined of
+    // this batch; `more` says the campaign held more stale leads than the cap
+    // could even LIST. Either way the card says "press again or let tonight's
+    // sweep finish" instead of presenting a slice as done.
+    remaining,
+    more: overCap,
+    complete: remaining === 0 && !overCap,
   };
 }
 

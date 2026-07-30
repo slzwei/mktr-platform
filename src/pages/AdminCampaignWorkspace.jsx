@@ -95,7 +95,7 @@ export default function AdminCampaignWorkspace() {
     }
   };
 
-  const handleSaveDetails = async (payload, brief) => {
+  const handleSaveDetails = async (payload, brief, scoringSubmit) => {
     setSavingDetails(true);
     try {
       if (isCreate) {
@@ -112,6 +112,21 @@ export default function AdminCampaignWorkspace() {
         const trimmedBrief = typeof brief === 'string' ? brief.trim() : '';
         if (newId && trimmedBrief) {
           await autoDesignCampaign(newId, created?.design_config ?? payload.design_config, trimmedBrief);
+        }
+        // The tailored scoring sheet (§3.3): AWAITED before navigation so the
+        // block's pending editor state is never unmounted mid-flight — and
+        // non-fatal, because scoring must never block a created campaign.
+        if (newId && scoringSubmit) {
+          try {
+            await scoringSubmit(newId);
+          } catch (err) {
+            // Partial success is its own message (review B3): a saved-but-
+            // not-applied draft must not invite a blind retry that would
+            // mint a duplicate.
+            toast.warning(err?.draftVersion
+              ? `Campaign created — scoring sheet saved as draft #${err.draftVersion}, but activation didn’t confirm. Check the campaign page.`
+              : 'Campaign created — the scoring sheet wasn’t confirmed. Check the campaign page’s scoring card.');
+          }
         }
         if (newId) navigate(`/admin/campaigns/${newId}/workspace?tab=design`);
         else navigate('/AdminCampaigns');

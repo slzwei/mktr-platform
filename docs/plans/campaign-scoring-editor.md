@@ -340,8 +340,8 @@ single authority.
 | Phase | Ships |
 |---|---|
 | **1** | Editor + campaign card + history + §4.1–4.8 + tests |
-| **1.5** | Rescore-now (bounded, explicit button; re-resolves version inside the fence; M7 race self-heals via version-mismatch staleness) |
-| **2** | Creation-time block (both surfaces) + duplicate-flow note + optional `discarded` status migration |
+| **1.5** | Rescore-now (SHIPPED 2026-07-31): POST /rescore — cache-busted, campaign-filtered via findStaleLeadIds' own predicate (sweep-agreeing by construction), scoreOneLead per row under a row cap (500) AND a 25s deadline, honest {examined, rescored, remaining, more} response; card button on the progress line. M7 hardening = the up-front cache bust; residual races self-heal via version-mismatch staleness |
+| **2** | Creation-time block (SHIPPED 2026-07-31, both surfaces): CreateScoringBlock under the brief — strict product-tier resolve line, "Tailor scoring →" opens the shared editor prefilled from the brief picks (bands → ladder curve, language → segment; seed-once), "apply immediately" approves with the pre-create baseline as expectedLiveVersion; both create flows AWAIT submit(campaignId) before navigating, failures toast + navigate (creation never blocked); untouched block mints nothing; 404 → neutral line + no-op. Duplicate-flow note + optional `discarded` migration remain future |
 | **1.6** | AI-propose button (SHIPPED 2026-07-31): "Draft with AI" on the card — optional steer sentence → /propose reads the brief and writes the sheet → the SAME draft/preview/approve gates; card re-simulates compareTo:'resolved' (never the propose response's stored-comparison sim) and renders the rationale; ANY edit invalidates the pending draft so approve can never ship a pre-edit doc |
 | out | Product/global sheet screens · decay knobs · batch preview loaders unless §4.3's budget trips · agent-facing anything |
 

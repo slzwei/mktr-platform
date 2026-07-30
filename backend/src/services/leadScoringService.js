@@ -368,7 +368,10 @@ const RESOLVED_VERSION_SQL = `COALESCE(
  * Hash-level staleness (facts moved, config didn't) is NOT expressible in
  * SQL; that is what the sweep's rotation is for.
  */
-export async function findStaleLeadIds({ limit = 200, afterId = null } = {}) {
+export async function findStaleLeadIds({ limit = 200, afterId = null, campaignId = null } = {}) {
+  // `campaignId` narrows the SAME predicate to one campaign — rescore-now
+  // (campaign-scoring-editor Phase 1.5) must agree with the sweep about what
+  // "stale" means, so it filters this query rather than writing its own.
   const [rows] = await sequelize.query(
     `SELECT p.id
        FROM prospects p
@@ -376,6 +379,7 @@ export async function findStaleLeadIds({ limit = 200, afterId = null } = {}) {
        LEFT JOIN campaigns cam ON cam.id = p."campaignId"
       WHERE (p."consumerId" IS NULL OR c."erasedAt" IS NULL)
         AND (:afterId::uuid IS NULL OR p.id > :afterId::uuid)
+        AND (:campaignId::uuid IS NULL OR p."campaignId" = :campaignId)
         AND (
           p."scoreComputedAt" IS NULL
           OR p."scoreDirtyAt" IS NOT NULL
@@ -385,7 +389,7 @@ export async function findStaleLeadIds({ limit = 200, afterId = null } = {}) {
       ORDER BY p.id
       LIMIT :limit`,
     {
-      replacements: { algorithmVersion: LEAD_ALGORITHM_VERSION, limit, afterId },
+      replacements: { algorithmVersion: LEAD_ALGORITHM_VERSION, limit, afterId, campaignId },
     }
   );
   return rows.map((r) => r.id);

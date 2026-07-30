@@ -1,5 +1,12 @@
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// Out of scope here: the create-flow scoring block owns its own queries and
+// QueryClient needs; its contract is covered by CreateScoringBlock.test.jsx.
+vi.mock('@/components/adminv2/CreateScoringBlock', () => ({
+  default: () => <div data-testid="create-scoring-stub" />,
+}));
+
 vi.mock('@/api/client', () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 

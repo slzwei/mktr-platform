@@ -6,6 +6,7 @@ import { sequelize, Consumer, Prospect } from '../src/models/index.js'
 import {
   createDraftConfig, approveScoringConfig, simulateConfig, proposeScoringConfig,
   listScoringConfigs, getScoringConfig, sanitizeDescription, MAX_DESCRIPTION_CHARS,
+  rescoreCampaignNow,
 } from '../src/services/scoringConfigService.js'
 import {
   getActiveScoringConfig, resolveScoringConfigStrict, _resetConfigCache,
@@ -622,5 +623,82 @@ describe('§4.8 regrade progress is the complement of the sweep, never a version
     expect(p.resolvedVersion).toBe(g.version)
     expect(p.complete).toBe(false)
     expect(String(c.id)).toBeTruthy()
+  })
+})
+
+describe('Phase 1.5 rescore-now: same-day, bounded, sweep-agreeing', () => {
+  const freshCampaign = () => createTestCampaign(admin.id, {
+    name: `Rescore ${Date.now()}-${seq += 1}`,
+    targetAudience: { objective: 'agent_leads', product: 'insurance' },
+  })
+
+  test('re-grades ONLY the target campaign onto the freshly-approved edition — no manual cache reset', async () => {
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+    const campA = await freshCampaign()
+    const campB = await freshCampaign()
+    const a = await leadOn(campA)
+    const b = await leadOn(campB)
+    await scoreOneLead(a.id, { force: true })
+    await scoreOneLead(b.id, { force: true })
+
+    // A campaign-scoped edition for A: its lead goes stale, B's stays current.
+    const draft = await createDraftConfig({ config: configWith(9), campaignId: campA.id })
+    await approveScoringConfig(draft.version, { expectedLiveVersion: g.version })
+
+    // Deliberately NO _resetConfigCache() here. HONESTY NOTE (review B5):
+    // in ONE process, approve's own bust already cleared the map, so this
+    // test cannot distinguish rescore's bust from approve's — rescore's
+    // exists for the OTHER processes (web vs cron) where approve's bust
+    // never ran, which no single-process test can exercise. What this test
+    // DOES pin: the whole chain lands the fresh edition with no manual
+    // cache intervention anywhere.
+    const res = await rescoreCampaignNow(campA.id)
+    expect(res.rescored).toBe(1)
+    expect(res.complete).toBe(true)
+
+    const [[rowA]] = await sequelize.query(
+      'SELECT "scoredConfigVersion" FROM prospects WHERE id = :id', { replacements: { id: a.id } }
+    )
+    const [[rowB]] = await sequelize.query(
+      'SELECT "scoredConfigVersion" FROM prospects WHERE id = :id', { replacements: { id: b.id } }
+    )
+    expect(rowA.scoredConfigVersion).toBe(draft.version)
+    expect(rowB.scoredConfigVersion).toBe(g.version)
+  })
+
+  test('the row cap is honest: examined stops at the cap and `more` says the list was longer', async () => {
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+    const camp = await freshCampaign()
+    await leadOn(camp)
+    await leadOn(camp)
+    // Never-scored leads ARE stale — same predicate as the sweep.
+    const res = await rescoreCampaignNow(camp.id, { limit: 1 })
+    expect(res.examined).toBe(1)
+    expect(res.more).toBe(true)
+    expect(res.complete).toBe(false)
+  })
+
+  test('the deadline stops the loop MID-QUEUE and reports the leftover — a real clock, not a zero', async () => {
+    const g = await createDraftConfig({ config: configWith(3) })
+    await approveLive(g.version)
+    const camp = await freshCampaign()
+    await leadOn(camp)
+    await leadOn(camp)
+    // An injected monotonic clock: every observation advances 10 "seconds",
+    // so the 25s budget survives exactly the first lead's admission check
+    // and expires before the second's — deterministic, no sleeps.
+    let tick = 0
+    const fakeNow = () => { tick += 10_000; return tick }
+    const res = await rescoreCampaignNow(camp.id, { now: fakeNow, deadlineMs: 25_000 })
+    expect(res.examined).toBe(1)
+    expect(res.remaining).toBe(1)
+    expect(res.complete).toBe(false)
+  })
+
+  test('an unknown campaign is a 422 sentence, not a silent empty run', async () => {
+    await expect(rescoreCampaignNow('00000000-0000-4000-8000-000000000002'))
+      .rejects.toThrow(/Campaign not found/)
   })
 })
