@@ -6,14 +6,19 @@
 
 const PII_KEY_PATTERN = /phone|email|nric|name|token|jwt|address|otp|password/i;
 
-// Reward-claim bearer tokens ride in URLs (`/api/reward-claim/:token`,
-// consumer `/r/:token`) — mask the path segment anywhere a URL is reported.
-// Mirrors backend/src/utils/redactTokens.js (frontend cannot import it).
-const TOKEN_PATH_RE = /(\/(?:api\/reward-claim|r)\/)[^/?#\s]+/gi;
+// Some URLs carry a live credential in the path (`/api/reward-claim/:token`,
+// `/r/:token`, `/api/screening-callback/:token`, auth verify/reset/invite
+// tokens, provisioning codes, the discovery webhook secret) or in the query
+// (`/callback?t=<screening token>`) — mask them anywhere a URL is reported.
+// Mirrors backend/src/utils/redactTokens.js (frontend cannot import it):
+// keep the two regexes IDENTICAL; src/lib/__tests__/sentryScrub.test.js
+// asserts every shape.
+const TOKEN_PATH_RE = /(\/(?:api\/reward-claim|r|api\/screening-callback|api\/redeem-ops\/discovery\/webhook|api\/auth\/(?:verify-email|reset-password|invite-info)|api\/provision\/check)\/)[^/?#\s]+/gi;
+const TOKEN_QUERY_RE = /([?&]t=)[^&#\s]+/gi;
 
 export function maskTokenUrl(url) {
   if (typeof url !== 'string' || url.length === 0) return url;
-  return url.replace(TOKEN_PATH_RE, '$1[token]');
+  return url.replace(TOKEN_PATH_RE, '$1[token]').replace(TOKEN_QUERY_RE, '$1[token]');
 }
 
 export function scrubObject(input) {

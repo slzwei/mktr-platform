@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scrubObject, scrubEvent, scrubBreadcrumb } from '../sentryScrub';
+import { maskTokenUrl, scrubObject, scrubEvent, scrubBreadcrumb } from '../sentryScrub';
 
 describe('scrubObject()', () => {
  it('redacts top-level PII keys (case-insensitive substring match)', () => {
@@ -86,5 +86,47 @@ describe('scrubBreadcrumb()', () => {
  it('returns crumb unchanged when no data', () => {
  const crumb = { category: 'http' };
  expect(scrubBreadcrumb(crumb)).toBe(crumb);
+ });
+});
+
+const SECRET = 'sk_live_deadbeefcafebabe1234';
+
+// Parity table with backend/test/unit/redactTokens.test.js — this frontend
+// copy of the regex must mask every URL-credential shape the backend masks.
+// Add new URL-authenticated routes to BOTH tables.
+const CREDENTIAL_SHAPES = [
+ ['reward-claim API', `/api/reward-claim/${SECRET}`, '/api/reward-claim/[token]'],
+ ['consumer reward link', `/r/${SECRET}`, '/r/[token]'],
+ ['screening callback', `/api/screening-callback/${SECRET}`, '/api/screening-callback/[token]'],
+ ['discovery webhook secret', `/api/redeem-ops/discovery/webhook/${SECRET}`, '/api/redeem-ops/discovery/webhook/[token]'],
+ ['verify-email token', `/api/auth/verify-email/${SECRET}`, '/api/auth/verify-email/[token]'],
+ ['reset-password token', `/api/auth/reset-password/${SECRET}`, '/api/auth/reset-password/[token]'],
+ ['invite-info token', `/api/auth/invite-info/${SECRET}`, '/api/auth/invite-info/[token]'],
+ ['provisioning poll code', `/api/provision/check/${SECRET}`, '/api/provision/check/[token]'],
+ ['screening link query (?t=)', `/callback?t=${SECRET}`, '/callback?t=[token]'],
+];
+
+describe('maskTokenUrl() (frontend twin of backend redactTokens)', () => {
+ it.each(CREDENTIAL_SHAPES)('masks %s', (_label, input, expected) => {
+ expect(maskTokenUrl(input)).toBe(expected);
+ });
+
+ it('leaves non-credential URLs untouched', () => {
+ expect(maskTokenUrl('/api/campaigns/abc123')).toBe('/api/campaigns/abc123');
+ expect(maskTokenUrl('/t/summer-promo')).toBe('/t/summer-promo');
+ });
+
+ it('masks the screening ?t= token in event.request.url', () => {
+ const event = { request: { url: `https://redeem.sg/callback?t=${SECRET}` } };
+ expect(scrubEvent(event).request.url).toBe('https://redeem.sg/callback?t=[token]');
+ });
+
+ it('masks credential URLs in breadcrumb data and message', () => {
+ const out = scrubBreadcrumb({
+ data: { url: `/api/reward-claim/${SECRET}` },
+ message: `fetch /api/screening-callback/${SECRET} 404`,
+ });
+ expect(out.data.url).toBe('/api/reward-claim/[token]');
+ expect(out.message).toBe('fetch /api/screening-callback/[token] 404');
  });
 });
