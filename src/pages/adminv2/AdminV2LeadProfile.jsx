@@ -20,7 +20,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useProspectProfile, useAgentOptions } from '@/hooks/queries/useAdminV2';
-import { bulkAssign, bulkReturnToHeld, bulkDelete, fetchConsentCopy } from '@/api/adminV2';
+import { bulkAssign, bulkReturnToHeld, bulkDelete, fetchConsentCopy, fetchScoringEdition } from '@/api/adminV2';
 import { STATUS_LABELS, SOURCE_LABELS, heldLabel } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtDate, fmtDay, fmtSGDExact } from '@/lib/adminV2/format';
 import { Card, Chip, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
@@ -836,6 +836,143 @@ function EnrichmentCard({ enrichment }) {
 }
 
 /**
+ * THIS CAMPAIGN'S customised sheet, on the lead (the follow-up ask: "no i
+ * mean, the customised scoring metrics for this particular campaign").
+ *
+ * Shows the EXACT EDITION the stamp names — fetched lazily on first open,
+ * never the currently-resolved sheet: the campaign may have moved to a newer
+ * edition since this lead was scored, and captioning old points with new
+ * rules is the §4.4 lie all over again. Weights render beside their house
+ * values with a ↑/↓ marker on every deviation; the age curve and target
+ * segments come from the same document. Effective weights fall back to the
+ * breakdown's own maxPoints when an older edition's document omits a key.
+ */
+function CampaignSheetPeek({ edition, breakdown, campaignId }) {
+  const [state, setState] = useState({ status: 'idle', sheet: null });
+  if (edition == null) return null;
+
+  const load = async (e) => {
+    if (!e.currentTarget.open || state.status === 'ready' || state.status === 'loading') return;
+    setState({ status: 'loading', sheet: null });
+    try {
+      setState({ status: 'ready', sheet: await fetchScoringEdition(edition) });
+    } catch {
+      setState({ status: 'error', sheet: null });
+    }
+  };
+
+  const sheet = state.sheet;
+  const cfg = sheet?.configJson || {};
+  const house = sheet?.houseDefault || {};
+  const comps = breakdown?.components || {};
+  // Effective weight: the edition's document, else the breakdown's own max —
+  // which IS the weight that actually applied.
+  const weightFor = (name, leadGrain) => {
+    const map = leadGrain ? cfg.leadComponents : cfg.components;
+    return map?.[name]?.maxPoints ?? comps[name]?.maxPoints ?? null;
+  };
+  const houseFor = (name, leadGrain) => {
+    const map = leadGrain ? house.leadComponents : house.components;
+    return map?.[name]?.maxPoints ?? null;
+  };
+
+  // "peaks 30-44" from the curve: the segments at the curve's own maximum.
+  const curve = Array.isArray(cfg.ageCurve) ? cfg.ageCurve : [];
+  let peak = null;
+  if (curve.length) {
+    const top = Math.max(...curve.map((s) => s.value));
+    const ranges = [];
+    let lo = 0;
+    for (const seg of curve) {
+      const hi = seg.upTo == null ? null : seg.upTo;
+      if (seg.value === top) ranges.push(hi == null ? `${lo}+` : `${lo}–${hi}`);
+      lo = hi == null ? lo : hi + 1;
+    }
+    peak = ranges.join(', ');
+  }
+  const segments = Array.isArray(cfg.targetSegments) ? cfg.targetSegments : [];
+
+  const NAMES = [
+    ['meet', 'Reachability', [['engagement', false], ['contactability', false], ['market_fit', false], ['response', true], ['screening', true]]],
+    ['buy', 'Potential', [['life_events', false], ['family_gap', false], ['capacity', false], ['coverage_headroom', false], ['age', false]]],
+  ];
+
+  return (
+    <details style={{ borderTop: '1px solid var(--line)' }} onToggle={load}>
+      <summary style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--ink-2)' }}>
+        <span className="disc-caret" aria-hidden="true" style={{ color: 'var(--ink-3)', display: 'inline-block', transition: 'transform .12s ease' }}>▸</span>
+        This campaign's scoring sheet
+        <span style={{ flex: 1 }} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)' }}>EDITION #{edition}</span>
+      </summary>
+      <div style={{ padding: '2px 16px 12px 36px' }}>
+        {state.status === 'loading' && <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '4px 0' }}>Loading the edition…</div>}
+        {state.status === 'error' && (
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '4px 0' }}>
+            Couldn't load edition #{edition} — the weights in the breakdown above (the “/N” figures) are the ones that applied.
+          </div>
+        )}
+        {state.status === 'ready' && (
+          <>
+            {NAMES.map(([key, title, names]) => (
+              <div key={key}>
+                <div className="av2-microcaps" style={{ padding: '6px 0 2px' }}>{title}</div>
+                {names.map(([name, leadGrain]) => {
+                  const w = weightFor(name, leadGrain);
+                  const h = houseFor(name, leadGrain);
+                  const differs = w != null && h != null && w !== h;
+                  return (
+                    <div key={name} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '2px 0', fontSize: 12 }}>
+                      <span style={{ width: 148, flex: 'none', color: 'var(--ink-2)' }}>{COMPONENT_LABELS[name] || name}</span>
+                      <span className="av2-mono" style={{ width: 34, textAlign: 'right', flex: 'none', fontWeight: differs ? 800 : 500, color: differs ? 'var(--ink)' : 'var(--ink-2)' }}>
+                        {w ?? '—'}
+                      </span>
+                      <span className="av2-mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>
+                        house {h ?? '—'}
+                        {differs && (
+                          <span style={{ color: w > h ? 'var(--accent-text)' : 'var(--warn)', fontWeight: 700 }}>
+                            {' '}{w > h ? '↑' : '↓'} {w > h ? '+' : ''}{Math.round((w - h) * 10) / 10}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            <div style={{ fontSize: 12, color: 'var(--ink-2)', paddingTop: 8 }}>
+              <span className="av2-microcaps" style={{ display: 'block', paddingBottom: 2 }}>Age dial</span>
+              {peak ? <>full weight at ages <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{peak}</span>, ramping down outside</> : 'house curve'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-2)', paddingTop: 8 }}>
+              <span className="av2-microcaps" style={{ display: 'block', paddingBottom: 2 }}>Target market</span>
+              {segments.length
+                ? segments.map((s, i) => (
+                  <span key={i}>
+                    {i > 0 && ' · '}
+                    {[s.language && (SEGMENT_LANGUAGE_LABELS[s.language] || s.language), s.ethnicity].filter(Boolean).join(' / ')}
+                    {typeof s.weight === 'number' && s.weight !== 1 ? ` ×${s.weight}` : ''}
+                  </span>
+                ))
+                : 'everyone equally'}
+            </div>
+            {campaignId && (
+              <div style={{ paddingTop: 10 }}>
+                <Link to={`/admin/campaigns/${campaignId}`} style={{ fontSize: 11.5, fontWeight: 700 }}>
+                  Tune this sheet on the campaign page →
+                </Link>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
+const SEGMENT_LANGUAGE_LABELS = { en: 'English', zh: 'Mandarin', ms: 'Malay', ta: 'Tamil' };
+
+/**
  * The MECHANICS, on the page (asked for directly: "can you put somewhere,
  * the scoring mechanics on the lead?"). The same plain language the console
  * uses everywhere, tucked behind a disclosure so it teaches without
@@ -902,7 +1039,7 @@ function ScoringMechanicsNote({ edition }) {
  * stamp that means "scored", and an empty card would imply a verdict nobody
  * has reached.
  */
-function LeadScoreCard({ prospect, campaignName, hasPersonCard }) {
+function LeadScoreCard({ prospect, campaignName, campaignId, hasPersonCard }) {
   const bd = prospect?.scoreBreakdown || null;
   if (!bd || prospect.scoredConfigVersion == null) return null;
   const stamp = [
@@ -945,6 +1082,12 @@ function LeadScoreCard({ prospect, campaignName, hasPersonCard }) {
       <ScoreComponents breakdown={bd} />
 
       <ScoreEvents events={bd.events} scoredAt={prospect.scoreComputedAt} />
+
+      <CampaignSheetPeek
+        edition={prospect.scoredConfigVersion}
+        breakdown={bd}
+        campaignId={campaignId}
+      />
 
       <ScoringMechanicsNote edition={prospect.scoredConfigVersion} />
     </Card>
@@ -1692,6 +1835,7 @@ export default function AdminV2LeadProfile() {
               <LeadScoreCard
                 prospect={p}
                 campaignName={currentSignup?.campaign?.name || p.campaign?.name || null}
+                campaignId={currentSignup?.campaign?.id || p.campaign?.id || null}
                 hasPersonCard={Boolean(journey?.enrichment)}
               />
             )}
