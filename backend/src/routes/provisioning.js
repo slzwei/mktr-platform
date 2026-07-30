@@ -3,7 +3,10 @@ import rateLimit from 'express-rate-limit';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import * as provisioningController from '../controllers/provisioningController.js';
 
-export const meta = { path: '/api/provision' };
+// Paused DOOH tablet onboarding — POST /session and GET /check/:code are
+// unauthenticated and /check hands out a live deviceKey, so this surface must
+// not mount unless explicitly enabled. Deletion is tracked separately.
+export const meta = { path: '/api/provision', flag: 'PROVISIONING_ENABLED', flagDefault: 'false' };
 
 const router = express.Router();
 

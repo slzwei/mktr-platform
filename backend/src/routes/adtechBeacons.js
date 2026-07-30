@@ -4,7 +4,8 @@ import { pushService } from '../services/pushService.js';
 import { Impression, Campaign } from '../models/index.js';
 import rateLimit from 'express-rate-limit';
 
-export const meta = { path: '/api/adtech', flag: 'BEACONS_ENABLED', flagDefault: 'true' };
+// Paused DOOH subsystem — an unset env var must mean OFF, not on.
+export const meta = { path: '/api/adtech', flag: 'BEACONS_ENABLED', flagDefault: 'false' };
 
 const router = express.Router();
 

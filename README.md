@@ -624,7 +624,7 @@ It then schedules the recurring in-process jobs (all skipped under `NODE_ENV=tes
 
 ## ⛔ Retired & frozen code
 
-The **DOOH / fleet subsystem was retired on 2026-07-15** — fleet, devices, drivers, OTA APK hosting and commissions receive no development, and nothing new should be built for them. The code is still in the tree and the routes still mount (some behind `MANIFEST_ENABLED` / `BEACONS_ENABLED`, default off), so you will encounter it:
+The **DOOH / fleet subsystem was retired on 2026-07-15** — fleet, devices, drivers, OTA APK hosting and commissions receive no development, and nothing new should be built for them. The code is still in the tree, so you will encounter it. Mount status: `provisioning.js` (`PROVISIONING_ENABLED`), `apk.js` (`APK_ENABLED`), `adtechManifest.js` (`MANIFEST_ENABLED`) and `adtechBeacons.js` (`BEACONS_ENABLED`) are each behind their own flag, **all default OFF** (an unset env var means the route does not mount); `devices.js`, `deviceEvents.js` (SSE), `vehicles.js`, `fleet.js` and `commissions.js` still mount unconditionally but every endpoint requires a JWT (admin/agent), pending deletion:
 
 - **`tablet-app/`** — an Android (Kotlin/Jetpack Compose) DOOH player. Frozen since 2026-05-09; see [`tablet-app/PAUSED.md`](tablet-app/PAUSED.md).
 - **Backend** — `apk.js`, `provisioning.js`, `adtechManifest.js`, `adtechBeacons.js`, `deviceEvents.js` (SSE), `devices.js`, `vehicles.js`, `fleet.js`, plus the fleet models listed under [Data model](#-data-model).
