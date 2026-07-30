@@ -522,7 +522,26 @@ export function makeLeadProfileService(overrides = {}) {
   async function consumerEnrichment(consumerId) {
     if (!consumerId) return null;
     try {
-      const row = await d.ConsumerProfile.findByPk(consumerId);
+      // ONE statement — profile + source-lead stamps + campaign label in a
+      // single MVCC snapshot (campaign-scoring-editor §4.4). A lead rescore
+      // commits its stamps and the person projection atomically, so two
+      // separate reads here could pair an old projected breakdown with a
+      // newer source stamp; one statement cannot.
+      const [[row]] = await d.sequelize.query(
+        `SELECT cp."meetScore", cp."buyScore", cp."consumerScore", cp."scoreBreakdown",
+                cp."scoreComputedAt", cp."scoredConfigVersion", cp."scoringAlgorithmVersion",
+                cp."scoreSourceProspectId",
+                p.id AS "srcProspectId", p."campaignId" AS "srcCampaignId",
+                p."scoredConfigVersion" AS "srcConfigVersion",
+                p."scoringAlgorithmVersion" AS "srcAlgorithmVersion",
+                p."scoreComputedAt" AS "srcComputedAt",
+                cam.name AS "srcCampaignName"
+           FROM consumer_profiles cp
+           LEFT JOIN prospects p ON p.id = cp."scoreSourceProspectId"
+           LEFT JOIN campaigns cam ON cam.id = p."campaignId"
+          WHERE cp."consumerId" = :cid`,
+        { replacements: { cid: consumerId } }
+      );
       if (!row || row.scoredConfigVersion == null) return null;
 
       // The ledger, resolved the same way the scorer resolved it — the panel
@@ -556,39 +575,56 @@ export function makeLeadProfileService(overrides = {}) {
         d.logger.warn('[leadProfile] fact ledger read failed (omitted)', { error: err?.message });
       }
 
-      // WHICH lead these numbers were copied from (§4). They are the person's
-      // BEST lead's scores, and once a campaign carries its own weights "their
-      // best" without "at what" is a number nobody can act on. Absent until
-      // that person's next rescore — migration 101 deliberately did not
-      // backfill it rather than re-derive the tie-break in one-shot SQL.
-      let scoreSource = null;
-      if (row.scoreSourceProspectId) {
-        try {
-          const src = await d.Prospect.findByPk(row.scoreSourceProspectId, {
-            attributes: ['id', 'campaignId'],
-            include: [{ association: 'campaign', attributes: ['id', 'name'] }],
-          });
-          if (src) {
-            scoreSource = {
-              prospectId: String(src.id),
-              campaignId: src.campaignId ? String(src.campaignId) : null,
-              campaignName: src.campaign?.name || null,
-            };
-          }
-        } catch (err) {
-          // A missing label must never blank the scores beside it.
-          d.logger.warn('[leadProfile] score source read failed (omitted)', { error: err?.message });
+      // WHICH lead these numbers were copied from (§4) — already joined above.
+      // Absent until that person's next rescore: migration 101 deliberately
+      // did not backfill the pointer.
+      const sourceResolved = Boolean(row.srcProspectId);
+      const scoreSource = sourceResolved
+        ? {
+          prospectId: String(row.srcProspectId),
+          campaignId: row.srcCampaignId ? String(row.srcCampaignId) : null,
+          campaignName: row.srcCampaignName || null,
         }
-      }
+        : null;
+
+      // THE CAPTION STAMPS (campaign-scoring-editor §4.4). The projected
+      // breakdown is a copy of the winning LEAD's, but the person-pass
+      // re-stamps this row's own config/algorithm/time columns every consumer
+      // sweep — so under per-campaign sheets those columns caption a
+      // DIFFERENT document than the one shown. The stamps that describe the
+      // breakdown live on the source lead, read in the same snapshot above:
+      //   - source resolves → the source lead's stamps (older than the
+      //     person-pass is CORRECT: they caption the copy, not resolution);
+      //   - breakdown retained but source unresolvable (lead deleted, or a
+      //     pre-101 projection whose pointer was never backfilled — the two
+      //     are indistinguishable) → NO stamps, and the card says "score
+      //     source signup unavailable" rather than borrowing person-pass
+      //     numbers that describe nothing on screen;
+      //   - no breakdown at all → person-pass stamps, which then caption
+      //     exactly what they are: person-pass state.
+      const hasBreakdown = Boolean(row.scoreBreakdown);
+      const stampsUnavailable = hasBreakdown && !sourceResolved;
+      const stamps = sourceResolved
+        ? {
+          scoredAt: row.srcComputedAt || null,
+          configVersion: row.srcConfigVersion ?? null,
+          algorithmVersion: row.srcAlgorithmVersion || null,
+        }
+        : stampsUnavailable
+          ? { scoredAt: null, configVersion: null, algorithmVersion: null }
+          : {
+            scoredAt: row.scoreComputedAt || null,
+            configVersion: row.scoredConfigVersion ?? null,
+            algorithmVersion: row.scoringAlgorithmVersion || null,
+          };
 
       return {
         meetScore: row.meetScore ?? null,
         buyScore: row.buyScore ?? null,
         consumerScore: row.consumerScore ?? null,
         breakdown: row.scoreBreakdown || null,
-        scoredAt: row.scoreComputedAt || null,
-        configVersion: row.scoredConfigVersion ?? null,
-        algorithmVersion: row.scoringAlgorithmVersion || null,
+        ...stamps,
+        stampsUnavailable,
         scoreSource,
         facts,
       };
@@ -734,6 +770,7 @@ export function makeLeadProfileService(overrides = {}) {
 
   return {
     enrichJourneyProfile,
+    consumerEnrichment,
     getSignupProfile,
     getSessionContext,
     getLyfeDelivery,

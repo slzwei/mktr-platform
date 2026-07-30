@@ -24,6 +24,7 @@ import { bulkAssign, bulkReturnToHeld, bulkDelete, fetchConsentCopy } from '@/ap
 import { STATUS_LABELS, SOURCE_LABELS, heldLabel } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtDate, fmtDay, fmtSGDExact } from '@/lib/adminV2/format';
 import { Card, Chip, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { COMPONENT_LABELS } from '@/lib/adminV2/scoringLabels';
 import { rowChipFor, drawWindowDay } from '@/lib/adminV2/outcome';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
@@ -521,22 +522,9 @@ function ConsentKv({ label, state, legacy }) {
  * or is simply unknown — that distinction is the point, because "unknown
  * capacity" and "low capacity" must never render the same way.
  */
-const COMPONENT_LABELS = {
-  engagement: 'engagement',
-  contactability: 'contactability',
-  market_fit: 'market fit',
-  life_events: 'life events',
-  family_gap: 'family gap',
-  capacity: 'capacity',
-  coverage_headroom: 'coverage headroom',
-  age: 'age',
-  // The two LEAD-grain components (per-campaign-lead-scoring §4). Named here
-  // for both grains, not just the drill-in: the person's numbers are a copy of
-  // their winning lead's, breakdown included, so "response" and "screening"
-  // already surface on the profile card and were reading as bare column keys.
-  response: 'message response',
-  screening: 'screening call',
-};
+// COMPONENT_LABELS moved to @/lib/adminV2/scoringLabels — shared with the
+// sheet editor (campaign-scoring-editor §3.1) so the card and the editor
+// describe the same components in the same words.
 
 const FACT_LABELS = {
   'identity.gender': 'gender',
@@ -786,7 +774,14 @@ function EnrichmentCard({ enrichment }) {
   return (
     <Card
       title="Scoring"
-      meta={enrichment?.configVersion != null ? `CONFIG v${enrichment.configVersion}` : undefined}
+      // The caption stamps come from the SOURCE lead (campaign-scoring-editor
+      // §4.4). When a breakdown survives but its source signup is gone —
+      // deleted, or a projection older than the pointer column — there is no
+      // honest stamp to show, and borrowing the person-pass one would caption
+      // this breakdown with an unrelated config.
+      meta={enrichment?.stampsUnavailable
+        ? 'SCORE SOURCE SIGNUP UNAVAILABLE'
+        : enrichment?.configVersion != null ? `CONFIG v${enrichment.configVersion}` : undefined}
     >
       <div style={{ padding: '12px 18px 6px', display: 'flex', gap: 18 }}>
         <ScoreDial label="Meet" value={enrichment?.meetScore} hint="no signal yet" />

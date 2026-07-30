@@ -1,6 +1,7 @@
 import {
   SCOREABLE_COMPONENTS, DEFAULT_LEAD_COMPONENTS, normalizeConfig,
 } from './consumerScoring.js';
+import { LANGUAGES, ETHNICITIES } from './factTaxonomy.js';
 
 /**
  * SEMANTIC invariants for a scoring config
@@ -56,6 +57,26 @@ export const MAX_AGE_CURVE_SLOPE = 0.5;
 
 const MAX_AGE_CURVE_SEGMENTS = 24;
 
+/**
+ * Serialized-size ceiling, measured on the document as it would be STORED
+ * (after §4.1 composition, before the semantic checks below). Generous — the
+ * shipped default is ~1KB — but a bound: configJson is an unindexed jsonb
+ * column that rides every resolution read, and "the editor sent 40MB of
+ * segments" should be a 422, not a table problem.
+ */
+export const MAX_SCORING_CONFIG_BYTES = 64 * 1024;
+
+/**
+ * Sign map (campaign-scoring-editor §4.7). Penalties carry their sign in
+ * maxPoints (consumerScoring.js header) — so the sign IS the semantics, and a
+ * flipped one silently inverts the component: a positive coverage_headroom
+ * would pay people for being already insured. Everything not named here is a
+ * bonus and must not go negative.
+ */
+export const PENALTY_COMPONENTS = Object.freeze(new Set(['coverage_headroom']));
+
+const MAX_TARGET_SEGMENTS = 8;
+
 const isPlainObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const fail = (error) => ({ ok: false, error });
 const isFiniteNumber = (n) => typeof n === 'number' && Number.isFinite(n);
@@ -83,6 +104,17 @@ function checkComponentMap(raw, label) {
     if (!isFiniteNumber(def.maxPoints)) return `${label}.${name}.maxPoints must be a finite number.`;
     if (Math.abs(def.maxPoints) > MAX_COMPONENT_POINTS) {
       return `${label}.${name}.maxPoints must be within ±${MAX_COMPONENT_POINTS} (got ${def.maxPoints}).`;
+    }
+    // The sign is the semantics (§4.7): a penalty's negative max is what makes
+    // it subtract, so flipping it inverts the component rather than erroring.
+    // Zero is legal either way — it just switches the component off.
+    if (PENALTY_COMPONENTS.has(name) && def.maxPoints > 0) {
+      return `${label}.${name} is a penalty — its maxPoints must be ≤ 0 (got ${def.maxPoints}). `
+        + 'A positive value would REWARD what the component exists to subtract for.';
+    }
+    if (!PENALTY_COMPONENTS.has(name) && def.maxPoints < 0) {
+      return `${label}.${name}.maxPoints must be ≥ 0 (got ${def.maxPoints}) — only penalties `
+        + `(${[...PENALTY_COMPONENTS].join(', ')}) carry negative weight.`;
     }
   }
   return null;
@@ -192,6 +224,13 @@ function checkGroups(groups, components, leadComponents) {
 export function validateScoringConfig(raw) {
   if (!isPlainObject(raw)) return fail('A scoring config must be a JSON object.');
 
+  // Size FIRST: everything after this walks the document, and the walk itself
+  // should never be the DoS. Measured exactly as it would be stored.
+  const bytes = Buffer.byteLength(JSON.stringify(raw), 'utf8');
+  if (bytes > MAX_SCORING_CONFIG_BYTES) {
+    return fail(`Scoring config is ${bytes} bytes; the cap is ${MAX_SCORING_CONFIG_BYTES}.`);
+  }
+
   const KNOWN_TOP_LEVEL = [
     'algorithmVersion', 'groups', 'components', 'leadComponents',
     'ageCurve', 'targetSegments', 'decay', 'minFactConfidence',
@@ -218,13 +257,45 @@ export function validateScoringConfig(raw) {
 
   if (raw.targetSegments !== undefined) {
     if (!Array.isArray(raw.targetSegments)) return fail('targetSegments must be an array.');
+    if (raw.targetSegments.length > MAX_TARGET_SEGMENTS) {
+      return fail(`targetSegments has ${raw.targetSegments.length} rows; the cap is ${MAX_TARGET_SEGMENTS}.`);
+    }
+    const seenAxes = new Set();
     for (let i = 0; i < raw.targetSegments.length; i += 1) {
       const s = raw.targetSegments[i];
       if (!isPlainObject(s)) return fail(`targetSegments[${i}] must be an object.`);
+      const extra = Object.keys(s).filter((k) => !['language', 'ethnicity', 'weight'].includes(k));
+      if (extra.length) return fail(`targetSegments[${i}] has unknown keys: ${extra.join(', ')}.`);
+      // A row with neither axis can never match anyone — it is dead weight the
+      // scorer would silently skip forever.
+      if (s.language === undefined && s.ethnicity === undefined) {
+        return fail(`targetSegments[${i}] must name a language or an ethnicity.`);
+      }
+      if (s.language !== undefined && !LANGUAGES.includes(s.language)) {
+        return fail(`targetSegments[${i}].language must be one of: ${LANGUAGES.join(', ')}.`);
+      }
+      if (s.ethnicity !== undefined && !ETHNICITIES.includes(s.ethnicity)) {
+        return fail(`targetSegments[${i}].ethnicity must be one of: ${ETHNICITIES.join(', ')}.`);
+      }
       if (s.weight !== undefined && (!isFiniteNumber(s.weight) || s.weight < 0 || s.weight > 1)) {
         return fail(`targetSegments[${i}].weight must be a number in 0..1.`);
       }
+      // Two rows for the same (language, ethnicity) pair: only the heavier one
+      // could ever win, so the duplicate is either a mistake or a contradiction.
+      const axisKey = `${s.language ?? '*'}|${s.ethnicity ?? '*'}`;
+      if (seenAxes.has(axisKey)) return fail(`targetSegments[${i}] duplicates an earlier row's axes.`);
+      seenAxes.add(axisKey);
     }
+  }
+
+  // Exact keys on the RAW decay object — the normalized checks below cover the
+  // two known knobs' VALUES, but an unknown sibling key would ride into
+  // storage silently and read as meaningful forever.
+  if (raw.decay !== undefined) {
+    if (!isPlainObject(raw.decay)) return fail('decay must be an object.');
+    const extra = Object.keys(raw.decay)
+      .filter((k) => !['lifeEventHalfLifeDays', 'engagementHalfLifeDays'].includes(k));
+    if (extra.length) return fail(`decay has unknown keys: ${extra.join(', ')}.`);
   }
 
   // Normalize AFTER the raw-shape checks so the semantic rules below run over

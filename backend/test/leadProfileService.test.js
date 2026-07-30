@@ -591,3 +591,93 @@ describe('consentTimeline — source-allowlisted contact events', () => {
     expect(await svc.consentTimeline(null)).toEqual([]);
   });
 });
+
+// ── consumerEnrichment: the caption stamps travel with the copied breakdown ──
+//
+// campaign-scoring-editor §4.4. The projected breakdown is a copy of the
+// winning LEAD's document, but consumer_profiles' own stamp columns are
+// re-written by the person pass every consumer sweep — so the caption must
+// come from the SOURCE LEAD, read in the same SQL snapshot, or show nothing.
+describe('consumerEnrichment caption stamps', () => {
+  const PROFILE_ROW = {
+    meetScore: 50, buyScore: 16, consumerScore: 48,
+    scoreBreakdown: { groups: {}, components: {}, events: [] },
+    // The person-pass stamps — under per-campaign sheets these describe a
+    // DIFFERENT document than the breakdown shown.
+    scoreComputedAt: '2026-07-30T00:00:00Z',
+    scoredConfigVersion: 3,
+    scoringAlgorithmVersion: 'score/v3',
+    scoreSourceProspectId: 'p-src',
+  };
+
+  function stampDeps(row) {
+    return makeLeadProfileService({
+      logger: silentLogger,
+      sequelize: {
+        query: jest.fn().mockImplementation(async (sql) => {
+          if (String(sql).includes('FROM consumer_profiles cp')) return [row ? [row] : []];
+          return [[]];
+        }),
+      },
+      loadObservations: jest.fn().mockResolvedValue([]),
+      resolveCurrentFacts: jest.fn().mockReturnValue({}),
+    });
+  }
+
+  it('prefers the SOURCE lead stamps when the join resolves — they caption the copy', async () => {
+    const svc = stampDeps({
+      ...PROFILE_ROW,
+      srcProspectId: 'p-src', srcCampaignId: 'camp-1', srcCampaignName: 'Tokyo Draw',
+      // Older than the person pass — CORRECT, not stale: it captions the
+      // copied breakdown, not current resolution (Codex round-3).
+      srcConfigVersion: 7, srcAlgorithmVersion: 'lead/v1', srcComputedAt: '2026-07-28T00:00:00Z',
+    });
+    const e = await svc.consumerEnrichment('con-1');
+    expect(e.configVersion).toBe(7);
+    expect(e.algorithmVersion).toBe('lead/v1');
+    expect(e.scoredAt).toBe('2026-07-28T00:00:00Z');
+    expect(e.stampsUnavailable).toBe(false);
+    expect(e.scoreSource).toEqual({ prospectId: 'p-src', campaignId: 'camp-1', campaignName: 'Tokyo Draw' });
+  });
+
+  it('a retained breakdown with an unresolvable source shows NO stamps — never person-pass ones', async () => {
+    // Deleted source lead AND the pre-migration-101 legacy projection both
+    // land here (null pointer, breakdown kept) — observationally identical,
+    // so the copy claims neither deletion nor a caption (round-5 B1).
+    const svc = stampDeps({
+      ...PROFILE_ROW,
+      scoreSourceProspectId: null,
+      srcProspectId: null, srcCampaignId: null, srcCampaignName: null,
+      srcConfigVersion: null, srcAlgorithmVersion: null, srcComputedAt: null,
+    });
+    const e = await svc.consumerEnrichment('con-1');
+    expect(e.stampsUnavailable).toBe(true);
+    expect(e.configVersion).toBeNull();
+    expect(e.scoredAt).toBeNull();
+    expect(e.algorithmVersion).toBeNull();
+    expect(e.scoreSource).toBeNull();
+    // The numbers themselves still render — only the caption is withheld.
+    expect(e.meetScore).toBe(50);
+    expect(e.breakdown).toEqual(PROFILE_ROW.scoreBreakdown);
+  });
+
+  it('no breakdown at all → person-pass stamps caption person-pass state', async () => {
+    const svc = stampDeps({
+      ...PROFILE_ROW,
+      scoreBreakdown: null, meetScore: null, buyScore: null, consumerScore: null,
+      scoreSourceProspectId: null,
+      srcProspectId: null, srcCampaignId: null, srcCampaignName: null,
+      srcConfigVersion: null, srcAlgorithmVersion: null, srcComputedAt: null,
+    });
+    const e = await svc.consumerEnrichment('con-1');
+    expect(e.stampsUnavailable).toBe(false);
+    expect(e.configVersion).toBe(3);
+    expect(e.algorithmVersion).toBe('score/v3');
+    expect(e.scoredAt).toBe('2026-07-30T00:00:00Z');
+  });
+
+  it('never person-scored (no stamp) stays null — the card is absent, not empty', async () => {
+    const svc = stampDeps({ ...PROFILE_ROW, scoredConfigVersion: null });
+    expect(await svc.consumerEnrichment('con-1')).toBeNull();
+  });
+});

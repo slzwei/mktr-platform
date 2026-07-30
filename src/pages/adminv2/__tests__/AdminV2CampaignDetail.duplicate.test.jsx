@@ -25,6 +25,12 @@ const CAMPAIGN = {
   end_date: null,
 };
 
+// Out of scope here: the scoring card owns its own queries + QueryClient
+// needs; its behavior is covered by CampaignScoringCard.test.jsx.
+vi.mock('@/components/adminv2/CampaignScoringCard', () => ({
+  default: () => <div data-testid="scoring-card-stub" />,
+}));
+
 vi.mock('@/hooks/queries/useAdminV2', () => ({
   useCampaignSummary: () => ({
     isLoading: false,

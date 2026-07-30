@@ -83,6 +83,7 @@ export function _resetConfigCache() {
  */
 const RESOLVE_SQL = `
   SELECT e.version, e."configJson", e."campaignId", e."productKey",
+         e."activatedAt", e."actorUserId",
          CASE WHEN e."campaignId" IS NOT NULL THEN 1
               WHEN e."productKey" IS NOT NULL THEN 2
               ELSE 3 END AS tier
@@ -95,12 +96,57 @@ const RESOLVE_SQL = `
    LIMIT 1`;
 
 /** The product this campaign's leads score under, or null. */
-async function loadCampaignProductKey(campaignId) {
+async function loadCampaignProductKey(campaignId, { transaction } = {}) {
   const [[row]] = await sequelize.query(
     'SELECT "targetAudience" FROM campaigns WHERE id = :cid',
-    { replacements: { cid: campaignId } }
+    { replacements: { cid: campaignId }, transaction }
   );
   return briefProductKey(row?.targetAudience);
+}
+
+/**
+ * The EDITOR's resolver (campaign-scoring-editor §4.2): the same walk as
+ * getActiveScoringConfig with every kindness stripped. Direct DB — no cache
+ * read, no cache write — and a read failure THROWS instead of dressing code
+ * defaults up as an answer: an admin about to edit from this baseline must
+ * never be seeded from defaults while a real configuration exists behind a
+ * query hiccup. `version: 0` therefore means the table GENUINELY resolves to
+ * nothing at this scope, which is the legitimate house-default baseline.
+ *
+ * Returns the winner's RAW `configJson` beside the normalized one — §4.1's
+ * composition base — plus the activation metadata the panel captions.
+ * `transaction` exists for §4.5: approve re-runs this under its advisory lock
+ * so the expectedLiveVersion comparison reads the same snapshot it writes.
+ */
+export async function resolveScoringConfigStrict({
+  campaignId = null, productKey = null, transaction,
+} = {}) {
+  const product = campaignId
+    ? await loadCampaignProductKey(campaignId, { transaction })
+    : productKey;
+  const [rows] = await sequelize.query(RESOLVE_SQL, {
+    replacements: { campaignId, productKey: product },
+    transaction,
+  });
+  const row = rows[0] || null;
+  if (!row) {
+    return {
+      version: 0,
+      scope: 'default',
+      config: normalizeConfig(DEFAULT_SCORING_CONFIG),
+      raw: {},
+      activatedAt: null,
+      actorUserId: null,
+    };
+  }
+  return {
+    version: row.version,
+    scope: row.campaignId ? 'campaign' : row.productKey ? 'product' : 'global',
+    config: normalizeConfig(row.configJson),
+    raw: row.configJson,
+    activatedAt: row.activatedAt,
+    actorUserId: row.actorUserId,
+  };
 }
 
 /**

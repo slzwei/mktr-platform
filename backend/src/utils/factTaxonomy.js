@@ -37,8 +37,11 @@ export const MAX_EVIDENCE_CHARS = 300;
 export const MIN_LLM_CONFIDENCE = 0.5;
 
 const GENDERS = ['male', 'female'];
-const ETHNICITIES = ['chinese', 'malay', 'indian', 'eurasian', 'other'];
-const LANGUAGES = ['en', 'zh', 'ms', 'ta'];
+// Exported (campaign-scoring-editor §3.1/§4.7): the scoring-config validator
+// clamps targetSegments to THESE vocabularies, and the editor UI renders its
+// pickers from a parity-tested copy — one owner, here, for both.
+export const ETHNICITIES = ['chinese', 'malay', 'indian', 'eurasian', 'other'];
+export const LANGUAGES = ['en', 'zh', 'ms', 'ta'];
 const MARITAL = ['single', 'married', 'divorced', 'widowed'];
 const PROPERTY = ['hdb', 'condo', 'landed', 'none'];
 const EMPLOYMENT = ['employed', 'self_employed', 'unemployed', 'retired', 'nsf', 'student'];

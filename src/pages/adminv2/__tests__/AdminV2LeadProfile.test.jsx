@@ -650,6 +650,18 @@ describe('scoring panel', () => {
     await screen.findByText('Campaigns');
     expect(screen.queryByText('Scoring')).not.toBeInTheDocument();
   });
+
+  it('a breakdown whose source signup is gone captions itself unavailable — never with person-pass stamps', async () => {
+    // campaign-scoring-editor §4.4: deleted source lead and pre-101 legacy
+    // projection are indistinguishable; the card claims neither a config nor
+    // a time it cannot stand behind.
+    const d = ENRICHED({ stampsUnavailable: true, configVersion: null, scoredAt: null, algorithmVersion: null });
+    fetchProspectProfile.mockResolvedValue(d);
+    setup('/admin/leads/p1?view=profile');
+    await screen.findByText('Scoring');
+    expect(screen.getByText('SCORE SOURCE SIGNUP UNAVAILABLE')).toBeInTheDocument();
+    expect(screen.queryByText(/CONFIG v/)).not.toBeInTheDocument();
+  });
 });
 
 /**
