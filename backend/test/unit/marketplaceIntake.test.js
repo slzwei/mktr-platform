@@ -1,4 +1,4 @@
-import { makeProspectService } from '../services/prospectService.js';
+import { makeProspectService } from '../../src/services/prospectService.js';
 
 // Marketplace flow intake (docs/plans/redeem-marketplace-v2.md Phase 4), DB-free
 // via makeProspectService DI (same harness as campaignStatusGateAndShare.test.js):

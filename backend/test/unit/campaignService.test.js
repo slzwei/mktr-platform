@@ -330,9 +330,9 @@ describe('campaignService (unit)', () => {
       );
 
       const whereArg = Campaign.findAndCountAll.mock.calls[0][0].where;
-      const orConditions = whereArg[Op.or];
-      expect(orConditions).toBeDefined();
-      expect(orConditions).toHaveLength(2);
+      const andGroups = whereArg[Op.and];
+      expect(andGroups).toHaveLength(1);
+      expect(andGroups[0][Op.or]).toHaveLength(2);
     });
 
     it('scopes non-admin users to own + public campaigns', async () => {
@@ -345,11 +345,33 @@ describe('campaignService (unit)', () => {
       );
 
       const whereArg = Campaign.findAndCountAll.mock.calls[0][0].where;
-      const orConditions = whereArg[Op.or];
-      expect(orConditions).toEqual([
+      const andGroups = whereArg[Op.and];
+      expect(andGroups).toHaveLength(1);
+      expect(andGroups[0][Op.or]).toEqual([
         { createdBy: 'agent-1' },
         { isPublic: true },
       ]);
+    });
+
+    // Regression (P0-1): search once overwrote the role scope — both wrote the
+    // same where[Op.or] key — so ?search= leaked every campaign to non-admins.
+    it('keeps the non-admin role scope when search is present', async () => {
+      Campaign.findAndCountAll.mockResolvedValue({ count: 0, rows: [] });
+
+      await campaignService.listCampaigns(
+        { id: 'agent-1', role: 'agent' },
+        { search: 'luggage' },
+        makeReq({ user: { id: 'agent-1', role: 'agent' } })
+      );
+
+      const whereArg = Campaign.findAndCountAll.mock.calls[0][0].where;
+      const andGroups = whereArg[Op.and];
+      expect(andGroups).toHaveLength(2);
+      expect(andGroups[0][Op.or]).toEqual([
+        { createdBy: 'agent-1' },
+        { isPublic: true },
+      ]);
+      expect(andGroups[1][Op.or]).toHaveLength(2);
     });
 
     it('sorts by createdAt DESC', async () => {
@@ -1069,6 +1091,80 @@ describe('campaignService (unit)', () => {
   // ────────────────────────────────────────────────
   // getCampaignAnalytics
   // ────────────────────────────────────────────────
+
+  // ────────────────────────────────────────────────
+  // Campaign-name sanitisation — create/update/duplicate parity (P1-8):
+  // the create-time tag strip is a real defence (the name lands raw in the
+  // agent assignment-email HTML), so update and duplicate must apply the SAME
+  // sanitiser or a PUT bypasses it.
+  // ────────────────────────────────────────────────
+
+  describe('campaign name sanitisation (create/update/duplicate parity)', () => {
+    const DIRTY = '  <img src=x onerror=alert(1)>Summer <b>Promo</b>  ';
+    const CLEAN = 'Summer Promo';
+
+    it('createCampaign strips HTML tags from the name', async () => {
+      Campaign.create.mockResolvedValue(makeCampaignInstance({ id: 'camp-2' }));
+
+      await campaignService.createCampaign({ name: DIRTY }, { id: 'user-1', role: 'admin' });
+
+      expect(Campaign.create.mock.calls[0][0].name).toBe(CLEAN);
+    });
+
+    it('updateCampaign strips identically (the PUT bypass is closed)', async () => {
+      const instance = makeCampaignInstance();
+      Campaign.findOne.mockResolvedValue(instance);
+
+      await campaignService.updateCampaign('camp-1', { name: DIRTY }, makeReq());
+
+      expect(instance.update).toHaveBeenCalledWith(expect.objectContaining({ name: CLEAN }));
+    });
+
+    it('duplicateCampaign strips an explicit body.name identically', async () => {
+      const original = makeCampaignInstance({
+        toJSON() { return { id: 'camp-1', name: 'Original', metrics: {} }; },
+      });
+      Campaign.findOne.mockResolvedValue(original);
+      Campaign.create.mockResolvedValue(makeCampaignInstance({ id: 'camp-2' }));
+
+      await campaignService.duplicateCampaign('camp-1', { name: DIRTY }, makeReq());
+
+      expect(Campaign.create.mock.calls[0][0].name).toBe(CLEAN);
+    });
+
+    it('duplicateCampaign also cleans the derived default from a pre-fix poisoned row', async () => {
+      // duplicateCampaign derives the default from `original.name` (the row
+      // attribute), so the poisoned value must live there, not just in toJSON.
+      const original = makeCampaignInstance({ name: 'Legacy <script>x</script> Promo' });
+      Campaign.findOne.mockResolvedValue(original);
+      Campaign.create.mockResolvedValue(makeCampaignInstance({ id: 'camp-2' }));
+
+      await campaignService.duplicateCampaign('camp-1', {}, makeReq());
+
+      expect(Campaign.create.mock.calls[0][0].name).toBe('Legacy x Promo (Copy)');
+    });
+
+    it('all three paths store identical bytes for the same input', async () => {
+      Campaign.create.mockResolvedValue(makeCampaignInstance({ id: 'camp-2' }));
+      await campaignService.createCampaign({ name: DIRTY }, { id: 'user-1', role: 'admin' });
+      const createdName = Campaign.create.mock.calls[0][0].name;
+
+      const instance = makeCampaignInstance();
+      Campaign.findOne.mockResolvedValue(instance);
+      await campaignService.updateCampaign('camp-1', { name: DIRTY }, makeReq());
+      const updatedName = instance.update.mock.calls[0][0].name;
+
+      const original = makeCampaignInstance({
+        toJSON() { return { id: 'camp-1', name: 'Original', metrics: {} }; },
+      });
+      Campaign.findOne.mockResolvedValue(original);
+      await campaignService.duplicateCampaign('camp-1', { name: DIRTY }, makeReq());
+      const duplicatedName = Campaign.create.mock.calls.at(-1)[0].name;
+
+      expect(createdName).toBe(CLEAN);
+      expect(new Set([createdName, updatedName, duplicatedName]).size).toBe(1);
+    });
+  });
 
   describe('getCampaignAnalytics', () => {
     it('returns QR + prospect funnel data', async () => {

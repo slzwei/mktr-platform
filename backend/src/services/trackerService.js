@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { QrTag, QrScan, Attribution, Campaign } from '../models/index.js';
 import { buildPublicDesignConfig } from '../utils/publicDesignConfig.js';
+import { publicScreeningCallback } from '../utils/screeningEnv.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 if (isProd && !process.env.IP_HASH_SALT) {
@@ -168,7 +169,11 @@ export async function resolveSession(sid, atkCookie) {
       // (luckyDraw activation/terms ids etc.). toJSON-tolerant: DI test mocks
       // return plain objects.
       campaign = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
+      // Same env-derived screening notice the previews/public path attaches —
+      // the QR-scan funnel lands on the identical success page.
+      const screeningCallback = publicScreeningCallback(campaign.design_config);
       campaign.design_config = buildPublicDesignConfig(campaign.design_config);
+      if (screeningCallback) campaign.screeningCallback = screeningCallback;
     }
   }
 

@@ -1,4 +1,4 @@
-import { resolveReferrerName } from '../services/prospectService.js';
+import { resolveReferrerName } from '../../src/services/prospectService.js';
 
 // Input-guard coverage for the public "Referred by …" resolver. These cases must return
 // null WITHOUT a DB lookup (the UUID gate is what stops the public endpoint from being

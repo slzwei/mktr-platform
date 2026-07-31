@@ -1,4 +1,4 @@
-import { makeProspectService } from '../services/prospectService.js';
+import { makeProspectService } from '../../src/services/prospectService.js';
 import { quizDef, goldenCases } from '../../../test-fixtures/protectionPersonalityQuiz.mjs';
 
 // Proves the wiring in createProspect: a quizResult in the body + a campaign with

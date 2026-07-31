@@ -461,16 +461,24 @@ export function makeEntitlementService(overrides = {}) {
         // anti-farming guard → 'duplicate_phone' (a concurrent same-phone
         // signup lost the race). The transaction rolled back, so counters are
         // intact either way.
+        // Recovery reads mirror the EXACT index that fired — both uniques are
+        // per-activation, so the lookup must pin activationId too: a person
+        // legitimately holding live rewards on two activations must get THIS
+        // activation's row back, not whichever sorts first.
         const constraint = err?.parent?.constraint || err?.original?.constraint || '';
         if (constraint === 'uq_re_activation_phone') {
           const winner = await d.RewardEntitlement.findOne({
-            where: { phoneKey: phoneKeyOf(prospect.phone), status: { [Op.in]: LIVE_PHONE_STATUSES } },
+            where: {
+              activationId: resolvedActivation.id,
+              phoneKey: phoneKeyOf(prospect.phone),
+              status: { [Op.in]: LIVE_PHONE_STATUSES },
+            },
             order: [['createdAt', 'DESC']],
           });
           return { entitlement: winner, reason: 'duplicate_phone' };
         }
         const existing = await d.RewardEntitlement.findOne({
-          where: { prospectId: prospect.id },
+          where: { activationId: resolvedActivation.id, prospectId: prospect.id },
           order: [['createdAt', 'DESC']],
         });
         return { entitlement: existing, reason: 'duplicate' };
@@ -1063,7 +1071,13 @@ export function makeEntitlementService(overrides = {}) {
         limit: 100,
       });
       for (const prospect of prospects) {
-        const r = await issueForProspect(prospect, { via: 'sweep' }).catch(() => null);
+        // One bad row must not abort the sweep — but the skip ledger only
+        // records typed refusals, so an unlogged throw here would make a
+        // systemic failure invisible.
+        const r = await issueForProspect(prospect, { via: 'sweep' }).catch((err) => {
+          d.logger.warn('redeem_ops.entitlement.reconcile_failed', { prospectId: prospect.id, error: err?.message });
+          return null;
+        });
         if (r?.entitlement && r.reason === null) issued += 1;
       }
     }

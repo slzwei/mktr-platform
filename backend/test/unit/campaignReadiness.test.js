@@ -1,4 +1,4 @@
-import { computeReadiness } from '../services/campaignReadinessService.js';
+import { computeReadiness } from '../../src/services/campaignReadinessService.js';
 
 const codes = (r) => r.issues.map((i) => i.code);
 
@@ -142,7 +142,7 @@ describe('campaignReadinessService.computeReadiness', () => {
   // activation.
 
   it('warns when the draw is enabled with NO record while intake is still open', () => {
-    const r = computeReadiness({ ...healthy, drawEnabled: true, hasDrawRecord: false, drawIntakeOpen: true });
+    const r = computeReadiness({ ...healthy, drawEnabled: true, hasDrawRecord: false, drawIntakeOpen: true, railActive: true });
     expect(r.ready).toBe(true);
     expect(r.issues.find((i) => i.code === 'draw_record_missing').level).toBe('warning');
   });
@@ -168,6 +168,7 @@ describe('campaignReadinessService.computeReadiness', () => {
       drawCloseMismatch: true,
       docDrawClosesAt: '2026-10-30',
       drawRecordClosesAt: '2026-11-05',
+      railActive: true,
     });
     expect(r.ready).toBe(true);
     const issue = r.issues.find((i) => i.code === 'draw_close_date_mismatch');
@@ -178,9 +179,24 @@ describe('campaignReadinessService.computeReadiness', () => {
 
   it('a clean live draw raises no draw issues', () => {
     const r = computeReadiness({
-      ...healthy, drawEnabled: true, hasDrawRecord: true, hasLiveDraw: true, drawIntakeOpen: true, drawCloseMismatch: false,
+      ...healthy, drawEnabled: true, hasDrawRecord: true, hasLiveDraw: true, drawIntakeOpen: true, drawCloseMismatch: false, railActive: true,
     });
     expect(r.issues).toHaveLength(0);
+  });
+
+  // ── PR-2: boost-rail fact — the rows these fixtures now state explicitly ──
+
+  it('a draw with no active rail is critical when live, informational pre-launch', () => {
+    const live = computeReadiness({
+      ...healthy, drawEnabled: true, hasDrawRecord: true, hasLiveDraw: true, drawIntakeOpen: true,
+    });
+    expect(live.ready).toBe(false);
+    expect(live.issues.find((i) => i.code === 'draw_boost_rail_missing').level).toBe('critical');
+
+    const preLaunch = computeReadiness({
+      ...healthy, isActive: false, drawEnabled: true, hasDrawRecord: true, drawIntakeOpen: true,
+    });
+    expect(preLaunch.issues.find((i) => i.code === 'draw_boost_rail_missing').level).toBe('warning');
   });
 
   it('brand_awareness stays not-applicable even with nothing configured (PR 5 facts included)', () => {

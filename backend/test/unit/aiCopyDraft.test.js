@@ -24,8 +24,8 @@ import {
   COPY_FIELDS,
   PICK_FIELDS,
   INCLUSIONS_FIELD,
-} from '../services/campaignCopyAiService.js';
-import { LIMITS, DRAW_TEMPLATE_IDS } from '../utils/designConfigV2.js';
+} from '../../src/services/campaignCopyAiService.js';
+import { LIMITS, DRAW_TEMPLATE_IDS } from '../../src/utils/designConfigV2.js';
 
 /**
  * Campaign Studio AI copy assist (Studio PR 4 + the 2026-07-18 full-coverage

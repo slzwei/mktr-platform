@@ -1,4 +1,4 @@
-import { signAssetUrl } from '../utils/assetSigning.js';
+import { signAssetUrl } from '../../src/utils/assetSigning.js';
 
 describe('asset signing placeholder', () => {
   it('returns expiresAt >= manifest refresh seconds', () => {

@@ -1,4 +1,4 @@
-import { schemas } from '../middleware/validation.js';
+import { schemas } from '../../src/middleware/validation.js';
 
 // The generic validate() middleware does NOT stripUnknown, so any key not in the
 // schema 400s. These tests lock in that the quiz funnel fields are accepted while

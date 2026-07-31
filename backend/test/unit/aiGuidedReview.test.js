@@ -1,4 +1,4 @@
-import { buildGuidedReviewPrompts, requestStructuredJson } from '../services/guidedReviewAiService.js';
+import { buildGuidedReviewPrompts, requestStructuredJson } from '../../src/services/guidedReviewAiService.js';
 
 describe('Guided Review AI provider boundary', () => {
   it('separates untrusted brief data from fixed and organisation guidance', () => {

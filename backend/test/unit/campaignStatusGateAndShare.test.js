@@ -1,4 +1,4 @@
-import { makeProspectService } from '../services/prospectService.js';
+import { makeProspectService } from '../../src/services/prospectService.js';
 
 // Covers the two pieces added with the referral-email short link work, both DB-free via
 // makeProspectService dependency injection (same harness as referralAttribution.test.js):

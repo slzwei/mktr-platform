@@ -1,4 +1,4 @@
-import { makeEntitlementService, flushDeliveries } from '../services/redeemOps/entitlementService.js';
+import { makeEntitlementService, flushDeliveries } from '../../src/services/redeemOps/entitlementService.js';
 
 // Trial-reward PR E — the per-channel delivery fan-out contract, DB-free:
 // queueDelivery is exercised directly (exported for exactly this) with fake

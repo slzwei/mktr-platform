@@ -1,4 +1,4 @@
-import { aggregateQuizResults } from '../services/quizAnalyticsService.js';
+import { aggregateQuizResults } from '../../src/services/quizAnalyticsService.js';
 
 const mk = (profileId, band, scoredBy) => ({
   sourceMetadata: { quiz: { result: { profileId }, leadScore: band ? { band } : undefined, scoredBy } },

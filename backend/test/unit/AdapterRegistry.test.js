@@ -7,7 +7,7 @@
  * - rejects duplicate registration unless explicitly replaced
  */
 
-import { adapterRegistry } from '../AdapterRegistry.js';
+import { adapterRegistry } from '../../src/integrations/AdapterRegistry.js';
 
 const dummyAdapter = {
   id: 'test-platform',

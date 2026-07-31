@@ -108,6 +108,30 @@ describe('tasks', () => {
     const row = await PartnerOrganisation.findByPk(solo.id);
     expect(row.nextTaskAt).toBeNull();
   });
+
+  test('unknown status value falls back to the open-work default, not an unfiltered list', async () => {
+    await OutreachTask.create({
+      title: 'Quietly finished', partnerOrganisationId: partner.id,
+      assigneeUserId: execA.user.id, createdBy: execA.user.id,
+      dueAt: new Date(), status: 'completed',
+    });
+
+    const garbage = await request(app)
+      .get('/api/redeem-ops/tasks')
+      .query({ status: 'garbage' })
+      .set(auth(execA.token));
+    expect(garbage.status).toBe(200);
+    expect(garbage.body.data.tasks.some((t) => t.title === 'Quietly finished')).toBe(false);
+    expect(garbage.body.data.tasks.every((t) => ['open', 'in_progress'].includes(t.status))).toBe(true);
+
+    // 'all' stays the explicit opt-in that does surface completed work
+    const all = await request(app)
+      .get('/api/redeem-ops/tasks')
+      .query({ status: 'all' })
+      .set(auth(execA.token));
+    expect(all.status).toBe(200);
+    expect(all.body.data.tasks.some((t) => t.title === 'Quietly finished')).toBe(true);
+  });
 });
 
 describe('pools + claim-next concurrency', () => {

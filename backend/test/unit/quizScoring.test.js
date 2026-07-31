@@ -1,4 +1,4 @@
-import { scoreQuiz } from '../services/quizScoringService.js';
+import { scoreQuiz } from '../../src/services/quizScoringService.js';
 import { quizDef, goldenCases, tiebreakCase } from '../../../test-fixtures/protectionPersonalityQuiz.mjs';
 
 describe('quizScoringService.scoreQuiz — Protection Personality (server)', () => {

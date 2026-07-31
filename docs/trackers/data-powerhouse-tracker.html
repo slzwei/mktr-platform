@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Powerhouse — Progress Tracker</title>
+<style>
+  :root {
+    color-scheme: light;
+    --plane: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --chip-good-bg: rgba(12,163,12,0.12);
+    --chip-prog-bg: rgba(42,120,214,0.12);
+    --chip-warn-bg: rgba(250,178,25,0.16);
+    --chip-block-bg: rgba(236,131,90,0.16);
+    --chip-todo-bg: rgba(137,135,129,0.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --plane: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --border: rgba(255,255,255,0.10);
+      --accent: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10);
+    --accent: #3987e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--plane);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 20px 80px; }
+  header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); font-size: 13.5px; max-width: 640px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button {
+    font: 600 12.5px system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 12px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  .hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 22px 0 10px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px 12px;
+  }
+  .tile .v { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .tile .v .unit { font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .tile .k { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .tile.progress-tile .v { color: var(--accent); }
+  .overall-meter { height: 6px; border-radius: 3px; background: var(--grid); margin-top: 10px; overflow: hidden; }
+  .overall-meter > i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .25s ease; }
+  .baseline-note { color: var(--muted); font-size: 11.5px; margin: 6px 2px 24px; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 18px; }
+  .filters button { border-radius: 999px; padding: 5px 12px; color: var(--ink-2); }
+  .filters button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+  section.phase {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 18px 8px; margin-bottom: 16px;
+  }
+  .phase-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .phase-head h2 { font-size: 15.5px; margin: 0; }
+  .phase-head .why { color: var(--muted); font-size: 12.5px; }
+  .phase-count { color: var(--ink-2); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .phase-meter { height: 5px; border-radius: 3px; background: var(--grid); margin: 10px 0 6px; overflow: hidden; }
+  .phase-meter > i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .25s ease; }
+  section.phase.complete .phase-meter > i { background: var(--good); }
+  ul.items { list-style: none; margin: 6px 0 10px; padding: 0; }
+  li.item {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 10px 2px; border-top: 1px solid var(--grid);
+  }
+  li.item:first-child { border-top: none; }
+  .chip {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 650; color: var(--ink);
+    border: none; border-radius: 999px; padding: 4px 10px; cursor: pointer;
+    min-width: 104px; justify-content: flex-start;
+    background: var(--chip-todo-bg); margin-top: 1px;
+  }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+  .chip[data-s="done"]     { background: var(--chip-good-bg); }
+  .chip[data-s="done"] .dot { background: var(--good); }
+  .chip[data-s="progress"] { background: var(--chip-prog-bg); }
+  .chip[data-s="progress"] .dot { background: var(--accent); }
+  .chip[data-s="decision"] { background: var(--chip-warn-bg); }
+  .chip[data-s="decision"] .dot { background: var(--warning); }
+  .chip[data-s="blocked"]  { background: var(--chip-block-bg); }
+  .chip[data-s="blocked"] .dot { background: var(--serious); }
+  .item .body { min-width: 0; flex: 1; }
+  .item .t {
+    font-weight: 600; font-size: 14px; cursor: pointer;
+    display: flex; align-items: baseline; gap: 7px;
+  }
+  .item .t .caret { color: var(--muted); font-size: 10px; transition: transform .15s ease; flex: 0 0 auto; }
+  .item.open .t .caret { transform: rotate(90deg); }
+  .item.done .t .title-text { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--muted); text-decoration-thickness: 1px; }
+  .item .d { color: var(--ink-2); font-size: 12.5px; margin-top: 1px; }
+  .item .ref { color: var(--muted); font-size: 11.5px; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .exp { display: none; margin-top: 10px; }
+  .item.open .exp { display: block; }
+  .lbl {
+    display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 3px;
+  }
+  .plain {
+    font-size: 13px; color: var(--ink-2); background: var(--plane);
+    border: 1px solid var(--grid); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+  }
+  .promptbox { border: 1px solid var(--grid); border-radius: 10px; overflow: hidden; }
+  .promptbox .ph {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 12px; background: var(--plane); border-bottom: 1px solid var(--grid);
+  }
+  .promptbox .ph .lbl { margin: 0; }
+  .copyPrompt { padding: 4px 10px; font-size: 11.5px; border-radius: 6px; }
+  pre.prompt {
+    margin: 0; padding: 11px 13px; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--ink); white-space: pre-wrap; word-break: break-word; background: var(--surface);
+    user-select: all;
+  }
+  .noPrompt { font-size: 12px; color: var(--muted); font-style: italic; }
+  .hint { color: var(--muted); font-size: 11.5px; margin: 14px 2px 40px; }
+  footer { color: var(--muted); font-size: 11.5px; border-top: 1px solid var(--grid); padding-top: 14px; }
+  @media (max-width: 620px) {
+    li.item { flex-direction: column; gap: 6px; }
+    .chip { min-width: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>MKTR / Redeem — Data Powerhouse Tracker</h1>
+      <div class="sub">One consumer, many campaigns, one growing profile — with the permission to use it.
+      Click a title to expand its plain-English explanation and its ready-to-paste prompt. Click a status chip to cycle it; state saves in this browser.</div>
+    </div>
+    <div class="toolbar">
+      <button id="expandBtn" type="button">Expand all</button>
+      <button id="themeBtn" type="button">Theme</button>
+      <button id="copyBtn" type="button">Copy status as Markdown</button>
+      <button id="resetBtn" type="button">Reset</button>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="tile progress-tile">
+      <div class="v"><span id="pct">0</span><span class="unit">%</span></div>
+      <div class="k"><span id="doneCount">0</span> of <span id="totalCount">0</span> items shipped</div>
+      <div class="overall-meter"><i id="overallBar" style="width:0%"></i></div>
+    </div>
+    <div class="tile"><div class="v">5.5<span class="unit">/10</span></div><div class="k">Audit readiness score (baseline)</div></div>
+    <div class="tile"><div class="v">129</div><div class="k">Consumers on the spine</div></div>
+    <div class="tile"><div class="v">5</div><div class="k">Repeat consumers (≥2 campaigns)</div></div>
+    <div class="tile"><div class="v">1</div><div class="k">Verified → marketable today</div></div>
+    <div class="tile"><div class="v">339</div><div class="k">Consent events in the ledger</div></div>
+  </div>
+  <div class="baseline-note">Baseline numbers frozen from the prod snapshot of 20 Jul 2026 (audit: docs/reference/data-powerhouse-readiness-audit-2026-07-20.md). They don't auto-refresh.</div>
+
+  <div class="filters" id="filters" role="group" aria-label="Filter by status">
+    <button type="button" data-f="all" aria-pressed="true">All</button>
+    <button type="button" data-f="todo" aria-pressed="false">○ To do</button>
+    <button type="button" data-f="progress" aria-pressed="false">◐ In progress</button>
+    <button type="button" data-f="done" aria-pressed="false">✓ Done</button>
+    <button type="button" data-f="blocked" aria-pressed="false">■ Blocked / Decision</button>
+  </div>
+
+  <main id="phases"></main>
+
+  <div class="hint">Statuses: ○ To do → ◐ In progress → ✓ Done → ■ Blocked → ◆ Needs decision (click a chip to cycle).
+  Stored under <code>localStorage["dpTracker.v1"]</code> for this origin (http://localhost:5599). “Copy status as Markdown” exports the live state for pasting into a Claude session.</div>
+
+  <footer>Source of truth: docs/reference/data-powerhouse-readiness-audit-2026-07-20.md · direction locked 21 Jul 2026 (mandatory consent · curated pushes, email→WhatsApp · wallet in redesign · full enrichment · no agent continuity).</footer>
+</div>
+
+<script>
+const PHASES = [
+  {
+    id: "p0", title: "Phase 0 — Foundation (shipped)", why: "What already exists and works in prod",
+    items: [
+      { id:"spine", t:"Consumer spine — durable person entity", s:"done",
+        d:"One person per phone, all signups linked (100% of eligible prospects). PR #204, live in prod.",
+        ref:"backend/src/models/Consumer.js · consumerService.js",
+        plain:`The master "one person = one record" table. Every signup with the same phone number now lands on the same person, with counts of how many campaigns they have joined and whether their number is proven real. This was the audit's #1 missing piece — it shipped and is live.`,
+        prompt:null },
+      { id:"ledger", t:"Consent ledger + suppressions + email unsubscribe", s:"done",
+        d:"Person-level, purpose-scoped consent events with copy versioning; RFC-8058 unsubscribe. PR #205, live.",
+        ref:"migrations 080/081 · consentService.js",
+        plain:`A permanent diary of every consent moment: "on 20 Jul this person agreed to X, wording version Y, phone verified". Plus a do-not-contact list and working unsubscribe links in emails. This is evidence-grade — it is what protects you if a message is ever challenged.`,
+        prompt:null },
+      { id:"backfill", t:"Legacy consent backfill", s:"done",
+        d:"324 historical signups re-derived into the ledger, idempotently.",
+        ref:"081-consent-backfill.js",
+        plain:`All the signups that happened before the ledger existed were translated into it retroactively, so history is not blank — every past person has their original consent recorded.`,
+        prompt:null },
+      { id:"audit", t:"Deep readiness audit (all systems + live DBs)", s:"done",
+        d:"8 layers scored, gap register, prod data snapshot.",
+        ref:"docs/reference/data-powerhouse-readiness-audit-2026-07-20.md",
+        plain:`The full scan of the codebase and live databases that produced the 5.5/10 score, this tracker's item list, and the evidence behind each item.`,
+        prompt:null },
+      { id:"decisions", t:"Direction locked — 9 strategic decisions", s:"done",
+        d:"Mandatory consent · curated cohort pushes (email first, WhatsApp next) · wallet into redesign · full enrichment · person-centric backend with agent-side independence.",
+        ref:"memory + audit doc",
+        plain:`Your answers that set the strategy: the reward is the deal (agree to be contactable or no reward), pushes go to hand-picked groups (never blanket retargeting), the wallet goes into the redesign, profiles get the full build, and agents keep getting leads independently while MKTR keeps the person intelligence.`,
+        prompt:null },
+      { id:"prompt", t:"Redesign prompt updated for the new direction", s:"done",
+        d:"Wallet, mandatory-consent block, returning-consumer prefill, next-for-you cross-sell folded into the paste-ready claude.ai/design brief.",
+        ref:"docs/plans/redeem-redesign-claude-design-prompt.md",
+        plain:`The brief you paste into claude.ai/design for the redeem.sg rebrand now includes the wallet and the new consent moment — so the design work and the data strategy cannot drift apart.`,
+        prompt:null }
+    ]
+  },
+  {
+    id: "p1", title: "Phase 1 — Consent rework (mandatory + brand-wide)", why: "The legal key that unlocks everything else",
+    items: [
+      { id:"copy", t:"Draft the agree-all consent copy (brand-wide scope)", s:"done",
+        d:"Drafted + refined 21 Jul: Variant C selected, §9.4 FINAL text SHIPPED as era 2026-07-21-agree-all-v1 (via funnelui/mktui). Interim legal pass in doc §9; real counsel = tracker item legal.",
+        ref:"docs/plans/consent-agree-all-copy-2026-07-21.md (canonical — the other pack doc is superseded)",
+        plain:`The old small print only let us contact someone about that ONE campaign. The new wording — now live — makes redeeming itself the agreement: contact plus marketing about other Redeem offers, campaign terms, and (on sponsored campaigns) sharing with the named sponsor. It is the sentence that turns one-off signups into an audience you may market to.`,
+        prompt:null },
+      { id:"legal", t:"Legal review of the mandatory-consent copy", s:"progress",
+        d:"Interim in-test counsel pass done 21 Jul: Variant C selected + 3 refinements; DNC send-time-scrub safeguard binds Phase 3 pushes. REAL PDPA counsel re-reviews doc §7+§9 before redeem go-live.",
+        ref:"docs/plans/consent-agree-all-copy-2026-07-21.md §9 → then external — compliance",
+        plain:`A lawyer or compliance reviewer sanity-checks the new wording once. Why: Singapore's PDPA frowns on demanding more consent than is "reasonable" as the price of a product — and requiring people to accept disclosure to a financial adviser for a $10 voucher is the aggressive end of that. One review protects the entire model.`,
+        prompt:`Assemble the EXTERNAL-counsel pack for the agree-all consent block (tracker item "legal"). The wording is ALREADY LIVE (era 2026-07-21-agree-all-v1) and the interim analysis already exists — do NOT redraft copy or re-run the in-test review. Package: the shipped §9.4 wording from docs/plans/consent-agree-all-copy-2026-07-21.md, a diff vs the pre-rework (pre-21-Jul) live copy, the §7 questions with their §9.2 interim answers, the §9.5 binding safeguards we adopted, and a one-page forwardable brief for a Singapore PDPA practitioner. If counsel edits the wording, the change ships as a NEW era (restamp date, new registry entry) per doc §9.5-4 — flag that in the brief.`},
+      { id:"funnelui", t:"Funnel UI: mandatory agreement block (main funnel)", s:"done",
+        d:"LIVE 21 Jul: #211 era registry + #213 agree-all block + #214 consolidation (§9.4 FINAL copy, era 2026-07-21-agree-all-v1, NAMED-sponsor rule §9.5-1, whatsapp channel, read-only T&C dialog). 1618 vitest + 76 jest + 22 Playwright checks green; deploy-verified.",
+        ref:"CampaignSignupForm.jsx · src/lib/consentCopy.js",
+        plain:`The actual form change on campaign pages: the three checkboxes become one clear "here's the deal" section that must be accepted before the Submit button works. Same funnel, same steps — just the consent moment redesigned to be honest, readable, and unskippable.`,
+        prompt:null },
+      { id:"mktui", t:"Marketplace flow: same mandatory block", s:"done",
+        d:"LIVE 21 Jul (#214): MarketplaceFlow consent step = the identical block from the same twin module + consent_copy_version on the wire; DNC step untouched; behavioral tests (base/sponsored/name-less/DNC) + Playwright full-flow drives + live-verified on redeem.sg.",
+        ref:"MarketplaceFlow.jsx",
+        plain:`The marketplace on redeem.sg has its own signup flow (the one with child/branch/timing questions). This applies the identical consent redesign there, so both entry points make exactly the same deal.`,
+        prompt:null },
+      { id:"globalev", t:"Write GLOBAL marketing grants to the ledger", s:"done",
+        d:"LIVE 21 Jul (#215, 61cdc4a): brand-scope eras mint scoped + campaignId:null twin at capture; era-aware backfill; 082 ran on deploy (0 minted — zero signups in the #213/#214→082 window, verified in prod DB; heals any future gap). canMarketTo unchanged. 29 integration proofs. Also shipped the §9 legal-pack doc into the repo.",
+        ref:"consentService.recordCaptureConsentEventsTx · migration 082 · PR #215",
+        plain:`When someone agrees to the new wording, we must record it in the consent diary as a BRAND-WIDE permission, not a one-campaign permission. The sending machinery checks that diary before every push — without this record it will keep refusing to message anyone about a different campaign (by design).`,
+        prompt:`Extend consent capture so agree-all submissions ALSO write a GLOBAL (campaignId:null) contact grant to consent_events alongside the campaign-scoped event (tracker item "globalev", in consentService.recordCaptureConsentEventsTx). REUSE the shipped era: submissions carry consent_copy_version '2026-07-21-agree-all-v1' and the registry already pins its copy/hash/scope — do NOT mint a new version or touch the funnels; this is ledger-write + canMarketTo work only. Include: a global-grant path in canMarketTo (verified global grant ∧ not suppressed), a one-off backfill minting global grants for the interim cohort (contact events already recorded under that era label between 21 Jul and this change), and tests proving new signups pass the cross-campaign check while legacy-era signups still fail it. Plan → my review → implement.`},
+      { id:"copyhash", t:"Copy-evidence integrity fix", s:"done",
+        d:"RESOLVED for the agree-all era (#211+#214): on-screen clauses render from src/lib/consentCopy.js, byte-locked to the backend evidence constants by the lockstep vitest; ledger metadata pins hash+variant+scope. Legacy-era paraphrase stays frozen by design (closed era).",
+        ref:"src/lib/__tests__/consentCopy.lockstep.test.js",
+        plain:`Every consent record stores a fingerprint of the exact wording the person saw. The old fingerprint came from a backend paraphrase, not the real on-screen sentence. Fixed for the live era: the on-screen words and the hashed backend constants are byte-locked by a test that fails the build on any drift. (The legacy-era paraphrase stays frozen on purpose — that era is closed and its recorded hashes must keep meaning what they meant.)`,
+        prompt:null },
+      { id:"3sites", t:"Point the 3 legacy consent checks at the ledger", s:"done",
+        d:"Done 21 Jul: audience sync = ledger grant+verified (getMarketableGrantMap) + suppression drop; canWhatsAppProspect = purpose-based on the ledger (D2 resolved: transactional rides erasure-only); Meta/TikTok em/ph = ctx.marketingConsent from canMarketTo at both dispatch boundaries. Fail-closed throughout; legacy boolean still written, never read.",
+        ref:"redeemedAudienceService.js:92 · whatsappService.js:81 · metaCapiService.js:61",
+        plain:`Three older parts of the system still check the old per-signup tick instead of the new consent diary: the Meta ad-audience upload, the WhatsApp capability check, and the ad-event senders. Until they switch over, an unsubscribe would not fully stop them — the diary must be the single source of truth everywhere.`,
+        prompt:null }
+    ]
+  },
+  {
+    id: "p2", title: "Phase 2 — Compliance backbone", why: "What makes mandatory consent defensible",
+    items: [
+      { id:"erasure", t:"PR C — PDPA erasure", s:"done",
+        d:"LIVE 21 Jul (#219 → 0b7c8dd, deploy dep-d9fh0r58nd3s73f7e0r0 live-probed 401 on api.mktr.sg): POST /api/consumers/:id/erase (admin+confirm) — one-txn allowlist rebuild across the FULL matrix (prospects incl. digits-matched unlinked + inbound-Retell fromNumber rows, activities, commissions, entitlements w/ inventory bookkeeping, redemption receipts, draw entries + pending-winner→ineligible, short links deref'd, webhook payload copies + in-txn lead.deleted outbox, sessions/attributions, idempotency keys, OTP+waitlist rows), suppression upgraded to erasure (blocks transactional), global ledger denial, audit; re-erase = repair pass; send fences (queueDelivery reload+isSendBlocked, attemptDelivery reload, link-resend 410, PUT-on-erased 410). Codex xhigh 16 findings dispositioned in PR. 25-test suite + 292 regression green. Left for 'propagate': Lyfe lead.deleted handler; Retell provider-side deletion = report.retellCallIds + SOP.",
+        ref:"plan: consumer-spine-and-consent-ledger.md",
+        plain:`"Erase me" done properly: one admin action that wipes a person's data everywhere it lives (profile, all their signups, records that copied their details), keeps only a tombstone saying "never contact this number again", and leaves an audit trail. Required under PDPA. Today, deleting a lead removes one row and leaves everything else behind.`,
+        prompt:`Build PR C — erasure (tracker item "erasure") from the plan in docs/plans/consumer-spine-and-consent-ledger.md: admin person-level erasure endpoint, erasedAt + PII nulling across the full table matrix (including webhook payload copies, draw entries, activity snapshots), an erasure-reason suppression, and a ledger event. Note draw_entries has no consumerId yet — coordinate with tracker item "drawlink" or handle via phoneHash. Plan → Codex → implement, with tests.`},
+      { id:"propagate", t:"Suppression/erasure propagation downstream", s:"done",
+        d:"FULLY LIVE 22 Jul — emitter + BOTH consumers + BOTH flags. Emitter (#220 → 4c10c24, 2 Codex xhigh rounds): lead.suppressed v1 from a durable projection + reconciler (boot/hourly/post-writer/flush-time catchup; dark→flip auto-backfill; outcome-based erasure fallback). Lyfe consumer 21 Jul: migration + EF v27 via Supabase MCP, app banner/hard-block (lyfe-app 8427521), flag on (dep-d9fib1v7f7vs73b83b00). mktr-leads consumer 22 Jul: migration applied via Management API (keychain CLI token — tombstone + RPC + BEFORE-INSERT stamping trigger + wa_intro DNC skip, monotonic merge proven on prod w/ synthetic key), EF deployed via CLI (401/405 probes), PR mktr-leads#32 merged to feat/buy-leads (88bab61), MKTR_LEADS_LEAD_SUPPRESSED_ENABLED=true (dep-d9g8i8naqgkc73bqqlo0). PROD-VERIFIED: both subscribers' events carry lead.suppressed; 0 suppressions→0 pairs→0 deliveries consistent. First real unsubscribe/erasure = the natural E2E receipt (watch webhook_deliveries + the downstream lead's do_not_contact columns). mktr-leads app UI rides the next OTA; board-card chip = noted follow-up.",
+        ref:"suppressionPropagationService.js · docs/reference/webhook-propagation-contract.md",
+        plain:`When someone unsubscribes or is erased, the agents who already received their lead (in the Lyfe app or mktr-leads) currently never find out — they could keep calling in good faith. This adds an automatic notification so downstream systems mark the lead do-not-contact.`,
+        prompt:`Design and implement the suppression/erasure propagation contract (tracker item "propagate"): a new webhook event (e.g. lead.suppressed / person.erased) emitted by mktr-platform when a suppression or erasure lands, with a payload spec doc. Then plan the consumer-side handling for lyfe-app's receive-mktr-lead and mktr-leads (cross-repo — plan those changes for me to apply in the other repos). Start with the emitter.`},
+      { id:"resub", t:"Resubscribe lift — new consent re-opens marketing", s:"done",
+        d:"FULLY LIVE 22 Jul (Shawn's latest-consent-wins decision; 3 Codex xhigh rounds rethink→rethink→SHIP): a fresh OTP-VERIFIED agree-all signup by an unsubscribed person LIFTS the unsubscribe — suppression row destroyed atomically with a source:'resubscribe' ledger event; canMarketTo/audiences/email push re-open with zero reader changes. Emitter #228 → 41e9877 (deploy dep-d9g9m0i8qa3s73b3cpt0; migration 086 constraint surgery prod-verified, both subscribers carry lead.unsuppressed). Downstream: watermarked persistent state rows + insert-or-LOCK merges, lyfe 97485ff + mktr-leads#33 (d14c089) — both prod DBs synthetic-proven (hold/older-blocked/newer-applies/tie-refused/erasure-latch). Only self-service unsubscribe lifts; admin/complaint/erasure never; every ambiguity resolves toward suppressed. Counsel confirmation queued as consent doc §9.5-5 (2783732). wa_intro resumes for lifted people automatically.",
+        ref:"consentService.js lift hook · suppressionPropagationService.js · contract §6",
+        plain:`If someone unsubscribed but later signs up again and accepts the consent block, the system now treats that as them changing their mind: marketing switches back on for them, their leads downstream lose the do-not-contact flag, and the WhatsApp intro works again. Erased people and admin-blocked people are never auto-reopened, and any doubt keeps them unsubscribed.`,
+        prompt:null },
+      { id:"retention", t:"Retention / purge policy for consumer PII", s:"todo",
+        d:"Time-based purge for prospects+consumers (today: none).",
+        ref:"bootstrap.js purges",
+        plain:`A rule for how long we keep personal data of people who never converted or have gone quiet — e.g. anonymize after X years — running automatically. PDPA expects data not to be kept forever; today nothing ever expires.`,
+        prompt:`Propose and implement a retention policy for prospect/consumer PII (tracker item "retention"): recommended retention windows with PDPA rationale, a scheduled purge job following the existing bootstrap.js purge patterns, and a per-table definition of what "purge" means (delete vs anonymize; the consent ledger survives as evidence). Plan doc first — I want to sign off the windows before any code.`},
+      { id:"dnc", t:"DNC go-live (PDPC)", s:"blocked",
+        d:"Transport fully built and dark; PDPC onboarding mid-flight (Log 00668352): stamped notification form DRAFTED, awaiting Shawn's send → then UAT + eServiceId/org credentials → set prod env + flip DNC_API_ENABLED.",
+        ref:"dncService.js · DNC_API_ENABLED",
+        plain:`Singapore's Do-Not-Call registry check is fully built into the funnel but switched off — we are waiting for the government (PDPC) to finish our API onboarding and issue credentials. Once they do, we flip it on and registered numbers get checked automatically before an agent may call.`,
+        prompt:`Resume DNC PDPC go-live (tracker item "dnc"): check the correspondence state (PDPC Log 00668352), list what is still outstanding on our side (firewall confirmation, UAT plan, eServiceId/orgCode), and once credentials arrive: set the prod env vars (DNC_BASE_URL prod, DNC_ORG_CODE, DNC_ESERVICE_ID, DNC_PRIVATE_KEY), run the UAT plan, then flip DNC_API_ENABLED with a verification probe. Context in the dnc-scrubbing memory.`}
+    ]
+  },
+  {
+    id: "p3", title: "Phase 3 — Cohorts & push (the activation engine)", why: "Curated pushes to hand-picked groups — not blind retargeting",
+    items: [
+      { id:"cohortapi", t:"Cohort builder backend", s:"done",
+        d:"LIVE 21 Jul (#222 → ecffd64, deploy dep-d9fiiod8nd3s73f8i80g; probes: /api/cohorts 404→401 flip on api.mktr.sg, migration 084 + both draw indexes verified in prod DB): admin /api/cohorts — filters (campaigns · draws via prospect+phoneHash branches · tags JS-resolved, never cast · attributes w/ live /facets vocabulary), stateless preview, saved cohorts (preview-before-persist snapshots, soft-archive), paged members w/ per-person reasons (age_unknown/age_conflict/age_ineligible · missing_email/missing_phone · suppressed · not_consented · not_verified). canMarketToBatch = EXACT canMarketTo parity (scope rule, 3-key tie-break incl. forced createdAt+uuid ties, channel matching) proven per fixture × scope × all 5 channels; destination checks live outside the gate so parity holds. Binding 18+ (§9.5-2): floor not default, real-calendar dob validation (cast-free), ANY under-18 claim disqualifies, SGT day. Codex xhigh: 2 BLOCKER + 8 MAJOR folded (plan §10). 40 new + 105 regression + 1625 vitest. Senders inherit written obligations: actual-campaign gate equality + DNC send-time scrub. Unblocks cohortui + emailpush.",
+        ref:"backend/src/services/cohortService.js · routes/cohorts.js · plan: docs/plans/cohort-builder-backend.md",
+        plain:`The engine behind "everyone who joined the last lucky draw": define a group of people by what they did, and the system automatically keeps only those we are ALLOWED to message (agreed + phone-verified + not unsubscribed). Every push starts from one of these groups — this is the heart of your curated-push model.`,
+        prompt:null },
+      { id:"cohortui", t:"Cohort builder admin UI", s:"done",
+        d:"LIVE 22 Jul (#223 → f1d391f; static dep-d9frimojo6nc73dran80 + backend dep-d9frimojo6nc73drang0 both live; cache-busted mktr.sg greps: index chunk carries AdminCohorts + references AdminV2CohortDetail-BTf6D1tV.js which serves 'Why people are excluded'): /AdminCohorts (nav+⌘K via shared NAV) — saved list w/ snapshot reachable/total + archive-confirm; CohortBuilder dialog = facet pills from /cohorts/facets (verbatim attribute values), draws/tags/postal (digit-hygiene), 18+ floor w/ §9.5-2 note, consent-scope + preview-channel selects, debounced live preview strip (total · reachable · non-zero reason chips); /admin/cohorts/:id = the WHY screen — fresh ?refresh=1 resolution, split tiles, per-reason breakdown w/ plain hints, paged members carrying reason chips (lands on excluded tab), channel re-ask. Also /api/cohorts → host-guard blocklist. 13 new vitest (1638 total green) + 48 backend. Next: emailpush puts the Push button on this screen.",
+        ref:"src/pages/adminv2/AdminV2Cohorts.jsx · AdminV2CohortDetail.jsx · components/adminv2/CohortBuilder.jsx",
+        plain:`The admin screen where you actually pick the group: choose the filters, see "212 people, 180 reachable", save it with a name, and later hit Push. Lives in the mktr.sg admin.`,
+        prompt:null },
+      { id:"emailpush", t:"Email broadcast push", s:"done",
+        d:"LIVE 22 Jul (#224 → fb01280; backend dep-d9fst6rtqb8s73fhu7j0 + static dep-d9fst6rtqb8s73fhu9d0 both live; probes: /api/email-broadcasts 401 on api.mktr.sg + 403 under ops host, mktr.sg serving index-OQkXv23-.js w/ AdminBroadcasts, migration 085 + both tables + CHECKs verified in prod DB, 0 rows — nothing auto-sends): /AdminBroadcasts composer (cohort + ACTIVE campaign + subject/body/CTA, ?cohort= deep link from the cohort WHY screen's new Push email button) → /admin/broadcasts/:id console (confirm-with-live-estimate + scope reminder, live count tiles, cancel ≤1 iteration, resume = pending rows only, self-test send, paged send log w/ reason chips). Pipeline discharges cohort-plan §5: EVERY recipient re-gated at its send moment via canMarketToBatch scoped to the push campaign; PR-B rails on every mail (footer + List-Unsubscribe One-Click, token VERIFIED before send); at-most-once (claim fence + attempting CAS, ambiguous_crash never retried); one copy per normalized inbox + cross-consumer address suppression; CAS state machine w/ workerLeaseId + advisory-locked transitions + one-in-flight fence + boot/5-min sweeps; context frozen at preparing (utm_campaign=broadcast-<id8>); recipients join the erasure matrix (16b + per-write self-repair). TWO Codex xhigh rounds folded: plan 25 findings (§10) + diff 3 BLOCKER/3 MAJOR (§11 — post-CAS reload, zombie lease, write-skew lock, durable address, cancel-sticks). 37 backend + 73 regression + 1647 vitest. Env knobs (defaults live): EMAIL_BROADCAST_RATE_PER_SEC=2, MAX_RECIPIENTS=5000. Next: wapush rides the same runner; bounce/complaint webhooks + facets is_active = documented follow-ups (plan §9/§11).",
+        ref:"backend/src/services/emailBroadcastService.js · src/pages/adminv2/AdminV2Broadcasts.jsx · plan: docs/plans/email-broadcast-push.md",
+        plain:`The first working Push button: compose a simple offer email ("New: the Tokyo draw is live"), pick a cohort, send. Every single email re-checks permission at the moment of sending and carries the unsubscribe link (already built). A log records exactly who got what, when.`,
+        prompt:`Build the email broadcast push (tracker item "emailpush"): a campaign-push composer (subject/body/CTA linking to a campaign URL with utm tagging), cohort selection, a send-time canMarketTo re-check per recipient, unsubscribe footer + List-Unsubscribe reusing the PR-B rails, throttled sending, and a send log (who/when/status). Keep it minimal-viable: one clean template, no fancy editor. Plan → Codex → implement.`},
+      { id:"watemplates", t:"WhatsApp MARKETING templates → Meta approval", s:"progress",
+        d:"Pack SHIPPED 22 Jul (#241 → dd0c66e) + IMAGE twins 23 Jul (#249 → 008219d) + headline-led _img bodies (Shawn's Manager adaptation backported, #251 → 72da21a; §5B new-UI gotchas: media sample = image header, URL type MUST be Dynamic, var type Number): SIX Meta-lint'd EN MARKETING templates — marketing_new_campaign / _new_draw / _offer (TEXT headers) + the same three as _img twins (IMAGE header = PER-SEND parameter: each push attaches that campaign's own hero w/ NO re-approval — same mechanic reward_pass uses in prod; Meta reviews only the committed sample backend/scripts/assets/wa-marketing-sample.png, 1200×628 Editorial satori→resvg). Shared rails: footer 'MKTR Pte. Ltd. · Reply STOP to unsubscribe' + Stop-promotions quick reply → wapush STOP contract incl. literal button text; dynamic redeem.sg/{{1}} CTA carrying utm_source=wa_push; lang MUST stay 'en' = WHATSAPP_TEMPLATE_LANG default (en_US-only approval would 132001 every send); wapush image param = {link} public https jpeg/png ≤5MB or media {id}, NEVER webp. Canonical payloads + idempotent submit + --status poll + resumable-upload sample flow: backend/scripts/submit-wa-marketing-templates.mjs (--text-only/--images-only/--sample; auto-resolves WABA + app id from token; sample-upload failure degrades to text set); copy pack + contracts + Manager walkthrough: docs/plans/wa-marketing-template-pack.md. CREDS BLOCKER DISSOLVED 07-25: the sibling draw_callback_optin (screening leg, lives in this same script) was submitted LOCALLY — Render CLI key (~/.render/cli.yaml) → GET api.render.com env-vars → new --token-stdin flag — and Meta APPROVED it within the hour, proving script + WABA resolution + review end-to-end (script also gained --whoami/--business/--waba + a probe-verified hardcoded WABA fallback: the prod token's granular scopes enumerate nothing). The SIX cohort templates are STILL UNSUBMITTED as of 07-26 (wa-delivery-truth.md's live WABA enumeration lists only the transactional set + callback; the old Render-Shell-only framing is obsolete). BEFORE submitting read docs/plans/wa-delivery-truth.md: Meta silently drops MARKETING sends to recently-messaged users (131049, visible only on the statuses webhook) and that plan (item 'delivtruth') extends this script with --utility-pack — coordinate, don't collide. Submit ≈30s local run, then --status poll (review mins–hours, SLA 24h). wapush hard gate: status=APPROVED (text set min; _img set unlocks hero pushes).",
+        ref:"backend/scripts/submit-wa-marketing-templates.mjs · docs/plans/wa-marketing-template-pack.md",
+        plain:`WhatsApp only allows pre-approved wording for marketing messages. We write the templates (e.g. "A new lucky draw is live — tap to enter") and submit them to Meta; approval typically takes days. Doing this EARLY, while the email push is being built, means WhatsApp is ready the moment we want it.`,
+        prompt:`Submit the six cohort MARKETING templates (tracker item "watemplates") — the pack is BUILT and committed; do not redraft copy. Path proven 07-25 on the sibling draw_callback_optin: pull WHATSAPP_TOKEN from Render env (CLI key in ~/.render/cli.yaml → GET api.render.com/v1/services/srv-d2s9p0emcj7s73acd9lg/env-vars; jq is /usr/bin/jq) and pipe it into node backend/scripts/submit-wa-marketing-templates.mjs --token-stdin (idempotent — submits only missing names, prints the status table; --whoami if WABA resolution misbehaves). FIRST read docs/plans/wa-delivery-truth.md — its --utility-pack extension rides this same script and its marketing-cap finding shapes wapush; coordinate rather than collide. Then poll --status until APPROVED and update this seed (blocked-external while PENDING is honest).`},
+      { id:"wapush", t:"WhatsApp push channel (post-approval)", s:"todo",
+        d:"Same push button gains WhatsApp; STOP/opt-out handling included. GROUNDWORK NOW LIVE: whatsappService.sendTemplate carries a purpose:'marketing' lane (full canMarketTo, fail-closed) making real marketing sends since the screening-callback leg (#268, draw_callback_optin approved 07-25). STOP handling is now SPECIFIED in docs/plans/wa-delivery-truth.md §B2 (item 'delivtruth') (inbound STOP/button → whatsapp-channel suppression, reason wa_stop) — the approved footer's 'Reply STOP' points into the void until it ships. DESIGN CONSTRAINT (07-26 incident): Meta's per-user MARKETING frequency cap silently drops sends — HTTP 200 then error 131049 on the statuses webhook only — so honest delivery receipts need that webhook (same plan §B), not send-time 200s. Hard gate unchanged: watemplates APPROVED.",
+        ref:"whatsappService — marketing path",
+        plain:`Once Meta approves the templates, the same Push button gains a WhatsApp option — the message lands in the person's WhatsApp instead of (or alongside) email. Includes handling replies like "STOP" so opting out by reply actually works.`,
+        prompt:`Wire the WhatsApp marketing push channel (tracker item "wapush", only after templates are approved): send approved marketing templates to a cohort through the existing WABA plumbing, gated per-recipient by canMarketTo purpose:'marketing' AND a DNC-registry scrub at send time regardless of agree-all consent (binding safeguard, consent doc §9.5 — holds until real counsel expressly blesses agree-all as a DNC override), with a STOP-keyword opt-out path that writes a whatsapp-channel suppression, plus send-log entries and bounded retry like the voucher sender. Build the STOP path + delivery receipts on docs/plans/wa-delivery-truth.md §B (statuses webhook — match STOP/UNSUBSCRIBE text AND the literal quick-reply button text) and design around Meta's per-user marketing frequency cap (silent 131049 drops: HTTP 200 is not delivery). Plan → Codex → implement.`},
+      { id:"delivtruth", t:"Delivery truth — WA statuses webhook, UTILITY resubmits, SES receipts", s:"progress",
+        d:"Born from the 07-26 incident: Meta SILENTLY dropped a boost-receipt WhatsApp (per-user MARKETING frequency cap, error 131049 — visible only on the statuses webhook) while the admin showed 'sent ✓'; reward_voucher carries the same latent risk on real voucher deliveries. Every current ✓ (WA and email) = transport acceptance, not delivery. PLAN AT v2, CODEX-REVIEWED 07-26 (30 findings folded; §v2 is binding): wa_message_statuses inbox table (migration 090, atomic rank-guarded upsert sent<delivered<read<failed, receipts NEVER mutated — readers LEFT JOIN on metadata messageId), GET/POST /api/whatsapp/webhook (prod-required signature, WABA + phone_number_id binding), sendTemplate wamid + templateName capture, inbound STOP → applyUnsubscribe source:'wa_stop' (global marketing scope, resubscribe-lift compatible — closes the void the approved 'Reply STOP' footer points into), email providerMessageId now / SES event publishing later, delivery-state labels on lead profile + ops console, resendEntitlement boost-receipt mode, erasure scrub. UTILITY twins draw_boost_receipt_v2 + reward_voucher_v2 SUBMITTED 07-26 via Graph API, ACCEPTED as PENDING/UTILITY (post-approval: flip WHATSAPP_TEMPLATE_DRAW_BOOST/_VOUCHER env, no deploy; script --utility-pack extension still unbuilt). CODE UNBUILT as of 07-26 (no webhook route / migration 090 / inbox — verified). Needs Shawn ONCE: paste WHATSAPP_APP_SECRET into Render. Remediation queued: resend the dropped boost receipt (entitlement 15fa630f…) on the UTILITY template and watch it hit delivered. Guards wapush + pushmeasure honesty and the core voucher promise.",
+        ref:"docs/plans/wa-delivery-truth.md · whatsappService.sendTemplate · leadProfileService.deliveryReceipts",
+        plain:`Today the system writes "sent ✓" the moment Meta or the email server ACCEPTS a message — and Meta then silently binned a reward message while the admin showed ✓. This adds the listening leg: Meta and SES report back what actually happened (delivered, read, failed and why), the two reward templates move to Meta's exempt UTILITY category so they stop being frequency-capped, and replying STOP genuinely unsubscribes. Until this exists, no push report can be trusted and a voucher can vanish without anyone noticing.`,
+        prompt:`Execute docs/plans/wa-delivery-truth.md at v2 (tracker item "delivtruth") — the plan is Codex-reviewed and the 'v2 — Codex review deltas' section is binding; do not re-litigate it: wa_message_statuses inbox (migration 090 w/ down()) + GET/POST /api/whatsapp/webhook (handshake, prod-required signature, entry/phone_number_id binding, atomic rank-guarded upsert, 200-after-commit) + sendTemplate wamid/templateName capture + STOP → applyUnsubscribe({source:'wa_stop'}) + mailer/fulfilmentNotify providerMessageId (BOTH normalizers) + delivery labels (lead-profile precedence + receiptBits + ops RedemptionsPage) + resendEntitlement boost-receipt mode + erasure scrub of messageId/providerMessageId + inbox rows. Build in a disposable worktree off origin/main. Post-deploy: set WHATSAPP_WEBHOOK_VERIFY_TOKEN + WHATSAPP_WABA_ID (autonomous), ask Shawn ONCE for WHATSAPP_APP_SECRET, repoint the WABA subscribed_apps override_callback_uri to api.mktr.sg/api/whatsapp/webhook, verify sent→delivered lands on a live send. Then poll the PENDING UTILITY twins; on APPROVED flip WHATSAPP_TEMPLATE_DRAW_BOOST=draw_boost_receipt_v2 + WHATSAPP_TEMPLATE_VOUCHER=reward_voucher_v2 (env-only) and remediate entitlement 15fa630f-c5bc-4041-b2ea-b532aabe66ee (resend boost receipt, watch delivered).`},
+      { id:"pushmeasure", t:"Push measurement", s:"todo",
+        d:"Per push: delivered / opened / clicked / signed up. SUBSTRATE = item 'delivtruth' (docs/plans/wa-delivery-truth.md, Codex-reviewed v2): wamid capture + statuses webhook w/ monotonic sent<delivered<read rank (WA), sesMessageId capture now / SES event publishing later (email) — today every 'sent ✓' receipt is transport acceptance only, proven silently droppable by the 07-26 boost-receipt incident. Opens/clicks + utm-attributed signups remain greenfield.",
+        ref:"send log + attribution",
+        plain:`After each push, know what actually happened: how many were delivered, opened, clicked — and most importantly, how many signed up for the pushed campaign. This closes the loop so you learn which groups and which offers work.`,
+        prompt:`Add push measurement (tracker item "pushmeasure"): per-push stats — sent/delivered/failed from the send log, email opens + clicks (tracking pixel + wrapped links), WhatsApp delivery/read receipts where the API provides them — and, most important, attributed signups: pushes carry utm_source=push&push_id, capture lands it in prospect sourceMetadata, and the push report counts resulting signups. Surface the report on the cohort/push UI. Delivery legs: build on the receipt truth layer in docs/plans/wa-delivery-truth.md (WA statuses webhook, SES event publishing) — do not invent a parallel receipts path.`}
+    ]
+  },
+  {
+    id: "p4", title: "Phase 4 — Person profiles (enrichment)", why: "The profile card that makes cohorts smart",
+    items: [
+      { id:"taxonomy", t:"Campaign taxonomy", s:"done",
+        d:"LIVE 23 Jul (#244 → a65fe7d + backfill #245 → 6d99c07; all 4 Render services live incl. backend dep-d9gehshoagis73fpoab0; proofs: served mktr bundle = shared marketplaceContent-CyJsaGrx.js chunk + new-section strings in AdminCampaignStudio-B_D_9ovN.js and CohortBuilder-JJcnz2XE.js; prod DB 6/6 campaigns categorized + _migrations has 087): ONE place to add/remove a category — backend/src/utils/marketplaceContent.js CONSUMER_CATEGORY_DEFS (was 4 hand-mirrored copies; marketplace content.js, studio marketplaceOptions and classic MarketplacePanel now derive from it; redeem-ops checked per Shawn's note — its categoryService is the partner-vertical CRM/Discover registry, a different domain, untouched). Storage = the EXISTING design_config category key (v1 root / v2 distribution.marketplace.category) read via new getStoredCategory — deliberately NOT tags/targetAudience: category was already clamped+marketplace-rendered there, a column or tags would add a second driftable copy (tags stays the freeform cohort facet). Studio: Category promoted to its own CATEGORY section, set for every campaign listed or not (label now 'Campaign category'). Cohorts: filters.campaignCategories (Joi 400 + binding 422 on unknown ids, JS-resolved to campaign ids like tags — never cast in SQL, ANDs with other filters), facets return the full 10-entry taxonomy w/ live counts + per-campaign category, builder Category pill row + summaries. Backfill via boot migration 087 (UUID-keyed, fill-only, idempotent): Pet Hotel + iPhone draw + FairPrice $10/$20 → family_lifestyle, [Retell] CareShield → financial_education; Tokyo already carried family_lifestyle. 226 backend jest + 1792 vitest + build green. Unblocks crosssell's category-aware picks.",
+        ref:"backend/src/utils/marketplaceContent.js (CONSUMER_CATEGORY_DEFS) · cohortService campaignCategories · migration 087",
+        plain:`Give every campaign a category label — parenting, home, groceries, finance. Sounds trivial, but it is what lets a cohort say "everyone interested in parenting" instead of you hand-picking campaign IDs. The database columns already exist; they have just never been used.`,
+        prompt:`Implement campaign taxonomy (tracker item "taxonomy"): define the category set (align with the marketplace categories in utils/marketplaceContent.js), store it on campaigns (use the existing empty tags/targetAudience columns or a cleaner category field — your call, justify it), add the Studio UI to set it, backfill the existing campaigns, and expose category as a cohort filter. Small-medium PR.`},
+      { id:"rollup", t:"Person-level attribute rollup", s:"todo",
+        d:"dob / postal / income / vertical answers accumulate on the consumer with provenance — today they evaporate per-signup (filled on 132/135 prospects!).",
+        ref:"consumerService projection",
+        plain:`Today a person's birthday, postal code, income and quiz answers sit inside each individual signup and are effectively forgotten. This copies them onto the person's single profile card — with a note of where and when each fact came from — so knowledge accumulates instead of evaporating. 132 of 135 signups already contain this data; it is just never gathered up.`,
+        prompt:`Build person-level attribute rollup (tracker item "rollup"): aggregate demographics/location/vertical answers from each signup onto the Consumer — an attributes JSONB with per-field provenance (source prospect, campaign, capturedAt) and a newest-verified-wins merge rule. Recompute in the capture resolver and the reconciler so rebuilds stay faithful. Expose it in the journey/person endpoints. Plan → Codex → implement.`},
+      { id:"customq", t:"Custom per-campaign questions (config, not code)", s:"todo",
+        d:"Campaign designer adds its own questions (child's age, home type…); answers land on the person.",
+        ref:"designConfigV2 FIELD_IDS + FieldRenderer",
+        plain:`Let each campaign ask its own extra questions — child's age for the prenatal campaign, home type for the reno one — configured in the campaign designer with no developer needed per vertical. Answers flow onto the person's profile card too. Today the form's field list is hardcoded at 7 fields.`,
+        prompt:`Add custom per-campaign questions to design_config v2 (tracker item "customq"): a question-slot schema (id/label/type/options/required), Studio editor UI, FieldRenderer support in both funnels, storage on the prospect, and rollup into consumer attributes (pairs with tracker item "rollup"). Respect the v2 twin files (src/lib/designConfigV2.js ↔ backend/src/utils/designConfigV2.js + clamp). This is a bigger one: plan → Codex → implement.`},
+      { id:"search", t:"Consumer search + list", s:"progress",
+        d:"PLAN READY, BUILD PENDING: docs/plans/admin-people-directory.md — scoped 07-26, Codex xhigh reviewed (20 findings, verdict RETHINK, §3/§4 rewritten, dispositions §8), open questions RESOLVED with Shawn 07-26 (erased rows visible w/ chip, two-step return/delete in profile view, nav under Prospects). Shape: /AdminPeople list + GET /api/consumers (EXISTS-based signup flags not counts, from-guard sort allowlist, one search box, no new detail views). The person DETAIL view already shipped as Lead Profile (#269/#271/#273) — this is the person LIST that clicks into it. Build in a FRESH worktree off origin/main (the scoping checkout was a stale draw branch).",
+        ref:"docs/plans/admin-people-directory.md · routes/consumers.js",
+        plain:`Type a phone number, get the person — their campaigns, rewards, draw entries, consent status. Today that simple question is impossible to ask anywhere: you can only stumble onto a person by finding one of their leads first.`,
+        prompt:`Execute docs/plans/admin-people-directory.md (tracker item "search"): /AdminPeople + GET /api/consumers exactly as reviewed — §8 dispositions are binding and §7 records Shawn's resolved answers; do NOT re-scope. Collision-check for a sibling build first (plan dated 2026-07-26), then build in a fresh worktree off origin/main. Medium PR, tests for the search + sort-allowlist semantics.`},
+      { id:"personpage", t:"First-class person page (admin/ops)", s:"done",
+        d:"SHIPPED as the prospect-anchored Lead Profile, LIVE 07-25: #269 (?include=profile backend — leadProfileService: draw standing, reward diagnostics, comms receipts) + #271 (/admin/leads/:id REPLACES the drawer) + #273 (master-detail v2 from the design handoff; list drill-in + ?view=profile). Consent block reads the LEDGER — getConsentState per signup campaign (state + copy versions; legacy sourceMetadata booleans demoted to a comparison) — and suppression/erasure are surfaced (journey suppressed marker, erased banner + allowlist-only view). A consumer-anchored /admin/people/:id route was deliberately REJECTED (people-directory plan §6): the prospect-anchored profile IS the person surface; the person LIST that clicks into it = item 'search'. Residual: rolled-up attributes w/ provenance = item 'rollup'.",
+        ref:"src/pages/adminv2/AdminV2LeadProfile.jsx · backend/src/services/leadProfileService.js · docs/plans/admin-lead-profile-page.md",
+        plain:`One full screen per person for you and ops: every campaign they joined, rewards and redemptions, lucky-draw entries, exactly what they consented to and when, and whether they have unsubscribed. Replaces today's tiny card buried inside the lead drawer — and fixes it showing the OLD consent flags instead of the ledger.`,
+        prompt:`Build the first-class person page in admin v2 (tracker item "personpage"): journey timeline (signups, entitlements, redemptions, draw entries), consent history read from consent_events (kind/version/verified/when + current effective state), suppression state, and rolled-up attributes with provenance. Also replace the LeadDrawer Person card's legacy sourceMetadata consent booleans with ledger truth. Depends on "search" for navigation.`}
+    ]
+  },
+  {
+    id: "p5", title: "Phase 5 — Wallet (“My rewards”)", why: "The consumer-facing face of the spine — and the re-verification engine",
+    items: [
+      { id:"walletdesign", t:"Wallet designed in the redeem.sg redesign", s:"todo",
+        d:"Prompt is ready to paste into claude.ai/design (wallet, prefill variant, cross-sell included).",
+        ref:"docs/plans/redeem-redesign-claude-design-prompt.md",
+        plain:`The customer-facing "My rewards" area gets designed as part of the redeem.sg rebrand you are running on claude.ai/design — the brief already includes it. The output is a working prototype that we then port into the real site.`,
+        prompt:`The redesign prompt at docs/plans/redeem-redesign-claude-design-prompt.md is ready — paste it into claude.ai/design yourself (it includes the wallet, the recognised-returning-consumer flow, and the mandatory-consent block). Then bring me the prototype: I will review the wallet flows against our backend reality and write the port plan (tracker item "walletdesign").`},
+      { id:"walletapi", t:"Wallet backend", s:"todo",
+        d:"Phone-OTP session → rewards/vouchers across campaigns, basic details, marketing preferences.",
+        ref:"new: /api/wallet",
+        plain:`The plumbing behind My rewards: enter your number → receive an OTP → a short-lived session that can list your vouchers across ALL campaigns, show your saved details, and let you change marketing preferences. No passwords ever — the OTP is the login.`,
+        prompt:`Build the wallet backend (tracker item "walletapi"): phone-OTP wallet session (reuse verificationService; short-lived signed session token), GET my-rewards (entitlements + vouchers across campaigns for the verified phone), basic profile, and marketing-preference endpoints (view/change → ledger events + suppressions). Security-sensitive: rate-limited, enumeration-safe (reveal nothing before OTP passes). Plan → Codex → implement.`},
+      { id:"prefill", t:"Funnel prefill for recognised consumers", s:"todo",
+        d:"OTP-verified returning phone → shorter flow, known details prefilled.",
+        ref:"funnel + wallet session",
+        plain:`A returning person who has verified their phone (or arrives from their wallet) stops retyping everything: the form greets them, fills in what we already know, and shortens to a tap-through. The second redemption becomes 20 seconds instead of 2 minutes — that is how the audience compounds.`,
+        prompt:`Implement returning-consumer prefill in the funnels (tracker item "prefill"): after OTP verification in this session (or with a live wallet session), fetch known profile fields and prefill the form; render the visibly shortened recognised-path variant per the redesign. Hard rule: reveal NO data until the phone is OTP-verified in the current session (no enumeration). Plan → Codex → implement.`},
+      { id:"crosssell", t:"Confirmation-page “next for you”", s:"todo",
+        d:"Cross-sell block after redemption — 5 people already crossed campaigns with zero machinery.",
+        ref:"confirmation surfaces",
+        plain:`The "you might also like" moment right after a successful redemption — the single cheapest place to create the second signup. Five people already crossed campaigns entirely on their own; this gives that behavior a doorway.`,
+        prompt:`Add the confirmation-page "next for you" block (tracker item "crosssell"): after a successful submission, recommend 2-3 other live campaigns — category-aware once taxonomy exists, excluding campaigns the person already redeemed (via the spine) — on both funnel confirmations. Tag the links (utm) so we can measure crossover lift. Small-medium PR.`},
+      { id:"reverify", t:"Legacy re-verification via wallet", s:"todo",
+        d:"128 unverified consumers become marketable as they walk through OTP again.",
+        ref:"verifiedSignupCount growth",
+        plain:`128 of our 129 known people signed up before OTP-proof was stored, so the system rightly treats them as unverified and refuses to market to them. Every time one of them opens the wallet or redeems again, they re-verify and join the marketable base. This item measures that growth and makes sure every door does the stamping.`,
+        prompt:`Instrument legacy re-verification (tracker item "reverify"): verify that every OTP door stamps verification at person level (funnels today; the wallet OTP session once tracker item "walletapi" lands — building that session is walletapi's job, not this one's), add a marketable-base growth stat (verified consumers over time) to the dashboard, and propose — as a doc only, no sends — any legitimate one-time reactivation touch for legacy consumers given their existing campaign-scoped consent. Legal caution applies to that last part.`}
+    ]
+  },
+  {
+    id: "p6", title: "Phase 6 — Spine completion & hygiene", why: "Fold alongside the phases above",
+    items: [
+      { id:"drawlink", t:"consumerId on draw_entries (+ backfill)", s:"todo",
+        d:"Lucky-draw entries join the person; phoneHash backfill for orphans.",
+        ref:"DrawEntry.js · luckyDrawService.js",
+        plain:`Lucky-draw entries currently point at the individual signup, not the person. Adding the person link means a draw entry still counts on someone's profile even if old signup rows get cleaned up — and "everyone who entered a draw" cohorts become simple and reliable.`,
+        prompt:`Add consumerId to draw_entries (tracker item "drawlink"): migration + model field, set at entry creation from the prospect's consumerId, backfill existing entries via the prospect join with a phoneHash fallback, include draws fully in the consumer journey, and extend the reconciler to relink draw entries the way it already does entitlements. Small PR, tests included.`},
+      { id:"commlink", t:"consumerId on commissions", s:"todo",
+        d:"Unlocks lifetime-value per person.",
+        ref:"Commission.js",
+        plain:`Commissions record what a converted lead was worth — but only per-signup. Linking them to the person unlocks the money question: "what has this human been worth across everything?" — real lifetime value.`,
+        prompt:`Add consumerId to commissions (tracker item "commlink"): migration + model field, set on create via the prospect's consumerId, backfill existing rows, and add a lifetime-value rollup to the consumer journey endpoint. Small PR, tests included.`},
+      { id:"waitlist", t:"Waitlist reconciliation", s:"todo",
+        d:"Email-keyed waitlist signups reconcile into the spine when the person later redeems.",
+        ref:"WaitlistSignup.js",
+        plain:`People who joined the early-access waitlist by email live in a separate pile that never connects to anything. This links them to their person record when they later redeem (matched by email), so your earliest fans are not strangers to the system.`,
+        prompt:`Reconcile waitlist_signups into the spine (tracker item "waitlist"): when a consumer is created or updated, match waitlist rows by email (and phone where present) and link/annotate them; one-off backfill for existing rows. Keep email as an attribute-level match only — phone remains the sole identity key. Small PR.`},
+      { id:"mergevis", t:"Person-merge visibility on phone edit", s:"todo",
+        d:"Editing a prospect's phone silently merges consumers today — surface it to the admin.",
+        ref:"prospectService.js:1380",
+        plain:`If staff edit a lead's phone number to a number we already know, the two histories silently become one person. That is usually the right outcome — but staff should SEE "this will merge with an existing profile" before it happens, and it should be logged.`,
+        prompt:`Surface person-merges on phone edit (tracker item "mergevis"): when editing a prospect's phone would relink it to an existing consumer, show a confirm step in the admin UI ("this merges into [name] — N existing signups") and write an audit/activity entry when it proceeds. The backend already relinks via recomputeConsumersByPhone — this adds visibility, not new mechanics. Small PR.`},
+      { id:"hygiene", t:"Hygiene sweep", s:"todo",
+        d:"Stale Consumer.js header comment (STILL says unsubTokenHash/erasedAt 'land dark… nothing reads them yet' — B/C ship and read them) · rename selectRedeemers honestly (redeemedAudienceService.js:73, unrenamed) · /api/consumers canonicalization now rides the people-directory build (item 'search' adds GET /api/consumers as the person list; the orphan :id decision folds in there).",
+        ref:"small PR",
+        plain:`Three ten-minute cleanups the audit flagged: an outdated code comment, a misleadingly named function (the "redeemed audience" actually contains ALL leads, not just redeemers), and deciding whether the unused person API endpoint is the official one. Cheap now, confusing later if left.`,
+        prompt:`Run the data-powerhouse hygiene sweep (tracker item "hygiene"): (1) fix the stale Consumer.js header comment — PR B now reads unsubTokenHash/erasedAt; (2) rename/document redeemedAudienceService.selectRedeemers to reflect that it selects all non-bot leads, not redeemers; (3) /api/consumers canonicalization: the people-directory plan (item "search") makes GET /api/consumers the person list while the prospect-anchored profile stays the detail — if that build has landed, confine (3) to doc/comment truth; never build a competing person read. One small PR.`}
+    ]
+  },
+  {
+    id: "p7", title: "Later — the flywheel (P3)", why: "Compounding intelligence once the engine runs",
+    items: [
+      { id:"rollupdash", t:"Person-level measurement dashboards", s:"todo",
+        d:"Repeat rate, cross-campaign conversion, LTV.",
+        ref:"dashboardService — consumer grain",
+        plain:`Charts that answer "is the flywheel actually turning": what percentage of people come back for a second campaign, which campaigns feed each other, how the marketable base is growing, and what a person is worth over time.`,
+        prompt:`Build person-level measurement (tracker item "rollupdash"): repeat-rate (consumers with ≥2 signups, trended), a campaign-crossover matrix (which campaign leads to which), verified/marketable-base growth, and LTV once commissions are person-linked (tracker item "commlink"). Backend aggregates + an admin v2 dashboard section. Plan first.`},
+      { id:"inclusion", t:"Meta/TikTok inclusion audiences + lookalikes", s:"todo",
+        d:"Cohorts as a secondary ad-audience output (person-deduped, ledger-gated).",
+        ref:"redeemedAudienceService v2",
+        plain:`A second output for the same cohorts: feed a group into Meta/TikTok as a private audience so those exact people — and "people similar to them" — see the next campaign's ads in their feed. Complements the message pushes; no message is sent.`,
+        prompt:`Build ad-audience export as a cohort output (tracker item "inclusion"): person-deduped hashed email+phone upload to a per-cohort Meta custom audience (and the TikTok equivalent), ledger-gated and suppression-aware like the exclusion sync, plus lookalike-seed creation from a cohort. Reuse the redeemedAudienceService patterns (the selector RENAME is tracker item "hygiene" — do not do it here; if hygiene already landed, use the new name). Plan → Codex → implement.`},
+      { id:"stitch", t:"Click/session → person stitching", s:"todo",
+        d:"Populate prospects.sessionId/attributionId at capture (both are 0/135 today; 78 clicks + 12 scans are anonymous).",
+        ref:"capture path",
+        plain:`We already record ad clicks, QR scans and site sessions — but anonymously. Stitching them to the person at signup means profiles also know HOW someone found us and how engaged they are, not just what they signed. The database columns for this exist and have never been filled.`,
+        prompt:`Wire session/attribution stitching (tracker item "stitch"): investigate why prospects.sessionId and attributionId are 0/135 (the columns and the tracker plumbing both exist but were never connected), populate them at capture from the session/attribution context, and expose per-person acquisition + engagement recency in the journey. Plan first with the root-cause finding.`},
+      { id:"ttfunnel", t:"TikTok down-funnel events", s:"todo",
+        d:"ConfirmedResident/ClosedWon parity with Meta.",
+        ref:"tiktokEventsService.js",
+        plain:`Meta already hears when a lead becomes a confirmed prospect or a closed deal, so its ads optimize toward quality people. TikTok never gets those signals — this sends it the same ones.`,
+        prompt:`Add TikTok down-funnel events (tracker item "ttfunnel"): mirror leadOutcomeService's ConfirmedResident/ClosedWon sends to tiktokEventsService with deduplicated event_ids and the same suppression-aware PII handling as the Meta path. Small PR + prod verification like the Meta rollout.`},
+      { id:"lifecycle", t:"Consumer lifecycle journey runner", s:"todo",
+        d:"Automated multi-step nurture per person (new engine — partner cadences are structurally partner-bound).",
+        ref:"net-new build",
+        plain:`The long-game autopilot: define a sequence per person — day 0 welcome, day 7 next offer, day 30 check-in — that runs automatically with every permission check built in. The partner cadence engine cannot be reused for this (it is structurally tied to businesses), and it only makes sense once manual cohort pushes are working and proven.`,
+        prompt:`Design the consumer lifecycle journey runner (tracker item "lifecycle") — PLAN ONLY, no code until Phases 1–5 are live: an enrollment model keyed to consumers (explicitly not the partner cadence engine), steps with channel + template + delay, canMarketTo at every send, and exit rules (converted / suppressed / erased / draw ended). Produce the plan doc for my Codex review.`}
+    ]
+  }
+];
+
+const ORDER = ["todo","progress","done","blocked","decision"];
+const CHIP_LABEL = { todo:"○ To do", progress:"◐ In progress", done:"✓ Done", blocked:"■ Blocked", decision:"◆ Decision" };
+
+// Appended to EVERY copied prompt: the run-to-live contract. A pasted prompt
+// is the only thing guaranteed to be in a fresh session's context, so the
+// contract travels with it. Single source here — never per-item.
+const RUN_CONTRACT = [
+  "",
+  "--- EXECUTION CONTRACT (binding for every tracker item) ---",
+  "Work this to DONE-AND-LIVE in this session unless a gate below applies. Do not stop at built, do not stop at merged, do not ask permission between steps.",
+  "1. COLLISION CHECK before building: git fetch; gh pr list; re-read docs/trackers/data-powerhouse-tracker.html (it mutates — parallel sessions use it as the coordination channel). If a branch/PR already covers this item, consolidate by stacking on it — never build a competing implementation.",
+  "2. Build in an isolated git worktree (shared checkout). Tests green: vitest run + targeted backend jest suites for touched files.",
+  "3. Ship: PR to main, merge, then PROVE live — a NEW Render deploy per affected service (list_deploys; push is not live), then live-domain verification (grep the served bundle for a string unique to this change, or probe the live API).",
+  "4. LAST STEP, never skipped: edit docs/trackers/data-powerhouse-tracker.html — set this item's seed s to 'done' and rewrite its d field with what shipped (PR numbers, date, proof). Re-read the item block right before editing; other sessions edit this file too. The page auto-heals stale browser overrides, so the seed IS the card.",
+  "GATES that change step 4 instead of skipping it: if this prompt says plan-first / my review, deliver the gated artifact and set s to 'progress' with d saying exactly what awaits Shawn. If blocked on an external party (counsel, Meta, PDPC), set s to 'blocked' with the dependency named in d. Never end a session leaving this item's seed silently stale.",
+].join("\n");
+// v2: an override remembers the SEED it was clicked against ({s, seededAs}).
+// When a shipping session later changes the seed in this file, the stale
+// override is dropped on load — seeds are ground truth for shipped work; a
+// local click only sticks while the seed it overrode is still current.
+// (v1 plain-string overrides under dpTracker.v1 are deliberately abandoned —
+// they had no seed memory and were shadowing shipped statuses.)
+const KEY = "dpTracker.v2";
+
+let overrides = {};
+try { overrides = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { overrides = {}; }
+{
+  let pruned = false;
+  for (const ph of PHASES) for (const it of ph.items) {
+    const o = overrides[it.id];
+    if (o && (typeof o !== "object" || !o.s || o.seededAs !== it.s)) { delete overrides[it.id]; pruned = true; }
+  }
+  for (const id of Object.keys(overrides)) {
+    if (!PHASES.some(p => p.items.some(i => i.id === id))) { delete overrides[id]; pruned = true; }
+  }
+  if (pruned) localStorage.setItem(KEY, JSON.stringify(overrides));
+}
+let filter = "all";
+const openSet = new Set();
+let allOpen = location.hash === "#all";
+
+function statusOf(item) { const o = overrides[item.id]; return o ? o.s : item.s; }
+function save() { localStorage.setItem(KEY, JSON.stringify(overrides)); }
+function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function render() {
+  const root = document.getElementById("phases");
+  root.innerHTML = "";
+  let done = 0, total = 0;
+  for (const ph of PHASES) {
+    let phDone = 0;
+    const visible = [];
+    for (const it of ph.items) {
+      total++;
+      const s = statusOf(it);
+      if (s === "done") { done++; phDone++; }
+      const match = filter === "all" || s === filter || (filter === "blocked" && (s === "blocked" || s === "decision"));
+      if (match) visible.push(it);
+    }
+    if (!visible.length && filter !== "all") continue;
+    const sec = document.createElement("section");
+    sec.className = "phase" + (phDone === ph.items.length ? " complete" : "");
+    const pctPh = Math.round(100 * phDone / ph.items.length);
+    sec.innerHTML =
+      '<div class="phase-head"><h2>' + ph.title + '</h2>' +
+      '<span class="phase-count">' + phDone + " / " + ph.items.length + '</span></div>' +
+      '<div class="why">' + ph.why + '</div>' +
+      '<div class="phase-meter"><i style="width:' + pctPh + '%"></i></div>';
+    const ul = document.createElement("ul");
+    ul.className = "items";
+    for (const it of visible) {
+      const s = statusOf(it);
+      const isOpen = allOpen || openSet.has(it.id);
+      const li = document.createElement("li");
+      li.className = "item" + (s === "done" ? " done" : "") + (isOpen ? " open" : "");
+      li.dataset.id = it.id;
+      const promptHtml = it.prompt
+        ? '<div class="promptbox"><div class="ph"><span class="lbl">Prompt — paste into a Claude Code session (from mktr-platform) · copies WITH the run-to-live contract</span>' +
+          '<button class="copyPrompt" type="button" data-id="' + it.id + '">Copy prompt</button></div>' +
+          '<pre class="prompt">' + esc(it.prompt + "\n" + RUN_CONTRACT) + '</pre></div>'
+        : '<div class="noPrompt">Shipped — nothing to run.</div>';
+      li.innerHTML =
+        '<button class="chip" data-s="' + s + '" data-id="' + it.id + '" type="button" title="Click to cycle status">' +
+        '<span class="dot"></span>' + CHIP_LABEL[s] + '</button>' +
+        '<div class="body">' +
+          '<div class="t" data-toggle="' + it.id + '"><span class="caret">▶</span><span class="title-text">' + it.t + '</span></div>' +
+          '<div class="d">' + it.d + '</div>' +
+          '<div class="ref">' + it.ref + '</div>' +
+          '<div class="exp">' +
+            '<span class="lbl">What this means</span>' +
+            '<div class="plain">' + esc(it.plain) + '</div>' +
+            promptHtml +
+          '</div>' +
+        '</div>';
+      ul.appendChild(li);
+    }
+    sec.appendChild(ul);
+    root.appendChild(sec);
+  }
+  const pct = total ? Math.round(100 * done / total) : 0;
+  document.getElementById("pct").textContent = pct;
+  document.getElementById("doneCount").textContent = done;
+  document.getElementById("totalCount").textContent = total;
+  document.getElementById("overallBar").style.width = pct + "%";
+}
+
+function findItem(id) { return PHASES.flatMap(p => p.items).find(i => i.id === id); }
+
+document.getElementById("phases").addEventListener("click", async (e) => {
+  const copyBtn = e.target.closest(".copyPrompt");
+  if (copyBtn) {
+    const it = findItem(copyBtn.dataset.id);
+    const full = it.prompt + "\n" + RUN_CONTRACT;
+    try { await navigator.clipboard.writeText(full); }
+    catch (err) { window.prompt("Copy this:", full); return; }
+    const old = copyBtn.textContent;
+    copyBtn.textContent = "Copied ✓";
+    setTimeout(() => { copyBtn.textContent = old; }, 1400);
+    return;
+  }
+  const chip = e.target.closest(".chip");
+  if (chip) {
+    const item = findItem(chip.dataset.id);
+    const cur = statusOf(item);
+    const next = ORDER[(ORDER.indexOf(cur) + 1) % ORDER.length];
+    // Cycling back onto the seed clears the override entirely; otherwise the
+    // override pins {status, seed-it-overrode} so a future seed change wins.
+    if (next === item.s) delete overrides[item.id];
+    else overrides[item.id] = { s: next, seededAs: item.s };
+    save();
+    render();
+    return;
+  }
+  const toggle = e.target.closest("[data-toggle]");
+  if (toggle) {
+    const id = toggle.dataset.toggle;
+    if (allOpen) { allOpen = false; for (const it of PHASES.flatMap(p => p.items)) openSet.add(it.id); }
+    if (openSet.has(id)) openSet.delete(id); else openSet.add(id);
+    render();
+  }
+});
+
+document.getElementById("filters").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  filter = btn.dataset.f;
+  for (const b of document.querySelectorAll("#filters button")) b.setAttribute("aria-pressed", String(b === btn));
+  render();
+});
+
+document.getElementById("expandBtn").addEventListener("click", () => {
+  allOpen = !allOpen;
+  if (!allOpen) openSet.clear();
+  document.getElementById("expandBtn").textContent = allOpen ? "Collapse all" : "Expand all";
+  render();
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  if (!confirm("Reset all statuses to their seeded values?")) return;
+  overrides = {};
+  save();
+  render();
+});
+
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const r = document.documentElement;
+  const cur = r.getAttribute("data-theme");
+  const osDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = cur ? (cur === "dark" ? "light" : "dark") : (osDark ? "light" : "dark");
+  r.setAttribute("data-theme", next);
+});
+
+document.getElementById("copyBtn").addEventListener("click", async () => {
+  const lines = ["# Data Powerhouse — status (" + new Date().toISOString().slice(0,10) + ")", ""];
+  for (const ph of PHASES) {
+    const phDone = ph.items.filter(i => statusOf(i) === "done").length;
+    lines.push("## " + ph.title + " (" + phDone + "/" + ph.items.length + ")");
+    for (const it of ph.items) {
+      const s = statusOf(it);
+      const mark = s === "done" ? "x" : " ";
+      const suffix = (s !== "done" && s !== "todo") ? " — **" + s.toUpperCase() + "**" : "";
+      lines.push("- [" + mark + "] " + it.t + suffix);
+    }
+    lines.push("");
+  }
+  const text = lines.join("\n");
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { window.prompt("Copy this:", text); return; }
+  const btn = document.getElementById("copyBtn");
+  const old = btn.textContent;
+  btn.textContent = "Copied ✓";
+  setTimeout(() => { btn.textContent = old; }, 1400);
+});
+
+if (allOpen) document.getElementById("expandBtn").textContent = "Collapse all";
+render();
+</script>
+</body>
+</html>

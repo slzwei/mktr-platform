@@ -18,6 +18,8 @@
  * open draw). Edit BOTH files together or the copies drift.
  */
 
+import { MAX_PRIZE_NAME, MAX_PRIZE_ROWS, MAX_PRIZE_QTY } from '../../../../backend/src/utils/luckyDrawCaps.js';
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -50,15 +52,25 @@ export function numberWords(n) {
   return one ? `${tens}-${ONES[one].toLowerCase()}` : tens;
 }
 
-/** Valid rows only: {qty 1.., name non-empty}; mirrors the server normalizer's shape. */
+/**
+ * Valid rows only, under the SAME caps as the server normalizer (luckyDraw.js
+ * cleanPrizes): first MAX_PRIZE_ROWS valid rows, names trimmed and cut to
+ * MAX_PRIZE_NAME, qty an integer 1..MAX_PRIZE_QTY else coerced to 1 — so the
+ * terms never state a fact the save-time clamp would rewrite (draw
+ * promise-consistency gate).
+ */
 function cleanRows(prizes) {
   if (!Array.isArray(prizes)) return [];
-  return prizes
-    .filter((p) => p && typeof p.name === 'string' && p.name.trim())
-    .map((p) => ({
-      qty: Number.isInteger(Number(p.qty)) && Number(p.qty) >= 1 ? Number(p.qty) : 1,
-      name: p.name.trim(),
-    }));
+  const out = [];
+  for (const p of prizes) {
+    if (out.length >= MAX_PRIZE_ROWS) break;
+    if (!p || typeof p.name !== 'string') continue;
+    const name = p.name.trim().slice(0, MAX_PRIZE_NAME);
+    if (!name) continue;
+    const qty = Number(p.qty);
+    out.push({ qty: Number.isInteger(qty) && qty >= 1 && qty <= MAX_PRIZE_QTY ? qty : 1, name });
+  }
+  return out;
 }
 
 /**

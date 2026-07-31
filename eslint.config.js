@@ -70,7 +70,7 @@ export default [
   },
   // Jest globals for backend tests
   {
-    files: ['backend/**/*.test.js', 'backend/test/**/*.js', 'backend/src/tests/**/*.js'],
+    files: ['backend/**/*.test.js', 'backend/test/**/*.js'],
     languageOptions: {
       globals: {
         ...globals.jest,

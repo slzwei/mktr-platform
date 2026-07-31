@@ -67,7 +67,7 @@ function buildDeps(overrides = {}) {
     gateHeldDncLead: jest.fn().mockResolvedValue({ outcome: 'released' }),
     screeningConfig: jest.fn().mockResolvedValue({ configured: true }),
     screeningApplies: jest.fn().mockResolvedValue(true),
-    startScreeningAttempt: jest.fn().mockResolvedValue({ status: 'dialed' }),
+    scheduleScreeningAttempt: jest.fn().mockResolvedValue({ status: 'scheduled' }),
     resolveConsumerForCaptureTx: jest.fn().mockResolvedValue(null),
     recordCaptureConsentEventsTx: jest.fn().mockResolvedValue(),
     canMarketTo: jest.fn().mockResolvedValue(false),
@@ -111,7 +111,7 @@ describe('createProspect — screening gate decision table', () => {
 
     const dispatched = deps.dispatchEvent.mock.calls.map((c) => c[0]);
     expect(dispatched).not.toContain('lead.created');
-    expect(deps.startScreeningAttempt).toHaveBeenCalledTimes(1);
+    expect(deps.scheduleScreeningAttempt).toHaveBeenCalledTimes(1);
     expect(deps.onLeadCaptured).toHaveBeenCalledTimes(1); // screening holds stay reward-eligible
   });
 
@@ -133,7 +133,7 @@ describe('createProspect — screening gate decision table', () => {
     const row = deps.createdProspects[0];
     expect(row.quarantineReason).toBe('no_funded_agent');
     expect(row.screeningMetadata).toBeUndefined();
-    expect(deps.startScreeningAttempt).not.toHaveBeenCalled();
+    expect(deps.scheduleScreeningAttempt).not.toHaveBeenCalled();
     expect(deps.onLeadCaptured).not.toHaveBeenCalled();
   });
 
@@ -153,7 +153,7 @@ describe('createProspect — screening gate decision table', () => {
     expect(row.dncMetadata).toEqual({ intendedAgentId: 'agent-1', alreadyCharged: false });
     expect(row.screeningMetadata).toBeUndefined();
     expect(deps.gateHeldDncLead).toHaveBeenCalled();
-    expect(deps.startScreeningAttempt).not.toHaveBeenCalled();
+    expect(deps.scheduleScreeningAttempt).not.toHaveBeenCalled();
   });
 
   it('gate not applicable → assigned + delivered exactly as today', async () => {
@@ -163,7 +163,7 @@ describe('createProspect — screening gate decision table', () => {
     expect(deps.createdProspects[0].quarantineReason == null).toBe(true);
     expect(res.assignedAgentId).toBe('agent-1');
     expect(deps.dispatchEvent.mock.calls.map((c) => c[0])).toContain('lead.created');
-    expect(deps.startScreeningAttempt).not.toHaveBeenCalled();
+    expect(deps.scheduleScreeningAttempt).not.toHaveBeenCalled();
     expect(deps.onLeadCaptured).toHaveBeenCalled();
   });
 });

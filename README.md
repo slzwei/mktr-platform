@@ -417,6 +417,10 @@ Routes are **auto-discovered**: each file in `backend/src/routes/` exports `meta
 **Dashboards & ops**
 - `/api/dashboard`, `/api/analytics`, `/api/notifications`, `/api/uploads`
 
+**Fleet / DOOH (paused; deletion scheduled)**
+- `/api/provision` (`PROVISIONING_ENABLED`) · `/api/apk` (`APK_ENABLED`) · `/api/adtech/*` manifest (`MANIFEST_ENABLED`) + beacons (`BEACONS_ENABLED`) — each behind its own flag, **all default OFF** (an unset env var means the route is not mounted)
+- `/api/devices`, `/api/devices/events` (SSE), `/api/vehicles`, `/api/fleet` — still mounted **unconditionally** (JWT admin/agent auth; the device SSE stream additionally checks `MANIFEST_ENABLED` per-route), pending deletion
+
 **Health & docs**
 - `GET /health` · `GET /health/public-host` (host-detection diagnostic) · `GET /health/sync` (per-adapter sync freshness)
 - `GET /api-docs` — Swagger UI (non-production only)
@@ -526,6 +530,7 @@ The backend runs migrations automatically on boot (and, in `NODE_ENV=test`, forc
 | System Agent | `SYSTEM_AGENT_EMAIL`, `SYSTEM_AGENT_REDIRECT_EMAIL`, `DEFAULT_AGENT_ID` |
 | Attribution | `ATTRIB_SECRET`, `IP_HASH_SALT` (required in prod) |
 | Crons | `SYNC_AGENT_CRON` (default on) |
+| DOOH (paused) | `PROVISIONING_ENABLED`, `APK_ENABLED`, `MANIFEST_ENABLED`, `BEACONS_ENABLED` (all default off), `MANIFEST_RPS_PER_DEVICE`, `BEACON_RPS_PER_DEVICE`, `BEACON_IDEMP_WINDOW_MIN`, `ENABLE_DOMAIN_PREFIXES` |
 | Observability | `SENTRY_DSN`, `OBS_SAMPLE_RATE` |
 
 `backend/env.example` is the annotated, copy-pasteable starting point and carries the most detailed comments; `.env.example` covers the frontend. Neither is exhaustive — the table above, [`CLAUDE.md`](CLAUDE.md) and [`docs/reference/`](docs/reference/) are the fuller picture.
@@ -569,7 +574,7 @@ Also at the repo root: `scripts/campaignPageParity.mjs` (v1↔v2 campaign-page p
 
 Locally:
 
-- **Backend:** Jest + supertest (`backend/src/tests/`, `backend/test/`).
+- **Backend:** Jest + supertest (`backend/test/` — the single test root; `unit/` for DI/unit suites, `integration/` for DB-backed suites, `migrations/` for the migration chain).
 - **Frontend:** Vitest + Testing Library (`src/**/*.{test,spec}.{js,jsx}`), jsdom, v8 coverage.
 - **E2E:** Playwright specs in `e2e/` ([`playwright.config.js`](playwright.config.js)).
 

@@ -1,4 +1,4 @@
-import { aggregateDeliveryPoolAgents } from '../services/leadPackageService.js';
+import { aggregateDeliveryPoolAgents } from '../../src/services/leadPackageService.js';
 
 // Pure aggregation logic for the campaign-first delivery pool — DB-free.
 describe('leadPackageService.aggregateDeliveryPoolAgents', () => {

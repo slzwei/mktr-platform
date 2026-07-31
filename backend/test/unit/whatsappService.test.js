@@ -1,4 +1,4 @@
-import { makeWhatsappService, canWhatsAppProspect, waRecipient } from '../services/redeemOps/whatsappService.js';
+import { makeWhatsappService, canWhatsAppProspect, waRecipient } from '../../src/services/redeemOps/whatsappService.js';
 
 // Trial-reward PR E — template payload shape + gates, all DB-free (RewardOffer,
 // QRCode and fetch are DI fakes). The fan-out contract (email ≠ WhatsApp

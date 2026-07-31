@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { sequelize, Prospect, IdempotencyKey, User, Campaign } from '../models/index.js';
 import ProspectActivity from '../models/ProspectActivity.js';
-import { resolveAssignedAgentId, resolveLeadRouting } from './systemAgent.js';
+import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId } from './systemAgent.js';
 import { chargeLeadCredit } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
 import { dispatchEvent } from './webhookService.js';
@@ -39,6 +39,7 @@ const defaultDeps = {
   sequelize,
   resolveAssignedAgentId,
   resolveLeadRouting,
+  getSystemAgentId,
   chargeLeadCredit,
   decideAssignment,
   dncEnforcement,
@@ -452,11 +453,14 @@ export function makeRetellService(overrides = {}) {
       }
 
       // ── Email notification (fire-and-forget) ──
+      // Unassigned (but not held) leads notify the System Agent. Its address is
+      // configurable (SYSTEM_AGENT_EMAIL / DEFAULT_AGENT_ID), so resolve the id —
+      // a literal email here matched nothing and the notification never sent.
       const notifyAgent = quarantined
         ? null
         : assignedAgentId
           ? await d.User.findByPk(assignedAgentId)
-          : await d.User.findOne({ where: { email: 'system@mktr.sg' } });
+          : await d.User.findByPk(await d.getSystemAgentId());
 
       if (notifyAgent) {
         const prospectWithCampaign = campaign

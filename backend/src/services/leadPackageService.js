@@ -143,7 +143,66 @@ export async function updatePackage(id, fields) {
 }
 
 /**
- * Assign a package to an agent. Returns the assignment and data needed for email.
+ * Post-commit held-queue sweep trigger (async, fire-and-forget). NOTE:
+ * auto-release is currently DISABLED (held leads are manual-only) so this
+ * no-ops — retained as the hook to re-enable it. Dynamic import keeps
+ * releaseSweep (and its systemAgent/webhook graph) out of this module's
+ * static dependency graph — avoids coupling and keeps unit-test mocks lean.
+ */
+function triggerCampaignSweep(campaignId, source) {
+  if (!campaignId) return;
+  import('./releaseSweep.js')
+    .then((m) => m.sweepCampaign(campaignId))
+    .catch((err) => logger.error(`[ReleaseSweep] ${source} trigger failed`, { error: err?.message || String(err) }));
+}
+
+/**
+ * The ONE race-safe assignment writer — every path that mints an active
+ * assignment (admin single, external single, campaign bulk) funnels here.
+ * A per-package advisory xact lock serializes concurrent assigns across ALL
+ * entry points (no unique (agentId,leadPackageId) index exists), and the
+ * skip-existing read + insert share one transaction, so a double-click or a
+ * concurrent admin can never mint duplicate active assignments. Agents
+ * already holding an active assignment come back in `existingByAgent`,
+ * never duplicated. Callers own the package-level guards (status/campaign)
+ * and their own response contracts.
+ */
+async function lockedAssignActive({ pkg, agentIds, leadsTotal }) {
+  return sequelize.transaction(async (t) => {
+    await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:k))', {
+      replacements: { k: `lpa:${pkg.id}` },
+      transaction: t,
+    });
+    const existing = await LeadPackageAssignment.findAll({
+      where: { leadPackageId: pkg.id, agentId: { [Op.in]: agentIds }, status: 'active' },
+      transaction: t,
+    });
+    const existingByAgent = new Map(existing.map((e) => [e.agentId, e]));
+    const rows = agentIds
+      .filter((id) => !existingByAgent.has(id))
+      .map((agentId) => ({
+        agentId,
+        leadPackageId: pkg.id,
+        leadsTotal,
+        leadsRemaining: leadsTotal,
+        priceSnapshot: pkg.price,
+        status: 'active',
+        purchaseDate: new Date(),
+      }));
+    const created = rows.length
+      ? await LeadPackageAssignment.bulkCreate(rows, { transaction: t, returning: true })
+      : [];
+    return { created, existingByAgent };
+  });
+}
+
+/**
+ * Assign a package to an agent (internal/admin path). Returns the assignment
+ * and data needed for email. Runs through the same locked core as the
+ * external + bulk paths, so an admin double-click returns the EXISTING active
+ * assignment (alreadyAssigned: true — the controller skips the duplicate
+ * email) instead of minting a second one, and a non-active (draft/archived)
+ * package is no longer assignable.
  */
 export async function assignPackage({ agentId, packageId }) {
   if (!agentId || !packageId) {
@@ -161,30 +220,19 @@ export async function assignPackage({ agentId, packageId }) {
     }]
   });
   if (!pkg) throw new AppError('Package not found', 404);
+  if (pkg.status !== 'active') throw new AppError('Package is not active', 409);
 
-  const assignment = await LeadPackageAssignment.create({
-    agentId,
-    leadPackageId: packageId,
+  const { created, existingByAgent } = await lockedAssignActive({
+    pkg,
+    agentIds: [agentId],
     leadsTotal: pkg.leadCount,
-    leadsRemaining: pkg.leadCount,
-    priceSnapshot: pkg.price,
-    status: 'active',
-    purchaseDate: new Date()
   });
-
-  // New funded package → trigger the held-queue sweep for its campaign (async,
-  // fire-and-forget). NOTE: auto-release is currently DISABLED (held leads are
-  // manual-only) so this sweep no-ops — retained as the hook to re-enable it.
-  if (pkg.campaignId) {
-    // Dynamic import keeps releaseSweep (and its systemAgent/webhook graph) out of this
-    // module's static dependency graph — avoids coupling and keeps unit-test mocks lean.
-    import('./releaseSweep.js')
-      .then((m) => m.sweepCampaign(pkg.campaignId))
-      .catch((err) => logger.error('[ReleaseSweep] assignPackage trigger failed', { error: err?.message || String(err) }));
-  }
+  const assignment = created[0] || existingByAgent.get(agentId);
+  if (created.length > 0) triggerCampaignSweep(pkg.campaignId, 'assignPackage');
 
   return {
     assignment,
+    alreadyAssigned: created.length === 0,
     agent,
     packageInfo: {
       name: pkg.name,
@@ -478,9 +526,10 @@ function rejectWalletPackage(pkg) {
 }
 
 /**
- * Assign an ACTIVE catalog package to a mktr-leads agent. Active-only guard +
- * duplicate guard under the same per-package advisory lock bulkAssignPackage uses
- * (no unique (agentId,leadPackageId) index). Optional custom leadsTotal override.
+ * Assign an ACTIVE catalog package to a mktr-leads agent. Active-only guard,
+ * then the shared lockedAssignActive core (per-package advisory lock +
+ * skip-existing — no unique (agentId,leadPackageId) index exists). Optional
+ * custom leadsTotal override.
  * Returns a typed status: assigned | exists | package_inactive | invalid_agent.
  */
 export async function assignPackageExternal({ agentMktrUserId, packageId, leadsTotalOverride }) {
@@ -496,41 +545,20 @@ export async function assignPackageExternal({ agentMktrUserId, packageId, leadsT
   if (!pkg) throw new AppError('Package not found', 404);
   if (pkg.status !== 'active') return { status: 'package_inactive' };
 
-  const result = await sequelize.transaction(async (t) => {
-    await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:k))', {
-      replacements: { k: `lpa:${packageId}` },
-      transaction: t,
-    });
-    const existing = await LeadPackageAssignment.findOne({
-      where: { leadPackageId: packageId, agentId: agent.id, status: 'active' },
-      transaction: t,
-    });
-    if (existing) return { status: 'exists', assignmentId: existing.id };
-
-    const override = Number(leadsTotalOverride);
-    const total = Number.isFinite(override) && override >= 1 ? Math.round(override) : pkg.leadCount;
-    const a = await LeadPackageAssignment.create(
-      {
-        agentId: agent.id,
-        leadPackageId: packageId,
-        leadsTotal: total,
-        leadsRemaining: total,
-        priceSnapshot: pkg.price,
-        status: 'active',
-        purchaseDate: new Date(),
-      },
-      { transaction: t }
-    );
-    return { status: 'assigned', assignmentId: a.id };
+  const override = Number(leadsTotalOverride);
+  const total = Number.isFinite(override) && override >= 1 ? Math.round(override) : pkg.leadCount;
+  const { created, existingByAgent } = await lockedAssignActive({
+    pkg,
+    agentIds: [agent.id],
+    leadsTotal: total,
   });
 
-  // New funded package → campaign sweep (no-op today; retained as the re-enable hook).
-  if (result.status === 'assigned' && pkg.campaignId) {
-    import('./releaseSweep.js')
-      .then((m) => m.sweepCampaign(pkg.campaignId))
-      .catch((err) => logger.error('[ReleaseSweep] assignPackageExternal trigger failed', { error: err?.message || String(err) }));
+  if (created.length > 0) {
+    // New funded package → campaign sweep (no-op today; retained as the re-enable hook).
+    triggerCampaignSweep(pkg.campaignId, 'assignPackageExternal');
+    return { status: 'assigned', assignmentId: created[0].id };
   }
-  return result;
+  return { status: 'exists', assignmentId: existingByAgent.get(agent.id).id };
 }
 
 /**
@@ -549,22 +577,37 @@ export async function topUpAssignment({ assignmentId, addLeads, setRemaining }) 
 
   const prevRemaining = a.leadsRemaining;
   if (setRemaining !== undefined) {
+    // Absolute correction — last-writer-wins is the semantic of "set".
     const n = parseInt(setRemaining, 10);
     if (isNaN(n) || n < 0) throw new AppError('Invalid lead count', 400);
     await a.update({ leadsRemaining: n, status: n === 0 ? 'completed' : 'active' });
   } else {
     const add = parseInt(addLeads, 10);
     if (isNaN(add) || add < 1) throw new AppError('Invalid amount', 400);
-    await a.update({ leadsRemaining: a.leadsRemaining + add, leadsTotal: a.leadsTotal + add, status: 'active' });
+    // Column-relative single-statement increment (house pattern:
+    // leadCredits.chargeLeadCredit) — a concurrent charge's decrement lands on
+    // the same row instead of being erased by a stale read-modify-write. The
+    // status guard re-checks the pre-read state atomically so a concurrent
+    // cancel/expire is never resurrected by this write.
+    const [rows] = await sequelize.query(
+      `UPDATE lead_package_assignments
+          SET "leadsRemaining" = "leadsRemaining" + :add,
+              "leadsTotal" = "leadsTotal" + :add,
+              status = 'active',
+              "updatedAt" = NOW()
+        WHERE id = :id AND status IN ('active', 'completed')
+        RETURNING id`,
+      { replacements: { add, id: a.id } }
+    );
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new AppError('Cannot modify a cancelled or expired assignment', 409);
+    }
+    await a.reload();
   }
 
   if (a.leadsRemaining > prevRemaining) {
     const pkg = await LeadPackage.findByPk(a.leadPackageId, { attributes: ['campaignId'] });
-    if (pkg?.campaignId) {
-      import('./releaseSweep.js')
-        .then((m) => m.sweepCampaign(pkg.campaignId))
-        .catch((err) => logger.error('[ReleaseSweep] topUpAssignment trigger failed', { error: err?.message || String(err) }));
-    }
+    triggerCampaignSweep(pkg?.campaignId, 'topUpAssignment');
   }
   return { assignment: a };
 }
@@ -782,11 +825,11 @@ export async function getCampaignDeliveryPool(campaignId) {
 
 /**
  * Bulk-assign one campaign package to many agents (campaign-first funding).
- * Race-safe: a per-package advisory xact lock serializes concurrent admin
- * assigns so the skip-existing read + insert can't duplicate active assignments
- * (no unique (agentId,leadPackageId) index exists). Idempotent — agents already
- * holding an active assignment for this package are skipped, not duplicated.
- * Fires exactly ONE releaseSweep after commit (not per agent).
+ * Race-safe via the shared lockedAssignActive core. Idempotent — agents
+ * already holding an active assignment for this package are skipped, not
+ * duplicated. Active-package guard mirrors the single-assign paths (an
+ * archived package is not fundable). Fires exactly ONE releaseSweep after
+ * commit (not per agent).
  */
 export async function bulkAssignPackage({ campaignId, packageId, agentIds }) {
   if (!campaignId || !packageId || !Array.isArray(agentIds) || agentIds.length === 0) {
@@ -799,6 +842,7 @@ export async function bulkAssignPackage({ campaignId, packageId, agentIds }) {
   if (String(pkg.campaignId) !== String(campaignId)) {
     throw new AppError('Package does not belong to this campaign', 400);
   }
+  if (pkg.status !== 'active') throw new AppError('Package is not active', 409);
 
   const validAgents = await User.findAll({
     where: { id: { [Op.in]: uniqueAgentIds }, role: 'agent', isActive: true },
@@ -810,42 +854,14 @@ export async function bulkAssignPackage({ campaignId, packageId, agentIds }) {
   let assignedIds = [];
   let skipped = [];
   if (validIds.length > 0) {
-    await sequelize.transaction(async (t) => {
-      await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:k))', {
-        replacements: { k: `lpa:${packageId}` },
-        transaction: t,
-      });
-
-      const existing = await LeadPackageAssignment.findAll({
-        where: { leadPackageId: packageId, agentId: { [Op.in]: validIds }, status: 'active' },
-        attributes: ['agentId'],
-        transaction: t,
-      });
-      const existingIds = new Set(existing.map((e) => e.agentId));
-      skipped = validIds.filter((id) => existingIds.has(id));
-      assignedIds = validIds.filter((id) => !existingIds.has(id));
-
-      if (assignedIds.length > 0) {
-        await LeadPackageAssignment.bulkCreate(
-          assignedIds.map((agentId) => ({
-            agentId,
-            leadPackageId: packageId,
-            leadsTotal: pkg.leadCount,
-            leadsRemaining: pkg.leadCount,
-            priceSnapshot: pkg.price,
-            status: 'active',
-            purchaseDate: new Date(),
-          })),
-          { transaction: t }
-        );
-      }
+    const { created, existingByAgent } = await lockedAssignActive({
+      pkg,
+      agentIds: validIds,
+      leadsTotal: pkg.leadCount,
     });
-  }
-
-  if (assignedIds.length > 0 && pkg.campaignId) {
-    import('./releaseSweep.js')
-      .then((m) => m.sweepCampaign(pkg.campaignId))
-      .catch((err) => logger.error('[ReleaseSweep] bulkAssignPackage trigger failed', { error: err?.message || String(err) }));
+    assignedIds = created.map((c) => c.agentId);
+    skipped = validIds.filter((id) => existingByAgent.has(id));
+    if (created.length > 0) triggerCampaignSweep(pkg.campaignId, 'bulkAssignPackage');
   }
 
   return {

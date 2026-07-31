@@ -4,6 +4,7 @@ import {
   Car, Driver, FleetOwner, Impression,
   WebhookDelivery, WebhookSubscriber, LeadPackageAssignment, sequelize
 } from '../models/index.js';
+import { logger } from '../utils/logger.js';
 
 // ── Period plumbing (admin rebuild Phase B) ───────────────────────────────────
 // Everything admin-dashboard is SGT-anchored: "today" = since 00:00 SGT.
@@ -37,15 +38,29 @@ function sgtDayEndMs(yyyyMmDd) {
   return Number.isNaN(t) ? null : t;
 }
 
-// Defensive helpers for optional columns / missing tables
+// Defensive helpers for optional columns / missing tables. Degrading to 0 is
+// deliberate (one broken column must not blank the whole dashboard), but the
+// failure has to be visible — a DB outage otherwise renders as healthy zeros.
 const safeSum = async (model, column, options = {}) => {
   try {
     const val = await model.sum(column, options);
     return Number(val) || 0;
-  } catch (_) { return 0; }
+  } catch (err) {
+    logger.warn('[Dashboard] sum failed — rendering 0', { model: model?.name, column, error: err?.message });
+    return 0;
+  }
 };
 const safeCount = async (model, options = {}) => {
-  try { return await model.count(options); } catch (_) { return 0; }
+  try { return await model.count(options); }
+  catch (err) {
+    logger.warn('[Dashboard] count failed — rendering 0', { model: model?.name, error: err?.message });
+    return 0;
+  }
+};
+// Same contract for the attention rail's list queries: degrade to empty, loudly.
+const warnEmpty = (query, empty) => (err) => {
+  logger.warn('[Dashboard] attention query failed — rendering empty', { query, error: err?.message });
+  return empty;
 };
 
 /**
@@ -174,7 +189,7 @@ export async function getAttention() {
       attributes: ['quarantineReason', [sequelize.fn('COUNT', sequelize.col('id')), 'n']],
       group: ['quarantineReason'],
       raw: true
-    }).catch(() => []),
+    }).catch(warnEmpty('heldByReason', [])),
     safeCount(Prospect, { where: { assignedAgentId: null, externalAgentId: null, quarantinedAt: null } }),
     // FULL external cohort, including inactive agents — the agent-sync can
     // deactivate a user who still holds a balance, and money must never
@@ -183,16 +198,16 @@ export async function getAttention() {
       where: { mktrLeadsId: { [Op.ne]: null }, role: 'agent' },
       attributes: ['id', 'firstName', 'lastName', 'fullName', 'email', 'walletBalanceCents', 'isActive'],
       raw: true
-    }).catch(() => []),
+    }).catch(warnEmpty('externalAgentWallets', [])),
     LeadPackageAssignment.findAll({
       where: { source: 'wallet', status: 'active', leadsRemaining: { [Op.gt]: 0 } },
       attributes: ['leadsRemaining', 'unitPriceCents'],
       include: [{ association: 'package', attributes: ['campaignId'], required: true }],
-    }).catch(() => []),
+    }).catch(warnEmpty('committedDemand', [])),
     Campaign.findAll({
       where: { status: 'active', is_active: true },
       attributes: ['id', 'name', 'end_date', 'leadPriceCents', 'design_config'],
-    }).catch(() => []),
+    }).catch(warnEmpty('activeCampaigns', [])),
     // Screening economics. One row: total spend across every screening attempt
     // (jsonb_each over the token-keyed attempts, summing costCents) and the
     // qualified count. LEFT JOIN LATERAL keeps a qualified lead whose attempts
@@ -207,7 +222,7 @@ export async function getAttention() {
        LEFT JOIN LATERAL jsonb_each(COALESCE(p."screeningMetadata"->'attempts', '{}'::jsonb)) att ON true
        WHERE p."screeningMetadata" IS NOT NULL`,
       { type: sequelize.QueryTypes.SELECT }
-    ).then((r) => r?.[0] || { spend_cents: 0, qualified: 0 }).catch(() => ({ spend_cents: 0, qualified: 0 }))
+    ).then((r) => r?.[0] || { spend_cents: 0, qualified: 0 }).catch(warnEmpty('screeningEconomics', { spend_cents: 0, qualified: 0 }))
   ]);
 
   // Held, grouped over the real reason set; anything unknown/null reconciles into `other`.
@@ -259,7 +274,9 @@ export async function getAttention() {
         where: { campaignId: pricedActive.map((c) => c.id) },
       }],
       raw: true,
-    }).catch(() => []);
+      // A failure here is worse than zeros: every priced campaign would render
+      // as a zero-commitment INCIDENT (false alarms), so it must be loud.
+    }).catch(warnEmpty('campaignCoverage', []));
     coveredIds = new Set(covered.map((r) => r['package.campaignId']));
   }
   const zeroCommitCampaigns = pricedActive

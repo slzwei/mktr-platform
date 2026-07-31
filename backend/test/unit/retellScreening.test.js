@@ -18,8 +18,27 @@ import {
   UNANSWERED_REASONS,
 } from '../../src/services/retellScreeningService.js';
 import { runScreeningSweep } from '../../src/services/screeningSweepService.js';
+import { parseWindow } from '../../src/utils/screeningEnv.js';
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+
+// Screening behaviour is a function of SGT time-of-day (call window, daily
+// budget day, retry scheduling), so an unpinned suite changes result by WHEN
+// it runs — the 26 Jul 23:59 SGT CI run went red because even the widest
+// parseable window excludes its final minute (end-exclusive). Pin Date for
+// every test; only Date is faked so real timers keep async plumbing honest.
+// Describes that need timer control still call jest.useFakeTimers() locally.
+const PINNED_NOW = new Date('2026-07-23T04:30:00Z'); // 12:30 SGT — inside CFG's window and the 10:00-20:00 default
+const FAKE_DATE_ONLY = {
+  now: PINNED_NOW,
+  doNotFake: [
+    'hrtime', 'nextTick', 'performance', 'queueMicrotask',
+    'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback',
+    'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+  ],
+};
+beforeEach(() => jest.useFakeTimers(FAKE_DATE_ONLY));
+afterEach(() => jest.useRealTimers());
 
 const CFG = {
   enabled: true,
@@ -156,6 +175,36 @@ describe('call-window helpers', () => {
     expect(first.toISOString()).toBe('2026-07-23T05:00:00.000Z'); // +2h, in window
     const second = nextRetryAt({ ...cfgWin, retryMinutes: 120 }, 2, base); // +4h → 15:00 SGT ok
     expect(second.toISOString()).toBe('2026-07-23T07:00:00.000Z');
+  });
+});
+
+describe('call-window boundary minutes (start-inclusive, end-EXCLUSIVE)', () => {
+  const cfgWin = { ...CFG, callWindow: '10:00-20:00' };
+  // A wall-clock instant for HH:MM SGT on the given day (+08:00, no DST).
+  const atSgt = (hhmm, day = '2026-07-23') => new Date(`${day}T${hhmm}:00+08:00`);
+
+  it('the start minute is IN; one minute before start is OUT', () => {
+    expect(inCallWindow(cfgWin, atSgt('10:00'))).toBe(true);
+    expect(inCallWindow(cfgWin, atSgt('09:59'))).toBe(false);
+  });
+
+  it('the end minute is OUT; the last minute before it is IN', () => {
+    expect(inCallWindow(cfgWin, atSgt('20:00'))).toBe(false);
+    expect(inCallWindow(cfgWin, atSgt('19:59'))).toBe(true);
+  });
+
+  it("the widest window '00:00-23:59' closes for its final minute and reopens at midnight — the 26 Jul CI red", () => {
+    expect(inCallWindow(CFG, atSgt('23:59'))).toBe(false); // the minute CI happened to run at
+    expect(inCallWindow(CFG, atSgt('23:58'))).toBe(true);
+    expect(inCallWindow(CFG, atSgt('00:00', '2026-07-24'))).toBe(true);
+  });
+
+  it("a 24:00 end clamps its HOUR to 23 (→ ends 23:00) — writing '-24:00' narrows the window, and truly always-open is unrepresentable", () => {
+    expect(parseWindow('00:00-24:00')).toEqual({ startMin: 0, endMin: 23 * 60 });
+  });
+
+  it('at 23:59 SGT the next open is the coming midnight, not a day later', () => {
+    expect(nextWindowOpen(CFG, atSgt('23:59')).toISOString()).toBe(atSgt('00:00', '2026-07-24').toISOString());
   });
 });
 
@@ -301,6 +350,38 @@ describe('startScreeningAttempt', () => {
     expect(out).toMatchObject({ status: 'deferred', reason: 'outside_window' });
   });
 
+  it('at 23:59 SGT even the widest window defers (the red-CI minute); from midnight it dials again', async () => {
+    jest.setSystemTime(new Date('2026-07-26T15:59:00Z')); // 26 Jul 23:59 SGT — the incident instant
+    const seq = fakeSequelize([[[{ id: 'p' }]]]);
+    const svc = makeRetellScreeningService(dialerDeps(seq));
+    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG });
+    expect(out).toMatchObject({ status: 'deferred', reason: 'outside_window' });
+
+    jest.setSystemTime(new Date('2026-07-26T16:00:00Z')); // 27 Jul 00:00 SGT — the window reopens
+    const deps2 = dialerDeps(fakeSequelize(happyDialQueries()));
+    const out2 = await makeRetellScreeningService(deps2).startScreeningAttempt(
+      pendingProspect(), { campaign: screeningCampaign(), cfg: CFG }
+    );
+    expect(out2.status).toBe('dialed');
+  });
+
+  it('dials in the start minute itself and defers one minute earlier (10:00-20:00)', async () => {
+    const cfg = { ...CFG, callWindow: '10:00-20:00' };
+    jest.setSystemTime(new Date('2026-07-23T01:59:00Z')); // 09:59 SGT
+    const seq = fakeSequelize([[[{ id: 'p' }]]]);
+    const early = await makeRetellScreeningService(dialerDeps(seq)).startScreeningAttempt(
+      pendingProspect(), { campaign: screeningCampaign(), cfg }
+    );
+    expect(early).toMatchObject({ status: 'deferred', reason: 'outside_window' });
+
+    jest.setSystemTime(new Date('2026-07-23T02:00:00Z')); // 10:00 SGT — start minute is IN
+    const deps2 = dialerDeps(fakeSequelize(happyDialQueries()));
+    const out2 = await makeRetellScreeningService(deps2).startScreeningAttempt(
+      pendingProspect(), { campaign: screeningCampaign(), cfg }
+    );
+    expect(out2.status).toBe('dialed');
+  });
+
   it('daily budget and concurrency caps defer instead of dialing', async () => {
     const seqBudget = fakeSequelize([[[{}]], [[{ dialsToday: 50 }]], [[{ id: 'p' }]]]);
     const svcBudget = makeRetellScreeningService(dialerDeps(seqBudget));
@@ -348,6 +429,73 @@ describe('startScreeningAttempt', () => {
     const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG, now: IN_WINDOW });
     expect(out.status).toBe('dispatch_failed');
     expect(seq.calls.some((c) => c.sql.includes(`SET "screeningActiveCallId" = NULL`))).toBe(true);
+  });
+});
+
+describe('scheduleScreeningAttempt (delayed first dial, §7.1a)', () => {
+  const delayCfg = { ...CFG, dialDelaySeconds: 60 };
+  afterEach(() => jest.useRealTimers());
+
+  it('stamps screeningNextAttemptAt for the sweep and dials only once the delay elapses', async () => {
+    jest.useFakeTimers();
+    const seq = fakeSequelize([[[{ id: 'p' }]], ...happyDialQueries()]);
+    const deps = dialerDeps(seq);
+    const svc = makeRetellScreeningService(deps);
+
+    const out = await svc.scheduleScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: delayCfg });
+    expect(out.status).toBe('scheduled');
+    expect(deps.retellClient.createPhoneCall).not.toHaveBeenCalled();
+
+    // The durable half: the stamp the sweep's due-retry job reads, so a crash
+    // inside the delay window costs lateness, not the call.
+    expect(seq.calls[0].sql).toMatch(/"screeningNextAttemptAt" = :at/);
+    expect(seq.calls[0].opts.replacements.at.getTime() - Date.now()).toBe(60_000);
+
+    jest.advanceTimersByTime(60_000);
+    // Real timers so flushAsync's setTimeout(0) runs — but re-pin Date
+    // immediately: the dial fired by the elapsed delay checks the call window
+    // on ITS side of the flush, and must not read the ambient wall clock.
+    jest.useRealTimers();
+    jest.useFakeTimers(FAKE_DATE_ONLY);
+    await flushAsync();
+    await flushAsync();
+    expect(deps.retellClient.createPhoneCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('delay 0 dials inline (pre-delay behaviour is one env var away)', async () => {
+    const seq = fakeSequelize(happyDialQueries());
+    const deps = dialerDeps(seq);
+    const svc = makeRetellScreeningService(deps);
+    const out = await svc.scheduleScreeningAttempt(pendingProspect(), {
+      campaign: screeningCampaign(),
+      cfg: { ...CFG, dialDelaySeconds: 0 },
+    });
+    expect(out.status).toBe('dialed');
+    expect(deps.retellClient.createPhoneCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('never stamps a schedule when the feature is not configured', async () => {
+    const seq = fakeSequelize([]);
+    const deps = dialerDeps(seq);
+    const svc = makeRetellScreeningService(deps);
+    const out = await svc.scheduleScreeningAttempt(pendingProspect(), {
+      campaign: screeningCampaign(),
+      cfg: { ...delayCfg, configured: false },
+    });
+    expect(out).toEqual({ status: 'skipped', reason: 'not_configured' });
+    expect(seq.calls).toHaveLength(0);
+  });
+
+  it('never stamps a schedule the guards would reject — the sweep would re-select it every pass', async () => {
+    const seq = fakeSequelize([]);
+    const deps = dialerDeps(seq);
+    const svc = makeRetellScreeningService(deps);
+    const out = await svc.scheduleScreeningAttempt(pendingProspect({ sourceMetadata: {} }), {
+      campaign: screeningCampaign(),
+      cfg: delayCfg,
+    });
+    expect(out).toEqual({ status: 'skipped', reason: 'gate_not_applicable' });
+    expect(seq.calls).toHaveLength(0);
   });
 });
 

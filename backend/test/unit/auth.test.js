@@ -1,13 +1,13 @@
 import { jest } from '@jest/globals';
-import { googleLogin } from '../controllers/authController.js';
+import { googleLogin } from '../../src/controllers/authController.js';
 
 // Mock dependencies
 jest.mock('google-auth-library');
-jest.mock('../models/index.js');
+jest.mock('../../src/models/index.js');
 jest.mock('jsonwebtoken');
 
 import { OAuth2Client } from 'google-auth-library';
-import { User } from '../models/index.js';
+import { User } from '../../src/models/index.js';
 import jwt from 'jsonwebtoken';
 
 describe('Google OAuth Controller', () => {

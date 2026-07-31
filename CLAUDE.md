@@ -154,10 +154,10 @@ Optional: `RETELL_CAMPAIGN_MAP`, `DEFAULT_AGENT_ID`, `SYSTEM_AGENT_EMAIL` (defau
 ## Known technical debt
 
 1. **System Agent delivery gap**: leads assigned to System Agent can't reach Lyfe (`lead.created` needs agent phone). Needs a fallback path.
-2. **Fake emails for Retell leads**: `retell-{call_id}@calls.mktr.sg` pollutes `prospects`. Consider nullable email / sentinel.
-3. **setTimeout-based retries lost on restart** (see above) — consider a persistent job queue (pg-boss/bullmq).
-4. **Hardcoded email redirect**: `mailer.js:105-108` redirects System Agent emails to `shawnleejob@gmail.com` — should be `SYSTEM_AGENT_REDIRECT_EMAIL`.
-5. **Agent sync is pull-only + manual**; `MAX_CONCURRENT_DELIVERIES = 3` may throttle at high volume; `env.example` incomplete.
+2. **setTimeout-based retries lost on restart** (see above) — consider a persistent job queue (pg-boss/bullmq).
+3. **Agent sync is pull-only + manual**; `MAX_CONCURRENT_DELIVERIES = 3` may throttle at high volume; `env.example` incomplete.
+
+Resolved (kept out of the list above): Retell leads now store `email: null` (no more fake `retell-{call_id}@calls.mktr.sg`); the System-Agent email redirect reads `SYSTEM_AGENT_REDIRECT_EMAIL` (mailer.js) — unset = skip, not a hardcoded inbox.
 
 ## Pipeline-relevant files
 

@@ -1,4 +1,4 @@
-import { decryptApiKey, encryptApiKey, isAiCredentialEncryptionReady } from '../utils/aiCredentialEncryption.js';
+import { decryptApiKey, encryptApiKey, isAiCredentialEncryptionReady } from '../../src/utils/aiCredentialEncryption.js';
 
 describe('AI credential encryption', () => {
   const originalSecret = process.env.AI_SETTINGS_ENCRYPTION_KEY;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { ALLOWED_SORT_FIELDS, normalizeAgentSort } from '../src/services/agentService.js';
+import { ALLOWED_SORT_FIELDS, normalizeAgentSort } from '../../src/services/agentService.js';
 
 describe('normalizeAgentSort()', () => {
   it('passes through any whitelisted sortBy', () => {

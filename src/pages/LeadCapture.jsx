@@ -598,7 +598,11 @@ export default function LeadCapture() {
     ) {
       return (
         <>
-          <DrawSuccessPage campaign={campaign} submittedPhone={submittedPhone} />
+          <DrawSuccessPage
+            campaign={campaign}
+            submittedPhone={submittedPhone}
+            screeningCallback={campaign.screeningCallback}
+          />
           {shareDialog}
         </>
       );

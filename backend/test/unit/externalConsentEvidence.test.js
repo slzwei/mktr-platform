@@ -6,7 +6,7 @@ import {
   THIRD_PARTY_CONSENT_CHANNELS,
   AGREE_ALL_THIRD_PARTY_VERSION,
   AGREE_ALL_THIRD_PARTY_COPY,
-} from '../src/services/externalConsent.js';
+} from '../../src/services/externalConsent.js';
 
 describe('buildExternalConsentEvidence', () => {
   it('returns null when the box was NOT ticked (fail-safe — nothing written)', () => {

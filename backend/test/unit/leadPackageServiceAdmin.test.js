@@ -8,6 +8,7 @@ const LeadPackageAssignment = {
   findByPk: jest.fn(),
   findOne: jest.fn(),
   create: jest.fn(),
+  bulkCreate: jest.fn(),
   count: jest.fn(),
 };
 const User = { findByPk: jest.fn(), findOne: jest.fn() };
@@ -172,35 +173,35 @@ describe('assignPackageExternal', () => {
   it('assigns and snapshots price; inherits leadCount', async () => {
     User.findOne.mockResolvedValue({ id: 'agent-1' });
     LeadPackage.findByPk.mockResolvedValue(activePkg);
-    LeadPackageAssignment.findOne.mockResolvedValue(null);
-    LeadPackageAssignment.create.mockResolvedValue({ id: 'new-1' });
+    LeadPackageAssignment.findAll.mockResolvedValue([]);
+    LeadPackageAssignment.bulkCreate.mockResolvedValue([{ id: 'new-1', agentId: 'agent-1' }]);
 
     const result = await assignPackageExternal({ agentMktrUserId: 'mktr-1', packageId: 'pkg-1' });
 
     expect(result).toEqual({ status: 'assigned', assignmentId: 'new-1' });
-    const createArg = LeadPackageAssignment.create.mock.calls[0][0];
+    const createArg = LeadPackageAssignment.bulkCreate.mock.calls[0][0][0];
     expect(createArg).toMatchObject({ leadsTotal: 50, leadsRemaining: 50, priceSnapshot: 100, status: 'active' });
   });
 
   it('honours a custom leadsTotalOverride', async () => {
     User.findOne.mockResolvedValue({ id: 'agent-1' });
     LeadPackage.findByPk.mockResolvedValue(activePkg);
-    LeadPackageAssignment.findOne.mockResolvedValue(null);
-    LeadPackageAssignment.create.mockResolvedValue({ id: 'new-1' });
+    LeadPackageAssignment.findAll.mockResolvedValue([]);
+    LeadPackageAssignment.bulkCreate.mockResolvedValue([{ id: 'new-1', agentId: 'agent-1' }]);
 
     await assignPackageExternal({ agentMktrUserId: 'mktr-1', packageId: 'pkg-1', leadsTotalOverride: 25 });
-    const createArg = LeadPackageAssignment.create.mock.calls[0][0];
+    const createArg = LeadPackageAssignment.bulkCreate.mock.calls[0][0][0];
     expect(createArg).toMatchObject({ leadsTotal: 25, leadsRemaining: 25 });
   });
 
   it('returns exists when the agent already holds an active assignment (dup guard)', async () => {
     User.findOne.mockResolvedValue({ id: 'agent-1' });
     LeadPackage.findByPk.mockResolvedValue(activePkg);
-    LeadPackageAssignment.findOne.mockResolvedValue({ id: 'existing-1' });
+    LeadPackageAssignment.findAll.mockResolvedValue([{ id: 'existing-1', agentId: 'agent-1' }]);
 
     const result = await assignPackageExternal({ agentMktrUserId: 'mktr-1', packageId: 'pkg-1' });
     expect(result).toEqual({ status: 'exists', assignmentId: 'existing-1' });
-    expect(LeadPackageAssignment.create).not.toHaveBeenCalled();
+    expect(LeadPackageAssignment.bulkCreate).not.toHaveBeenCalled();
   });
 
   it('rejects a non-active package', async () => {
@@ -218,12 +219,36 @@ describe('assignPackageExternal', () => {
 });
 
 describe('topUpAssignment', () => {
-  it('delta adds to BOTH remaining and total (fixes the 150/100 bug)', async () => {
-    const a = { id: 'a1', status: 'active', leadsRemaining: 10, leadsTotal: 100, leadPackageId: 'pkg-1', update: jest.fn().mockResolvedValue(true) };
+  it('delta adds to BOTH remaining and total atomically in SQL (never a stale read-modify-write)', async () => {
+    const a = {
+      id: 'a1', status: 'active', leadsRemaining: 10, leadsTotal: 100, leadPackageId: 'pkg-1',
+      update: jest.fn().mockResolvedValue(true), reload: jest.fn().mockResolvedValue(true),
+    };
     LeadPackageAssignment.findOne.mockResolvedValue(a);
+    sequelize.query.mockResolvedValue([[{ id: 'a1' }]]);
 
     await topUpAssignment({ assignmentId: 'a1', addLeads: 50 });
-    expect(a.update).toHaveBeenCalledWith({ leadsRemaining: 60, leadsTotal: 150, status: 'active' });
+
+    // Column-relative UPDATE carries the whole increment — a concurrent
+    // charge's decrement can land between load and write without being erased.
+    const [sql, opts] = sequelize.query.mock.calls[0];
+    expect(sql).toMatch(/"leadsRemaining"\s*=\s*"leadsRemaining"\s*\+\s*:add/);
+    expect(sql).toMatch(/"leadsTotal"\s*=\s*"leadsTotal"\s*\+\s*:add/);
+    expect(sql).toMatch(/status IN \('active', 'completed'\)/);
+    expect(opts.replacements).toEqual({ add: 50, id: 'a1' });
+    expect(a.update).not.toHaveBeenCalled();
+    expect(a.reload).toHaveBeenCalled();
+  });
+
+  it('409s when the row flipped to cancelled between load and the atomic write', async () => {
+    const a = {
+      id: 'a1', status: 'active', leadsRemaining: 10, leadsTotal: 100, leadPackageId: 'pkg-1',
+      update: jest.fn(), reload: jest.fn(),
+    };
+    LeadPackageAssignment.findOne.mockResolvedValue(a);
+    sequelize.query.mockResolvedValue([[]]); // status guard matched no row
+
+    await expect(topUpAssignment({ assignmentId: 'a1', addLeads: 5 })).rejects.toThrow('cancelled or expired');
   });
 
   it('absolute setRemaining correction sets status by count', async () => {

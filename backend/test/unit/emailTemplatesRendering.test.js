@@ -1,4 +1,7 @@
-import './setup.js'
+// Sibling of emailTemplates.test.js — written in a parallel coverage push
+// (5e0ba1c vs 88adf08), so the basics overlap; the special-character,
+// whitespace-trim and null-link cases exist only here. Consolidation welcome.
+import '../setup.js'
 import {
   getAgentInviteSubject,
   getAgentInviteEmail,
@@ -6,7 +9,7 @@ import {
   getRoleInviteSubject,
   getRoleInviteEmail,
   getRoleInviteText
-} from '../src/services/emailTemplates.js'
+} from '../../src/services/emailTemplates.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent Invite Templates

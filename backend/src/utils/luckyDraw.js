@@ -22,11 +22,9 @@
 
 import { AppError } from '../middleware/appError.js';
 import { PASS_THEMES } from './drawTheme.js';
+import { MAX_PRIZE_NAME, MAX_PRIZE_ROWS, MAX_PRIZE_QTY } from './luckyDrawCaps.js';
 
 const MAX_PRIZE = 80; // legacy manual `prize` cap — unchanged so stored rows never drift
-const MAX_PRIZE_NAME = 80;
-const MAX_PRIZE_ROWS = 8;
-const MAX_PRIZE_QTY = 99;
 // Derived summaries are bounded by construction (8 × (4 + 80) + 7 × 3 = 693);
 // this slice is a belt that should never cut.
 const MAX_PRIZE_SUMMARY = 700;

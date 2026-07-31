@@ -1,4 +1,4 @@
-import { makeProspectService } from '../services/prospectService.js';
+import { makeProspectService } from '../../src/services/prospectService.js';
 
 // Proves the referral-identity wiring in createProspect: a referralRef in the
 // body (the sharer's prospect UUID from the share URL's ?ref=) is resolved into
@@ -9,6 +9,11 @@ import { makeProspectService } from '../services/prospectService.js';
 // quizProspectWiring.test.js.
 
 const REFERRER_ID = '5f1e9c1a-2222-4444-8888-aaaaaaaaaaaa';
+
+// createProspect reloads the just-created prospect ('prospect-new') with its
+// campaign for the confirmation-email branding — that call is not a referrer
+// lookup, so the no-lookup assertions must see through it.
+const referrerLookups = (calls) => calls.filter((c) => c.id !== 'prospect-new');
 
 function buildService({ referrer, findByPkImpl } = {}) {
   const fakeTx = {};
@@ -108,7 +113,7 @@ describe('createProspect — referral identity wiring', () => {
       { cookies: {}, headers: {}, meta: {} }
     );
     expect(prospect.sourceMetadata.referral).toEqual({ ref: 'legacy-slug-42' });
-    expect(findByPkCalls).toHaveLength(0);
+    expect(referrerLookups(findByPkCalls)).toHaveLength(0);
   });
 
   it('ignores referralRef when leadSource is not referral', async () => {
@@ -121,7 +126,7 @@ describe('createProspect — referral identity wiring', () => {
       { cookies: {}, headers: {}, meta: {} }
     );
     expect(prospect.sourceMetadata?.referral).toBeUndefined();
-    expect(findByPkCalls).toHaveLength(0);
+    expect(referrerLookups(findByPkCalls)).toHaveLength(0);
   });
 
   it("ignores the anonymous legacy ref value '1'", async () => {
@@ -132,7 +137,7 @@ describe('createProspect — referral identity wiring', () => {
       { cookies: {}, headers: {}, meta: {} }
     );
     expect(prospect.sourceMetadata?.referral).toBeUndefined();
-    expect(findByPkCalls).toHaveLength(0);
+    expect(referrerLookups(findByPkCalls)).toHaveLength(0);
   });
 
   it('never passes referralRef through as a Prospect column', async () => {
@@ -151,7 +156,12 @@ describe('createProspect — referral identity wiring', () => {
 
   it('a throwing referrer lookup never blocks lead creation', async () => {
     const { svc } = buildService({
-      findByPkImpl: () => { throw new Error('db down'); },
+      // Throw only for the referrer lookup — the post-create reload must stay
+      // healthy (its own failure path is the || prospect fallback, not this test).
+      findByPkImpl: (id) => {
+        if (id === REFERRER_ID) throw new Error('db down');
+        return null;
+      },
     });
     const { prospect } = await svc.createProspect(
       { ...baseBody, referralRef: REFERRER_ID },

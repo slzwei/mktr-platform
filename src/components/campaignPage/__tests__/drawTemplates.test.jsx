@@ -240,6 +240,48 @@ describe('DrawSuccessPage', () => {
   });
 });
 
+describe('DrawSuccessPage — AI screening call-back notice', () => {
+  const cb = { number: '+6562773210', etaMinutes: 1, callWindow: '10:00-20:00', windowOpen: true };
+
+  it('is absent by default — no server-side promise, no block', () => {
+    render(<DrawSuccessPage campaign={drawCampaign('postcard')} submittedPhone="+6591234312" />);
+    expect(document.querySelector('[data-draw-callback]')).toBeNull();
+    expect(screen.queryByText('INCOMING CALL')).not.toBeInTheDocument();
+  });
+
+  it.each(DRAW_TEMPLATE_IDS)('%s prints the formatted caller id and the wait', (id) => {
+    render(<DrawSuccessPage campaign={drawCampaign(id)} submittedPhone="+6591234312" screeningCallback={cb} />);
+    expect(document.querySelector('[data-draw-callback]')).toBeTruthy();
+    expect(screen.getByText('INCOMING CALL')).toBeInTheDocument();
+    expect(
+      screen.getByText(/An automated call from \+65 6277 3210 will ring you in about a minute/)
+    ).toBeInTheDocument();
+  });
+
+  it('outside the calling window it promises the window open, never "a minute"', () => {
+    render(
+      <DrawSuccessPage
+        campaign={drawCampaign('postcard')}
+        submittedPhone="+6591234312"
+        screeningCallback={{ ...cb, windowOpen: false }}
+      />
+    );
+    expect(screen.getByText(/will ring you after 10am/)).toBeInTheDocument();
+    expect(screen.queryByText(/ring you in about a minute/)).not.toBeInTheDocument();
+  });
+
+  it('drops the caller id gracefully when the server did not supply one (Studio preview)', () => {
+    render(
+      <DrawSuccessPage
+        campaign={drawCampaign('postcard')}
+        submittedPhone="+6591234312"
+        screeningCallback={{ number: null, etaMinutes: 1, windowOpen: true }}
+      />
+    );
+    expect(screen.getByText(/^An automated call will ring you in about a minute/)).toBeInTheDocument();
+  });
+});
+
 describe('close-date de-duplication + type floors (2026-07-23)', () => {
   // Every inline font size actually rendered, parsed from style attributes.
   // clamp()/unset values parse to NaN and are filtered.

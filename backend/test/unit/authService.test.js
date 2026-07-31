@@ -196,6 +196,15 @@ describe('authService (unit)', () => {
       const createArg = mocks.User.create.mock.calls[0][0];
       expect(createArg.role).toBe('customer');
     });
+
+    it('forces role to customer even if a caller passes one (P0-2 hardening)', async () => {
+      mocks.User.findOne.mockResolvedValue(null);
+
+      await authService.register({ email: 'new@example.com', password: 'pass123', role: 'agent' });
+
+      const createArg = mocks.User.create.mock.calls[0][0];
+      expect(createArg.role).toBe('customer');
+    });
   });
 
   // ────────────────────────────────────────────────
