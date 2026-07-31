@@ -5,9 +5,12 @@
  * the existing designer/workspace — this screen observes, it never forks the
  * editing surface.
  */
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getMarketplaceListedFromDoc } from '@/lib/designConfigV2';
+import { toast } from 'sonner';
+import { queryClient } from '@/lib/queryClient';
 import { useCampaignSummary, useAttention } from '@/hooks/queries/useAdminV2';
+import { useDuplicateCampaign } from '@/hooks/queries/useCampaignsQuery';
 import { fmtNumber, fmtSGD, fmtDate, fmtDateTime, fmtRelative, daysUntil } from '@/lib/adminV2/format';
 import { STATUS_LABELS, STATUS_CHIP_CLASS, heldLabel } from '@/lib/adminV2/constants';
 import { Card, Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
@@ -27,11 +30,26 @@ function Tile({ label, value, caption, tone }) {
 
 export default function AdminV2CampaignDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const summary = useCampaignSummary(id);
   // Zero-commitment truth comes from /attention (wallet OR package funding —
   // a legacy-package-covered campaign must NOT get a false incident banner).
   // The summary's own commitments list is wallet-only by design.
   const attention = useAttention();
+  const duplicate = useDuplicateCampaign();
+
+  const handleDuplicate = async () => {
+    try {
+      const res = await duplicate.mutateAsync({ id });
+      const copy = res?.campaign;
+      toast.success(`Duplicated as “${copy?.name || 'Copy'}” — it starts as a draft`);
+      // The hook invalidates ['campaigns']; the v2 board reads ['adminV2'].
+      queryClient.invalidateQueries({ queryKey: ['adminV2'] });
+      if (copy?.id) navigate(`/admin/campaigns/${copy.id}`);
+    } catch (err) {
+      toast.error(`Duplicate failed: ${err?.response?.data?.message || err?.message || 'error'}`);
+    }
+  };
 
   if (summary.isLoading) {
     return (
@@ -62,6 +80,9 @@ export default function AdminV2CampaignDetail() {
         meta={`${(c.type || '').replace(/_/g, ' ').toUpperCase()} · ${fmtDate(c.start_date)} → ${c.end_date ? fmtDate(c.end_date) : 'OPEN-ENDED'} · AGES ${c.min_age ?? '—'}–${c.max_age ?? '—'}`}
       >
         <Link to="/AdminCampaigns" className="av2-btn av2-btn--sm" style={{ textDecoration: 'none' }}>← All campaigns</Link>
+        <button type="button" className="av2-btn av2-btn--sm" disabled={duplicate.isPending} onClick={handleDuplicate}>
+          {duplicate.isPending ? 'Duplicating…' : 'Duplicate'}
+        </button>
         <Link to={designHref} className="av2-btn av2-btn--sm" style={{ textDecoration: 'none' }}>Open designer</Link>
         <Link to={editHref} className="av2-btn av2-btn--primary av2-btn--sm" style={{ textDecoration: 'none' }}>Edit details</Link>
       </PageHeader>

@@ -40,3 +40,7 @@ coverage/
 
 dist-parity/
 dist-studio-smoke/
+dist-mktr/
+
+# Review remediation dashboard (scaffolding — see .review/README.md, task P5-1)
+.review/

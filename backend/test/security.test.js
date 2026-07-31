@@ -1,6 +1,10 @@
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
+
+// Set feature flags BEFORE importing getApp, since route mounting is conditional at init time
+process.env.PROVISIONING_ENABLED = 'true'
+
 import { getApp, closeDb, createTestUser } from './helpers.js'
 
 let app

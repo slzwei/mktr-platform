@@ -181,7 +181,7 @@ const defaultDeps = {
   // the redeemOps model surface stays out of this module's static graph.
   cancelLiveEntitlementsForProspectTx: async (...a) =>
     (await import('./redeemOps/entitlementService.js')).cancelLiveEntitlementsForProspectTx(...a),
-  startScreeningAttempt: async (prospect, opts) => (await import('./retellScreeningService.js')).startScreeningAttempt(prospect, opts),
+  scheduleScreeningAttempt: async (prospect, opts) => (await import('./retellScreeningService.js')).scheduleScreeningAttempt(prospect, opts),
   buildProspectWhere,
   dispatchEvent,
   persistEventDeliveries,
@@ -766,45 +766,6 @@ export function makeProspectService(overrides = {}) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), quiz: quizMeta };
     }
 
-    // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
-    // The client sends raw answers (+ an advisory result we ignore). We recompute
-    // the authoritative profile/readiness/leadScore from the campaign's own quiz
-    // definition so a tampered client cannot fake a result. Stored under
-    // sourceMetadata.quiz; forwarded verbatim to Lyfe in the lead.created webhook.
-    if (quizSubmission && Array.isArray(quizSubmission.answers) && quizSubmission.answers.length > 0) {
-      const quizDef = sourceCampaign?.design_config?.quiz;
-      let quizMeta;
-      if (quizDef && quizDef.enabled) {
-        let scored = null;
-        try {
-          scored = scoreQuiz(quizDef, quizSubmission.answers);
-        } catch (err) {
-          d.logger.error('[Quiz] scoring failed', { error: err?.message || String(err) });
-        }
-        quizMeta = {
-          quizId: quizDef.quizId || quizSubmission.quizId || null,
-          version: quizDef.version ?? quizSubmission.version ?? null,
-          answers: quizSubmission.answers,
-          result: scored
-            ? { profileId: scored.profileId, title: scored.title, readiness: scored.readiness, agentAngle: scored.agentAngle }
-            : (quizSubmission.result || null),
-          leadScore: scored?.leadScore || null,
-          scoredBy: scored ? 'server' : 'client-unverified',
-        };
-      } else {
-        // No quiz definition on the campaign (or disabled): keep the raw answers
-        // and the advisory client result, clearly marked unverified.
-        quizMeta = {
-          quizId: quizSubmission.quizId || null,
-          version: quizSubmission.version ?? null,
-          answers: quizSubmission.answers,
-          result: quizSubmission.result || null,
-          scoredBy: 'client-unverified',
-        };
-      }
-      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), quiz: quizMeta };
-    }
-
     // --- Routing resolution: reads from QrTag, not Campaign ---
     let routingMode = 'direct';
     let resolvedAgent = null;
@@ -828,11 +789,18 @@ export function makeProspectService(overrides = {}) {
         // Load the group record for webhook metadata
         agentGroup = await m.AgentGroup.findByPk(sourceQrTag.agentGroupId);
 
-        // Atomic round-robin index increment on QrTag
+        // Atomic round-robin index increment on QrTag. A failed increment must
+        // not lose the lead, but the stale-index fallback pins every lead on
+        // this tag to the same member while it persists — so it has to be loud.
         const [, [updated]] = await m.QrTag.update(
           { roundRobinIndex: d.sequelize.literal('"roundRobinIndex" + 1') },
           { where: { id: sourceQrTag.id }, returning: true }
-        ).catch(() => [0, [sourceQrTag]]);
+        ).catch((err) => {
+          d.logger.warn('[Routing] QR round-robin increment failed — reusing stale index', {
+            qrTagId: sourceQrTag.id, error: err?.message || String(err),
+          });
+          return [0, [sourceQrTag]];
+        });
 
         const idx = (updated?.roundRobinIndex ?? sourceQrTag.roundRobinIndex) % members.length;
         const selectedMember = members[idx];
@@ -1354,8 +1322,11 @@ export function makeProspectService(overrides = {}) {
     // and the entitlement hook. Fire-and-forget; any failure leaves the held
     // row for the sweep. DNC-held leads are NOT triggered here — dncGate hands
     // off and dials on clear (§6).
+    // SCHEDULE, don't dial: the first attempt waits cfg.dialDelaySeconds so the
+    // consumer can read the success page's "an automated call is coming" notice
+    // before their phone rings (§7.1a).
     if (screeningHeld) {
-      d.startScreeningAttempt(prospect, { campaign: sourceCampaign }).catch((err) =>
+      d.scheduleScreeningAttempt(prospect, { campaign: sourceCampaign }).catch((err) =>
         d.logger.error('[Screening] capture dial trigger error', { error: err?.message || String(err) })
       );
     }

@@ -73,6 +73,7 @@ function buildMocks() {
 
   const resolveAssignedAgentId = jest.fn().mockResolvedValue('agent-1');
   const resolveLeadRouting = jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'package' });
+  const getSystemAgentId = jest.fn().mockResolvedValue('system-agent-id');
   const chargeLeadCredit = jest.fn().mockResolvedValue(true);
   const dispatchEvent = jest.fn().mockResolvedValue(undefined);
   const sendLeadAssignmentEmail = jest.fn().mockResolvedValue(undefined);
@@ -102,6 +103,7 @@ function buildMocks() {
     sequelize,
     resolveAssignedAgentId,
     resolveLeadRouting,
+    getSystemAgentId,
     chargeLeadCredit,
     dispatchEvent,
     sendLeadAssignmentEmail,
@@ -231,6 +233,7 @@ describe('retellService (unit)', () => {
         sequelize: mocks.sequelize,
         resolveAssignedAgentId: mocks.resolveAssignedAgentId,
         resolveLeadRouting: mocks.resolveLeadRouting,
+        getSystemAgentId: mocks.getSystemAgentId,
         chargeLeadCredit: mocks.chargeLeadCredit,
         dispatchEvent: mocks.dispatchEvent,
         sendLeadAssignmentEmail: mocks.sendLeadAssignmentEmail,
@@ -442,6 +445,39 @@ describe('retellService (unit)', () => {
       expect(webhookPayload.data.routing.agentName).toBe('Agent Smith');
       expect(webhookPayload.data.routing.agentExternalId).toBe('lyfe-agent-1');
       expect(webhookPayload.data.routing.mode).toBe('retell_round_robin');
+    });
+
+    it('notifies the System Agent resolved via getSystemAgentId when no agent is assigned', async () => {
+      // No campaign resolves (unmapped Retell agent) → the prospect is created
+      // unassigned and the notification must go to the REAL System Agent — the
+      // pre-fix code looked up a hardcoded 'system@mktr.sg' (wrong address:
+      // systemAgent.js defaults to system@mktr.local) and silently never sent.
+      mocks.Campaign.findByPk.mockResolvedValue(null);
+      mocks.Campaign.findOne.mockResolvedValue(null);
+      mocks.Campaign.findAll.mockResolvedValue([]);
+
+      const systemAgentRow = {
+        id: 'system-agent-id',
+        email: 'system@mktr.local',
+        firstName: 'System',
+        lastName: 'Agent',
+      };
+      mocks.User.findByPk.mockImplementation(async (id) =>
+        id === 'system-agent-id' ? systemAgentRow : null
+      );
+
+      const result = await service.processRetellCall(makeSuccessfulCallPayload());
+
+      expect(result.status).toBe('created');
+      expect(mocks.Prospect.create.mock.calls[0][0].assignedAgentId).toBeNull();
+      expect(mocks.getSystemAgentId).toHaveBeenCalled();
+      expect(mocks.User.findByPk).toHaveBeenCalledWith('system-agent-id');
+      // Regression pin: the old bug was User.findOne({ email: 'system@mktr.sg' }).
+      expect(mocks.User.findOne).not.toHaveBeenCalled();
+      expect(mocks.sendLeadAssignmentEmail).toHaveBeenCalledWith(
+        systemAgentRow,
+        expect.anything()
+      );
     });
 
     it('parses first/last name from dynamic variables', async () => {

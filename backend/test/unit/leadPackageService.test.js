@@ -48,6 +48,7 @@ const LeadPackageAssignment = {
   findAll: jest.fn().mockResolvedValue([mockAssignment]),
   findByPk: jest.fn().mockResolvedValue(mockAssignment),
   create: jest.fn().mockResolvedValue(mockAssignment),
+  bulkCreate: jest.fn().mockResolvedValue([mockAssignment]),
   count: jest.fn().mockResolvedValue(0),
 };
 
@@ -267,17 +268,40 @@ describe('leadPackageService (unit)', () => {
 
   describe('assignPackage', () => {
     it('assigns a package to an agent', async () => {
+      LeadPackageAssignment.findAll.mockResolvedValueOnce([]); // no active dup for this pair
       const result = await assignPackage({ agentId: 'agent-1', packageId: 'pkg-1' });
 
-      expect(LeadPackageAssignment.create).toHaveBeenCalledWith(
-        expect.objectContaining({
+      expect(LeadPackageAssignment.bulkCreate).toHaveBeenCalledWith(
+        [expect.objectContaining({
           agentId: 'agent-1',
           leadPackageId: 'pkg-1',
           status: 'active',
-        })
+        })],
+        expect.objectContaining({ returning: true })
       );
+      expect(result.alreadyAssigned).toBe(false);
       expect(result.agent).toBeDefined();
       expect(result.packageInfo.name).toBe('Gold Package');
+    });
+
+    it('returns the existing active assignment instead of duplicating (alreadyAssigned)', async () => {
+      User.findByPk.mockResolvedValue(mockAgent);
+      LeadPackage.findByPk.mockResolvedValue(mockPackage);
+      LeadPackageAssignment.findAll.mockResolvedValueOnce([mockAssignment]); // dup-check hit
+
+      const result = await assignPackage({ agentId: 'agent-1', packageId: 'pkg-1' });
+
+      expect(result.alreadyAssigned).toBe(true);
+      expect(result.assignment).toBe(mockAssignment);
+      expect(LeadPackageAssignment.bulkCreate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-active (draft/archived) package', async () => {
+      User.findByPk.mockResolvedValue(mockAgent);
+      LeadPackage.findByPk.mockResolvedValue({ ...mockPackage, status: 'archived' });
+
+      await expect(assignPackage({ agentId: 'agent-1', packageId: 'pkg-1' }))
+        .rejects.toThrow('Package is not active');
     });
 
     it('throws when agent not found', async () => {

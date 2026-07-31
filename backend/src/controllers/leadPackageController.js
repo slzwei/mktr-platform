@@ -61,14 +61,17 @@ export const assignPackage = asyncHandler(async (req, res) => {
   }
 
   const { agentId, packageId } = req.body;
-  const { assignment, agent, packageInfo } = await leadPackageService.assignPackage({
+  const { assignment, agent, packageInfo, alreadyAssigned } = await leadPackageService.assignPackage({
     agentId,
     packageId
   });
 
-  // Send email notification (async, don't block response)
-  sendPackageAssignmentEmail(agent, packageInfo)
-    .catch(err => console.error('Failed to send package assignment email:', err));
+  // Send email notification (async, don't block response). A double-click
+  // returns the existing assignment — don't email the agent twice for it.
+  if (!alreadyAssigned) {
+    sendPackageAssignmentEmail(agent, packageInfo)
+      .catch(err => console.error('Failed to send package assignment email:', err));
+  }
 
   res.status(201).json({
     success: true,

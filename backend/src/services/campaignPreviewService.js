@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Campaign, CampaignPreview } from '../models/index.js';
 import { buildPublicDesignConfig } from '../utils/publicDesignConfig.js';
+import { publicScreeningCallback } from '../utils/screeningEnv.js';
 
 function generateSlug() {
   return crypto.randomBytes(16).toString('hex');
@@ -65,11 +66,13 @@ export async function resolveSlug(slug) {
 
   let snapshot = preview.snapshot;
   if (campaign) {
+    const screeningCallback = publicScreeningCallback(campaign.design_config);
     snapshot = {
       ...snapshot,
       // Public endpoint: whitelist-rebuild, never the raw JSONB (it carries
       // internal luckyDraw activation/terms ids).
       design_config: buildPublicDesignConfig(campaign.design_config),
+      ...(screeningCallback ? { screeningCallback } : {}),
       name: campaign.name,
       type: campaign.type,
       min_age: campaign.min_age,
@@ -106,6 +109,11 @@ export async function getPublicCampaign(id) {
   // (luckyDraw activation/terms ids, future keys). This endpoint is public —
   // rebuild through the whitelist, never dump the raw column.
   const plain = campaign.toJSON();
+  // Sibling of design_config, NOT inside it: the notice is env-derived (the
+  // number the dialer calls from), so it must not ride the pure doc whitelist.
+  // Null unless this campaign's gate is on AND the deployment can really dial.
+  const screeningCallback = publicScreeningCallback(plain.design_config);
   plain.design_config = buildPublicDesignConfig(plain.design_config);
+  if (screeningCallback) plain.screeningCallback = screeningCallback;
   return plain;
 }

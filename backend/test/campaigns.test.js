@@ -244,6 +244,33 @@ describe('Campaign search and filtering', () => {
       expect(campaigns.every(c => c.status === 'draft')).toBe(true)
     }
   })
+
+  // Regression (P0-1): the search filter used to overwrite the non-admin role
+  // scope (both assigned where[Op.or]), so ?search= leaked every campaign —
+  // including other users' private ones — to any authenticated user.
+  it('GET /api/campaigns?search= — non-admin never sees a private campaign owned by someone else', async () => {
+    const foreignPrivate = await createTestCampaign(adminUser.id, {
+      name: 'ScopeLeak Probe Foreign',
+      status: 'active',
+      isPublic: false
+    })
+    const ownPrivate = await createTestCampaign(agentUser.id, {
+      name: 'ScopeLeak Probe Own',
+      status: 'active',
+      isPublic: false
+    })
+
+    const res = await request(app)
+      .get('/api/campaigns?search=ScopeLeak')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    const ids = res.body.data.campaigns.map(c => c.id)
+    expect(ids).not.toContain(foreignPrivate.id)
+    // Search must still return the requester's own matches — the scope and the
+    // search combine, neither replaces the other.
+    expect(ids).toContain(ownPrivate.id)
+  })
 })
 
 describe('Campaign update', () => {

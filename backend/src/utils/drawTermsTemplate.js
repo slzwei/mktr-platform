@@ -1,0 +1,132 @@
+/**
+ * Deterministic starter Terms & Conditions for a lucky-draw campaign — the
+ * BACKEND twin of src/components/campaigns/workspace/drawTermsTemplate.js
+ * (same twin discipline as designConfigV2 / listingDerivation: byte-identical
+ * template logic, edit BOTH or the copies drift; the frontend file's unit
+ * suite pins the wording, the backend port test pins parity of this port).
+ *
+ * The workspace create flow builds these terms in the browser and the server
+ * pins whatever arrives (ensureDrawTermsVersion). This twin exists for the
+ * server-side paths that must mint terms WITHOUT a browser payload — today:
+ * duplicateCampaign carrying an open draw onto the copy, where the terms must
+ * state the COPY's campaign name and facts, never the original's.
+ *
+ * Never LLM output — draw terms are deterministic template facts
+ * (docs/plans/studio-ai-full-coverage-plan.md).
+ */
+
+import { MAX_PRIZE_NAME, MAX_PRIZE_ROWS, MAX_PRIZE_QTY } from './luckyDrawCaps.js';
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** '2026-10-30' → '30 October 2026' (string split — SGT calendar date). */
+export function formatLongDate(ymd) {
+  const m = typeof ymd === 'string' ? ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+  if (!m) return '';
+  const month = MONTHS[Number(m[2]) - 1];
+  return month ? `${Number(m[3])} ${month} ${m[1]}` : '';
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+/** Legal-style count words, 1..99 ("One", "Three", "Twenty-five"); digits beyond. */
+export function numberWords(n) {
+  if (!Number.isInteger(n) || n < 1 || n > 99) return String(n);
+  if (n < 20) return ONES[n];
+  const tens = TENS[Math.floor(n / 10)];
+  const one = n % 10;
+  return one ? `${tens}-${ONES[one].toLowerCase()}` : tens;
+}
+
+/**
+ * Valid rows only, under the SAME caps as the server normalizer (luckyDraw.js
+ * cleanPrizes): first MAX_PRIZE_ROWS valid rows, names trimmed and cut to
+ * MAX_PRIZE_NAME, qty an integer 1..MAX_PRIZE_QTY else coerced to 1 — so the
+ * terms never state a fact the save-time clamp would rewrite (draw
+ * promise-consistency gate).
+ */
+function cleanRows(prizes) {
+  if (!Array.isArray(prizes)) return [];
+  const out = [];
+  for (const p of prizes) {
+    if (out.length >= MAX_PRIZE_ROWS) break;
+    if (!p || typeof p.name !== 'string') continue;
+    const name = p.name.trim().slice(0, MAX_PRIZE_NAME);
+    if (!name) continue;
+    const qty = Number(p.qty);
+    out.push({ qty: Number.isInteger(qty) && qty >= 1 && qty <= MAX_PRIZE_QTY ? qty : 1, name });
+  }
+  return out;
+}
+
+/**
+ * @param {object} opts
+ * @param {string} opts.campaignName  e.g. "iPhone Lucky Draw — August 2026"
+ * @param {Array<{qty:number,name:string}>} [opts.prizes]  structured prizes, award order
+ * @param {string} [opts.prize]      legacy single free-text prize (used when prizes absent)
+ * @param {string} opts.closesAt     YYYY-MM-DD (SGT)
+ * @param {string} [opts.boostClosesAt]  YYYY-MM-DD; defaults to closesAt
+ * @param {number} [opts.multiplier]     default 10
+ * @param {number} [opts.minAge]         default 18 (defaults keep legacy output byte-identical)
+ * @param {number} [opts.maxAge]         optional ceiling — when set (and sane), the eligibility
+ *                                       clause reads "aged N to M" (D8: the capture gate DOES
+ *                                       enforce max_age when a DOB is collected, so the terms
+ *                                       must state both bounds, never "and above")
+ * @param {'sms'|'whatsapp'} [opts.verification]  default 'sms'
+ */
+export function buildDrawTermsHtml({ campaignName, prizes, prize, closesAt, boostClosesAt, multiplier = 10, minAge = 18, maxAge = null, verification = 'sms' }) {
+  const name = escapeHtml((campaignName || '').trim() || 'Lucky Draw');
+  const rows = cleanRows(prizes);
+  const legacyRows = rows.length ? rows : cleanRows(prize ? [{ qty: 1, name: prize }] : []);
+  const total = legacyRows.reduce((sum, p) => sum + p.qty, 0);
+  const closesLong = formatLongDate(closesAt);
+  const boostLong = formatLongDate(boostClosesAt || closesAt) || closesLong;
+  const m = Number.isInteger(multiplier) && multiplier >= 2 ? multiplier : 10;
+
+  // One prize unit → the exact legacy singular wording (regression-pinned);
+  // multiple units → enumerated prizes, N winners, exhaust-quantity award order.
+  const single = total <= 1;
+  const prizeClause = single
+    ? `<p><strong>Prize:</strong> ${escapeHtml(legacyRows[0]?.name || '')}. The prize is not exchangeable for cash and is subject to availability and any conditions advised to the winner.</p>`
+    : [
+        '<p><strong>Prizes:</strong></p>',
+        '<ol>',
+        ...legacyRows.map((p) => `<li>${numberWords(p.qty)} (${p.qty}) &times; ${escapeHtml(p.name)}</li>`),
+        '</ol>',
+        '<p>Prizes are not exchangeable for cash and are subject to availability and any conditions advised to winners.</p>',
+      ].join('\n');
+  const drawClause = single
+    ? `<p><strong>The draw:</strong> One winner is drawn at random from all verified entries after the entry period closes, in a process witnessed by MKTR staff. Completing a complimentary financial-review session on or before ${boostLong} earns you ${m} entries instead of one.</p>`
+    : `<p><strong>The draw:</strong> ${numberWords(total)} (${total}) winners are drawn at random from all verified entries after the entry period closes, in a process witnessed by MKTR staff. Prizes are awarded in the order listed above, with each prize awarded its stated number of times before the draw moves to the next. Each verified mobile number can win at most one prize. Completing a complimentary financial-review session on or before ${boostLong} earns you ${m} entries instead of one.</p>`;
+  const notifyClause = single
+    ? "<p><strong>Winner notification &amp; claim:</strong> The winner is contacted directly by phone or SMS using the details provided and has fourteen (14) days to respond and claim. If unclaimed within 14 days, a replacement winner is drawn. Results are posted, with the winner's masked details, at redeem.sg/winners.</p>"
+    : "<p><strong>Winner notification &amp; claim:</strong> Winners are contacted directly by phone or SMS using the details provided, and each has fourteen (14) days to respond and claim. If a prize is unclaimed within 14 days, a replacement winner is drawn for that prize. Results are posted, with each winner's masked details, at redeem.sg/winners.</p>";
+
+  return [
+    `<h3>Redeem &times; MKTR &mdash; ${name}</h3>`,
+    '<p><strong>Promoter:</strong> MKTR PTE. LTD. (UEN 202507548M), Singapore. Redeem is a service of MKTR PTE. LTD.</p>',
+    prizeClause,
+    (() => {
+      const minEff = Number.isInteger(minAge) && minAge > 18 ? minAge : 18;
+      const maxEff = Number.isInteger(maxAge) && maxAge > minEff && maxAge < 130 ? maxAge : null;
+      const ageClause = maxEff ? `aged ${minEff} to ${maxEff}` : `aged ${minEff} and above`;
+      return `<p><strong>Eligibility &amp; entry:</strong> Open to Singapore residents ${ageClause}. Entry is free. Complete the form and verify your mobile number with the one-time ${verification === 'whatsapp' ? 'WhatsApp' : 'SMS'} code &mdash; one entry per verified mobile number.</p>`;
+    })(),
+    `<p><strong>Entry period:</strong> Entries close at 23:59 (SGT) on ${closesLong}. Entries received after that time are not eligible.</p>`,
+    drawClause,
+    notifyClause,
+    '<p><strong>Data &amp; contact:</strong> By entering you agree to be contacted by MKTR and its financial-advisory representatives about this promotion and related services, in line with our Personal Data Policy. We honour the Do Not Call registry and every opt-out.</p>',
+    '<p><strong>Integrity:</strong> MKTR will never ask you to pay a fee to release a prize. Anyone requesting payment is not us &mdash; report them to hello@redeem.sg.</p>',
+  ].join('\n');
+}

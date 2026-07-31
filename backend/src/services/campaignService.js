@@ -10,6 +10,7 @@ import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy, normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { PASS_THEMES } from '../utils/drawTheme.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
+import { buildDrawTermsHtml } from '../utils/drawTermsTemplate.js';
 import { checkDrawConsistency } from '../utils/drawConsistency.js';
 import {
   classifyDesignConfigVersion,
@@ -20,6 +21,7 @@ import {
 } from '../utils/designConfigV2Clamp.js';
 import { invalidateMarketplaceCache } from './marketplaceCache.js';
 import { invalidateFeaturedDropsCache } from './featuredDropsService.js';
+import { logger } from '../utils/logger.js';
 import { refundCampaignCommitments } from './walletService.js';
 
 /**
@@ -81,6 +83,18 @@ const drawFactsOf = (doc) => {
 };
 
 const SLUG_RE = /^[a-z0-9-]{3,80}$/;
+
+/**
+ * Strip HTML tags from a user-supplied campaign name. The name is interpolated
+ * into HTML-string surfaces that do NOT escape (agent lead-/package-assignment
+ * emails in mailer.js) and into generated draw terms, so a stored
+ * `<img onerror=…>` must die at the door. ONE sanitiser for every write path —
+ * create, update, duplicate — a PUT must not reintroduce what POST strips.
+ * Non-strings pass through untouched for Joi/model validation to reject.
+ */
+export function sanitizeCampaignName(value) {
+  return typeof value === 'string' ? value.replace(/<[^>]*>/g, '').trim() : value;
+}
 
 /** Wallet commit price: null/'' clears; else a positive integer in cents. */
 function normalizeLeadPriceCents(value) {
@@ -287,9 +301,13 @@ function buildCampaignWhere(req, extra = {}) {
   } catch (_) { /* skip in dev */ }
 
   if (req.user.role !== 'admin') {
-    where[Op.or] = [
-      { createdBy: req.user.id },
-      { isPublic: true }
+    // The role scope lives inside Op.and — never as a bare where[Op.or] — so a
+    // later filter that also needs an OR group (e.g. the search filter) cannot
+    // overwrite it. Assigning the same symbol key twice silently drops the
+    // first group, which leaked every campaign to any authenticated user.
+    where[Op.and] = [
+      ...(where[Op.and] || []),
+      { [Op.or]: [{ createdBy: req.user.id }, { isPublic: true }] }
     ];
   }
 
@@ -338,9 +356,16 @@ export async function listCampaigns(user, query, req) {
 
   if (search) {
     const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
-    where[Op.or] = [
-      { name: { [Op.iLike]: `%${sanitizedSearch}%` } },
-      { description: { [Op.iLike]: `%${sanitizedSearch}%` } }
+    // Append inside Op.and — the role scope from buildCampaignWhere is an OR
+    // group too, and both must hold at once.
+    where[Op.and] = [
+      ...(where[Op.and] || []),
+      {
+        [Op.or]: [
+          { name: { [Op.iLike]: `%${sanitizedSearch}%` } },
+          { description: { [Op.iLike]: `%${sanitizedSearch}%` } }
+        ]
+      }
     ];
   }
 
@@ -455,10 +480,7 @@ export function assertDrawActivatable(designConfig) {
 export async function createCampaign(body, user) {
   const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
 
-  // Defense-in-depth: strip HTML tags from the name so a stored payload like
-  // `<img src=x onerror=...>` can't ride along into any surface that renders it
-  // unescaped (e.g. PDF/email templates), independent of frontend escaping.
-  const safeName = typeof name === 'string' ? name.replace(/<[^>]*>/g, '').trim() : name;
+  const safeName = sanitizeCampaignName(name);
 
   const campaignData = {
     name: safeName,
@@ -554,7 +576,14 @@ export async function createCampaign(body, user) {
         const rail = await ensureRail({ campaign, designConfig: withTerms, user });
         withTerms = stampRailActivationId(withTerms, rail.activationId);
       } catch (err) {
-        await campaign.update({ is_active: false, status: 'draft', design_config: withTerms }).catch(() => {});
+        await campaign.update({ is_active: false, status: 'draft', design_config: withTerms }).catch((revertErr) => {
+          // Both the rail AND the compensating demote failed: the campaign may
+          // be live promising a pass that can never issue — the one state the
+          // revert exists to prevent. Needs a human.
+          logger.error('[Campaign] draw rail arming failed AND the demote-to-draft revert failed — campaign may be active without an armed rail', {
+            campaignId: campaign.id, error: revertErr?.message || String(revertErr),
+          });
+        });
         throw err;
       }
     }
@@ -598,7 +627,7 @@ export async function updateCampaign(id, body, req) {
   const { name, type, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
 
   const updateData = {};
-  if (name) updateData.name = name;
+  if (name) updateData.name = sanitizeCampaignName(name);
   if (type !== undefined) updateData.type = type;
   if (min_age !== undefined) updateData.min_age = min_age;
   if (max_age !== undefined) updateData.max_age = max_age;
@@ -988,11 +1017,29 @@ export async function duplicateCampaign(id, body, req) {
   if (!original) throw new AppError('Campaign not found or access denied', 404);
 
   const { metrics: _discardedMetrics, ...rest } = original.toJSON();
+  // Sanitise the DERIVED default too: a pre-fix row whose stored name carries
+  // markup must not re-propagate it through duplication (or into the copy's
+  // generated draw terms below).
+  const copyName = sanitizeCampaignName(body.name || `${original.name} (Copy)`);
+  // An OPEN draw (SGT close date still in the future) carries onto the copy —
+  // ADMIN duplicates only, matching applyLuckyDrawPolicy (luckyDraw is an
+  // admin-only key; anyone else keeps the historical strip). What carries is
+  // the SHAPE — prizes, dates, multiplier, colourway — never the original's
+  // operational stamps: activationId (the copy's rail is provisioned at ITS
+  // launch), termsVersionId/termsHash (the copy mints its OWN terms v1 after
+  // create, naming the copy). A CLOSED or dateless draw does not carry at
+  // all: draw dates are create-time-only in every editor, so a copy born
+  // with a past close date could never be edited into a launchable draw.
+  const origDraw = req.user?.role === 'admin'
+    ? normalizeLuckyDraw(getStoredLuckyDraw(rest.design_config))
+    : undefined;
+  const origDrawCloseMs = origDraw?.enabled === true ? sgtDayEndExclusiveMs(origDraw.closesAt) : null;
+  const carryDraw = origDrawCloseMs !== null && origDrawCloseMs > Date.now();
   // Never clone homepage publication: a duplicate of a featured campaign must
-  // not silently appear on redeem.sg when it is later activated. Never clone
-  // luckyDraw either — its dates, activation, and terms version are all
-  // campaign-specific (docs/plans/lucky-draw-10x.md §4.1); a duplicate must be
-  // deliberately re-enabled as its own draw.
+  // not silently appear on redeem.sg when it is later activated. luckyDraw is
+  // stripped by default (dates, activation, and terms version are all
+  // campaign-specific — docs/plans/lucky-draw-10x.md §4.1) and re-added below
+  // only under the carryDraw rules above.
   const dupDesign = (() => {
     if (!rest.design_config || typeof rest.design_config !== 'object') return rest.design_config;
     // marketplaceListed never clones either — a duplicate of a listed campaign
@@ -1017,6 +1064,39 @@ export async function duplicateCampaign(id, body, req) {
       }
       copy.distribution = distribution;
     }
+    if (carryDraw) {
+      // Whitelisted, normalized shape only — the stamps named above can never
+      // ride along, whatever the stored row accumulated.
+      const carried = {};
+      for (const key of ['enabled', 'prizes', 'prize', 'winners', 'closesAt', 'boostClosesAt', 'drawOn', 'multiplier', 'passTheme', 'bookingUrl']) {
+        if (origDraw[key] !== undefined) carried[key] = origDraw[key];
+      }
+      copy.luckyDraw = carried;
+      // The copy's terms state the COPY's name and facts — cloning the
+      // original's terms verbatim would pin a T&C naming a different
+      // campaign. Same deterministic template as the workspace create flow
+      // (backend twin); minAge/maxAge/verification come from the cloned row
+      // so the rebuilt terms can never contradict the copy's own gates.
+      const isV2 = classifyDesignConfigVersion(copy) === 'v2';
+      const termsHtml = buildDrawTermsHtml({
+        campaignName: copyName,
+        prizes: origDraw.prizes,
+        prize: origDraw.prize,
+        closesAt: origDraw.closesAt,
+        boostClosesAt: origDraw.boostClosesAt,
+        multiplier: origDraw.multiplier,
+        minAge: Number(rest.min_age) || 18,
+        maxAge: Number(rest.max_age) || null,
+        verification: (isV2 ? copy.form?.verification : copy.otpChannel) === 'whatsapp' ? 'whatsapp' : 'sms',
+      });
+      if (isV2) {
+        const form = copy.form && typeof copy.form === 'object' ? copy.form : {};
+        const terms = form.terms && typeof form.terms === 'object' ? form.terms : {};
+        copy.form = { ...form, terms: { ...terms, html: termsHtml } };
+      } else {
+        copy.termsContent = termsHtml;
+      }
+    }
     return copy;
   })();
   // A versioned (v2 Studio) duplicate goes through the SAME write gate as
@@ -1036,7 +1116,7 @@ export async function duplicateCampaign(id, body, req) {
     ...rest,
     design_config: dupDesignFinal,
     id: undefined,
-    name: body.name || `${original.name} (Copy)`,
+    name: copyName,
     status: 'draft',
     createdBy: req.user.id,
     spentAmount: 0,
@@ -1051,6 +1131,15 @@ export async function duplicateCampaign(id, body, req) {
     createdAt: undefined,
     updatedAt: undefined
   });
+
+  // A carried draw pins the COPY's own terms v1 — the version row needs the
+  // new campaign id, so this mirrors createCampaign's ensure-after-create
+  // ordering (a crash between create and this pin self-heals: the next
+  // design_config save re-runs ensureDrawTermsVersion idempotently).
+  if (carryDraw) {
+    const withTerms = await ensureDrawTermsVersion(dupDesignFinal, copy.id, req.user.id);
+    await copy.update({ design_config: withTerms });
+  }
 
   // Duplicate agent assignments from the original campaign
   const originalAgents = await CampaignAgentAssignment.findAll({

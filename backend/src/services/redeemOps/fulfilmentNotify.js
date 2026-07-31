@@ -134,7 +134,7 @@ export function makeFulfilmentNotify(overrides = {}) {
         <p><strong>${drawCtx.multiplier}x your chances when you meet with a consultant:</strong> complete your complimentary 20-minute financial review and they will scan this pass at the session.</p>
         <p style="text-align:center;margin:20px 0"><img src="cid:reservation-qr" width="320" height="320" style="max-width:100%" alt="Entry pass QR"/></p>
         <p style="text-align:center"><a href="${link}" style="color:#2563eb">View your entry pass</a></p>
-        <p style="color:#6b7280;font-size:12px">Reviews must be completed by ${escapeHtml(boostDeadlineLong(drawCtx.boostClosesAt) || 'the close date')} to count. We never ask you to pay to release a prize.</p>
+        <p style="color:#6b7280;font-size:12px">Reviews must be completed by ${escapeHtml(boostDeadlineLong(drawCtx.boostClosesAt) || 'the close date')} to count.</p>
       </div>` : `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
         <h2 style="margin:0 0 8px">Your ${escapeHtml(rewardName)} is reserved 🎁</h2>
@@ -188,8 +188,7 @@ export function makeFulfilmentNotify(overrides = {}) {
         <p>Your consultant has recorded your completed review — your entry to
         <strong>${escapeHtml(drawName)}</strong> now holds <strong>${m} chances</strong> instead of one.</p>
         ${cardPng ? '<p style="text-align:center;margin:20px 0"><img src="cid:boost-card" width="320" height="320" style="max-width:100%" alt="Boost unlocked"/></p>' : ''}
-        <p style="color:#6b7280;font-size:12px">Nothing else to do — winners are contacted directly after the draw.
-        We never ask you to pay to release a prize.</p>
+        <p style="color:#6b7280;font-size:12px">Nothing else to do — winners are contacted directly after the draw.</p>
       </div>`;
     return deliver({
       to: prospect.email,

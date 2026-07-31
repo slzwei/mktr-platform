@@ -9,6 +9,7 @@ import {
 } from '../models/index.js';
 import { hashToken } from '../services/redeemOps/tokens.js';
 import { drawContextForActivation, boostDeadlineLong } from '../services/redeemOps/drawLink.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * PUBLIC consumer reward view — backs redeem.sg/r/:token
@@ -90,8 +91,15 @@ router.get('/:token', claimLimiter, asyncHandler(async (req, res) => {
   };
 
   // Draw-rail voice (PR-4, F13/CX22): the page belongs to a LUCKY DRAW entry
-  // pass — its states are draw states, never partner-voucher states.
-  const drawCtx = await drawContextForActivation(entitlement.activationId).catch(() => null);
+  // pass — its states are draw states, never partner-voucher states. Display
+  // only (no credential minted here), so a lookup error degrades to voucher
+  // voice — but loudly, since the page then misdescribes what the pass is.
+  const drawCtx = await drawContextForActivation(entitlement.activationId).catch((err) => {
+    logger.warn('[RewardClaim] draw context lookup failed — rendering voucher voice', {
+      entitlementId: entitlement.id, error: err?.message,
+    });
+    return null;
+  });
 
   // Locked reservation → the meeting pass (only when the link used the presentation token)
   if (entitlement.status === 'eligible' && entitlement.presentationTokenHash === hash && !expired) {

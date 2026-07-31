@@ -323,6 +323,40 @@ attempt). The existing private recording breaker is untouched.
    pg advisory lock `screening_dial`.
 8. Phone re-validated E.164.
 
+### §7.1a First-dial delay + the success-page promise (2026-07-30)
+The capture path **schedules** rather than dials: `scheduleScreeningAttempt()`
+(the entry point both `prospectService.createProspect` and the `dncGate`
+handoff now use) waits `SCREENING_DIAL_DELAY_SECONDS` — default **60**, clamp
+`0..900`, `0` = the pre-2026-07-30 dial-immediately behaviour. Retries are
+untouched: they keep their own §7.3 backoff, and the sweep still calls
+`startScreeningAttempt` directly.
+
+Durable-first, like everything else here. The delay is **stamped** on the row
+(`screeningNextAttemptAt`, through the same fenced `deferAttempt` write the
+sweep's due-retry job reads), and the in-process `setTimeout` is only a
+punctuality optimisation: a crash, redeploy, or dyno swap inside the window
+costs lateness (≤ one sweep interval), never the call. The timer is `unref`'d,
+re-reads the row before the guards run, and the fenced claim makes a
+timer/sweep race a no-op for the loser. A schedule is never stamped when the
+guards already reject the lead — an unstamped-but-doomed row would otherwise be
+re-selected by the sweep every pass until TTL.
+
+**Why:** the draw success page now tells the consumer the call is coming
+(`DrawSuccessPage` → `data-draw-callback`, copy in `src/lib/screeningCallback.js`),
+and ringing before they have finished reading it is what the delay buys away.
+
+The page's notice is **server-fed and fail-closed** — `campaign.screeningCallback`,
+built by `backend/src/utils/screeningEnv.js#publicScreeningCallback` and attached
+by both public campaign hydrations (`campaignPreviewService.getPublicCampaign` /
+`resolveSlug`, `trackerService.getSession`). It is `null` — and the block does
+not render — unless the campaign's gate is on AND the deployment can really
+dial (enabled + agent id + from-number + `RETELL_API_KEY`, not dry-run). The
+from-number clamp lives in that util and `screeningConfig()` reads it from
+there, so **the number printed is by construction the number dialled from**.
+Outside `SCREENING_CALL_WINDOW` the payload reports `windowOpen:false` and the
+copy promises the window open ("after 10am") instead of a minute it cannot
+deliver at 2am.
+
 ### §7.2 Attempt lifecycle — token-first (Codex #3)
 1. Mint local token `att_<uuid>`; fenced claim:
    `SET screeningActiveCallId='pend_'+token, screeningAttemptCount=screeningAttemptCount+1,
@@ -608,6 +642,89 @@ expected):
 
 Rollback: master off ⇒ drain (§10.5); verdict holds remain for triage; migration
 stays (additive).
+
+---
+
+## §16.5 Callback handling — script v9 (2026-07-25, post-soak)
+
+The opener asks "is now a good time?", so "call me later" is the single most
+likely first-turn answer. v8 treated it as a HARD-NO ESCAPE (hang up, no
+rebuttal, no time captured), and the backend then redialled on the blind
+`retryMinutes × 2^(n−1)` ladder regardless of what the person had asked for.
+Worse, a verdict-less call wrote NO evidence: `verdictDetail` is only written by
+the qualified/not-qualified transitions (§9.1, §9.3), so the reason, summary and
+transcript were discarded and the drawer showed nothing but an attempt count and
+an audio file.
+
+Now:
+
+1. **Script v9** (agent `agent_4ea24f4a01e44f5c7ad14f3638` v9, LLM v9). Timing
+   is split out of the hard-no escape: ONE light "three quick yes-or-no
+   questions, thirty seconds" attempt, then — if they still can't — "later today
+   or tomorrow?", acknowledge, end. Never negotiates a clock time. Driving / in a
+   meeting / annoyed / firm no / wrong person still escape immediately.
+2. **New analysis field** `callback_window ∈ {none, later_today, tomorrow,
+   this_week}`, alongside `qualified: 'incomplete'` (which already covers a call
+   that never reached all three checks).
+3. **`callbackRetryAt(cfg, window, {now, quarantinedAt})`** maps it onto an
+   instant: +3h / +12h / +60h, clamped into the call window (so "tomorrow" lands
+   at the next open) and never past `quarantinedAt + 2 × maxHoldHours`.
+4. **One bonus attempt per lead.** `resolveAttemptFailure` takes `retryAt`; when
+   present it replaces the backoff and — first time only — writes
+   `screeningMetadata.callbackGranted`, lifting that lead's cap to
+   `maxAttempts + 1`. Someone who answers and asks for a ring-back has not
+   burned a reach; someone who keeps deferring still runs out. The grant rides
+   the fenced clear, so a replayed webhook cannot grant twice.
+5. **TTL respects the promise** (sweep job 3): a granted lead whose
+   `screeningNextAttemptAt` is still in the future is skipped, bounded by the
+   same 2× hold ceiling. Job 5's attempt cap carries the matching `+1`.
+6. **Evidence.** A verdict-less attempt now stores `outcome` (`no_verdict` /
+   `unanswered` / `qualified` / `not_qualified`) plus reason, summary, sentiment,
+   transcript and the raw checks — but only when no verdict transition will
+   capture them, so a 20k transcript is never duplicated. The drawer prints a
+   per-attempt line and, for a granted callback, the promised time.
+
+Not covered: nothing schedules the ring-back outside the 10:00–20:00 window, and
+a "next week" request is still clamped to the hold ceiling — past that, TTL
+releases the lead unscreened by policy (D1). WhatsApp fallback is §16.6.
+
+## §16.6 WhatsApp callback opt-in (BUILT 2026-07-25; template APPROVED same day)
+
+Template `draw_callback_optin` (MARKETING, id 1587973386015533, WABA
+1912683432731970) — the messaging leg for leads a dial cannot finish. The URL
+button's tap IS the consent: the person asking to be called is what makes the
+ring-back welcome. Copy follows the ×N-is-the-TOTAL contract, not the phone
+script's "N more chances" register. Definition + submitter:
+`backend/scripts/submit-wa-marketing-templates.mjs` (`--callback-only`).
+
+The full loop, all shipped:
+
+1. **Trigger** (`retellScreeningService.maybeSendWaCallbackInvite`, fired
+   fire-and-forget from `resolveAttemptFailure`): at most ONE invite per lead
+   (fenced `screeningMetadata.waCallback` claim), when the lead is still held
+   with attempts left and either a connected call ended verdict-less with NO
+   voice-booked callback, or the 2nd dial went unanswered (one dial before the
+   release policy would take the row away). Guards before the claim: draw
+   campaign only (the template speaks draw language), campaign active,
+   `canMarketTo` — and `sendTemplate` re-checks `purpose:'marketing'`
+   (full canMarketTo, fail-closed) at send time; a marketing unsubscribe
+   blocks it while transactional sends stay untouched.
+2. **Token**: `wcb_<32hex>` minted per invite, stored in `idempotency_keys`
+   (scope `screening:wa_callback`, key `wacb:<token>` → `{prospectId}`),
+   expiring at the same 2×maxHoldHours ceiling the TTL sweep grants a promise.
+3. **Page**: `redeem.sg/callback?t=<token>` (`src/pages/ScreeningCallback.jsx`,
+   Vault-pass palette). GET `/api/screening-callback/:token` returns first
+   name + draw context only; states ready / in_flight / done / invalid.
+4. **The tap**: POST with `window ∈ {asap(+10m), later_today, tomorrow}` →
+   `applyWaCallbackRequest`: fenced schedule write (`screeningNextAttemptAt` =
+   `callbackRetryAt`, window-clamped + ceiling-capped) + the SAME
+   `callbackGranted` bonus flag as the phone path (one bonus per lead total;
+   re-taps only move the time) + a ProspectActivity consent record with the
+   chosen window. The existing sweep then dials — every dial guard re-runs, so
+   a tap can never bypass window/DNC/consent/budget/concurrency.
+5. **Evidence**: drawer shows "wa invite <sent-at> · tapped (<window>)" and the
+   scheduled callback time. Route is public + rate-limited (60/15min,
+   reward-claim parity) and outside the redeem-host blocklist.
 
 ---
 

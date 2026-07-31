@@ -11,7 +11,6 @@ export default {
   setupFiles: ['./test/setup.js'],
   collectCoverageFrom: [
     'src/**/*.js',
-    '!src/tests/**',
     '!src/database/migrations/**',
     '!src/database/seed/**',
   ],

@@ -30,11 +30,11 @@ import { MediaBlock } from './templates';
 import { accentTextOn, resolveTheme } from '@/lib/designConfigV2';
 import {
   DRAW_TRUST_ROW_DEFAULT,
-  DRAW_SCAM_LINE_DEFAULT,
   drawWinnersNoteDefault,
   drawCtaSublineDefault,
   drawBoostBodyDefault,
 } from '@/lib/drawCopy';
+import { screeningCallbackLine } from '@/lib/screeningCallback';
 import { heroFontStack } from '@/lib/heroFonts';
 
 const SANS = "'Albert Sans', system-ui, sans-serif";
@@ -102,7 +102,10 @@ function drawStrings(luckyDraw, campaignName, drawCopy = {}) {
     kicker: (campaignName || '').toUpperCase(),
     boostBody: ov(drawCopy.boostBody) || drawBoostBodyDefault(m, boostFull),
     trustRow: ov(drawCopy.trustRow) || DRAW_TRUST_ROW_DEFAULT,
-    scamLine: ov(drawCopy.scamLine) || DRAW_SCAM_LINE_DEFAULT,
+    // No default since 2026-07-25 — the payment-integrity line is T&C-only
+    // (drawTermsTemplate "Integrity" clause). Renders ONLY when an operator
+    // sets content.drawCopy.scamLine.
+    scamLine: ov(drawCopy.scamLine) || '',
     winnersNote: ov(drawCopy.winnersNote) || drawWinnersNoteDefault(winners),
     ctaSubline: ov(drawCopy.ctaSubline) || drawCtaSublineDefault(m),
     /** Site default varies (FREE ENTRY / LUCKY DRAW · FREE ENTRY / ADMIT 1
@@ -193,7 +196,7 @@ function DrawFootnotes({ draw, scamLine, linkColor, mutedColor, faintColor, cont
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: align }}>
       {draw && (
         <div data-se="content.drawCopy.scamLine" style={{ fontSize: 13.5, color: mutedColor, fontFamily: SANS }}>
-          {scamLine || DRAW_SCAM_LINE_DEFAULT} Masked results at <WinnersLink color={linkColor} />.
+          {scamLine ? `${scamLine} ` : ''}Masked results at <WinnersLink color={linkColor} />.
         </div>
       )}
       <div data-se="content.footer.regulatory" style={{ fontSize: 11, color: faintColor, fontFamily: SANS }}>
@@ -919,7 +922,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
  * the generic SuccessState when the campaign is a v2 draw on one of the five
  * draw templates. Chrome follows the template; content is shared.
  */
-export function DrawSuccessPage({ campaign, submittedPhone = null }) {
+export function DrawSuccessPage({ campaign, submittedPhone = null, screeningCallback = undefined }) {
   const doc = campaign?.design_config || {};
   const theme = resolveTheme(doc.theme || {});
   const fontStack = heroFontStack(theme.fontId);
@@ -928,6 +931,12 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
   const s = drawStrings(doc.luckyDraw, campaign?.name, content.drawCopy);
   const templateId = DRAW_TEMPLATE_IDS.includes(doc.template?.id) ? doc.template.id : 'postcard';
   const sub = successSubOf(submittedPhone);
+  // Explicit prop, never derived from the doc: the caller ID and the "can this
+  // deployment actually dial" answer are both server-side facts (see
+  // src/lib/screeningCallback.js). Absent ⇒ the block does not render, so a
+  // campaign whose screening gate is on but whose backend is dark never
+  // promises a call that will not come.
+  const callbackLine = screeningCallbackLine(screeningCallback);
   const bookingUrl = s.draw?.bookingUrl || null;
   const closesLine = s.closesMono ? `ENTRIES CLOSE ${s.closesMono} · 23:59 SGT` : '';
   const pal = drawPalette(templateId, theme);
@@ -977,6 +986,20 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
       <ChancesRow accent={chrome.tenX} accentLabel={accentTextOn(chrome.tenX, chrome.pageBg)} inkColor={chrome.ink} mutedColor={monoMut} multiplier={s.multiplier} serifStack={fontStack} />
     </div>
   );
+  /** Same box vocabulary as CHANCES so it reads as page furniture, not an
+   *  alert — but placed directly under the confirmation line, because a call
+   *  landing in ~a minute is the most time-sensitive thing on this page. */
+  const callbackBox = (wrapStyle, labelColor, bodyColor) => callbackLine && (
+    <div data-draw-callback style={{ display: 'flex', flexDirection: 'column', gap: 8, ...wrapStyle }}>
+      <div style={mono(12, { letterSpacing: 1.5, color: labelColor, fontWeight: 600 })}>INCOMING CALL</div>
+      <div style={{ fontSize: 14.5, lineHeight: 1.55, color: bodyColor, fontFamily: SANS }}>{callbackLine}</div>
+    </div>
+  );
+  const callback = callbackBox(
+    { ...chrome.box, padding: '14px 20px' },
+    templateId === 'gazette' ? pal.ink : accentOnBox,
+    chrome.body
+  );
   const nextSteps = (
     <div style={{ ...chrome.box, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <NextSteps
@@ -1025,6 +1048,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
             <div style={serifItalic(38, { color: pal.ink }, fontStack)}>{chrome.title}</div>
             <div style={{ fontSize: 16, lineHeight: 1.55, color: pal.body, fontFamily: SANS }}>{sub}</div>
           </div>
+          {callbackBox({ padding: '16px 18px 0' }, accentOnCard, pal.body)}
           <div style={{ padding: '16px 18px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={mono(12, { letterSpacing: 1.5, color: accentOnCard, fontWeight: 600 })}>CHANCES</div>
             <ChancesRow accent={accentOnCard} accentLabel={accentTextOn(accentOnCard, pal.card)} inkColor={pal.ink} mutedColor={monoMut} multiplier={s.multiplier} serifStack={fontStack} />
@@ -1050,6 +1074,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
         {chrome.wordmark && <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: chrome.ink, fontFamily: SANS }}>{content.wordmark}</div>}
         <div style={{ marginTop: chrome.masthead || chrome.header ? 22 : 26, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {intro}
+          {callback}
           {chances}
           {nextSteps}
           {closesLine && <div style={mono(12.5, { letterSpacing: 1, color: monoMut })}>{closesLine}</div>}

@@ -15,7 +15,7 @@ const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
  * Register a new user.
  * @returns {{ user: object, token: string }}
  */
-export async function register({ email, password, firstName, lastName, fullName, phone, role }) {
+export async function register({ email, password, firstName, lastName, fullName, phone }) {
   const existingUser = await User.findOne({ where: { email } });
   if (existingUser) {
     throw new AppError('User with this email already exists', 400);
@@ -28,7 +28,9 @@ export async function register({ email, password, firstName, lastName, fullName,
     lastName: lastName || undefined,
     fullName: fullName || undefined,
     phone,
-    role: role || 'customer',
+    // Self-registration ALWAYS creates a customer — no parameter can change
+    // this. Privileged roles come from admins or the invitation flow only.
+    role: 'customer',
     emailVerificationToken: uuidv4(),
   });
 
@@ -201,7 +203,13 @@ export async function googleIdTokenLogin({ email, googleSub, name, picture }) {
       password: null,
     });
   } else {
-    if (!user.googleSub) user.googleSub = googleSub;
+    if (!user.googleSub) {
+      user.googleSub = googleSub;
+    } else if (user.googleSub !== googleSub) {
+      // Same identity pin as googleOAuthCallback — both Google doors must enforce it.
+      logger.warn('Google ID mismatch for user. Stored sub differs from incoming sub.', { userId: user.id });
+      throw new AppError('Authentication failed', 401);
+    }
     if (!user.fullName && name) user.fullName = name;
     if (!user.avatarUrl && picture) user.avatarUrl = picture;
     user.lastLogin = new Date();
@@ -326,9 +334,10 @@ export async function googleOAuthCallback(code, origin) {
       logger.info('Linking existing user to Google ID (hardening)');
       await user.update({ googleSub: googleUser.id });
     } else if (user.googleSub !== googleUser.id) {
-      if (user.googleSub && user.googleSub !== googleUser.id) {
-        logger.warn('Google ID mismatch for user. Stored sub differs from incoming sub.', { userId: user.id });
-      }
+      // The stored sub is an identity pin: same email + different Google account
+      // (recycled/re-created address) must never mint a token for this user.
+      logger.warn('Google ID mismatch for user. Stored sub differs from incoming sub.', { userId: user.id });
+      throw new AppError('Authentication failed', 401);
     }
   }
 

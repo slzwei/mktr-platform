@@ -21,6 +21,7 @@ function LegacyDesignerRedirect() {
 const LeadCapture = lazy(() => import('./LeadCapture'));
 const LeadCaptureDemo = lazy(() => import('./LeadCaptureDemo'));
 const RewardClaim = lazy(() => import('./RewardClaim'));
+const ScreeningCallback = lazy(() => import('./ScreeningCallback'));
 const PublicPreview = lazy(() => import('./public/Preview'));
 const TrackRedirect = lazy(() => import('./TrackRedirect'));
 const ShareRedirect = lazy(() => import('./ShareRedirect'));
@@ -267,6 +268,8 @@ function PagesContent() {
  <Route path="/share/:slug" element={<ShareRedirect />} />
  {/* Consumer reward journey — reservation pass / voucher (docs/redeem-ops/ROUTE_MAP.md) */}
  <Route path="/r/:token" element={<RewardClaim />} />
+ {/* Screening-callback opt-in — the draw_callback_optin WhatsApp button lands here (?t=token) */}
+ <Route path="/callback" element={<ScreeningCallback />} />
 
  {/* Design exploration prototypes — mktr build only */}
  <Route path="/preview" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <PreviewHub />} />

@@ -22,11 +22,16 @@ async function defaultScreeningHandoff(prospect, { intendedAgentId, alreadyCharg
       import('./screeningGate.js'),
       import('./retellScreeningService.js'),
     ]);
-    const campaign = await Campaign.findByPk(prospect.campaignId).catch(() => null);
+    // Uncaught: a fetch error falls to the outer catch, which logs it — the
+    // old inline swallow returned { handled: false } with no trace.
+    const campaign = await Campaign.findByPk(prospect.campaignId);
     if (!campaign || !gateMod.screeningApplies({ campaign, prospect })) return { handled: false };
     const handoff = await gateMod.transitionDncToScreening(prospect, { intendedAgentId, alreadyCharged });
     if (!handoff.transitioned) return { handled: false };
-    dialerMod.startScreeningAttempt(prospect, { campaign }).catch((err) =>
+    // Same delayed first dial as the direct capture path (§7.1a) — the DNC
+    // check runs in the background while the consumer is still on the success
+    // page, so the "a call is coming" promise is just as fresh here.
+    dialerMod.scheduleScreeningAttempt(prospect, { campaign }).catch((err) =>
       log?.error?.('[Screening] post-DNC dial trigger error', { error: err?.message || String(err) })
     );
     return { handled: true };
@@ -88,7 +93,12 @@ export async function releaseDncClearedLead({ prospect, agentId, alreadyCharged 
     // funded package appears — the DNC backfill retries this path.
     const routing = await d.resolveLeadRouting({
       reqUser: null, requestedAgentId: null, campaignId: prospect.campaignId, qrTagId: null,
-    }).catch(() => null);
+    }).catch((err) => {
+      // Still held-for-backfill below, but a routing OUTAGE must not masquerade
+      // as the benign "no intended agent" data state.
+      d.logger.warn('[DNC] release: routing resolution failed', { prospectId: prospect.id, error: err?.message || String(err) });
+      return null;
+    });
     if (routing?.agentId && routing.via !== 'fallback') agentId = routing.agentId;
   }
   if (!agentId) {
@@ -237,7 +247,11 @@ export async function gateHeldDncLead(prospect, overrides = {}) {
     };
   }
   if (result.status === 'registered') {
-    await prospect.update({ quarantineReason: 'dnc_registered' }).catch(() => {});
+    await prospect.update({ quarantineReason: 'dnc_registered' }).catch((err) => {
+      d.logger.warn('[DNC] failed to relabel hold as dnc_registered (stays dnc_pending; backfill retries)', {
+        prospectId: prospect.id, error: err?.message || String(err),
+      });
+    });
     d.logger.info('[DNC] lead held — registered on the no-voice-call register', { prospectId: prospect.id });
     return { outcome: 'held', status: 'registered' };
   }

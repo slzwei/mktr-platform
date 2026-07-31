@@ -303,9 +303,9 @@ Routes are **auto-discovered**: each file in `backend/src/routes/` exports `meta
 **Dashboards & ops**
 - `/api/dashboard`, `/api/analytics`, `/api/notifications`, `/api/uploads`
 
-**Fleet / DOOH (paused, flag-gated)**
-- `/api/devices`, `/api/devices/events` (SSE), `/api/vehicles`, `/api/fleet`, `/api/provision`, `/api/apk`
-- `/api/adtech/*` — manifest (`MANIFEST_ENABLED`) + beacons (`BEACONS_ENABLED`), default off in `env.example`
+**Fleet / DOOH (paused; deletion scheduled)**
+- `/api/provision` (`PROVISIONING_ENABLED`) · `/api/apk` (`APK_ENABLED`) · `/api/adtech/*` manifest (`MANIFEST_ENABLED`) + beacons (`BEACONS_ENABLED`) — each behind its own flag, **all default OFF** (an unset env var means the route is not mounted)
+- `/api/devices`, `/api/devices/events` (SSE), `/api/vehicles`, `/api/fleet` — still mounted **unconditionally** (JWT admin/agent auth; the device SSE stream additionally checks `MANIFEST_ENABLED` per-route), pending deletion
 
 **Health & docs**
 - `GET /health` · `GET /health/public-host` (host-detection diagnostic) · `GET /health/sync` (per-adapter sync freshness)
@@ -399,7 +399,7 @@ The backend runs migrations automatically on boot (and, in `NODE_ENV=test`, sync
 | System Agent | `SYSTEM_AGENT_EMAIL`, `SYSTEM_AGENT_REDIRECT_EMAIL`, `DEFAULT_AGENT_ID` |
 | Attribution | `ATTRIB_SECRET`, `IP_HASH_SALT` (required in prod) |
 | Crons | `SYNC_AGENT_CRON` (default on) |
-| DOOH (paused) | `MANIFEST_ENABLED`, `BEACONS_ENABLED`, `MANIFEST_RPS_PER_DEVICE`, `BEACON_RPS_PER_DEVICE`, `BEACON_IDEMP_WINDOW_MIN`, `ENABLE_DOMAIN_PREFIXES` |
+| DOOH (paused) | `PROVISIONING_ENABLED`, `APK_ENABLED`, `MANIFEST_ENABLED`, `BEACONS_ENABLED` (all default off), `MANIFEST_RPS_PER_DEVICE`, `BEACON_RPS_PER_DEVICE`, `BEACON_IDEMP_WINDOW_MIN`, `ENABLE_DOMAIN_PREFIXES` |
 | Observability | `SENTRY_DSN`, `OBS_SAMPLE_RATE` |
 
 See `.env.example` and `backend/env.example` for the annotated, copy-pasteable source of truth.
@@ -435,7 +435,7 @@ A standalone stress-test harness for the lead-capture path lives at `backend/str
 
 ## 🧪 Testing
 
-- **Backend:** Jest + supertest (`backend/src/tests/`, `backend/test/`). CI (`.github/workflows/ci.yml`) spins up a Postgres 15 service container and runs the unit suite on Node 20 with `NODE_ENV=test` (which force-syncs the schema before layering migrations). `npm audit` runs non-blocking.
+- **Backend:** Jest + supertest (`backend/test/` — the single test root; `unit/` for DI/unit suites, `integration/` for DB-backed suites, `migrations/` for the migration chain). CI (`.github/workflows/ci.yml`) spins up a Postgres 15 service container and runs the unit suite on Node 20 with `NODE_ENV=test` (which force-syncs the schema before layering migrations). `npm audit` runs non-blocking.
 - **Frontend:** Vitest + Testing Library (`src/**/*.{test,spec}.{js,jsx}`), jsdom environment, v8 coverage.
 - **E2E:** Playwright specs in `e2e/` (`playwright.config.js`).
 
@@ -469,7 +469,7 @@ The backend uses a deliberate **two-stage "Shell" boot** for resilience on Rende
 
 These exist in the tree and are wired up, but are **paused (since 2026-05-09)** and receive no active development. Don't delete without checking with the owner.
 
-- **`tablet-app/`** — a real Android (Kotlin/Jetpack Compose) DOOH player (ExoPlayer playback, GPS, QR provisioning, heartbeat/impression workers). See [`tablet-app/PAUSED.md`](tablet-app/PAUSED.md). The backend still serves the APIs it consumed: `apk.js` (self-hosted OTA "latest-only" APK), `provisioning.js` (QR device onboarding), `adtechManifest.js` (playlist/manifest), `adtechBeacons.js` (heartbeats/impressions), `deviceEvents.js` (SSE) — all behind `MANIFEST_ENABLED` / `BEACONS_ENABLED`, default off.
+- **`tablet-app/`** — a real Android (Kotlin/Jetpack Compose) DOOH player (ExoPlayer playback, GPS, QR provisioning, heartbeat/impression workers). See [`tablet-app/PAUSED.md`](tablet-app/PAUSED.md). The backend still carries the APIs it consumed, each behind its own default-off flag: `apk.js` (self-hosted OTA "latest-only" APK, `APK_ENABLED`), `provisioning.js` (QR device onboarding, `PROVISIONING_ENABLED`), `adtechManifest.js` (playlist/manifest, `MANIFEST_ENABLED`), `adtechBeacons.js` (heartbeats/impressions, `BEACONS_ENABLED`); `deviceEvents.js` (SSE) stays mounted but its device stream checks `MANIFEST_ENABLED` per-route.
 - **`services/` + `infra/`** — a microservices migration scaffold (`gateway` :4000, `auth-service` :4001, `leadgen-service`) with a docker-compose stack. **Never wired into production** — the live system is the `backend/` monolith. See [`services/PAUSED.md`](services/PAUSED.md); [`README-dev.md`](README-dev.md) retains the scaffold's run instructions under a clearly-marked "paused" section.
 
 The admin console still exposes the fleet/device/driver pages (`AdminFleet`, `AdminDevices`, `AdminVehicles`, `AdminApkManager`, `ProvisionDevice`, `DriverDashboard`, `FleetOwnerDashboard`, …); they are functional but secondary to the lead-gen product.

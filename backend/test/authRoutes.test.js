@@ -179,4 +179,48 @@ describe('Auth Routes', () => {
       expect(res.body.success).toBe(false)
     })
   })
+
+  // ---- P0-2 regression: self-registration cannot become an agent ----
+  // Before the fix, POST /auth/onboarding/role let any registered customer
+  // promote themselves to 'agent' and pass requireAgentOrAdmin everywhere.
+  describe('P0-2: privilege escalation via onboarding is closed', () => {
+    it('register → role endpoint gone → agent-gated endpoint refuses → role unchanged', async () => {
+      const email = `escalation-${Date.now()}@test.com`
+      const reg = await request(app)
+        .post('/api/auth/register')
+        .send({ email, password: 'Password123!', firstName: 'Self', lastName: 'Promoter' })
+      expect(reg.status).toBe(201)
+      const cookies = reg.headers['set-cookie']
+      expect(cookies?.length).toBeGreaterThan(0)
+
+      // The self-service role endpoint must not exist any more
+      const promote = await request(app)
+        .post('/api/auth/onboarding/role')
+        .set('Cookie', cookies)
+        .send({ role: 'agent' })
+      expect(promote.status).toBe(404)
+
+      // An agent-gated route must refuse the account
+      const gated = await request(app)
+        .get('/api/users/agents/list')
+        .set('Cookie', cookies)
+      expect(gated.status).toBe(403)
+
+      // And the stored role must still be customer
+      const profile = await request(app)
+        .get('/api/auth/profile')
+        .set('Cookie', cookies)
+      expect(profile.status).toBe(200)
+      expect(profile.body.data.user.role).toBe('customer')
+    })
+
+    it('register ignores a client-supplied role (defense in depth)', async () => {
+      const email = `role-inject-${Date.now()}@test.com`
+      const reg = await request(app)
+        .post('/api/auth/register')
+        .send({ email, password: 'Password123!', firstName: 'Role', lastName: 'Inject', role: 'fleet_owner' })
+      expect(reg.status).toBe(201)
+      expect(reg.body.data.user.role).toBe('customer')
+    })
+  })
 })

@@ -112,7 +112,16 @@ function DrawSuccessHarness({ campaign, doc }) {
   const shareUrl = customerLeadCaptureUrl(campaign?.id, {}, host);
   return (
     <>
-      <DrawSuccessPage campaign={{ ...campaign, design_config: doc }} submittedPhone="91234312" />
+      <DrawSuccessPage
+        campaign={{ ...campaign, design_config: doc }}
+        submittedPhone="91234312"
+        // Preview fixture, like submittedPhone above. The caller ID is a
+        // backend env fact the editor never sees, so the block previews
+        // number-less — the copy is written to read naturally either way.
+        screeningCallback={doc?.form?.gates?.screeningCall === true
+          ? { number: null, etaMinutes: 1, windowOpen: true }
+          : undefined}
+      />
       <ShareCampaignDialog
         open={shareOpen}
         onOpenChange={setShareOpen}

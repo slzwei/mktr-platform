@@ -196,19 +196,21 @@ export function makeWhatsappService(overrides = {}) {
   }
 
   /** One template send. Resolves normalized result, never throws. */
-  async function sendTemplate({ prospect, templateName, params, qrContent, card }) {
+  async function sendTemplate({ prospect, templateName, params, qrContent, card, purpose = 'transactional', urlButtonParam = null }) {
     if (!waEnabled()) return { sent: false, skipped: 'disabled' };
     // Capability inline (not via canWhatsAppProspect) so each send costs ONE
     // ledger read and the receipt codes stay distinct: 'no_whatsapp' = phone
     // capability, 'suppressed' = ledger block.
     if (!prospect || !waRecipient(prospect.phone)) return { sent: false, skipped: 'no_whatsapp' };
-    // PR B suppression gate: these sends are TRANSACTIONAL (delivering the
+    // PR B suppression gate. Default purpose is TRANSACTIONAL (delivering the
     // reward the person claimed) — only an erasure-reason suppression blocks
-    // them; a marketing unsubscribe does not (D2 resolved — see
-    // canWhatsAppProspect). Future marketing templates must call with
-    // purpose:'marketing' instead. isSendBlocked fails OPEN for transactional
-    // on lookup errors, so DB-less unit runs are unaffected.
-    if (await d.isSendBlocked(prospect, { channel: 'whatsapp', purpose: 'transactional' })) {
+    // it; a marketing unsubscribe does not (D2 resolved — see
+    // canWhatsAppProspect). purpose:'marketing' (the screening-callback
+    // invite) runs the FULL canMarketTo gate instead — verified
+    // campaign-scoped grant + no suppression — and fails CLOSED on lookup
+    // errors, while transactional keeps failing OPEN (DB-less unit runs
+    // unaffected).
+    if (await d.isSendBlocked(prospect, { channel: 'whatsapp', purpose })) {
       return { sent: false, skipped: 'suppressed' };
     }
 
@@ -223,6 +225,17 @@ export function makeWhatsappService(overrides = {}) {
       const components = [
         { type: 'body', parameters: params.map((text) => ({ type: 'text', text })) },
       ];
+      // Dynamic-suffix URL button (house shape: url 'https://redeem.sg/{{1}}',
+      // the param is path + query). Only the CTA (index 0) carries a variable;
+      // the STOP quick-reply needs no component.
+      if (urlButtonParam) {
+        components.push({
+          type: 'button',
+          sub_type: 'url',
+          index: '0',
+          parameters: [{ type: 'text', text: urlButtonParam }],
+        });
+      }
       if (qrHeaderEnabled() && (qrContent || card?.state === 'boost')) {
         // Editorial voucher card (branded frame around the QR); any renderer
         // failure degrades to the plain QR — the credential always ships.
@@ -375,8 +388,36 @@ export function makeWhatsappService(overrides = {}) {
     });
   }
 
-  return { sendReservationWhatsApp, sendVoucherWhatsApp, sendBoostReceiptWhatsApp };
+  /** The screening-callback opt-in (`draw_callback_optin`, APPROVED
+   * 2026-07-25) — the WhatsApp leg of the AI screening gate for a lead a dial
+   * could not finish. MARKETING purpose (full canMarketTo, fails closed): the
+   * message itself is the ask; the URL button's tap is the person's consent to
+   * be called. Copy contract: ×N is the TOTAL and the boost lands when the
+   * consultant RECORDS the session — the campaign-page register, deliberately
+   * NOT the phone script's "N more chances".
+   * 4 params = name, draw name, multiplier, prize label ("at {{4}}"). */
+  async function sendDrawCallbackOptinWhatsApp({ prospect, drawName, multiplier, prize, token }) {
+    const rawPrize = cleanParam(prize, '');
+    const prizeLabel = !rawPrize
+      ? 'the grand prize'
+      : (/^(the|a|an)\s/i.test(rawPrize) ? rawPrize : `the ${rawPrize}`);
+    return sendTemplate({
+      prospect,
+      templateName: process.env.WHATSAPP_TEMPLATE_DRAW_CALLBACK || 'draw_callback_optin',
+      purpose: 'marketing',
+      urlButtonParam: `callback?t=${encodeURIComponent(token)}&utm_source=wa_screening`,
+      params: [
+        cleanParam(prospect?.firstName, 'there'),
+        cleanParam(drawName, 'the lucky draw'),
+        String(Number.isFinite(Number(multiplier)) && Number(multiplier) >= 2 ? Math.floor(Number(multiplier)) : 10),
+        prizeLabel,
+      ],
+    });
+  }
+
+  return { sendReservationWhatsApp, sendVoucherWhatsApp, sendBoostReceiptWhatsApp, sendDrawCallbackOptinWhatsApp };
 }
 
 const _default = makeWhatsappService();
 export default _default;
+export const sendDrawCallbackOptinWhatsApp = _default.sendDrawCallbackOptinWhatsApp;

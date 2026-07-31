@@ -47,6 +47,22 @@ function useDebounced(value, ms = 300) {
   return debounced;
 }
 
+/**
+ * Where the website chip points. Prefers the URL the rep actually typed (it may
+ * carry a path), but only ever emits http(s) — stored free text must never
+ * become a `javascript:` link — and falls back to the normalized domain.
+ */
+function websiteHref(partner) {
+  const raw = (partner.website || '').trim();
+  if (raw) {
+    try {
+      const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+      if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+    } catch { /* unparseable — fall through to the derived domain */ }
+  }
+  return `https://${partner.websiteDomain}`;
+}
+
 /* Activity type → pastel icon circle (timeline card in the design system). */
 function timelineIcon(entry) {
   if (entry.kind === 'stage') {
@@ -558,10 +574,17 @@ export default function PartnerDetail() {
                 <span className="inline-flex items-center gap-1"><Phone className="w-3.5 h-3.5" aria-hidden="true" />{partner.primaryPhone}</span>
               )}
               {partner.websiteDomain && (
-                <span className="inline-flex items-center gap-1"><Globe className="w-3.5 h-3.5" aria-hidden="true" />{partner.websiteDomain}</span>
+                <a href={websiteHref(partner)} target="_blank" rel="noreferrer" title="Open website"
+                  className="inline-flex items-center gap-1 hover:underline" style={{ color: 'inherit' }}>
+                  <Globe className="w-3.5 h-3.5" aria-hidden="true" />{partner.websiteDomain}
+                </a>
               )}
               {partner.instagramHandle && (
-                <span className="inline-flex items-center gap-1"><Instagram className="w-3.5 h-3.5" aria-hidden="true" />@{partner.instagramHandle}</span>
+                <a href={`https://instagram.com/${partner.instagramHandle}`} target="_blank" rel="noreferrer"
+                  title="Open Instagram profile"
+                  className="inline-flex items-center gap-1 hover:underline" style={{ color: 'inherit' }}>
+                  <Instagram className="w-3.5 h-3.5" aria-hidden="true" />@{partner.instagramHandle}
+                </a>
               )}
               <RoStageTag stage={partner.pipelineStage} />
               {partner.pipelineStage === 'LOST' && partner.lostReason && (

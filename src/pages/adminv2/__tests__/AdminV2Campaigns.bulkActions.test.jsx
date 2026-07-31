@@ -1,7 +1,7 @@
 /**
- * Bulk select → pause/resume/archive/restore/delete on the v2 campaigns board.
- * The board was observe-and-navigate only; these actions were stranded on the
- * classic page after the admin-v2 rebuild.
+ * Bulk select → pause/resume/duplicate/archive/restore/delete on the v2
+ * campaigns board. The board was observe-and-navigate only; these actions were
+ * stranded on the classic page after the admin-v2 rebuild.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -27,6 +27,7 @@ vi.mock('@/hooks/queries/useAdminV2', () => ({
 
 vi.mock('@/services/campaignService', () => ({
   setCampaignLaunchState: vi.fn().mockResolvedValue({}),
+  duplicateCampaign: vi.fn().mockResolvedValue({}),
   archiveCampaign: vi.fn().mockResolvedValue({}),
   restoreCampaign: vi.fn().mockResolvedValue({}),
   permanentDeleteCampaign: vi.fn().mockResolvedValue({}),
@@ -105,6 +106,20 @@ describe('AdminV2Campaigns — bulk actions', () => {
     await waitFor(() => expect(campaignSvc.archiveCampaign).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
     expect(toast.success).toHaveBeenCalledWith('Archive: 1 campaign done');
+  });
+
+  it('duplicate is eligible for every status and posts one duplicate per row', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('checkbox', { name: 'Select all visible campaigns' }));
+    // All 3 rows (active/paused/archived) are eligible — no "(n)" suffix.
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }));
+    expect(await screen.findByText('Duplicate 3 campaigns?')).toBeInTheDocument();
+    expect(screen.getByText(/fresh draft/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(campaignSvc.duplicateCampaign).toHaveBeenCalledTimes(3));
+    expect(campaignSvc.duplicateCampaign).toHaveBeenCalledWith('c-archived');
+    expect(toast.success).toHaveBeenCalledWith('Duplicate: 3 campaigns done');
   });
 
   it('resume resumes paused campaigns only', async () => {

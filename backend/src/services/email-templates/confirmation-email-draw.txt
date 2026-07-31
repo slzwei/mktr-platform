@@ -12,7 +12,7 @@ Want {{multiplier}}x the chances? Complete your complimentary financial review s
 Entrant: {{firstName}}
 Status: In the draw{{stat3Text}}
 
-If you win, we contact you directly after the draw — and we never ask for payment to release a prize.
+If you win, we contact you directly after the draw.
 
 ------------------------------------------------------------
 

@@ -110,9 +110,11 @@ export function makeTaskService(overrides = {}) {
     else where.assigneeUserId = user.id;
 
     if (query.partnerId) where.partnerOrganisationId = String(query.partnerId);
-    if (query.status && TASK_STATUSES.includes(query.status)) where.status = query.status;
-    else if (!query.status) where.status = { [Op.in]: ['open', 'in_progress'] };
-    else if (query.status === 'all') delete where.status;
+    // 'all' opts out of the status filter; unrecognised values (like absence)
+    // fall back to open work rather than silently unfiltering the list.
+    if (query.status === 'all') { /* no status filter */ }
+    else if (TASK_STATUSES.includes(query.status)) where.status = query.status;
+    else where.status = { [Op.in]: ['open', 'in_progress'] };
 
     const { start, end } = sgtDayWindow();
     if (query.due === 'today') where.dueAt = { [Op.gte]: start, [Op.lt]: end };
