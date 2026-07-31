@@ -24,7 +24,6 @@ import {
 import { invalidateMarketplaceCache } from './marketplaceCache.js';
 import { invalidateFeaturedDropsCache } from './featuredDropsService.js';
 import { bustScoringConfigCache } from './scoringConfigCache.js';
-import { logger } from '../utils/logger.js';
 import { refundCampaignCommitments } from './walletService.js';
 
 /**

@@ -1102,11 +1102,12 @@ describe('campaignService (unit)', () => {
   describe('campaign name sanitisation (create/update/duplicate parity)', () => {
     const DIRTY = '  <img src=x onerror=alert(1)>Summer <b>Promo</b>  ';
     const CLEAN = 'Summer Promo';
+    const BRIEF = { objective: 'agent_leads', product: 'insurance' };
 
     it('createCampaign strips HTML tags from the name', async () => {
       Campaign.create.mockResolvedValue(makeCampaignInstance({ id: 'camp-2' }));
 
-      await campaignService.createCampaign({ name: DIRTY }, { id: 'user-1', role: 'admin' });
+      await campaignService.createCampaign({ name: DIRTY, targetAudience: BRIEF }, { id: 'user-1', role: 'admin' });
 
       expect(Campaign.create.mock.calls[0][0].name).toBe(CLEAN);
     });
@@ -1146,7 +1147,7 @@ describe('campaignService (unit)', () => {
 
     it('all three paths store identical bytes for the same input', async () => {
       Campaign.create.mockResolvedValue(makeCampaignInstance({ id: 'camp-2' }));
-      await campaignService.createCampaign({ name: DIRTY }, { id: 'user-1', role: 'admin' });
+      await campaignService.createCampaign({ name: DIRTY, targetAudience: BRIEF }, { id: 'user-1', role: 'admin' });
       const createdName = Campaign.create.mock.calls[0][0].name;
 
       const instance = makeCampaignInstance();

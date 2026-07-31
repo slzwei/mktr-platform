@@ -1,9 +1,9 @@
 import { jest } from '@jest/globals';
-import { resolveConsentCopy } from '../services/consentCopyRegistry.js';
+import { resolveConsentCopy } from '../../src/services/consentCopyRegistry.js';
 import {
   CONTACT_CONSENT_VERSION, AGREE_ALL_CONSENT_VERSION, AGREE_ALL_CONTACT_COPY,
-} from '../services/contactConsent.js';
-import { AGREE_ALL_THIRD_PARTY_COPY } from '../services/externalConsent.js';
+} from '../../src/services/contactConsent.js';
+import { AGREE_ALL_THIRD_PARTY_COPY } from '../../src/services/externalConsent.js';
 
 /**
  * Consent-version → wording resolver (admin lead-profile click-through).

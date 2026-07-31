@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import express from 'express';
 import request from 'supertest';
 import { jest } from '@jest/globals';
-import { makeWaWebhookService } from '../services/redeemOps/waWebhookService.js';
+import { makeWaWebhookService } from '../../src/services/redeemOps/waWebhookService.js';
 
 /**
  * wa-delivery-truth §B — the Meta status webhook, DB-free (sequelize/Consumer/
@@ -182,7 +182,7 @@ describe('processPayload — inbound STOP', () => {
 describe('POST /api/whatsapp/webhook route posture', () => {
   let app;
   beforeEach(async () => {
-    const { default: router } = await import('../routes/whatsappWebhook.js');
+    const { default: router } = await import('../../src/routes/whatsappWebhook.js');
     app = express();
     // Mirror server_internal's raw-body capture for signature verification.
     app.use(express.json({
