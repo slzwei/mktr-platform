@@ -134,15 +134,6 @@ describe('Campaign model validators', () => {
     await expect(campaign.validate()).rejects.toThrow()
   })
 
-  // Skipped: agentAssignmentMode was removed from Campaign model (migration 012)
-  it.skip('rejects invalid agentAssignmentMode', async () => {
-    const campaign = Campaign.build({
-      name: 'Bad Mode',
-      createdBy: adminUser.id,
-      agentAssignmentMode: 'invalid_mode'
-    })
-    await expect(campaign.validate()).rejects.toThrow()
-  })
 })
 
 // ---------------------------------------------------------------------------
