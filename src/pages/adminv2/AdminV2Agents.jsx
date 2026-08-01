@@ -14,20 +14,29 @@ import { fmtNumber, fmtSGD, fmtSGDExact, fmtRelative } from '@/lib/adminV2/forma
 import { Chip, PageHeader, PeriodSwitch, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import WalletLedgerList from '@/components/adminv2/WalletLedgerList';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
+import MoneySegments from '@/components/adminv2/mobile/MoneySegments';
 
 const LOW_WALLET_CENTS = 5000;
 
 const agentName = (a) => a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email;
 const isExternal = (a) => a.walletBalanceCents !== null && a.walletBalanceCents !== undefined;
+const initialsOf = (a) => agentName(a).split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase();
 
-function AgentDrawer({ agent, period, onClose }) {
+function AgentDrawer({ agent, period, onClose, mobile }) {
   if (!agent) return null;
   const external = isExternal(agent);
   const zero = external && agent.walletBalanceCents === 0;
   const breakdown = agent.owed_leads_breakdown || [];
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
+      <SheetContent
+        side={mobile ? 'bottom' : 'right'}
+        className="admin-v2"
+        style={mobile
+          ? { maxHeight: '84dvh', height: 'auto', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderTop: '1px solid var(--line)', borderRadius: '18px 18px 0 0', display: 'flex', flexDirection: 'column' }
+          : { width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}
+      >
         <SheetHeader style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
           <SheetTitle style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', fontFamily: 'var(--font-ui)', textAlign: 'left' }}>
             {agentName(agent)}
@@ -104,6 +113,7 @@ export default function AdminV2Agents() {
   const urlSearch = searchParams.get('q') || '';
   const [search, setSearch] = useState(urlSearch);
   const [drawer, setDrawer] = useState(null);
+  const mobile = useAdminV2Mobile();
   const patch = (changes) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -180,6 +190,112 @@ export default function AdminV2Agents() {
     `${fmtNumber(zeroCount)} WALLETS AT S$0`,
     `${fmtNumber(noCommitCount)} WITHOUT OPEN COMMITMENTS`,
   ].filter(Boolean).join(' · ');
+
+  /* ── Mobile (design 1694f8b2 Money tab · Agents segment): card roster ── */
+  if (mobile) {
+    return (
+      <div>
+        <div className="av2-mono" style={{ fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px 10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {meta.toLowerCase()}
+        </div>
+        <MoneySegments active="agents" />
+
+        <div style={{ display: 'flex', gap: 8, paddingBottom: 8 }}>
+          <div className="av2-input" style={{ flex: 1, height: 40, minWidth: 0 }}>
+            <span aria-hidden="true" style={{ color: 'var(--ink-3)' }}>⌕</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search agents…"
+              aria-label="Search agents"
+              style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, minWidth: 0, font: 'inherit', color: 'inherit', fontSize: 13 }}
+            />
+          </div>
+          <div className="av2-seg" role="group" aria-label="Status" style={{ flex: 'none' }}>
+            {[['active', 'Active'], ['', 'All']].map(([v, label]) => (
+              <button key={v || 'all'} type="button" aria-pressed={status === v} onClick={() => setStatus(v)} style={{ height: 32, padding: '0 11px', fontSize: 11.5 }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 5, paddingBottom: 10, overflowX: 'auto' }}>
+          {[['', 'All'], ['zero', 'At S$0'], ['nocommit', 'No commitments']].map(([v, label]) => {
+            const on = wFilter === v;
+            return (
+              <button key={v || 'all'} type="button" aria-pressed={on} onClick={() => setWFilter(v)} style={{ flex: 'none', minHeight: 32, padding: '0 12px', borderRadius: 9, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', background: on ? 'var(--ink)' : 'var(--surface)', color: on ? 'var(--canvas)' : 'var(--ink-2)', border: `1px solid ${on ? 'var(--ink)' : 'var(--line-strong)'}` }}>
+                {label}
+              </button>
+            );
+          })}
+          <span style={{ flex: 1 }} />
+          <PeriodSwitch value={period} onChange={setPeriod} />
+        </div>
+
+        {roster.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={92} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {roster.isError && <div className="av2-card"><ErrorState error={roster.error} onRetry={roster.refetch} /></div>}
+        {!roster.isLoading && !roster.isError && visible.length === 0 && (
+          <div className="av2-card"><EmptyState title="No agents match" hint="Adjust the search or filters." /></div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {visible.map((a) => {
+            const ext = isExternal(a);
+            const zero = ext && a.walletBalanceCents === 0;
+            const low = ext && a.walletBalanceCents > 0 && a.walletBalanceCents < LOW_WALLET_CENTS;
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setDrawer(a)}
+                className="av2-card"
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 13px', cursor: 'pointer', fontFamily: 'var(--font-ui)', color: 'var(--ink)' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 36, height: 36, flex: 'none', borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                    {initialsOf(a)}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentName(a)}</span>
+                      {!a.isActive && <Chip tone="warn">Inactive</Chip>}
+                    </span>
+                    <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {a.phone || a.email || '—'}
+                    </span>
+                  </span>
+                  <span style={{ flex: 'none', textAlign: 'right' }}>
+                    <span className="av2-mono" style={{ display: 'block', fontSize: 14, fontWeight: 600, color: zero ? 'var(--warn)' : low ? 'var(--warn)' : ext ? 'var(--ink)' : 'var(--ink-3)' }}>
+                      {ext ? fmtSGDExact(a.walletBalanceCents) : '—'}
+                    </span>
+                    {zero && (
+                      <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 700, background: 'var(--warn-soft)', color: 'var(--warn)', borderRadius: 5, padding: '1px 6px', marginTop: 2 }}>Empty</span>
+                    )}
+                  </span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, margin: '8px 0 0 46px', flexWrap: 'wrap' }}>
+                  {ext
+                    ? (a.committedLeads > 0
+                      ? <Chip tone="accent">{fmtNumber(a.committedLeads)} committed · {fmtSGD(a.committedValueCents)}</Chip>
+                      : <Chip>No commitments</Chip>)
+                    : <Chip>Internal</Chip>}
+                  <span style={{ flex: 1 }} />
+                  <span className="av2-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+                    {fmtNumber(a.assignedThisPeriod ?? 0)} assigned {period} · last {a.lastAssignedAt ? fmtRelative(a.lastAssignedAt) : '—'}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <AgentDrawer agent={drawer} period={period} onClose={() => setDrawer(null)} mobile />
+      </div>
+    );
+  }
 
   return (
     <div>

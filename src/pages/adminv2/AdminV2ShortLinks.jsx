@@ -15,6 +15,7 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from '@/components/ui/alert-dialog';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 
 const fetchLinks = async () => {
   const resp = await apiClient.get('/shortlinks?limit=200');
@@ -41,7 +42,7 @@ function CreateDialog({ onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !create.isPending) onClose(); }}>
-      <DialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 460 }}>
+      <DialogContent variant="sheet" className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 460 }}>
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>New short link</DialogTitle>
           <DialogDescription style={{ color: 'var(--ink-2)', fontSize: 11.5, textAlign: 'left' }}>
@@ -87,6 +88,7 @@ export default function AdminV2ShortLinks() {
     },
     onError: (e) => { toast.error(e?.message || 'Delete failed'); setConfirmDelete(null); },
   });
+  const mobile = useAdminV2Mobile();
 
   const rows = links.data?.rows || [];
 
@@ -96,6 +98,92 @@ export default function AdminV2ShortLinks() {
       .then(() => toast.success(`Copied mktr.sg/share/${slug}`))
       .catch(() => toast.error('Copy failed'));
   };
+
+  /* ── Mobile (design 1694f8b2 "MKTR Ops Console Mobile"): link cards ── */
+  if (mobile) {
+    const total = links.data?.total ?? 0;
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10 }}>
+          <div className="av2-mono" style={{ flex: 1, minWidth: 0, fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtNumber(total)} links{total > rows.length && rows.length > 0 ? ` · showing newest ${fmtNumber(rows.length)}` : ''} · clicks are lifetime
+          </div>
+          <button type="button" onClick={() => setCreating(true)} style={{ flex: 'none', height: 38, display: 'inline-flex', alignItems: 'center', padding: '0 14px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700 }}>
+            + New link
+          </button>
+        </div>
+
+        {links.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} height={90} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {links.isError && <div className="av2-card"><ErrorState error={links.error} onRetry={links.refetch} /></div>}
+        {!links.isLoading && !links.isError && rows.length === 0 && (
+          <div className="av2-card"><EmptyState title="No short links" hint="Create one for ads, print, or chat blasts." /></div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((l) => {
+            const active = isActive(l);
+            return (
+              <div key={l.id} className="av2-card" style={{ padding: '12px 13px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span className="av2-mono" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--accent-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>/share/{l.slug}</span>
+                    {!active && <Chip tone="warn">Expired</Chip>}
+                  </span>
+                  <button type="button" onClick={() => copy(l.slug)} style={{ flex: 'none', height: 32, padding: '0 12px', background: 'var(--surface-2)', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 11.5, fontWeight: 700, color: 'var(--ink)' }}>
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete /share/${l.slug}`}
+                    onClick={() => setConfirmDelete(l)}
+                    style={{ flex: 'none', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: 'none', borderRadius: 8, cursor: 'pointer', color: 'var(--bad)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-ui)' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="av2-mono" style={{ marginTop: 7, fontSize: 10.5, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={l.targetUrl}>
+                  → {l.targetUrl}
+                </div>
+                <div className="av2-mono" style={{ marginTop: 3, fontSize: 10, color: 'var(--ink-3)' }}>
+                  {fmtNumber(l.clickCount ?? l.clicks ?? 0)} clicks · last click {l.lastClickedAt ? fmtRelative(l.lastClickedAt) : '—'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="av2-caption" style={{ padding: '12px 4px 0' }}>
+          Expiry: {`links live ${90} days by default`} — expired slugs stop redirecting but keep their click history here.
+        </div>
+
+        {creating && <CreateDialog onClose={() => setCreating(false)} />}
+
+        <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}>
+          <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
+            <AlertDialogHeader>
+              <AlertDialogTitle style={{ color: 'var(--ink)' }}>Delete /{confirmDelete?.slug}?</AlertDialogTitle>
+              <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
+                Anything printed or posted with this link will dead-end immediately. Click history is removed with it.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); remove.mutate(confirmDelete.id); }}
+                disabled={remove.isPending}
+                style={{ background: 'var(--bad)', color: '#fff' }}
+              >
+                {remove.isPending ? 'Deleting…' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
 
   return (
     <div>

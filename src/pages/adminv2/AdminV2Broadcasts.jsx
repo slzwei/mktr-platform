@@ -18,6 +18,7 @@ import { fmtNumber, fmtRelative } from '@/lib/adminV2/format';
 import { BROADCAST_STATUS_META } from '@/lib/adminV2/broadcasts';
 import { normalizeDefinitionShape } from '@/lib/adminV2/cohorts';
 import { PageHeader, Chip, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -81,7 +82,8 @@ export function BroadcastComposer({ broadcast = null, initialCohortId = null, on
     <Dialog open onOpenChange={(open) => { if (!open && !save.isPending) onClose(); }}>
       <DialogContent
         className="admin-v2"
-        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}
+        variant="sheet"
+        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 640, maxHeight: '86dvh', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
       >
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>
@@ -154,8 +156,99 @@ export default function AdminV2Broadcasts() {
   const [composing, setComposing] = useState(() => !!prefillCohort);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const mobile = useAdminV2Mobile();
 
   const rows = broadcasts.data?.rows || [];
+
+  // Composer mount shared by both branches — identical wiring either way.
+  const composer = composing && (
+    <BroadcastComposer
+      initialCohortId={prefillCohort}
+      onClose={() => {
+        setComposing(false);
+        if (prefillCohort) setSearchParams({}, { replace: true });
+      }}
+      onSaved={(b) => {
+        queryClient.invalidateQueries({ queryKey: ['adminV2', 'emailBroadcasts'] });
+        if (b?.id) navigate(`/admin/broadcasts/${b.id}`);
+      }}
+    />
+  );
+
+  /* ── Mobile (design 1694f8b2): meta row + push cards ── */
+  if (mobile) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 10px' }}>
+          <span className="av2-mono" style={{ flex: 1, minWidth: 0, fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtNumber(rows.length)} push{rows.length === 1 ? '' : 'es'} · re-gated at send time
+          </span>
+          <button type="button" onClick={() => setComposing(true)} style={{ flex: 'none', height: 38, display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700 }}>
+            + New push
+          </button>
+        </div>
+
+        {broadcasts.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} height={96} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {broadcasts.isError && <div className="av2-card"><ErrorState error={broadcasts.error} onRetry={broadcasts.refetch} /></div>}
+        {!broadcasts.isLoading && !broadcasts.isError && rows.length === 0 && (
+          <div className="av2-card">
+            <EmptyState
+              title="No email pushes yet"
+              hint="Compose a subject/body/CTA about one campaign, pick a cohort, test it to yourself, then send."
+              action={<button type="button" className="av2-btn av2-btn--primary av2-btn--sm" onClick={() => setComposing(true)}>Compose the first one</button>}
+            />
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((b) => {
+            const st = BROADCAST_STATUS_META[b.status] || { label: b.status, tone: '' };
+            return (
+              <div
+                key={b.id}
+                className="av2-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/admin/broadcasts/${b.id}`)}
+                onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/broadcasts/${b.id}`); }}
+                style={{ padding: '12px 13px', cursor: 'pointer' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.subject}</span>
+                  <span style={{ flex: 'none' }}><Chip tone={st.tone}>{st.label}</Chip></span>
+                </div>
+                <div className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {b.cohort?.name || '—'} · {b.campaign?.name || '—'}
+                </div>
+                <div className="av2-mono" style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 8, fontSize: 12 }}>
+                  {b.status === 'draft' ? (
+                    <span style={{ color: 'var(--ink-3)' }}>—</span>
+                  ) : (
+                    <>
+                      <span style={{ color: 'var(--ok)', fontWeight: 700 }}>{fmtNumber(b.sentCount)} sent</span>
+                      <span style={{ color: 'var(--ink-3)' }}>· {fmtNumber(b.skippedCount)} skipped ·</span>
+                      <span style={{ color: b.failedCount ? 'var(--bad)' : 'var(--ink-3)', fontWeight: b.failedCount ? 700 : 400 }}>{fmtNumber(b.failedCount)} failed</span>
+                    </>
+                  )}
+                  <span style={{ marginLeft: 'auto', flex: 'none', fontSize: 10.5, color: 'var(--ink-3)' }}>{fmtRelative(b.createdAt)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="av2-caption" style={{ padding: '14px 4px 0', lineHeight: 1.5 }}>
+          Sends are throttled, one push at a time, with the unsubscribe footer + one-click header on every message. Cohort membership never substitutes for the send-time consent check.
+        </div>
+
+        {composer}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -224,19 +317,7 @@ export default function AdminV2Broadcasts() {
         Sends are throttled, one push at a time, with the unsubscribe footer + one-click header on every message. Cohort membership never substitutes for the send-time consent check.
       </div>
 
-      {composing && (
-        <BroadcastComposer
-          initialCohortId={prefillCohort}
-          onClose={() => {
-            setComposing(false);
-            if (prefillCohort) setSearchParams({}, { replace: true });
-          }}
-          onSaved={(b) => {
-            queryClient.invalidateQueries({ queryKey: ['adminV2', 'emailBroadcasts'] });
-            if (b?.id) navigate(`/admin/broadcasts/${b.id}`);
-          }}
-        />
-      )}
+      {composer}
     </div>
   );
 }

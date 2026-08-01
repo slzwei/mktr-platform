@@ -14,13 +14,17 @@ import { fetchAttention } from '@/api/adminV2';
 import { composeAttentionRows, SEVERITY_GLYPH } from '@/lib/adminV2/attention';
 import { fmtRelative } from '@/lib/adminV2/format';
 import { Skeleton } from '@/components/adminv2/primitives';
+import { useAdminV2Mobile } from './mobile/useAdminV2Mobile';
 
 const ACTIONABLE = new Set(['incident', 'held', 'warning']);
 const TONE = { incident: 'var(--bad)', held: 'var(--hold)', warning: 'var(--warn)', watch: 'var(--ink-3)' };
+const SEV_SOFT = { incident: 'var(--bad-soft)', held: 'var(--hold-soft)', warning: 'var(--warn-soft)', watch: 'var(--accent-soft)' };
+const SEV_FG = { incident: 'var(--bad)', held: 'var(--hold)', warning: 'var(--warn)', watch: 'var(--accent-text)' };
 
 export default function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const isMobile = useAdminV2Mobile();
 
   const attention = useQuery({
     queryKey: ['adminV2', 'attention'],
@@ -66,8 +70,9 @@ export default function NotificationsBell() {
         aria-expanded={open}
         style={{
           width: 40, height: 40, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--surface)', border: '1px solid var(--line-strong)', borderRadius: 10, cursor: 'pointer',
-          position: 'relative',
+          background: isMobile ? 'transparent' : 'var(--surface)',
+          border: isMobile ? 'none' : '1px solid var(--line-strong)',
+          borderRadius: 10, cursor: 'pointer', position: 'relative', padding: 0,
         }}
       >
         <svg viewBox="0 0 24 24" style={{ width: 16, height: 16 }} aria-hidden="true">
@@ -90,7 +95,83 @@ export default function NotificationsBell() {
         )}
       </button>
 
-      {open && (
+      {open && isMobile && (
+        /* Full-screen takeover (design 1694f8b2): back chevron · title · count,
+           then card rows with severity-tinted icon squares + deep-link CTAs. */
+        <div
+          aria-label="Notifications"
+          style={{ position: 'fixed', inset: 0, zIndex: 110, background: 'var(--canvas)', display: 'flex', flexDirection: 'column', animation: 'av2m-fade-in .15s ease' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 'calc(8px + env(safe-area-inset-top, 0px)) 10px 8px', borderBottom: '1px solid var(--line)', flex: 'none' }}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close notifications"
+              style={{ width: 44, height: 44, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              <svg viewBox="0 0 24 24" style={{ width: 20, height: 20 }} aria-hidden="true">
+                <path d="M14.5 5 8 12l6.5 7" fill="none" stroke="var(--ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em', color: 'var(--ink)' }}>Needs attention</span>
+              <span className="av2-mono" style={{ display: 'block', fontSize: 9, letterSpacing: '.14em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+                {attention.dataUpdatedAt ? `updated ${fmtRelative(attention.dataUpdatedAt)}` : 'all times SGT'}
+              </span>
+            </span>
+            {rows.length > 0 && (
+              <span className="av2-mono" style={{ fontSize: 11, fontWeight: 600, background: 'var(--ink)', color: 'var(--canvas)', borderRadius: 6, padding: '2px 8px', marginRight: 8 }}>
+                {rows.length}
+              </span>
+            )}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+            {attention.isLoading && [0, 1, 2].map((i) => (
+              <div key={i} style={{ paddingBottom: 8 }}><Skeleton height={60} style={{ borderRadius: 14 }} /></div>
+            ))}
+            {attention.isError && (
+              <div style={{ padding: '20px 10px', display: 'grid', gap: 8, justifyItems: 'center' }}>
+                <span style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>Couldn’t load alerts.</span>
+                <button type="button" className="av2-btn av2-btn--sm" onClick={() => attention.refetch()}>Retry</button>
+              </div>
+            )}
+            {!attention.isLoading && !attention.isError && rows.length === 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '60px 20px', textAlign: 'center' }}>
+                <svg viewBox="0 0 24 24" style={{ width: 40, height: 40 }} aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" fill="var(--ok-soft)" />
+                  <path d="M7.5 12.5l3 3 6-6.5" fill="none" stroke="var(--ok)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>All clear</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-2)', maxWidth: '30ch', lineHeight: 1.5 }}>Nothing needs you. Deep links land here when something does.</div>
+              </div>
+            )}
+            {rows.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => go(r.href)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '11px 12px',
+                  background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, marginBottom: 8,
+                  cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-ui)', color: 'var(--ink)',
+                  boxShadow: 'var(--shadow)', minHeight: 60, boxSizing: 'border-box',
+                }}
+              >
+                <span aria-hidden="true" style={{ width: 34, height: 34, flex: 'none', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, background: SEV_SOFT[r.severity] || 'var(--surface-2)', color: SEV_FG[r.severity] || 'var(--ink-2)' }}>
+                  {SEVERITY_GLYPH[r.severity] || '●'}
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{r.title}</span>
+                  <span style={{ display: 'block', fontSize: 11, color: 'var(--ink-2)', marginTop: 1 }}>{r.detail}</span>
+                </span>
+                {r.cta && <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent-text)', whiteSpace: 'nowrap', flex: 'none' }}>{r.cta} →</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {open && !isMobile && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 60 }} aria-hidden="true" />
           {/* Plain popover of buttons/links — deliberately NOT role="menu",

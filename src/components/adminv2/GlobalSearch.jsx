@@ -14,12 +14,15 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchProspects, fetchCampaignsList, fetchAgentOptions } from '@/api/adminV2';
 import { NAV } from '@/lib/adminV2/nav';
+import { useAdminV2Mobile } from './mobile/useAdminV2Mobile';
 
 const MIN_QUERY = 2; // entity endpoints; page-label matching starts at 1 char
 const GROUP_LIMIT = 5;
 
-export default function GlobalSearch() {
+/** variant: 'pill' (desktop topbar search field) | 'icon' (mobile top bar). */
+export default function GlobalSearch({ variant = 'pill' }) {
   const [open, setOpen] = useState(false);
+  const isMobile = useAdminV2Mobile();
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
   const [active, setActive] = useState(0);
@@ -181,31 +184,52 @@ export default function GlobalSearch() {
 
   return (
     <>
-      <button
-        ref={pillRef}
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Search leads, campaigns, agents (⌘K)"
-        style={{
-          flex: '0 1 320px', height: 40, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
-          background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10,
-          boxSizing: 'border-box', cursor: 'pointer', fontFamily: 'var(--font-ui)',
-        }}
-      >
-        <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, flex: 'none' }} aria-hidden="true">
-          <path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15Z" fill="none" stroke="var(--ink-3)" strokeWidth="2" />
-          <path d="M16.2 16.2 21 21" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-        <span style={{ flex: 1, fontSize: 13, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textAlign: 'left' }}>Search leads, campaigns, agents</span>
-        <span className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', border: '1px solid var(--line-strong)', borderRadius: 5, padding: '1px 5px' }}>⌘K</span>
-      </button>
+      {variant === 'icon' ? (
+        <button
+          ref={pillRef}
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Search leads, campaigns, agents"
+          aria-label="Search"
+          style={{
+            width: 40, height: 40, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer', padding: 0,
+          }}
+        >
+          <svg viewBox="0 0 24 24" style={{ width: 18, height: 18 }} aria-hidden="true">
+            <path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15Z" fill="none" stroke="var(--ink-2)" strokeWidth="2" />
+            <path d="M16.2 16.2 21 21" fill="none" stroke="var(--ink-2)" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          ref={pillRef}
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Search leads, campaigns, agents (⌘K)"
+          style={{
+            flex: '0 1 320px', height: 40, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
+            background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10,
+            boxSizing: 'border-box', cursor: 'pointer', fontFamily: 'var(--font-ui)',
+          }}
+        >
+          <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, flex: 'none' }} aria-hidden="true">
+            <path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15Z" fill="none" stroke="var(--ink-3)" strokeWidth="2" />
+            <path d="M16.2 16.2 21 21" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <span style={{ flex: 1, fontSize: 13, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textAlign: 'left' }}>Search leads, campaigns, agents</span>
+          <span className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', border: '1px solid var(--line-strong)', borderRadius: 5, padding: '1px 5px' }}>⌘K</span>
+        </button>
+      )}
 
       {open && (
         // Plain fixed divs (no portal) so the palette stays inside the
         // .admin-v2 subtree and inherits the [data-theme] CSS variables.
         <div
           onMouseDown={() => setOpen(false)}
-          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(9, 11, 16, .42)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}
+          style={isMobile
+            ? { position: 'fixed', inset: 0, zIndex: 110, background: 'var(--canvas)', animation: 'av2m-fade-in .15s ease' }
+            : { position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(9, 11, 16, .42)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}
         >
           <div
             role="dialog"
@@ -215,36 +239,56 @@ export default function GlobalSearch() {
             // The input is the dialog's only tab stop (options are pointer/
             // arrow-key targets) — swallow Tab so focus can't reach the page
             // behind the overlay.
-            onKeyDown={(e) => { if (e.key === 'Tab') e.preventDefault(); }}
-            style={{
-              width: 'min(600px, 92vw)', marginTop: '12vh', background: 'var(--surface)',
-              border: '1px solid var(--line-strong)', borderRadius: 14, boxShadow: 'var(--shadow)',
-              overflow: 'hidden', boxSizing: 'border-box',
-            }}
+            onKeyDown={(e) => { if (e.key === 'Tab' && !isMobile) e.preventDefault(); }}
+            style={isMobile
+              ? { width: '100%', height: '100dvh', background: 'var(--canvas)', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }
+              : {
+                width: 'min(600px, 92vw)', marginTop: '12vh', background: 'var(--surface)',
+                border: '1px solid var(--line-strong)', borderRadius: 14, boxShadow: 'var(--shadow)',
+                overflow: 'hidden', boxSizing: 'border-box',
+              }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', height: 50, borderBottom: '1px solid var(--line)' }}>
-              <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, flex: 'none' }} aria-hidden="true">
-                <path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15Z" fill="none" stroke="var(--ink-3)" strokeWidth="2" />
-                <path d="M16.2 16.2 21 21" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-              <input
-                ref={inputRef}
-                autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={onInputKey}
-                placeholder="Search leads, campaigns, agents…"
-                aria-label="Global search"
-                role="combobox"
-                aria-expanded="true"
-                aria-controls="av2-palette-list"
-                aria-activedescendant={flat[active]?.id}
-                style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--ink)' }}
-              />
-              <span className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', border: '1px solid var(--line-strong)', borderRadius: 5, padding: '1px 5px', flex: 'none' }}>esc</span>
+            <div style={isMobile
+              ? { display: 'flex', alignItems: 'center', gap: 8, padding: 'calc(10px + env(safe-area-inset-top, 0px)) 14px 10px', borderBottom: '1px solid var(--line)', flex: 'none' }
+              : { display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px', height: 50, borderBottom: '1px solid var(--line)' }}
+            >
+              <div style={isMobile
+                ? { flex: 1, display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--line-strong)', borderRadius: 10, boxSizing: 'border-box' }
+                : { flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}
+              >
+                <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, flex: 'none' }} aria-hidden="true">
+                  <path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15Z" fill="none" stroke="var(--ink-3)" strokeWidth="2" />
+                  <path d="M16.2 16.2 21 21" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <input
+                  ref={inputRef}
+                  autoFocus
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={onInputKey}
+                  placeholder="Search leads, campaigns, agents…"
+                  aria-label="Global search"
+                  role="combobox"
+                  aria-expanded="true"
+                  aria-controls="av2-palette-list"
+                  aria-activedescendant={flat[active]?.id}
+                  style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--ink)' }}
+                />
+              </div>
+              {isMobile ? (
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 700, color: 'var(--accent-text)', padding: '10px 2px', flex: 'none' }}
+                >
+                  Cancel
+                </button>
+              ) : (
+                <span className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', border: '1px solid var(--line-strong)', borderRadius: 5, padding: '1px 5px', flex: 'none' }}>esc</span>
+              )}
             </div>
 
-            <div id="av2-palette-list" role="listbox" aria-label="Search results" style={{ maxHeight: 400, overflowY: 'auto', padding: 6 }}>
+            <div id="av2-palette-list" role="listbox" aria-label="Search results" style={isMobile ? { flex: 1, overflowY: 'auto', padding: '6px 10px calc(20px + env(safe-area-inset-bottom, 0px))' } : { maxHeight: 400, overflowY: 'auto', padding: 6 }}>
               {!searching && q.trim().length < 1 && (
                 <div className="av2-mono" style={{ padding: '18px 12px', fontSize: 11, color: 'var(--ink-3)', textAlign: 'center' }}>
                   Type to search leads, campaigns, agents and pages
@@ -298,11 +342,13 @@ export default function GlobalSearch() {
               })}
             </div>
 
-            <div className="av2-mono" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 14 }}>
-              <span>↑↓ navigate</span>
-              <span>↵ open</span>
-              <span>esc close</span>
-            </div>
+            {!isMobile && (
+              <div className="av2-mono" style={{ padding: '8px 14px', borderTop: '1px solid var(--line)', fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 14 }}>
+                <span>↑↓ navigate</span>
+                <span>↵ open</span>
+                <span>esc close</span>
+              </div>
+            )}
           </div>
         </div>
       )}

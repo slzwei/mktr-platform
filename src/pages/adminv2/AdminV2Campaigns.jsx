@@ -16,6 +16,10 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { toast } from 'sonner';
 import { queryClient } from '@/lib/queryClient';
 import * as campaignSvc from '@/services/campaignService';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
+import { useLongPress } from '@/components/adminv2/mobile/useLongPress';
+import MobileSheet from '@/components/adminv2/mobile/MobileSheet';
+import { MobileSelectBar } from '@/components/adminv2/mobile/MobileBars';
 
 /**
  * Bulk row actions (select → act). Eligibility mirrors the server rules:
@@ -51,6 +55,56 @@ const TYPE_LABELS = {
 const WORKSPACE_ON = import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true';
 export const newCampaignHref = () => (WORKSPACE_ON ? '/admin/campaigns/workspace' : '/admin/campaigns/new');
 
+/** Mobile campaign card (design 1694f8b2): tap opens, long-press selects. */
+function MobileCampaignRow({ c, priced, drawDays, zeroCommit, marketplace, period, selecting, isSelected, onTap, onLongPress }) {
+  const lp = useLongPress(onLongPress);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onTap}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(); } }}
+      {...lp}
+      className="av2-card"
+      style={{
+        display: 'block', width: '100%', textAlign: 'left', padding: '12px 13px', cursor: 'pointer',
+        background: isSelected ? 'var(--accent-soft)' : 'var(--surface)',
+        borderColor: isSelected ? 'var(--accent)' : 'var(--line)',
+        WebkitUserSelect: 'none', userSelect: 'none',
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        {selecting && (
+          <span aria-hidden="true" style={{ width: 21, height: 21, flex: 'none', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, boxSizing: 'border-box', border: `1.5px solid ${isSelected ? 'var(--accent)' : 'var(--line-strong)'}`, background: isSelected ? 'var(--accent)' : 'transparent', color: 'var(--accent-ink)' }}>
+            {isSelected ? '✓' : ''}
+          </span>
+        )}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
+        <Chip tone={STATUS_TONE[c.status] ?? ''}>{c.status}</Chip>
+      </span>
+      <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', margin: '5px 0 0', textTransform: 'uppercase' }}>
+        {(TYPE_LABELS[c.type] || c.type)} · {priced ? `${fmtSGD(c.leadPriceCents)}/lead` : 'not priced'} · {fmtNumber(c.qrTagCount || 0)} QR
+      </span>
+      {(zeroCommit || c.committedRemaining > 0 || (drawDays !== null && drawDays > 0) || marketplace) && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, margin: '7px 0 0', flexWrap: 'wrap' }}>
+          {zeroCommit && <Chip tone="bad" glyph="▲">0 commitments — leads will quarantine</Chip>}
+          {c.committedRemaining > 0 && <Chip tone="accent">{fmtNumber(c.committedRemaining)} committed · {fmtSGD(c.committedValueCents)}</Chip>}
+          {drawDays !== null && drawDays > 0 && <Chip tone="warn">Draw closes {drawDays}d</Chip>}
+          {marketplace && <Chip tone="accent">Marketplace</Chip>}
+        </span>
+      )}
+      <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, margin: '8px 0 0' }}>
+        <span className="av2-mono" style={{ fontSize: 15, fontWeight: 600 }}>{fmtNumber(c.leadsThisPeriod || 0)}</span>
+        <span style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>leads · {period}</span>
+        <span style={{ flex: 1 }} />
+        <span className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+          {fmtNumber(c.leadsTotal ?? c.prospectCount ?? 0)} all-time · {c.end_date ? `ends ${fmtDate(c.end_date)}` : 'no end date'}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 export default function AdminV2Campaigns() {
   // Filters live in the URL (shareable, back/forward safe) — same rule as Prospects.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -76,8 +130,14 @@ export default function AdminV2Campaigns() {
   const [selected, setSelected] = useState(() => new Set());
   const [confirmAction, setConfirmAction] = useState(null); // BULK_ACTIONS entry | null
   const [bulkBusy, setBulkBusy] = useState(false);
+  const mobile = useAdminV2Mobile();
+  const [selectMode, setSelectMode] = useState(false);
+  // Mobile studio handoff: campaign design is a desktop surface — after the
+  // type pick, hand the operator a link instead of opening the workspace.
+  const [handoffType, setHandoffType] = useState(null);
   const handleCreateCampaign = (type) => {
     setTypeSelectOpen(false);
+    if (mobile) { setHandoffType(type); return; }
     navigate(`${newCampaignHref()}?type=${type}`);
   };
   const campaigns = useCampaignLeaderboard(period);
@@ -139,6 +199,168 @@ export default function AdminV2Campaigns() {
     setConfirmAction(null);
     setSelected(new Set());
   };
+
+  /* ── Mobile (design 1694f8b2): status pills + card list + select bar ── */
+  if (mobile) {
+    const selecting = selectMode || selected.size > 0;
+    const exitSelect = () => { setSelected(new Set()); setSelectMode(false); };
+    const handoffPath = handoffType ? `${newCampaignHref()}?type=${handoffType}` : '';
+    const handoffUrl = handoffType ? `${window.location.origin}${handoffPath}` : '';
+    return (
+      <div>
+        {/* Status pills + New */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1, display: 'flex', gap: 5, overflowX: 'auto', margin: '0 -2px', padding: 2, minWidth: 0 }}>
+            {statuses.map((s) => {
+              const on = statusFilter === s;
+              return (
+                <button
+                  key={s || 'all'}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setStatusFilter(s)}
+                  style={{ flex: 'none', minHeight: 34, padding: '0 12px', borderRadius: 9, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', textTransform: 'capitalize', background: on ? 'var(--ink)' : 'var(--surface)', color: on ? 'var(--canvas)' : 'var(--ink-2)', border: `1px solid ${on ? 'var(--ink)' : 'var(--line-strong)'}` }}
+                >
+                  {s || 'All'}
+                </button>
+              );
+            })}
+          </div>
+          <button type="button" onClick={() => setTypeSelectOpen(true)} style={{ flex: 'none', height: 38, display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700 }}>
+            + New
+          </button>
+        </div>
+
+        {attention.isError && (
+          <div className="av2-caption" style={{ color: 'var(--warn)', padding: '8px 2px 0' }}>
+            ▲ Attention feed unavailable — zero-commitment badges hidden.
+          </div>
+        )}
+
+        {/* Meta + period + select */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 2px 8px' }}>
+          <span className="av2-mono" style={{ fontSize: 10, letterSpacing: '.13em', color: 'var(--ink-3)', textTransform: 'uppercase', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtNumber(rows.length)} campaign{rows.length === 1 ? '' : 's'}
+          </span>
+          <PeriodSwitch value={period} onChange={setPeriod} />
+          <button type="button" onClick={() => (selecting ? exitSelect() : setSelectMode(true))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 700, color: 'var(--accent-text)', padding: '4px 2px' }}>
+            {selecting ? 'Done' : 'Select'}
+          </button>
+        </div>
+
+        {/* Card list */}
+        {campaigns.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={110} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {campaigns.isError && <div className="av2-card"><ErrorState error={campaigns.error} onRetry={campaigns.refetch} /></div>}
+        {!campaigns.isLoading && !campaigns.isError && rows.length === 0 && (
+          <div className="av2-card">
+            <EmptyState title="No campaigns match" hint={statusFilter ? 'Try a different status.' : 'Create your first campaign to start capturing leads.'} />
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((c) => {
+            const draw = c.design_config?.luckyDraw;
+            const drawDays = draw?.enabled ? daysUntil(draw.closesAt) : null;
+            const priced = Number.isInteger(c.leadPriceCents) && c.leadPriceCents > 0;
+            return (
+              <MobileCampaignRow
+                key={c.id}
+                c={c}
+                priced={priced}
+                drawDays={drawDays}
+                zeroCommit={attention.isSuccess && zeroCommitIds.has(c.id)}
+                marketplace={getMarketplaceListedFromDoc(c.design_config) === true}
+                period={period}
+                selecting={selecting}
+                isSelected={selected.has(c.id)}
+                onTap={() => { if (selecting) toggleSelected(c.id); else navigate(`/admin/campaigns/${c.id}`); }}
+                onLongPress={() => { if (!selecting) { setSelectMode(true); toggleSelected(c.id); } }}
+              />
+            );
+          })}
+        </div>
+
+        {/* Select-mode bar */}
+        {selecting && (
+          <MobileSelectBar
+            count={selected.size}
+            onCancel={exitSelect}
+            actions={BULK_ACTIONS.map((a) => ({
+              label: eligibleFor(a).length > 0 && eligibleFor(a).length !== selected.size ? `${a.label} (${eligibleFor(a).length})` : a.label,
+              tone: a.destructive ? 'danger' : undefined,
+              disabled: bulkBusy || eligibleFor(a).length === 0,
+              run: () => setConfirmAction(a),
+            }))}
+          />
+        )}
+
+        {/* Studio handoff — design happens on desktop */}
+        <MobileSheet open={!!handoffType} onClose={() => setHandoffType(null)} label="Design on desktop">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '14px 6px 4px' }}>
+            <span aria-hidden="true" style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--accent-soft)', color: 'var(--accent-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800 }}>▧</span>
+            <div className="av2-mono" style={{ fontSize: 10, letterSpacing: '.14em', color: 'var(--ink-3)', textTransform: 'uppercase', marginTop: 14 }}>
+              {String(handoffType || '').replace(/_/g, ' ')} · picked
+            </div>
+            <h2 style={{ margin: '8px 0 0', fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.25, maxWidth: '22ch', color: 'var(--ink)' }}>
+              Design opens in Studio on desktop
+            </h2>
+            <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6, maxWidth: '34ch' }}>
+              Page design, quiz logic and draw setup live in the campaign workspace — open it on a bigger screen when you're back at your desk.
+            </p>
+            <div style={{ marginTop: 18, width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface-2)', border: '1px solid var(--line-strong)', borderRadius: 12, padding: '12px 14px', boxSizing: 'border-box' }}>
+              <span className="av2-mono" style={{ flex: 1, fontSize: 11.5, color: 'var(--ink-2)', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{handoffUrl.replace(/^https?:\/\//, '')}</span>
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard?.writeText(handoffUrl).then(() => toast.success('Link copied')).catch(() => toast.error('Copy failed')); }}
+                style={{ flex: 'none', height: 32, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--line-strong)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 11.5, fontWeight: 700, color: 'var(--ink)' }}
+              >
+                Copy
+              </button>
+            </div>
+            <button type="button" onClick={() => { setHandoffType(null); navigate(handoffPath); }} style={{ marginTop: 10, width: '100%', height: 46, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 13.5, fontWeight: 700 }}>
+              Open here anyway
+            </button>
+            <button type="button" onClick={() => setHandoffType(null)} style={{ marginTop: 8, width: '100%', height: 44, background: 'transparent', color: 'var(--ink-2)', border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 700 }}>
+              Back to campaigns
+            </button>
+          </div>
+        </MobileSheet>
+
+        <CampaignTypeSelectionDialog
+          open={typeSelectOpen}
+          onOpenChange={setTypeSelectOpen}
+          onSelect={handleCreateCampaign}
+        />
+        <ConfirmDialog
+          open={confirmAction != null}
+          onOpenChange={(open) => { if (!open && !bulkBusy) setConfirmAction(null); }}
+          title={confirmAction ? `${confirmAction.label} ${eligibleFor(confirmAction).length} campaign${eligibleFor(confirmAction).length === 1 ? '' : 's'}?` : ''}
+          description={confirmAction ? [
+            confirmAction.key === 'delete'
+              ? 'Permanent deletion cannot be undone. Campaigns with pending or approved commissions are refused by the server.'
+              : confirmAction.key === 'duplicate'
+                ? 'Each copy starts as a fresh draft named “… (Copy)”. Design, media, and agent assignments carry over, and a still-open lucky draw carries as the copy’s own draw with freshly minted terms. Leads, QR codes, lead pricing, and marketplace/homepage publication never carry.'
+                : confirmAction.key === 'archive'
+                  ? 'Archived campaigns stop accepting signups and move to the archived filter; restore them anytime.'
+                  : confirmAction.key === 'activate'
+                    ? 'Resumes paused campaigns. Drafts are never launched from here — use the campaign workspace.'
+                    : 'Paused campaigns stop accepting public signups until resumed.',
+            eligibleFor(confirmAction).length !== selected.size
+              ? ` ${selected.size - eligibleFor(confirmAction).length} of the selected campaigns are not eligible and will be skipped.`
+              : '',
+          ].join('') : ''}
+          onConfirm={() => confirmAction && runBulk(confirmAction)}
+          confirmText={confirmAction?.destructive ? 'Delete' : 'Continue'}
+          pending={bulkBusy}
+          pendingText='Working…'
+          destructive={confirmAction?.destructive === true}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -88,6 +88,8 @@ const AdminV2QRCodes = lazy(() => import('./adminv2/AdminV2QRCodes'));
 const AdminV2ShortLinks = lazy(() => import('./adminv2/AdminV2ShortLinks'));
 const AdminV2Users = lazy(() => import('./adminv2/AdminV2Users'));
 const AdminV2AISettings = lazy(() => import('./adminv2/AdminV2AISettings'));
+// Mobile hub tab — the sidebar long-tail lives here on phones (v2-only route).
+const AdminV2More = lazy(() => import('./adminv2/AdminV2More'));
 const AdminCampaigns = lazy(() => import('./AdminCampaigns'));
 const AdminCampaignForm = lazy(() => import('./AdminCampaignForm'));
 const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
@@ -374,6 +376,17 @@ function PagesContent() {
  <ProtectedRoute requiredRole="admin">
  <AdminV2Shell>
  <AdminV2People />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
+ {ADMIN_V2 && (
+ <Route
+ path="/admin/more" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2More />
  </AdminV2Shell>
  </ProtectedRoute>
  }

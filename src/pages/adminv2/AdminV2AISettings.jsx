@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { PageHeader, Card, Chip, Skeleton, ErrorState } from '@/components/adminv2/primitives';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 
 const fetchSettings = async () => (await apiClient.get('/admin/ai/settings'))?.data?.settings ?? null;
 
@@ -23,7 +24,7 @@ function ProviderCard({ id, label, settings, form, setForm, onTest, testing }) {
   return (
     <Card span={6}>
       <div style={{ padding: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
           <span className="av2-h2">{label}</span>
           {isDefault
             ? <Chip tone="accent">Default</Chip>
@@ -43,7 +44,7 @@ function ProviderCard({ id, label, settings, form, setForm, onTest, testing }) {
 
         <div className="av2-microcaps" style={{ marginBottom: 6 }}>API key</div>
         {!editingKey ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className="av2-mono" style={{ fontSize: 12, color: 'var(--ink-2)' }}>
               {status.configured
                 ? status.source === 'environment' ? 'from server environment' : `••••${status.hint || ''}`
@@ -94,6 +95,7 @@ export default function AdminV2AISettings() {
   const settings = useQuery({ queryKey: ['adminV2', 'aiSettings'], queryFn: fetchSettings });
   const [form, setForm] = useState(null);
   const [testing, setTesting] = useState('');
+  const mobile = useAdminV2Mobile();
 
   useEffect(() => {
     if (settings.data && !form) {
@@ -144,19 +146,33 @@ export default function AdminV2AISettings() {
   if (settings.isLoading || !form) {
     return (
       <div>
-        <PageHeader title="AI Settings" meta="PROVIDERS · KEYS · GUARDRAILS" />
-        <Skeleton height={220} />
+        {mobile ? (
+          <div className="av2-mono" style={{ fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px 10px' }}>
+            providers · keys · guardrails
+          </div>
+        ) : (
+          <PageHeader title="AI Settings" meta="PROVIDERS · KEYS · GUARDRAILS" />
+        )}
+        <Skeleton height={220} style={mobile ? { borderRadius: 14 } : undefined} />
       </div>
     );
   }
 
   return (
     <div>
+      {/* Mobile: shell top bar titles the page — mono meta line only; the save
+          action moves to a full-width button at the bottom of the page. */}
+      {mobile ? (
+        <div className="av2-mono" style={{ fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px 10px' }}>
+          providers · keys · guardrails · workstyle
+        </div>
+      ) : (
       <PageHeader title="AI Settings" meta="PROVIDERS · KEYS · GUARDRAILS · WORKSTYLE">
         <button type="button" className="av2-btn av2-btn--primary" disabled={save.isPending} onClick={() => save.mutate()}>
           {save.isPending ? 'Saving…' : 'Save changes'}
         </button>
       </PageHeader>
+      )}
 
       {settings.data.encryptionReady === false && (
         <div className="av2-caption" style={{ color: 'var(--bad)', marginBottom: 12 }}>
@@ -164,7 +180,7 @@ export default function AdminV2AISettings() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16 }}>
+      <div className="av2-grid12" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: mobile ? 10 : 16 }}>
         <ProviderCard id="openai" label="OpenAI" settings={settings.data} form={form} setForm={setForm} onTest={testProvider} testing={testing === 'openai'} />
         <ProviderCard id="anthropic" label="Anthropic" settings={settings.data} form={form} setForm={setForm} onTest={testProvider} testing={testing === 'anthropic'} />
 
@@ -194,6 +210,19 @@ export default function AdminV2AISettings() {
           </div>
         </Card>
       </div>
+
+      {/* Mobile: the page action lives at the bottom, full width */}
+      {mobile && (
+        <button
+          type="button"
+          className="av2-btn av2-btn--primary"
+          disabled={save.isPending}
+          onClick={() => save.mutate()}
+          style={{ width: '100%', justifyContent: 'center', height: 46, borderRadius: 12, marginTop: 14 }}
+        >
+          {save.isPending ? 'Saving…' : 'Save changes'}
+        </button>
+      )}
     </div>
   );
 }

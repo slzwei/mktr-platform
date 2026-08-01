@@ -118,7 +118,8 @@ export default function CohortBuilder({ cohort = null, onClose, onSaved }) {
     <Dialog open onOpenChange={(open) => { if (!open && !save.isPending) onClose(); }}>
       <DialogContent
         className="admin-v2"
-        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 760, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}
+        variant="sheet"
+        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 760, maxHeight: '86dvh', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
       >
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>

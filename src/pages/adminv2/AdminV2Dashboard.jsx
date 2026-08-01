@@ -19,6 +19,7 @@ import { heldLabel } from '@/lib/adminV2/constants';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
 import { Card, PeriodSwitch, Skeleton, ErrorState } from '@/components/adminv2/primitives';
 import { SeriesLineChart } from '@/components/adminv2/charts';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 
 const SEVERITY_STYLE = {
   incident: { bg: 'var(--bad-soft)', fg: 'var(--bad)' },
@@ -57,10 +58,37 @@ function dayLabel(isoDate) {
 
 function HealthStrip() {
   const attention = useAttention();
+  const mobile = useAdminV2Mobile();
   if (attention.isLoading) return <div style={{ gridColumn: 'span 12' }}><Skeleton height={74} style={{ borderRadius: 14 }} /></div>;
   if (attention.isError) return <Card span={12}><ErrorState error={attention.error} onRetry={attention.refetch} /></Card>;
 
   const strip = composeHealthStrip(attention.data);
+  if (mobile) {
+    // Tile grid (2 big + 3 small) instead of one five-segment row.
+    const spans = strip.length === 5 ? [3, 3, 2, 2, 2] : strip.map(() => 2);
+    return (
+      <div style={{ gridColumn: 'span 12', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+        {strip.map((seg, i) => (
+          <Link
+            key={seg.id}
+            to={seg.href}
+            className="av2-card"
+            style={{ gridColumn: `span ${spans[i] || 2}`, display: 'flex', flexDirection: 'column', gap: 2, padding: '12px 12px 10px', color: 'var(--ink)', textDecoration: 'none', minWidth: 0 }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg viewBox="0 0 24 24" style={{ width: 11, height: 11, flex: 'none' }} aria-hidden="true">
+                <path d={GLYPH_PATH[seg.shape]} fill={TONE_COLOR[seg.tone]} />
+              </svg>
+              <span className="av2-mono" style={{ fontSize: (spans[i] || 2) === 3 ? 19 : 14, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: '-0.02em', color: seg.valueTone ? TONE_COLOR[seg.valueTone] : 'var(--ink)' }}>
+                {seg.value}
+              </span>
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{seg.label}</span>
+          </Link>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="av2-card" style={{ gridColumn: 'span 12', display: 'flex', overflow: 'hidden' }}>
       {strip.map((seg, i) => (
@@ -142,6 +170,7 @@ function AttentionQueue() {
 function LeadFlow({ period }) {
   const series = useSeries(period);
   const funnel = useFunnel(period);
+  const mobile = useAdminV2Mobile();
   if (series.isLoading || funnel.isLoading) return <Card span={7} title="Lead flow" style={{ minHeight: 330 }}><div style={{ padding: 16 }}><Skeleton height={42} width={120} /><Skeleton height={118} style={{ marginTop: 14 }} /><Skeleton height={90} style={{ marginTop: 14 }} /></div></Card>;
   if (series.isError) return <Card span={7} title="Lead flow" style={{ minHeight: 330 }}><ErrorState error={series.error} onRetry={series.refetch} /></Card>;
   if (funnel.isError) return <Card span={7} title="Lead flow" style={{ minHeight: 330 }}><ErrorState error={funnel.error} onRetry={funnel.refetch} /></Card>;
@@ -179,29 +208,29 @@ function LeadFlow({ period }) {
     <section className="av2-card" style={{ gridColumn: 'span 7', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 330 }}>
       <header style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '13px 16px 0' }}>
         <h2 className="av2-h2" style={{ margin: 0 }}>Lead flow</h2>
-        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>OTP-verified submissions · {PERIOD_NOUN[period]}</span>
+        {!mobile && <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>OTP-verified submissions · {PERIOD_NOUN[period]}</span>}
         <span style={{ flex: 1 }} />
         <span className="av2-mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>peak {fmtNumber(max)}/day</span>
       </header>
       <div style={{ padding: '10px 16px 16px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>{fmtNumber(s.today)}</span>
+          <span style={{ fontSize: mobile ? 36 : 42, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>{fmtNumber(s.today)}</span>
           <span style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 6, padding: '3px 8px', background: delta.bg, color: delta.fg }}>{delta.label}</span>
-          <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>leads today (since 00:00 SGT)</span>
+          <span style={{ fontSize: mobile ? 11.5 : 12, color: 'var(--ink-2)' }}>leads today {mobile ? '· since 00:00 SGT' : '(since 00:00 SGT)'}</span>
         </div>
         <SeriesLineChart days={days} max={max} avgPerDay={s.avgPerDay} />
-        <div className="av2-mono" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--ink-3)' }}>
+        <div className="av2-mono" style={{ display: 'flex', justifyContent: 'space-between', fontSize: mobile ? 9.5 : 10.5, color: 'var(--ink-3)' }}>
           <span>{dayLabel(days[0].date)}</span><span>┄ avg {s.avgPerDay}/day</span><span>today</span>
         </div>
         <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {funnelRows.map((r) => (
-            <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ width: 170, flex: 'none', fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>{r.label}</span>
-              <span style={{ flex: 1, height: 18, background: 'var(--surface-2)', borderRadius: 5, overflow: 'hidden', display: 'block' }}>
+            <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: mobile ? 9 : 12 }}>
+              <span style={{ width: mobile ? 104 : 170, flex: 'none', fontSize: mobile ? 11 : 12, fontWeight: 600, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.label}</span>
+              <span style={{ flex: 1, height: mobile ? 16 : 18, background: 'var(--surface-2)', borderRadius: 5, overflow: 'hidden', display: 'block' }}>
                 <span style={{ display: 'block', height: '100%', width: `${r.pct}%`, background: r.color, borderRadius: 5 }} />
               </span>
-              <span className="av2-mono" style={{ width: 60, flex: 'none', textAlign: 'right', fontSize: 13, fontWeight: 600 }}>{fmtNumber(r.count)}</span>
-              <span style={{ width: 118, flex: 'none', textAlign: 'right', fontSize: 10.5, color: 'var(--ink-3)' }}>{r.conv}</span>
+              <span className="av2-mono" style={{ width: mobile ? 44 : 60, flex: 'none', textAlign: 'right', fontSize: mobile ? 12 : 13, fontWeight: 600 }}>{fmtNumber(r.count)}</span>
+              <span style={{ width: mobile ? 64 : 118, flex: 'none', textAlign: 'right', fontSize: mobile ? 9.5 : 10.5, color: 'var(--ink-3)', lineHeight: 1.25 }}>{r.conv}</span>
             </div>
           ))}
         </div>
@@ -212,6 +241,7 @@ function LeadFlow({ period }) {
 
 function RecentLeads() {
   const recent = useProspects({ limit: 8, sort: '-createdAt' });
+  const mobile = useAdminV2Mobile();
   if (recent.isLoading) return <Card span={7} title="Recent leads"><div style={{ padding: 16, display: 'grid', gap: 10 }}>{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={38} />)}</div></Card>;
   if (recent.isError) return <Card span={7} title="Recent leads"><ErrorState error={recent.error} onRetry={recent.refetch} /></Card>;
 
@@ -239,6 +269,29 @@ function RecentLeads() {
             const held = !!p.quarantinedAt;
             const utm = p.sourceMetadata?.utm?.utm_source;
             const agent = p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : '';
+            if (mobile) {
+              // Two-line row: name / phone · campaign, status chip + relative time right.
+              return (
+                <Link key={p.id} to={`/admin/leads/${p.id}`} className="av2-qrow" style={{ padding: '8px 14px', minHeight: 56 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.firstName} {p.lastName}</span>
+                    <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {p.phone || '—'} · {p.campaign?.name || SOURCE_SHORT[p.leadSource] || p.leadSource}{utm ? ` · ${utm}` : ''}
+                    </span>
+                  </span>
+                  <span style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                    {held ? (
+                      <span style={{ fontSize: 10.5, fontWeight: 700, background: 'var(--hold-soft)', color: 'var(--hold)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>◆ {heldLabel(p).short}</span>
+                    ) : agent ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>{agent}</span>
+                    ) : (
+                      <span style={{ fontSize: 10.5, fontWeight: 700, background: 'var(--warn-soft)', color: 'var(--warn)', borderRadius: 6, padding: '2px 8px' }}>Unassigned</span>
+                    )}
+                    <span className="av2-mono" style={{ fontSize: 9.5, color: 'var(--ink-3)' }}>{fmtAgoShort(p.createdAt)}</span>
+                  </span>
+                </Link>
+              );
+            }
             return (
               <Link key={p.id} to={`/admin/leads/${p.id}`} className="av2-qrow" style={{ padding: '7px 16px', minHeight: 47 }}>
                 <span className="av2-mono" style={{ width: 38, flex: 'none', fontSize: 11, color: 'var(--ink-3)' }}>{fmtAgoShort(p.createdAt)}</span>
@@ -350,6 +403,7 @@ export default function AdminV2Dashboard() {
   const [exporting, setExporting] = useState(false);
   const queryClient = useQueryClient();
   const attention = useAttention();
+  const mobile = useAdminV2Mobile();
 
   // Re-render every 15s so "updated Xm ago" stays honest without refetching.
   const [, setTick] = useState(0);
@@ -383,6 +437,29 @@ export default function AdminV2Dashboard() {
 
   return (
     <div>
+      {mobile ? (
+        /* Phone header: live "updated" line doubles as the refresh control
+           (design 1694f8b2), period + export on one row below. */
+        <header style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            title="Re-fetch all widgets"
+            className="av2-mono"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0 0', fontSize: 10, letterSpacing: '.13em', color: 'var(--ink-3)', textTransform: 'uppercase' }}
+          >
+            <span className="av2-pulse" aria-hidden="true" />
+            updated {attention.dataUpdatedAt ? fmtRelative(attention.dataUpdatedAt) : '—'} · tap to refresh
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PeriodSwitch value={period} onChange={setPeriod} />
+            <span style={{ flex: 1 }} />
+            <button type="button" className="av2-btn av2-btn--sm" onClick={handleExport} disabled={exporting} style={{ whiteSpace: 'nowrap' }}>
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          </div>
+        </header>
+      ) : (
       <header style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
         <div style={{ minWidth: 0 }}>
           <h1 className="av2-h1" style={{ margin: 0 }}>Dashboard</h1>
@@ -405,7 +482,8 @@ export default function AdminV2Dashboard() {
           {exporting ? 'Exporting…' : 'Export CSV'}
         </button>
       </header>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16, alignItems: 'stretch' }}>
+      )}
+      <div className="av2-grid12" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: mobile ? 10 : 16, alignItems: 'stretch' }}>
         <HealthStrip />
         <AttentionQueue />
         <LeadFlow period={period} />

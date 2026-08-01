@@ -23,6 +23,7 @@ import {
 } from '@/lib/adminV2/broadcasts';
 import { Card, Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { BroadcastComposer } from './AdminV2Broadcasts';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
@@ -30,9 +31,9 @@ import {
 
 const PAGE_SIZE = 50;
 
-function Tile({ label, value, caption, tone }) {
+function Tile({ label, value, caption, tone, style }) {
   return (
-    <div style={{ flex: 1, padding: 16, borderRight: '1px solid var(--line)' }}>
+    <div style={{ flex: 1, padding: 16, borderRight: '1px solid var(--line)', boxSizing: 'border-box', ...style }}>
       <div className="av2-microcaps">{label}</div>
       <div className="av2-mono" style={{ fontSize: 20, fontWeight: 600, marginTop: 4, color: tone || 'var(--ink)' }}>{value}</div>
       {caption && <div className="av2-caption" style={{ marginTop: 2 }}>{caption}</div>}
@@ -48,6 +49,7 @@ export default function AdminV2BroadcastDetail() {
   const [editing, setEditing] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const mobile = useAdminV2Mobile();
 
   const broadcast = useQuery({
     queryKey: ['adminV2', 'emailBroadcast', id],
@@ -110,8 +112,8 @@ export default function AdminV2BroadcastDetail() {
   if (broadcast.isLoading) {
     return (
       <div>
-        <Skeleton height={30} width={340} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16, marginTop: 20 }}>
+        <Skeleton height={30} width={340} style={{ maxWidth: '100%' }} />
+        <div className="av2-grid12" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16, marginTop: 20 }}>
           {[12, 12].map((span, i) => <div key={i} style={{ gridColumn: `span ${span}` }}><Skeleton height={140} /></div>)}
         </div>
       </div>
@@ -122,75 +124,96 @@ export default function AdminV2BroadcastDetail() {
   const st = BROADCAST_STATUS_META[b.status] || { label: b.status, tone: '' };
   const counts = b.liveCounts || {};
   const remaining = (counts.pending || 0) + (counts.attempting || 0);
+  const metaLine = `${(b.cohort?.name || '—').toUpperCase()} → ${(b.campaign?.name || '—').toUpperCase()} · ${st.label.toUpperCase()}`;
 
-  return (
-    <div>
-      <PageHeader
-        title={b.subject}
-        meta={`${(b.cohort?.name || '—').toUpperCase()} → ${(b.campaign?.name || '—').toUpperCase()} · ${st.label.toUpperCase()}`}
-      >
-        <Link to="/AdminBroadcasts" className="av2-btn av2-btn--sm" style={{ textDecoration: 'none' }}>← All pushes</Link>
-        {b.status === 'draft' && (
-          <>
-            <button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditing(true)}>Edit</button>
-            <button type="button" className="av2-btn av2-btn--sm" disabled={test.isPending} onClick={() => test.mutate()}>
-              {test.isPending ? 'Sending test…' : 'Send test to my email'}
-            </button>
-            <button
-              type="button"
-              className="av2-btn av2-btn--sm"
-              style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }}
-              disabled={destroy.isPending}
-              onClick={() => destroy.mutate()}
-            >
-              Delete
-            </button>
-            <button type="button" className="av2-btn av2-btn--sm av2-btn--primary" onClick={() => setConfirmSend(true)}>Send…</button>
-          </>
-        )}
-        {active && (
+  // One set of header actions — PageHeader children on desktop, a wrap row of
+  // the same compact buttons under the title on mobile. Handlers identical.
+  const headerActions = (
+    <>
+      <Link to="/AdminBroadcasts" className="av2-btn av2-btn--sm" style={{ textDecoration: 'none' }}>← All pushes</Link>
+      {b.status === 'draft' && (
+        <>
+          <button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditing(true)}>Edit</button>
+          <button type="button" className="av2-btn av2-btn--sm" disabled={test.isPending} onClick={() => test.mutate()}>
+            {test.isPending ? 'Sending test…' : 'Send test to my email'}
+          </button>
           <button
             type="button"
             className="av2-btn av2-btn--sm"
             style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }}
-            disabled={cancel.isPending || b.status === 'cancelling'}
+            disabled={destroy.isPending}
+            onClick={() => destroy.mutate()}
+          >
+            Delete
+          </button>
+          <button type="button" className="av2-btn av2-btn--sm av2-btn--primary" onClick={() => setConfirmSend(true)}>Send…</button>
+        </>
+      )}
+      {active && (
+        <button
+          type="button"
+          className="av2-btn av2-btn--sm"
+          style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }}
+          disabled={cancel.isPending || b.status === 'cancelling'}
+          onClick={() => cancel.mutate()}
+        >
+          {b.status === 'cancelling' ? 'Cancelling…' : 'Cancel send'}
+        </button>
+      )}
+      {(b.status === 'interrupted' || b.status === 'failed') && (
+        <>
+          {b.status === 'interrupted' && (
+            <button type="button" className="av2-btn av2-btn--sm av2-btn--primary" disabled={send.isPending} onClick={() => send.mutate({ resume: true })}>
+              Resume
+            </button>
+          )}
+          <button
+            type="button"
+            className="av2-btn av2-btn--sm"
+            style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }}
+            disabled={cancel.isPending}
             onClick={() => cancel.mutate()}
           >
-            {b.status === 'cancelling' ? 'Cancelling…' : 'Cancel send'}
+            Cancel remaining
           </button>
-        )}
-        {(b.status === 'interrupted' || b.status === 'failed') && (
-          <>
-            {b.status === 'interrupted' && (
-              <button type="button" className="av2-btn av2-btn--sm av2-btn--primary" disabled={send.isPending} onClick={() => send.mutate({ resume: true })}>
-                Resume
-              </button>
-            )}
-            <button
-              type="button"
-              className="av2-btn av2-btn--sm"
-              style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }}
-              disabled={cancel.isPending}
-              onClick={() => cancel.mutate()}
-            >
-              Cancel remaining
-            </button>
-          </>
-        )}
-      </PageHeader>
+        </>
+      )}
+    </>
+  );
 
-      {b.lastError && (
-        <div className="av2-caption" style={{ marginTop: -8, marginBottom: 14, color: 'var(--bad)' }}>{b.lastError}</div>
+  return (
+    <div>
+      {mobile ? (
+        <div style={{ padding: '2px 0 12px' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.25, color: 'var(--ink)' }}>{b.subject}</div>
+          <div className="av2-mono" style={{ fontSize: 10, letterSpacing: '.09em', color: 'var(--ink-3)', marginTop: 4, textTransform: 'uppercase' }}>{metaLine}</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {headerActions}
+          </div>
+        </div>
+      ) : (
+      <PageHeader
+        title={b.subject}
+        meta={metaLine}
+      >
+        {headerActions}
+      </PageHeader>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 16 }}>
+      {b.lastError && (
+        <div className="av2-caption" style={{ marginTop: mobile ? 0 : -8, marginBottom: 14, color: 'var(--bad)' }}>{b.lastError}</div>
+      )}
+
+      <div className="av2-grid12" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: mobile ? 10 : 16 }}>
         <Card span={12}>
-          <div style={{ display: 'flex' }}>
-            <Tile label="Recipients" value={b.status === 'draft' ? '—' : fmtNumber(b.totalRecipients)} caption={b.status === 'draft' ? 'resolved at send' : 'claimed at send start'} />
-            <Tile label="Sent" value={fmtNumber(counts.sent ?? b.sentCount)} tone="var(--ok)" caption="accepted by the mail server" />
-            <Tile label="Skipped" value={fmtNumber(counts.skipped ?? b.skippedCount)} tone="var(--warn)" caption="gate said no at send time" />
-            <Tile label="Failed" value={fmtNumber(counts.failed ?? b.failedCount)} tone={(counts.failed ?? b.failedCount) ? 'var(--bad)' : undefined} caption="transport errors" />
-            {active && <Tile label="Remaining" value={fmtNumber(remaining)} caption="throttled queue" />}
+          {/* Counter tiles — one row on desktop, a 2×2 grid on phones
+              (Remaining takes a full-width third row while a send runs) */}
+          <div style={{ display: 'flex', flexWrap: mobile ? 'wrap' : 'nowrap' }}>
+            <Tile label="Recipients" value={b.status === 'draft' ? '—' : fmtNumber(b.totalRecipients)} caption={b.status === 'draft' ? 'resolved at send' : 'claimed at send start'} style={mobile ? { flex: '1 1 50%', borderBottom: '1px solid var(--line)' } : undefined} />
+            <Tile label="Sent" value={fmtNumber(counts.sent ?? b.sentCount)} tone="var(--ok)" caption="accepted by the mail server" style={mobile ? { flex: '1 1 50%', borderRight: 'none', borderBottom: '1px solid var(--line)' } : undefined} />
+            <Tile label="Skipped" value={fmtNumber(counts.skipped ?? b.skippedCount)} tone="var(--warn)" caption="gate said no at send time" style={mobile ? { flex: '1 1 50%', ...(active ? { borderBottom: '1px solid var(--line)' } : {}) } : undefined} />
+            <Tile label="Failed" value={fmtNumber(counts.failed ?? b.failedCount)} tone={(counts.failed ?? b.failedCount) ? 'var(--bad)' : undefined} caption="transport errors" style={mobile ? { flex: '1 1 50%', borderRight: 'none', ...(active ? { borderBottom: '1px solid var(--line)' } : {}) } : undefined} />
+            {active && <Tile label="Remaining" value={fmtNumber(remaining)} caption="throttled queue" style={mobile ? { flex: '1 1 100%', borderRight: 'none' } : undefined} />}
           </div>
         </Card>
 
@@ -212,9 +235,9 @@ export default function AdminV2BroadcastDetail() {
             title="Send log"
             meta={recipients.data ? `${fmtNumber(recipients.data.total)} ${status === 'all' ? 'rows' : status}` : undefined}
             action={(
-              <div className="av2-seg" role="group" aria-label="Recipient status">
+              <div className="av2-seg" role="group" aria-label="Recipient status" style={mobile ? { minWidth: 0, maxWidth: '100%', overflowX: 'auto' } : undefined}>
                 {['all', 'sent', 'skipped', 'failed', 'pending'].map((s) => (
-                  <button key={s} type="button" aria-pressed={status === s} onClick={() => { setStatus(s); setPage(0); }}>
+                  <button key={s} type="button" aria-pressed={status === s} onClick={() => { setStatus(s); setPage(0); }} style={mobile ? { flex: 'none', padding: '0 10px', fontSize: 11.5 } : undefined}>
                     {s}
                   </button>
                 ))}
@@ -222,11 +245,11 @@ export default function AdminV2BroadcastDetail() {
             )}
           >
             <div role="table" aria-label="Send log">
-              <div className="av2-thead" role="row">
-                <span className="av2-microcaps" role="columnheader" style={{ flex: 1.6 }}>Email</span>
-                <span className="av2-microcaps" role="columnheader" style={{ width: 110, flex: 'none' }}>Status</span>
-                <span className="av2-microcaps" role="columnheader" style={{ flex: 1.4 }}>Why</span>
-                <span className="av2-microcaps" role="columnheader" style={{ width: 130, flex: 'none', textAlign: 'right' }}>When</span>
+              <div className="av2-thead" role="row" style={mobile ? { minWidth: 0 } : undefined}>
+                <span className="av2-microcaps" role="columnheader" style={{ flex: 1.6, minWidth: 0 }}>Email</span>
+                <span className="av2-microcaps" role="columnheader" style={{ width: mobile ? 84 : 110, flex: 'none' }}>Status</span>
+                <span className="av2-microcaps" role="columnheader" style={{ flex: 1.4, minWidth: 0 }}>Why</span>
+                <span className="av2-microcaps" role="columnheader" style={{ width: mobile ? 64 : 130, flex: 'none', textAlign: 'right' }}>When</span>
               </div>
 
               {recipients.isLoading && <StateRow><div style={{ padding: 12 }}><Skeleton height={60} /></div></StateRow>}
@@ -239,16 +262,16 @@ export default function AdminV2BroadcastDetail() {
                 const rst = RECIPIENT_STATUS_META[r.status] || { label: r.status, tone: '' };
                 const meta = r.reason ? broadcastReasonMeta(r.reason) : null;
                 return (
-                  <div key={r.id} className="av2-row" role="row" style={{ cursor: 'default' }}>
-                    <span role="cell" className="av2-mono" style={{ flex: 1.6, fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div key={r.id} className="av2-row" role="row" style={{ cursor: 'default', minWidth: mobile ? 0 : undefined }}>
+                    <span role="cell" className="av2-mono" style={{ flex: 1.6, minWidth: 0, fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {r.email || '—'}
                     </span>
-                    <span role="cell" style={{ width: 110, flex: 'none' }}><Chip tone={rst.tone}>{rst.label}</Chip></span>
-                    <span role="cell" style={{ flex: 1.4, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span role="cell" style={{ width: mobile ? 84 : 110, flex: 'none' }}><Chip tone={rst.tone}>{rst.label}</Chip></span>
+                    <span role="cell" style={{ flex: 1.4, minWidth: 0, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                       {r.reason ? <Chip tone={meta?.tone || ''}>{broadcastReasonLabel(r.reason)}</Chip> : <span className="av2-caption">—</span>}
-                      {r.error && <span className="av2-caption" style={{ color: 'var(--bad)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }} title={r.error}>{r.error}</span>}
+                      {r.error && <span className="av2-caption" style={{ color: 'var(--bad)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: mobile ? 140 : 260 }} title={r.error}>{r.error}</span>}
                     </span>
-                    <span role="cell" className="av2-mono" style={{ width: 130, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }} title={r.sentAt ? fmtDateTime(r.sentAt) : ''}>
+                    <span role="cell" className="av2-mono" style={{ width: mobile ? 64 : 130, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }} title={r.sentAt ? fmtDateTime(r.sentAt) : ''}>
                       {r.sentAt ? fmtRelative(r.sentAt) : '—'}
                     </span>
                   </div>
