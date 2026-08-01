@@ -90,7 +90,7 @@ export function buildDetailsDraftPrompts({ type, draw, brief, today, settings = 
     'startDate: today unless the brief implies a later start. endDate: only when the brief implies one; otherwise return an empty string.',
     'minAge/maxAge: a sensible audience range for the offer (defaults 18-65 when the brief is silent).',
     draw
-      ? 'prizes: award order, first row is the grand prize; qty 1-99 each, names concrete and customer-facing. closesAt must be after today; a draw needs a real deadline — if the brief gives none, pick a sensible one 4-8 weeks out. boostClosesAt <= closesAt (use closesAt when unsure). multiplier defaults to 10. minAge is at least 18 for draws. endDate should equal closesAt unless the brief says otherwise.'
+      ? 'prizes: award order, first row is the grand prize; qty 1-99 each, names concrete and customer-facing. closesAt must be after today; a draw needs a real deadline — if the brief gives none, pick a sensible one 4-8 weeks out. boostClosesAt must be ON OR AFTER closesAt (use closesAt when unsure — entrants may complete their session after entries close, never before the deadline you print). multiplier defaults to 10. minAge is at least 18 for draws. endDate should equal closesAt unless the brief says otherwise.'
       : null,
   ].filter(Boolean).join('\n');
   // Org guardrails ride the system prompt (campaign-copy convention); the
@@ -153,7 +153,13 @@ export function sanitizeDetailsDraft(raw, { draw, today }) {
     out.closesAt = closesAt;
     const boost = cleanYmd(raw.boostClosesAt);
     // Same-day boost is legitimate — the SGT day stays open until 23:59.
-    out.boostClosesAt = boost && boost <= closesAt && boost >= today ? boost : closesAt;
+    // The engine requires boostClosesAt >= closesAt (luckyDrawService): an
+    // entrant may finish their session AFTER entries close, up to the boost
+    // deadline, and the draw seals after that. The old `<=` accepted the
+    // opposite, so a model that read "boost ends before the draw closes" from
+    // a brief produced a config that printed that date in the T&Cs and then
+    // 422'd at draw creation.
+    out.boostClosesAt = boost && boost >= closesAt ? boost : closesAt;
     out.multiplier = cleanInt(raw.multiplier, 2, 100) ?? 10;
     if (!out.endDate) out.endDate = closesAt; // '' or absent → align to the close
   }
