@@ -170,6 +170,25 @@ export function isRedeemOpsUser(user) {
 export const ROW_OVERRIDE_SUB_ROLES = ['super_admin', 'ops_admin'];
 
 /**
+ * THE manager tier (P4-1) — powers that aren't about a single business: cap
+ * overrides, completing someone else's task, bulk assign/return. Was
+ * hand-rolled at six sites (cadence/task/partner services). Platform admin
+ * always qualifies.
+ */
+export const MANAGER_TIER_SUB_ROLES = ['super_admin', 'ops_admin', 'bdm'];
+export function isManagerTier(user) {
+  return !!user && (user.role === 'admin' || MANAGER_TIER_SUB_ROLES.includes(user.redeemOpsRole));
+}
+
+/**
+ * Team-wide analytics visibility (routes/redeemOpsAnalytics): the manager tier
+ * PLUS the analyst-class sub-roles. Named here so the route stops rolling its
+ * own list — deliberately NOT hasCapability('analytics.view_team'), whose
+ * matrix is wider (outreach_exec has it) and would silently change scope.
+ */
+export const TEAM_ANALYTICS_SUB_ROLES = [...MANAGER_TIER_SUB_ROLES, 'campaign_ops', 'redemption_ops', 'analyst'];
+
+/**
  * Row-level gate: may this user write to THIS business? Covers stage moves,
  * detail edits, contacts, locations and snooze — the actions that belong to
  * whoever is working the deal.

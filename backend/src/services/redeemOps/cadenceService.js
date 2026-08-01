@@ -6,7 +6,7 @@ import {
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
-import { hasCapability, canActOnPartnerRow } from './permissions.js';
+import { hasCapability, canActOnPartnerRow, isManagerTier } from './permissions.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeTaskService } from './taskService.js';
 import { makePartnerService } from './partnerService.js';
@@ -114,8 +114,7 @@ export function makeCadenceService(overrides = {}) {
   // Manager POWERS that aren't about a single business: overriding the per-owner
   // enrollment cap, and completing a task assigned to someone else. Distinct
   // from acting ON a business — see canActOnPartner directly below.
-  const isManager = (user) =>
-    user.role === 'admin' || ['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole);
+  const isManager = isManagerTier;
 
   // Running a cadence IS working the deal: it queues outreach tasks and sends
   // scripted messages under the owner's name. So enrolling, pausing, resuming
