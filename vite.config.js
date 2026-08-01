@@ -119,6 +119,15 @@ export default defineConfig(({ mode: _mode }) => ({
       reporter: ['text', 'text-summary', 'lcov'],
       include: ['src/**/*.{js,jsx}'],
       exclude: ['src/test/**', 'src/components/ui/**', 'src/dev/**'],
+      // Ratchet, not aspiration (P3-6): measured 2026-08-02 at 49.4/47.6/39.7/51.5
+      // — set ~1.5 points under so coverage can never silently halve. Raise as
+      // real coverage rises; never lower to make a red build pass.
+      thresholds: {
+        statements: 48,
+        branches: 46,
+        functions: 38,
+        lines: 50,
+      },
     },
   },
   plugins: [

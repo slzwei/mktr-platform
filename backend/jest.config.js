@@ -31,4 +31,16 @@ export default {
     '!src/database/seed/**',
   ],
   coverageReporters: ['text', 'text-summary', 'lcov'],
+  // Ratchet, not aspiration (P3-6): measured 2026-08-02 on the CI coverage
+  // pattern test/(unit/|integration/) at 50.78/42.13/43.87/53.06 — set ~1.5
+  // points under so coverage can never silently halve while CI stays green.
+  // Raise as real coverage rises; never lower to make a red build pass.
+  coverageThreshold: {
+    global: {
+      statements: 49,
+      branches: 41,
+      functions: 42,
+      lines: 51,
+    },
+  },
 }
