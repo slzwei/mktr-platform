@@ -67,7 +67,11 @@ jobs:
         run: cd backend && npm test -- --testPathPattern="test/migrations"
 
       - name: Check coverage
-        run: cd backend && npm test -- --coverage --testPathPattern="test/(unit/|integration/)" 2>&1 | tee /tmp/coverage.txt; grep "All files" /tmp/coverage.txt
+        # jest.config.js coverageThreshold is the gate — jest exits non-zero
+        # when global coverage drops below the ratchet. (The old
+        # `| tee; grep "All files"` passed whenever ANY table was printed and
+        # the pipe masked jest's exit code — it enforced nothing.)
+        run: cd backend && npm test -- --coverage --testPathPattern="test/(unit/|integration/)"
 
   frontend-test:
     name: Frontend Tests
