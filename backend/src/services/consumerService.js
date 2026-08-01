@@ -4,7 +4,7 @@ import { sequelize, Consumer, Prospect, RewardEntitlement, DrawEntry } from '../
 import { logger } from '../utils/logger.js';
 import { escapeLike } from '../utils/escapeLike.js';
 import { emailNormKey } from './repeatSignup.js';
-import { normalizePhone } from './prospectHelpers.js';
+import { normalizePhone, phoneDigits } from './prospectHelpers.js';
 // Enrichment input bumps on relink (consumer-profile-enrichment plan §6.3,
 // Codex R4-era #2): a moved prospect changes BOTH people's resolved facts.
 // Leaf import (models only) — no cycle.
@@ -629,7 +629,7 @@ export function makeConsumerService(overrides = {}) {
     const orderBy = SORTS[sort] || SORTS['-lastSeenAt'];
 
     const like = escapeLike(q);
-    const digits = String(q ?? '').replace(/\D/g, '');
+    const digits = phoneDigits(q);
     const parts = [];
     if (like) {
       parts.push(

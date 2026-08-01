@@ -9,7 +9,7 @@ import { logger } from '../utils/logger.js';
 import { emailNormKey } from './repeatSignup.js';
 import { makeInventoryService } from './redeemOps/inventoryService.js';
 import { makeRedeemOpsAuditService } from './redeemOps/auditService.js';
-import { buildLeadDeletedPayload } from './prospectHelpers.js';
+import { buildLeadDeletedPayload, phoneDigits } from './prospectHelpers.js';
 import { flushDeliveries, historicallyTargetedSubscribers } from './webhookService.js';
 import { reconcileSuppressionPropagation } from './suppressionPropagationService.js';
 import { evictVerifiedPhone, forgetPhoneVerification } from './verifiedPhoneStore.js';
@@ -59,7 +59,7 @@ import { evictDncCheckCache } from './dncCheckService.js';
 /** draw_entries.phoneHash is NOT NULL — erasure writes this obviously-fake sentinel. */
 export const ERASED_PHONE_HASH = '0'.repeat(64);
 
-const digitsOf = (v) => String(v || '').replace(/\D/g, '');
+const digitsOf = phoneDigits;
 
 const defaultDeps = {
   sequelize, Consumer, Prospect, RewardEntitlement, RedemptionEvent,

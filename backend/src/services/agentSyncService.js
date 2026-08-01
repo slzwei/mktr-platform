@@ -24,6 +24,7 @@ import { sequelize } from '../database/connection.js';
 import { logger } from '../utils/logger.js';
 import { adapterRegistry } from '../integrations/AdapterRegistry.js';
 import { recordSyncRun } from './syncHealth.js';
+import { phoneDigits } from './prospectHelpers.js';
 // Side-effect import: triggers LyfeAdapter self-registration. Without this
 // the registry is empty at first call and `adapterRegistry.get('lyfe')` throws.
 import '../integrations/index.js';
@@ -342,7 +343,7 @@ async function runSync(adapter, localIdField, startedAt) {
       continue;
     }
 
-    const normalizedPhone = ea.phone ? String(ea.phone).replace(/\D/g, '') : null;
+    const normalizedPhone = ea.phone ? phoneDigits(ea.phone) : null;
     const externalIdMatch = ea.externalId ? byExternalId.get(String(ea.externalId)) : null;
     const phoneEmailMatch =
       (normalizedPhone ? byPhone.get(normalizedPhone) : null) ||
