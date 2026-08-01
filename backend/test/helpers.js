@@ -93,11 +93,61 @@ export async function createTestProspect(campaignId, overrides = {}) {
 }
 
 /**
- * Create a test fleet owner via raw SQL. The FleetOwner model is retired but
- * the table remains (built by migrations) — the car-QR idempotency path still
- * needs FK-valid rows. Raw inserts must name createdAt/updatedAt explicitly.
+ * The retired-domain tables (commissions/cars/fleet_owners) are created by
+ * NOTHING on a fresh database — historically sequelize.sync() built them from
+ * the now-deleted models, and no migration has their CREATE TABLE. Long-lived
+ * databases (prod, reused local test DBs) still have them with historical
+ * rows; a fresh CI database does not. Tests that exercise the surviving
+ * raw-SQL paths (erasure scrub, delete pre-check, car-QR idempotency) create
+ * prod-shaped husks here so both worlds behave identically.
+ */
+export async function ensureRetiredTables() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS fleet_owners (
+      id UUID PRIMARY KEY,
+      full_name VARCHAR(255),
+      email VARCHAR(255),
+      phone VARCHAR(50),
+      company_name VARCHAR(255),
+      "createdAt" TIMESTAMPTZ NOT NULL,
+      "updatedAt" TIMESTAMPTZ NOT NULL
+    )`);
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS cars (
+      id UUID PRIMARY KEY,
+      make VARCHAR(255),
+      model VARCHAR(255),
+      year INTEGER,
+      plate_number VARCHAR(50),
+      type VARCHAR(50),
+      status VARCHAR(50),
+      fleet_owner_id UUID,
+      "createdAt" TIMESTAMPTZ NOT NULL,
+      "updatedAt" TIMESTAMPTZ NOT NULL
+    )`);
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS commissions (
+      id UUID PRIMARY KEY,
+      "agentId" UUID,
+      "campaignId" UUID,
+      "prospectId" UUID,
+      amount NUMERIC(10,2),
+      type VARCHAR(50),
+      status VARCHAR(50),
+      description TEXT,
+      metadata JSONB,
+      "earnedDate" TIMESTAMPTZ,
+      "createdAt" TIMESTAMPTZ NOT NULL,
+      "updatedAt" TIMESTAMPTZ NOT NULL
+    )`);
+}
+
+/**
+ * Create a test fleet owner via raw SQL (see ensureRetiredTables — the model
+ * is retired). Raw inserts must name createdAt/updatedAt explicitly.
  */
 export async function createTestFleetOwner(overrides = {}) {
+  await ensureRetiredTables();
   const n = uid();
   const [[row]] = await sequelize.query(
     `INSERT INTO fleet_owners (id, full_name, email, phone, company_name, "createdAt", "updatedAt")
@@ -167,10 +217,10 @@ export async function createTestAgentGroup(createdBy, agents = [], overrides = {
 }
 
 /**
- * Create a test car via raw SQL (Car model retired; table remains — see
- * createTestFleetOwner).
+ * Create a test car via raw SQL (Car model retired — see ensureRetiredTables).
  */
 export async function createTestCar(fleetOwnerId, overrides = {}) {
+  await ensureRetiredTables();
   const n = uid();
   const [[row]] = await sequelize.query(
     `INSERT INTO cars (id, make, model, year, plate_number, type, status, fleet_owner_id, "createdAt", "updatedAt")

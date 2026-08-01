@@ -118,6 +118,12 @@ describe('Migration idempotency (requires DB)', () => {
   let queryInterface;
 
   beforeAll(async () => {
+    // Boot the app first (sync + migration replay) so this suite is
+    // self-sufficient: it used to silently depend on an earlier suite in the
+    // same jest invocation having built the schema, which broke on a fresh
+    // database whenever this file ran early.
+    const { getApp } = await import('./helpers.js');
+    await getApp();
     const { sequelize: sq } = await import('../src/database/connection.js');
     sequelize = sq;
     queryInterface = sq.getQueryInterface();
@@ -163,6 +169,8 @@ describe('Post-migration schema verification (requires DB)', () => {
   let queryInterface;
 
   beforeAll(async () => {
+    const { getApp } = await import('./helpers.js');
+    await getApp(); // cached — see the idempotency describe above
     const { sequelize: sq } = await import('../src/database/connection.js');
     sequelize = sq;
     queryInterface = sq.getQueryInterface();
@@ -175,10 +183,12 @@ describe('Post-migration schema verification (requires DB)', () => {
     }
   });
 
-  // Tables created by normalization migrations (015, 018, 021, 023)
+  // Tables created by normalization migrations (018, 021, 023).
+  // device/vehicle_campaign_assignments are gone from this list: their
+  // createTable (015) references the retired devices/vehicles tables, which
+  // no fresh database has any more (the models that sync()'d them are
+  // deleted) — 015's guarded statements now no-op on fresh replays.
   const expectedTables = [
-    'device_campaign_assignments',
-    'vehicle_campaign_assignments',
     'campaign_media_items',
     'campaign_agent_assignments',
     'agent_group_members',
@@ -191,18 +201,14 @@ describe('Post-migration schema verification (requires DB)', () => {
     });
   }
 
-  // Named indexes created by migrations 013, 015, 018, 021, 023
+  // Named indexes created by migrations 013, 018, 021, 023. Retired-table
+  // indexes (commissions, device/vehicle assignments) are excluded — those
+  // tables only exist on long-lived databases, never on a fresh replay.
   const expectedIndexes = [
     // 013 - performance indexes
     { table: 'users', name: 'idx_users_role_isactive' },
     { table: 'prospects', name: 'idx_prospects_createdat' },
     { table: 'prospects', name: 'idx_prospects_agent_status' },
-    { table: 'commissions', name: 'idx_commissions_agent_earneddate' },
-    // 015 - device/vehicle campaign assignments
-    { table: 'device_campaign_assignments', name: 'idx_dca_device' },
-    { table: 'device_campaign_assignments', name: 'idx_dca_unique' },
-    { table: 'vehicle_campaign_assignments', name: 'idx_vca_vehicle' },
-    { table: 'vehicle_campaign_assignments', name: 'idx_vca_unique' },
     // 018 - campaign media items
     { table: 'campaign_media_items', name: 'idx_cmi_campaign' },
     // 021 - campaign agent assignments

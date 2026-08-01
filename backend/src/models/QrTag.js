@@ -169,13 +169,12 @@ const QrTag = sequelize.define('QrTag', {
       key: 'id'
     }
   },
+  // Legacy fleet column — the Car model is retired, so no sync-level FK here
+  // (a fresh test DB has no cars table when models sync). Prod's real FK was
+  // created by migrations and still stands for historical rows.
   carId: {
     type: DataTypes.UUID,
     allowNull: true,
-    references: {
-      model: 'cars',
-      key: 'id'
-    }
   },
   parentQrTagId: {
     type: DataTypes.UUID,

@@ -420,14 +420,20 @@ export async function permanentlyDeleteUser(userId, actorId) {
   }
 
   // Historical commission rows: the Commission model is retired but the table
-  // (and its ON DELETE RESTRICT agentId FK) remains — without this pre-check a
-  // delete would surface as a raw FK 500 instead of a friendly 409.
-  const [[{ count: commissionCount }]] = await sequelize.query(
-    'SELECT COUNT(*)::int AS count FROM commissions WHERE "agentId" = :userId',
-    { replacements: { userId } }
-  );
-  if (commissionCount > 0) {
-    throw new AppError('Cannot delete user with commissions. Archive commissions first.', 409);
+  // (and its ON DELETE RESTRICT agentId FK) remains on long-lived databases —
+  // without this pre-check a delete would surface as a raw FK 500 instead of a
+  // friendly 409. Fresh installs never create the table, so probe first (the
+  // probe must be a separate statement: Postgres parses a query's dead
+  // branches too, so a single guarded SELECT would still error).
+  const [[cReg]] = await sequelize.query("SELECT to_regclass('public.commissions') AS reg");
+  if (cReg.reg) {
+    const [[{ count: commissionCount }]] = await sequelize.query(
+      'SELECT COUNT(*)::int AS count FROM commissions WHERE "agentId" = :userId',
+      { replacements: { userId } }
+    );
+    if (commissionCount > 0) {
+      throw new AppError('Cannot delete user with commissions. Archive commissions first.', 409);
+    }
   }
 
   // Wallet history is a DB-level RESTRICT (wallet_ledger.agentId) — pre-check

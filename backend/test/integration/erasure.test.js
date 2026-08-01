@@ -11,6 +11,7 @@ import request from 'supertest';
 import { Transaction } from 'sequelize';
 import {
   getApp, closeDb, createTestUser, createTestCampaign, createTestQrTag, createTestAttribution,
+  ensureRetiredTables,
 } from '../helpers.js';
 import {
   sequelize, Consumer, Prospect, ProspectActivity,
@@ -293,6 +294,7 @@ describe('PDPA erasure — full matrix', () => {
     // Historical commission row with the lead's name (model retired; the table
     // and the erasure scrub both remain — seed via raw SQL, createdAt/updatedAt
     // named explicitly because the test schema has no DB defaults for them).
+    await ensureRetiredTables();
     await sequelize.query(
       `INSERT INTO commissions (id, type, amount, status, description, "agentId", "campaignId", "prospectId", "earnedDate", "createdAt", "updatedAt")
        VALUES (gen_random_uuid(), 'conversion', 50, 'pending', 'Lead conversion: Erin Tan', :agentId, :campaignId, :prospectId, now(), now(), now())`,

@@ -1,5 +1,5 @@
 import request from 'supertest'
-import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js'
+import { getApp, closeDb, createTestUser, createTestCampaign, ensureRetiredTables } from './helpers.js'
 
 let app, adminToken, adminUser, agentToken, agentUser
 
@@ -774,6 +774,7 @@ describe('Campaign permanent delete — retired commission gate no longer blocks
     })
     // Historical commission row (model retired; table remains) — raw SQL with
     // explicit createdAt/updatedAt since the test schema has no DB defaults.
+    await ensureRetiredTables()
     await sequelize.query(
       `INSERT INTO commissions (id, "agentId", "campaignId", amount, type, status, description, "earnedDate", "createdAt", "updatedAt")
        VALUES (gen_random_uuid(), :agentId, :campaignId, 100, 'conversion', 'pending', 'Test commission for delete test', now(), now(), now())`,
