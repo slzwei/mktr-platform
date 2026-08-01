@@ -153,9 +153,13 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
             }}
           >
             {info.root ? (
-              <Link to="/AdminDashboard" aria-label="Dashboard" style={{ display: 'flex', flex: 'none' }}>
-                <span style={{ width: 32, height: 32, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>M</span>
-              </Link>
+              // The brand root draws the wordmark as its title — an M tile
+              // beside it would say the same thing twice.
+              info.brand ? null : (
+                <Link to="/AdminDashboard" aria-label="Dashboard" style={{ display: 'flex', flex: 'none' }}>
+                  <span style={{ width: 32, height: 32, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>M</span>
+                </Link>
+              )
             ) : (
               <button
                 type="button"
@@ -226,12 +230,9 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
             position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
           }}
         >
-          <Link to="/AdminDashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px 14px', color: 'var(--ink)', textDecoration: 'none' }}>
-            <span style={{ width: 32, height: 32, flex: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>M</span>
-            <span>
-              <MktrWordmark size={16} style={{ marginBottom: 3 }} />
-              <span className="av2-mono" style={{ display: 'block', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>OPS CONSOLE</span>
-            </span>
+          <Link to="/AdminDashboard" style={{ display: 'block', padding: '18px 16px 14px', color: 'var(--ink)', textDecoration: 'none' }}>
+            <MktrWordmark size={18} style={{ marginBottom: 4 }} />
+            <span className="av2-mono" style={{ display: 'block', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>OPS CONSOLE</span>
           </Link>
           <nav className="av2-nav" aria-label="Admin" style={{ flex: 1, padding: '0 10px 12px' }}>
             {NAV.map((section) => (
