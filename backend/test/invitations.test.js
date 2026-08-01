@@ -107,7 +107,10 @@ describe('POST /api/users/invite', () => {
       .send({ email: `bad-role-${Date.now()}@test.com`, full_name: 'Bad Role', role: 'superadmin' })
 
     expect(res.status).toBe(400)
-    expect(res.body.message).toMatch(/Invalid role/i)
+    // P4-6: the route-layer schema rejects before the service — standard
+    // validation shape, with the offending field named in errors[].
+    expect(res.body.message).toBe('Validation Error')
+    expect(res.body.errors.some((e) => e.field === 'role')).toBe(true)
   })
 
   // ---- Duplicate invitation handling ----
