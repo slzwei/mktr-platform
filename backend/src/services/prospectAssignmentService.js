@@ -108,61 +108,102 @@ export function makeAssignmentOps({ d, m }) {
         prospect.screeningMetadata?.alreadyCharged === true &&
         prospect.screeningMetadata?.chargeRefunded !== true;
 
-      const [releaseRows] = await d.sequelize.query(
-        `UPDATE prospects
-            SET "assignedAgentId" = :agentId, "lastContactDate" = NOW(),
-                "quarantinedAt" = NULL, "quarantineReason" = NULL, "updatedAt" = NOW()
-          WHERE id = :prospectId AND "quarantinedAt" IS NOT NULL
-          RETURNING id`,
-        { replacements: { agentId, prospectId: prospect.id } }
-      );
-      const released = Array.isArray(releaseRows) && releaseRows.length > 0;
-      await prospect.reload();
+      // Release + delivery intent are ONE transaction (transactional outbox —
+      // the same contract as releaseHeldProspect / returnProspectToHeld):
+      // either the hold clears AND the pending delivery rows exist, or
+      // neither. A crash between the state flip and the dispatch can no
+      // longer strand a released-but-never-queued lead; if the process dies
+      // after commit but before the flush, recoverPendingRetries() sends the
+      // committed rows.
+      const releaseDestination = destinationForAgent(agent);
+      const t = await d.sequelize.transaction();
+      let released = false;
+      let prospectWithCampaign = null;
+      let deliveryPairs = [];
+      try {
+        const [releaseRows] = await d.sequelize.query(
+          `UPDATE prospects
+              SET "assignedAgentId" = :agentId, "lastContactDate" = NOW(),
+                  "quarantinedAt" = NULL, "quarantineReason" = NULL, "updatedAt" = NOW()
+            WHERE id = :prospectId AND "quarantinedAt" IS NOT NULL
+            RETURNING id`,
+          { replacements: { agentId, prospectId: prospect.id }, transaction: t }
+        );
+        released = Array.isArray(releaseRows) && releaseRows.length > 0;
+
+        if (released) {
+          await prospect.reload({ transaction: t });
+
+          await m.ProspectActivity.create({
+            prospectId: prospect.id,
+            type: 'assigned',
+            actorUserId: user?.id || null,
+            description: `Released from hold and assigned to ${agent.firstName} ${agent.lastName}`.trim(),
+            metadata: {
+              assignedAgentId: agentId,
+              previousAgentId,
+              released: true,
+              ...(screeningOverride ? { screeningOverride: true } : {}),
+            },
+          }, { transaction: t });
+
+          prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
+            include: [
+              { association: 'campaign', attributes: ['id', 'name'] },
+              { association: 'qrTag', attributes: ['id', 'slug'] },
+            ],
+            transaction: t,
+          });
+
+          deliveryPairs = await d.persistEventDeliveries(
+            'lead.assigned',
+            () =>
+              withBatchContext(
+                buildLeadAssignedPayload(prospect, agent, prospectWithCampaign, {
+                  qrTag: prospectWithCampaign?.qrTag || null,
+                  routingMode: 'direct',
+                }),
+                batch
+              ),
+            { destination: releaseDestination },
+            t
+          );
+          // Fail closed (mirrors releaseHeldProspect and the bulk pre-flight):
+          // never release a held lead into a destinationed app we cannot
+          // durably deliver to — roll back so it stays held and visible
+          // instead of vanishing. A destination-less (local-only) agent
+          // expects no delivery and passes.
+          if (releaseDestination && deliveryPairs.length === 0) {
+            await t.rollback();
+            await prospect.reload();
+            throw new d.AppError(
+              "Lead delivery is not configured for this agent's app (webhooks disabled or no subscriber) — releasing this held lead would strand it. Fix webhook configuration and retry.",
+              409
+            );
+          }
+        }
+
+        await t.commit();
+      } catch (err) {
+        if (!t.finished) await t.rollback().catch(() => {});
+        throw err;
+      }
 
       if (!released) {
         // Lost the race — already released elsewhere. Do not double-deliver, and return
         // agent:null so the controller does not email an agent about a lead a concurrent
         // release/sweep already assigned (possibly to a different agent).
+        await prospect.reload();
         return { prospect, agent: null, prospectWithCampaign: prospect };
       }
 
-      await m.ProspectActivity.create({
-        prospectId: prospect.id,
-        type: 'assigned',
-        actorUserId: user?.id || null,
-        description: `Released from hold and assigned to ${agent.firstName} ${agent.lastName}`.trim(),
-        metadata: {
-          assignedAgentId: agentId,
-          previousAgentId,
-          released: true,
-          ...(screeningOverride ? { screeningOverride: true } : {}),
-        },
-      });
-
+      // Post-commit side-effects — never block or roll back the durable release.
       if (!screeningCaptureCharged) {
         await d
           .deductLeadCredit({ agentId, campaignId: prospect.campaignId || null })
           .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
       }
-
-      const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
-        include: [
-          { association: 'campaign', attributes: ['id', 'name'] },
-          { association: 'qrTag', attributes: ['id', 'slug'] },
-        ],
-      });
-
-      const releaseDestination = destinationForAgent(agent);
-      d.dispatchEvent('lead.assigned', () =>
-        withBatchContext(
-          buildLeadAssignedPayload(prospect, agent, prospectWithCampaign, {
-            qrTag: prospectWithCampaign?.qrTag || null,
-            routingMode: 'direct',
-          }),
-          batch
-        ),
-        { destination: releaseDestination }
-      );
+      d.flushDeliveries(deliveryPairs);
 
       return { prospect, agent, prospectWithCampaign };
     }
@@ -291,10 +332,18 @@ export function makeAssignmentOps({ d, m }) {
     // cross-app release and leave the other app holding an active copy). RETURNING stays the
     // source of truth for WHICH rows changed, so per-campaign credit counting is exact. We
     // lock WITHOUT the campaign include — FOR UPDATE cannot be applied to the nullable side
-    // of an outer join — and fetch campaign data for the payloads afterwards.
+    // of an outer join — and fetch campaign data for the payloads inside the same
+    // transaction: the delivery rows are persisted IN-transaction too (transactional
+    // outbox, same contract as releaseHeldProspect), so the state flip and the delivery
+    // intent commit or roll back together — a crash after commit can no longer strand
+    // the batch (recoverPendingRetries flushes committed rows), and a crash before it
+    // leaves every lead exactly where it was.
     let result = [0, []];
     const lockedById = new Map();
     let requestedRows = [];
+    let deliveryPairs = [];
+    let full = [];
+    let batch = null;
     await d.sequelize.transaction(async (transaction) => {
       const locked = await m.Prospect.findAll({
         where: whereConditions,
@@ -320,6 +369,85 @@ export function makeAssignmentOps({ d, m }) {
         attributes: ['id', 'assignedAgentId', 'externalAgentId', 'quarantinedAt', 'quarantineReason'],
         transaction,
       });
+
+      // Persist the delivery intent for every newly-assigned lead (bulk-assign previously
+      // fired NO webhook at all, then fired fire-and-forget AFTER the commit — either way
+      // a crash stranded the batch). Mirror the single-assign path: lead.assigned to the
+      // new owner, plus — for a CROSS-app reassignment — lead.unassigned to the previous
+      // owner so its copy in the other app doesn't linger. One batch context for the whole
+      // fan-out: the mktr-leads receiver coalesces the N per-lead pushes into a single
+      // "{size} leads assigned to you" summary (Lyfe ignores batch for now).
+      const affectedNow = result[0];
+      const rowsNow = result[1] || [];
+      if (affectedNow > 0) {
+        batch = affectedNow > 1 ? { id: randomUUID(), size: affectedNow } : null;
+        const affectedIds = rowsNow.map((row) => row.id);
+        full = await m.Prospect.findAll({
+          where: { id: { [Op.in]: affectedIds } },
+          include: [
+            { association: 'campaign', attributes: ['id', 'name'] },
+            { association: 'qrTag', attributes: ['id', 'slug'] },
+          ],
+          transaction,
+        });
+
+        const prevOwnerIds = [
+          ...new Set(
+            affectedIds
+              .map((id) => lockedById.get(id)?.assignedAgentId)
+              .filter((prevId) => prevId && prevId !== agentId)
+          ),
+        ];
+        const prevAgentById = new Map();
+        if (prevOwnerIds.length > 0) {
+          const prevAgents = await m.User.findAll({
+            where: { id: { [Op.in]: prevOwnerIds } },
+            attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+            transaction,
+          });
+          for (const a of prevAgents) prevAgentById.set(a.id, a);
+        }
+
+        for (const p of full) {
+          const pairs = await d.persistEventDeliveries(
+            'lead.assigned',
+            () =>
+              withBatchContext(
+                buildLeadAssignedPayload(p, agent, p, { qrTag: p.qrTag || null, routingMode: 'direct' }),
+                batch
+              ),
+            { destination: newDestination },
+            transaction
+          );
+          // Fail closed: the pre-flight above vouched a subscriber existed; if it
+          // vanished mid-flight (disabled between the check and this write), roll the
+          // whole batch back — assigned-in-MKTR-but-never-surfaced is the exact state
+          // this outbox exists to prevent. Destination-less agents expect no delivery.
+          if (newDestination && pairs.length === 0) {
+            throw new d.AppError(
+              "Lead delivery is not configured for this agent's app (webhooks disabled or no subscriber) — bulk assign would strand the leads. Fix webhook configuration and retry.",
+              409
+            );
+          }
+          deliveryPairs.push(...pairs);
+
+          const prevId = lockedById.get(p.id)?.assignedAgentId;
+          const prevAgent = prevId && prevId !== agentId ? prevAgentById.get(prevId) : null;
+          if (prevAgent) {
+            const prevDestination = destinationForAgent(prevAgent);
+            if (prevDestination && prevDestination !== newDestination) {
+              const previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
+              const unPairs = await d.persistEventDeliveries(
+                'lead.unassigned',
+                () => buildLeadUnassignedPayload(p, previousAgentExternalId),
+                { destination: prevDestination },
+                transaction
+              );
+              deliveryPairs.push(...unPairs);
+            }
+          }
+        }
+      }
     });
 
     const affectedCount = result[0];
@@ -362,61 +490,8 @@ export function makeAssignmentOps({ d, m }) {
           .catch((err) => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
       }
 
-      // Deliver each newly-assigned lead (bulk-assign previously fired NO webhook at all, so
-      // bulk-assigned leads never reached the agent's app). Mirror the single-assign path:
-      // lead.assigned to the new owner, plus — for a CROSS-app reassignment — lead.unassigned
-      // to the previous owner so its copy in the other app doesn't linger. Payload rows are
-      // fetched with their campaign; previous owners come from the locked snapshot.
-      // One batch context for the whole fan-out: the mktr-leads receiver coalesces the N
-      // per-lead pushes into a single "{size} leads assigned to you" summary (Lyfe ignores
-      // batch for now — per-lead pushes, the pre-batch behavior).
-      const batch = affectedCount > 1 ? { id: randomUUID(), size: affectedCount } : null;
-      const affectedIds = affectedRows.map((row) => row.id);
-      const full = await m.Prospect.findAll({
-        where: { id: { [Op.in]: affectedIds } },
-        include: [
-          { association: 'campaign', attributes: ['id', 'name'] },
-          { association: 'qrTag', attributes: ['id', 'slug'] },
-        ],
-      });
-
-      const prevOwnerIds = [
-        ...new Set(
-          affectedIds
-            .map((id) => lockedById.get(id)?.assignedAgentId)
-            .filter((prevId) => prevId && prevId !== agentId)
-        ),
-      ];
-      const prevAgentById = new Map();
-      if (prevOwnerIds.length > 0) {
-        const prevAgents = await m.User.findAll({
-          where: { id: { [Op.in]: prevOwnerIds } },
-          attributes: ['id', 'lyfeId', 'mktrLeadsId'],
-        });
-        for (const a of prevAgents) prevAgentById.set(a.id, a);
-      }
-
-      for (const p of full) {
-        d.dispatchEvent('lead.assigned', () =>
-          withBatchContext(
-            buildLeadAssignedPayload(p, agent, p, { qrTag: p.qrTag || null, routingMode: 'direct' }),
-            batch
-          ),
-          { destination: newDestination }
-        );
-
-        const prevId = lockedById.get(p.id)?.assignedAgentId;
-        const prevAgent = prevId && prevId !== agentId ? prevAgentById.get(prevId) : null;
-        if (prevAgent) {
-          const prevDestination = destinationForAgent(prevAgent);
-          if (prevDestination && prevDestination !== newDestination) {
-            const previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
-            d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(p, previousAgentExternalId), {
-              destination: prevDestination,
-            });
-          }
-        }
-      }
+      // The delivery rows committed with the assignment — send them now.
+      d.flushDeliveries(deliveryPairs);
 
       // Log a ProspectActivity per newly-assigned lead so BULK assignment lands on the unified
       // timeline too — single-assign already logs (assignProspect), this path historically wrote

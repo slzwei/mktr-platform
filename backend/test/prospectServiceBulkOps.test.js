@@ -122,8 +122,12 @@ describe('bulkAssignProspects — held release, batch context, skip accounting',
     expect(updateArgs).toMatchObject({ assignedAgentId: 'agent-1', quarantinedAt: null, quarantineReason: null });
 
     // Every delivery is lead.assigned, batch-stamped, with qrTag + routing.mode parity.
-    const assignedCalls = deps.dispatchEvent.mock.calls.filter(([evt]) => evt === 'lead.assigned');
+    // P4-5: deliveries are persisted IN the assignment transaction (transactional
+    // outbox) and flushed after commit — assert the persist seam, not dispatchEvent.
+    const assignedCalls = deps.persistEventDeliveries.mock.calls.filter(([evt]) => evt === 'lead.assigned');
     expect(assignedCalls).toHaveLength(2);
+    for (const call of assignedCalls) expect(call[3]).toBeDefined(); // rode the txn
+    expect(deps.flushDeliveries).toHaveBeenCalled(); // sent only after commit
     const payloads = assignedCalls.map(([, builder]) => builder());
     for (const p of payloads) {
       expect(p.event).toBe('lead.assigned');
@@ -137,6 +141,7 @@ describe('bulkAssignProspects — held release, batch context, skip accounting',
       ])
     );
     expect(deps.dispatchEvent.mock.calls.some(([evt]) => evt === 'lead.created')).toBe(false);
+    expect(deps.persistEventDeliveries.mock.calls.some(([evt]) => evt === 'lead.created')).toBe(false);
 
     // Released row's activity is flagged for the timeline.
     const activityRows = deps.models.ProspectActivity.bulkCreate.mock.calls[0][0];
@@ -360,11 +365,16 @@ describe('assignProspect held release fires lead.assigned (never lead.created)',
 
     await svc.assignProspect('p1', 'agent-1', ADMIN);
 
-    const events = deps.dispatchEvent.mock.calls.map(([evt]) => evt);
+    // P4-5: the held release persists its delivery inside the release
+    // transaction (transactional outbox) and flushes post-commit.
+    const events = deps.persistEventDeliveries.mock.calls.map(([evt]) => evt);
     expect(events).toContain('lead.assigned');
     expect(events).not.toContain('lead.created');
-    const [, builder, opts] = deps.dispatchEvent.mock.calls.find(([evt]) => evt === 'lead.assigned');
+    expect(deps.dispatchEvent.mock.calls.map(([evt]) => evt)).not.toContain('lead.created');
+    const [, builder, opts, txn] = deps.persistEventDeliveries.mock.calls.find(([evt]) => evt === 'lead.assigned');
     expect(opts).toEqual({ destination: 'lyfe' });
+    expect(txn).toBeDefined(); // rode the release transaction
+    expect(deps.flushDeliveries).toHaveBeenCalled();
     const payload = builder();
     expect(payload.data.routing.mode).toBe('direct');
     expect(payload.data.qrTag).toEqual({ externalId: 'q1', slug: 's1' });
