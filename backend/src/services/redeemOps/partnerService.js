@@ -10,7 +10,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeDedupeService } from './dedupeService.js';
-import { hasCapability, canActOnPartnerRow } from './permissions.js';
+import { hasCapability, canActOnPartnerRow, isManagerTier, ROW_OVERRIDE_SUB_ROLES } from './permissions.js';
 import { deriveMatchingKeys, postalDistrictOf } from './normalizers.js';
 import { normaliseBulkIds } from './bulkIds.js';
 import {
@@ -21,6 +21,7 @@ import {
 import { makeOnboardingService } from './onboardingService.js';
 import { makeCategoryService } from './categoryService.js';
 import { fireCadenceHook } from './cadenceHooks.js';
+import { partnerDisplayName } from './partnerDisplayName.js';
 
 /**
  * Partner CRM core (docs/redeem-ops/ERD.md §3.1–3.6, brief §13–§18).
@@ -141,7 +142,7 @@ export function makePartnerService(overrides = {}) {
   // ── Create / update (dedupe-gated) ───────────────────────────────────────
 
   function displayNameOf(body) {
-    return body.tradingName || body.brandName || body.legalName || null;
+    return partnerDisplayName(body);
   }
 
   async function createPartner(body, user, requestId = null) {
@@ -281,7 +282,7 @@ export function makePartnerService(overrides = {}) {
     if (fromStage === toStage) return partner;
 
     const allowed = STAGE_TRANSITIONS[fromStage] || [];
-    const isForcer = user.role === 'admin' || ['super_admin', 'ops_admin'].includes(user.redeemOpsRole);
+    const isForcer = user.role === 'admin' || ROW_OVERRIDE_SUB_ROLES.includes(user.redeemOpsRole);
     if (!allowed.includes(toStage)) {
       // Backward corrections (mis-drop fixes) are open to whoever can act on
       // the row; every other off-map transition stays admin-only.
@@ -625,7 +626,7 @@ export function makePartnerService(overrides = {}) {
   async function editActivity(activityId, body, user, requestId = null) {
     const activity = await d.OutreachActivity.findByPk(activityId);
     if (!activity || activity.voidedAt) throw new AppError('Activity not found', 404);
-    const isManager = user.role === 'admin' || ['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole);
+    const isManager = isManagerTier(user);
     if (!isManager && activity.actorUserId !== user.id) {
       throw new AppError('You can only edit your own activities', 403);
     }
@@ -651,7 +652,7 @@ export function makePartnerService(overrides = {}) {
     if (!reason || !String(reason).trim()) throw new AppError('A reason is required to void an activity', 400);
     const activity = await d.OutreachActivity.findByPk(activityId);
     if (!activity || activity.voidedAt) throw new AppError('Activity not found', 404);
-    const isManager = user.role === 'admin' || ['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole);
+    const isManager = isManagerTier(user);
     if (!isManager && activity.actorUserId !== user.id) {
       throw new AppError('You can only void your own activities', 403);
     }

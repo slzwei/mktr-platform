@@ -2,6 +2,7 @@ import express from 'express';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { requireRedeemOps } from '../middleware/redeemOpsAuth.js';
 import analyticsService from '../services/redeemOps/analyticsService.js';
+import { TEAM_ANALYTICS_SUB_ROLES } from '../services/redeemOps/permissions.js';
 
 /**
  * Redeem Ops Phase 7 — analytics (docs/redeem-ops/ROUTE_MAP.md, brief §29).
@@ -18,7 +19,7 @@ const router = express.Router();
 
 router.get('/analytics/outreach', requireRedeemOps('analytics.view_own'), asyncHandler(async (req, res) => {
   const teamWide = req.user.role === 'admin'
-    || ['super_admin', 'ops_admin', 'bdm', 'campaign_ops', 'redemption_ops', 'analyst'].includes(req.user.redeemOpsRole);
+    || TEAM_ANALYTICS_SUB_ROLES.includes(req.user.redeemOpsRole);
   const ownerUserId = req.query.scope === 'me' || !teamWide ? req.user.id : null;
   const members = await analyticsService.outreachPerformance({ ownerUserId });
   res.json({ success: true, data: { members } });

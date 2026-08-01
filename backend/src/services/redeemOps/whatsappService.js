@@ -5,6 +5,7 @@ import { renderQrCardPng } from './qrCardRenderer.js';
 import { isSendBlocked } from '../consentService.js';
 import { boostDeadlineLong } from './drawLink.js';
 import { recordWaSend } from './waMessageOwnership.js';
+import { partnerDisplayName } from './partnerDisplayName.js';
 
 /**
  * Consumer WhatsApp delivery for reward credentials (trial-reward PR E,
@@ -174,7 +175,7 @@ export function makeWhatsappService(overrides = {}) {
       });
       return {
         rewardName: offer?.publicTitle || offer?.title || 'your reward',
-        partnerName: offer?.partner?.tradingName || offer?.partner?.brandName || offer?.partner?.legalName || null,
+        partnerName: partnerDisplayName(offer?.partner),
       };
     } catch {
       return { rewardName: 'your reward', partnerName: null };

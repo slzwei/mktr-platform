@@ -52,6 +52,7 @@ import User from '../models/User.js';
 import { logger } from '../utils/logger.js';
 import { adapterRegistry } from '../integrations/AdapterRegistry.js';
 import { recordSyncRun } from '../services/syncHealth.js';
+import { phoneDigits } from '../services/prospectHelpers.js';
 import '../integrations/index.js';
 
 const ASSIGNABLE_ROLES = new Set(['agent', 'manager', 'director']);
@@ -88,7 +89,7 @@ async function applyUpsert(adapter, lyfeUser) {
   const fullName = lyfeUser.full_name || null;
   const externalRole = lyfeUser.role || null;
   const email = lyfeUser.email || null;
-  const phone = lyfeUser.phone ? String(lyfeUser.phone).replace(/\D/g, '') : null;
+  const phone = lyfeUser.phone ? phoneDigits(lyfeUser.phone) : null;
   const isActive = lyfeUser.is_active !== false;
 
   const existing = await User.findOne({ where: { [localIdField]: externalId } });

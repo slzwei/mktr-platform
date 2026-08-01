@@ -9,6 +9,21 @@
  * Numbers starting with 65 and length 10 get + prefix.
  * All others get + prefix if missing.
  */
+/**
+ * THE raw digit-strip primitive (P4-1). The phone FORMATS in this codebase are
+ * deliberate, distinct contracts — do not flatten them into each other:
+ *   normalizePhone (here)            → E.164 storage form `+65XXXXXXXX`
+ *   Lyfe users mirror / agent sync   → bare `65XXXXXXXX` (Lyfe storage contract)
+ *   whatsappService.waRecipient      → Graph API digits `65XXXXXXXX`
+ *   dncService.formatDncNumber       → 8-digit local `XXXXXXXX`
+ *   entitlementService.phoneKeyOf    → dedupe digits (≥8)
+ *   the various maskPhone helpers    → display-only last-4 idioms
+ * Those named helpers keep their own guards; this is just the shared strip.
+ */
+export function phoneDigits(v) {
+  return String(v ?? '').replace(/\D/g, '');
+}
+
 export function normalizePhone(phone) {
   if (!phone) return phone;
   let p = String(phone).replace(/\s+/g, '');

@@ -5,7 +5,7 @@ import {
   WebhookDelivery, SuppressionPropagation,
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
-import { buildLeadSuppressedPayload, buildLeadUnsuppressedPayload } from './prospectHelpers.js';
+import { buildLeadSuppressedPayload, buildLeadUnsuppressedPayload, phoneDigits } from './prospectHelpers.js';
 import { flushDeliveries, historicallyTargetedSubscribers } from './webhookService.js';
 
 /**
@@ -43,7 +43,7 @@ import { flushDeliveries, historicallyTargetedSubscribers } from './webhookServi
  * already implies stop-contact; capability alone never skips.
  */
 
-const digitsOf = (v) => String(v || '').replace(/\D/g, '');
+const digitsOf = phoneDigits;
 
 const EVENT_FOR_STATE = {
   suppressed: 'lead.suppressed',

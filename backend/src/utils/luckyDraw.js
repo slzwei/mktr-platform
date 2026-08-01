@@ -22,7 +22,9 @@
 
 import { AppError } from '../middleware/appError.js';
 import { PASS_THEMES } from './drawTheme.js';
+import { cleanYmd } from './sgtTime.js';
 import { MAX_PRIZE_NAME, MAX_PRIZE_ROWS, MAX_PRIZE_QTY } from './luckyDrawCaps.js';
+import { isPlainObject, cleanString } from './objects.js';
 
 const MAX_PRIZE = 80; // legacy manual `prize` cap — unchanged so stored rows never drift
 // Derived summaries are bounded by construction (8 × (4 + 80) + 7 × 3 = 693);
@@ -32,32 +34,8 @@ const MAX_BOOKING_URL = 300;
 const MIN_MULTIPLIER = 2;
 const MAX_MULTIPLIER = 100;
 const DEFAULT_MULTIPLIER = 10;
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
-
-function isPlainObject(v) {
-  return Object.prototype.toString.call(v) === '[object Object]';
-}
-
-function cleanString(v, max) {
-  if (typeof v !== 'string') return undefined;
-  const t = v.trim();
-  if (!t) return undefined;
-  return t.slice(0, max);
-}
-
-function cleanYmd(v) {
-  if (typeof v !== 'string') return undefined;
-  const s = v.trim();
-  if (!YMD_RE.test(s)) return undefined;
-  // Strict calendar check — Date.parse would silently roll 2026-02-31 into
-  // March; a draw date must be a real day.
-  const [y, m, day] = s.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, day));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return undefined;
-  return s;
-}
 
 /** Valid structured rows only: plain objects with a non-empty name; qty coerced to 1..MAX_PRIZE_QTY. */
 function cleanPrizes(raw) {
@@ -86,6 +64,26 @@ export function derivePrizeSummary(prizes) {
 export function totalPrizeQuantity(ld) {
   if (!ld || !Array.isArray(ld.prizes)) return 0;
   return ld.prizes.reduce((sum, p) => sum + (Number.isInteger(p?.qty) ? p.qty : 0), 0);
+}
+
+/**
+ * THE multi-prize fail-closed guard (P4-1): the draw engine resolves exactly
+ * ONE claimed winner today, so a NORMALIZED draw whose prizes total more than
+ * one unit 422s with DRAW_MULTI_PRIZE_UNSUPPORTED. One code, one message
+ * core; call sites append their own context via `suffix` (readiness keeps a
+ * prose copy for tone — its lowercase issue code is a separate namespace).
+ * Phase 3 (multi-winner engine) removes this.
+ */
+export function assertSingleWinnerDraw(ld, { suffix = '.' } = {}) {
+  const total = totalPrizeQuantity(ld);
+  if (total > 1) {
+    const err = new AppError(
+      `This draw promises ${total} prizes, but multi-winner draw execution isn't live yet${suffix}`,
+      422
+    );
+    err.data = { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' };
+    throw err;
+  }
 }
 
 /**

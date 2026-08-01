@@ -2,6 +2,7 @@ import { QueryTypes, Op } from 'sequelize';
 import { PartnerOrganisation, User, sequelize } from '../../models/index.js';
 import { logger } from '../../utils/logger.js';
 import { normalizeBusinessName, normalizeDomain, normalizeHandle, normalizeUen } from './normalizers.js';
+import { partnerDisplayName } from './partnerDisplayName.js';
 
 /**
  * Duplicate business detection (docs/redeem-ops/ERD.md §5, brief §14).
@@ -56,7 +57,7 @@ export function makeDedupeService(overrides = {}) {
     const domain = normalizeDomain(probe.website) || (probe.websiteDomain ? String(probe.websiteDomain).toLowerCase() : null);
     const instagram = normalizeHandle(probe.instagramHandle);
     const tiktok = normalizeHandle(probe.tiktokHandle);
-    const name = normalizeBusinessName(probe.tradingName || probe.brandName || probe.legalName || probe.name || '');
+    const name = normalizeBusinessName(partnerDisplayName(probe, probe.name || ''));
 
     const exact = [];
     const seen = new Set(excludeId ? [excludeId] : []);

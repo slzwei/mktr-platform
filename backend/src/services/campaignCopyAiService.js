@@ -4,6 +4,7 @@ import { logger } from '../utils/logger.js';
 import { getRuntimeAiSettings } from './aiSettingsService.js';
 import { requestStructuredJson } from './guidedReviewAiService.js';
 import { withOrgStyle } from './redeemOps/aiSuggestShared.js';
+import { SLUG_RE } from '../utils/slug.js';
 import {
   LIMITS,
   TEMPLATE_IDS,
@@ -191,7 +192,6 @@ export const REC_TOPICS = [
 ];
 const REC_TOPIC_IDS = REC_TOPICS.map((t) => t.topic);
 const REC_LABELS = Object.fromEntries(REC_TOPICS.map((t) => [t.topic, t.label]));
-const SLUG_RE = /^[a-z0-9-]{3,80}$/;
 
 // ─────────────────────────── campaign context ───────────────────────────
 

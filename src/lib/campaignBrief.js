@@ -28,7 +28,7 @@
 
 export const BRIEF_VERSION = 1;
 
-const isPlainObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const isPlainObject = (x) => Object.prototype.toString.call(x) === '[object Object]';
 
 // ── the four questions' vocabularies ──
 

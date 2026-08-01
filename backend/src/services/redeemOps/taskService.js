@@ -6,6 +6,7 @@ import {
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { TASK_STATUSES, TASK_PRIORITIES } from './constants.js';
+import { isManagerTier } from './permissions.js';
 
 const TASK_TYPES = ['follow_up', 'call', 'meeting', 'proposal', 'admin', 'other'];
 const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -42,7 +43,7 @@ export function makeTaskService(overrides = {}) {
   };
 
   const isManager = (user) =>
-    user.role === 'admin' || ['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole);
+    isManagerTier(user);
 
   async function recomputeNextTaskAt(partnerOrganisationId, transaction = null) {
     const next = await d.OutreachTask.min('dueAt', {

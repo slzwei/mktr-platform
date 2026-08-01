@@ -6,11 +6,12 @@ import {
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
-import { hasCapability, canActOnPartnerRow } from './permissions.js';
+import { hasCapability, canActOnPartnerRow, isManagerTier } from './permissions.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeTaskService } from './taskService.js';
 import { makePartnerService } from './partnerService.js';
 import { normalizePhone } from '../prospectHelpers.js';
+import { partnerDisplayName } from './partnerDisplayName.js';
 import {
   CHANNEL_DISPOSITIONS, CADENCE_TERMINAL_DISPOSITIONS, CADENCE_WILDCARD_DISPOSITION,
   CADENCE_CHANNELS, CADENCE_TIME_WINDOWS, TASK_PRIORITIES, LOST_REASONS,
@@ -113,8 +114,7 @@ export function makeCadenceService(overrides = {}) {
   // Manager POWERS that aren't about a single business: overriding the per-owner
   // enrollment cap, and completing a task assigned to someone else. Distinct
   // from acting ON a business — see canActOnPartner directly below.
-  const isManager = (user) =>
-    user.role === 'admin' || ['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole);
+  const isManager = isManagerTier;
 
   // Running a cadence IS working the deal: it queues outreach tasks and sends
   // scripted messages under the owner's name. So enrolling, pausing, resuming
@@ -422,7 +422,7 @@ export function makeCadenceService(overrides = {}) {
       ? await d.User.findByPk(partner.ownerUserId, { attributes: ['firstName', 'fullName'], transaction: t })
       : null;
     const rendered = renderTemplate(step.scriptTemplate, {
-      partner_name: partner.tradingName || partner.brandName || partner.legalName || 'there',
+      partner_name: partnerDisplayName(partner, 'there'),
       contact_name: primaryContact?.name || 'there',
       category: partner.category || '',
       recipient: resolved.recipient || '',

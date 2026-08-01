@@ -1,3 +1,4 @@
+import { partnerDisplayName } from './partnerDisplayName.js';
 /**
  * Normalization for partner matching (docs/redeem-ops/ERD.md §5, brief §34).
  * Display values are stored as entered; these derive the SEPARATE matching keys.
@@ -83,7 +84,7 @@ export function postalDistrictOf(postalCode) {
  * keys can never drift from display values).
  */
 export function deriveMatchingKeys(body) {
-  const displayName = body.tradingName || body.brandName || body.legalName || '';
+  const displayName = partnerDisplayName(body, '');
   return {
     normalizedName: normalizeBusinessName(displayName),
     uen: normalizeUen(body.uen),

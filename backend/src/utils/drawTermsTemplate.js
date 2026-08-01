@@ -22,7 +22,13 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-/** '2026-10-30' → '30 October 2026' (string split — SGT calendar date). */
+/** '2026-10-30' → '30 October 2026' (string split — SGT calendar date).
+ * DELIBERATE copy of utils/sgtTime.longDate (P4-1 verified 2026-08-02): this
+ * file is a byte-parity twin of the frontend drawTermsTemplate.js, whose only
+ * allowed imports are twin siblings (luckyDrawCaps). Importing sgtTime here
+ * would force a frontend sgtTime twin — more twin surface than a 6-line
+ * formatter warrants. If the twin discipline ever ends, fold this into
+ * sgtTime.longDate. */
 export function formatLongDate(ymd) {
   const m = typeof ymd === 'string' ? ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
   if (!m) return '';
