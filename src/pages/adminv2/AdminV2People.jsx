@@ -13,6 +13,7 @@ import { useConsumers } from '@/hooks/queries/useAdminV2';
 import { PAGE_SIZE } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtRelative, fmtPhone } from '@/lib/adminV2/format';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 
 function readFilters(searchParams) {
   return {
@@ -140,6 +141,7 @@ export default function AdminV2People() {
   }), [filters]);
 
   const people = useConsumers(queryParams);
+  const mobile = useAdminV2Mobile();
   const rows = people.data?.rows || [];
   const total = people.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -153,6 +155,105 @@ export default function AdminV2People() {
       state: { from: `${location.pathname}${location.search}` },
     });
   };
+
+  /* ── Mobile (design 1694f8b2 "MKTR Ops Console Mobile"): search + person cards ── */
+  if (mobile) {
+    return (
+      <div>
+        <div className="av2-mono" style={{ fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px 10px' }}>
+          {total.toLocaleString('en-SG')} people · deduplicated
+        </div>
+
+        <div className="av2-input" style={{ height: 44, marginBottom: 10 }}>
+          <span aria-hidden="true" style={{ color: 'var(--ink-3)' }}>⌕</span>
+          <input
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder="Search name, phone, email"
+            aria-label="Search people"
+            style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, minWidth: 0, font: 'inherit', color: 'inherit', fontSize: 13 }}
+          />
+        </div>
+
+        {people.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} height={90} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {people.isError && <div className="av2-card"><ErrorState error={people.error} onRetry={people.refetch} /></div>}
+        {!people.isLoading && !people.isError && rows.length === 0 && (
+          <div className="av2-card">
+            <EmptyState
+              title={filters.search ? 'No people match this search' : 'No linked people yet'}
+              hint={filters.search
+                ? 'Search matches name, email, and phone digits. Erased people are browsable but never searchable.'
+                : 'People appear here once a signup links to the consumer spine.'}
+              action={filters.search && (
+                <button type="button" className="av2-btn av2-btn--sm" onClick={() => { setSearchDraft(''); patch({ q: null, page: null }); }}>Clear search</button>
+              )}
+            />
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((r) => {
+            const erased = !!r.erasedAt;
+            const name = `${r.firstName || ''} ${r.lastName || ''}`.trim();
+            const clickable = !!r.latestProspectId;
+            const meet = erased ? null : r.meetScore;
+            const buy = erased ? null : r.buyScore;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => openPerson(r)}
+                className="av2-card"
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 13px', cursor: clickable ? 'pointer' : 'default', fontFamily: 'var(--font-ui)', color: 'var(--ink)' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: erased ? 'var(--ink-2)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {erased ? 'Erased person' : (name || '—')}
+                    </span>
+                    {erased && <Chip tone="bad" glyph="⊘">Erased</Chip>}
+                  </span>
+                  <span className="av2-mono" style={{ flex: 'none', fontSize: 10, color: 'var(--ink-3)' }} title={fmtDateTime(r.lastSeenAt)}>
+                    {fmtRelative(r.lastSeenAt)}
+                  </span>
+                </span>
+                <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {erased ? '—' : (r.email || '—')} · {fmtPhone(r.phone) || '—'}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {r.signupCount} signup{r.signupCount === 1 ? '' : 's'} ({r.verifiedSignupCount} verified)
+                  </span>
+                  <span
+                    className="av2-mono"
+                    style={{ flex: 'none', fontSize: 10.5, color: 'var(--ink-2)' }}
+                    title={!erased && r.scoreSourceCampaignName ? `Scored on ${r.scoreSourceCampaignName}` : undefined}
+                  >
+                    M {meet ?? '—'} · B {buy ?? '—'}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 2px 0' }}>
+          <span className="av2-mono" style={{ flex: 1, fontSize: 10.5, color: 'var(--ink-3)' }}>
+            {rangeStart}–{rangeEnd} of {total.toLocaleString('en-SG')}
+          </span>
+          <button type="button" className="av2-btn av2-btn--sm" style={{ height: 38 }} disabled={filters.page <= 1} onClick={() => patch({ page: String(filters.page - 1) })}>← Prev</button>
+          <button type="button" className="av2-btn av2-btn--sm" style={{ height: 38 }} disabled={filters.page >= totalPages} onClick={() => patch({ page: String(filters.page + 1) })}>Next →</button>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 10 }}>
+          Voice (Retell) and pre-spine leads have no linked person — find them in Prospects.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

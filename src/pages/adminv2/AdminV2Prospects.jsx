@@ -20,6 +20,10 @@ import { fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
 import { rowChipFor } from '@/lib/adminV2/outcome';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
+import { useLongPress } from '@/components/adminv2/mobile/useLongPress';
+import MobileSheet, { SheetHead, SheetConfirm } from '@/components/adminv2/mobile/MobileSheet';
+import { MobileSelectBar } from '@/components/adminv2/mobile/MobileBars';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
@@ -103,6 +107,105 @@ function LeadScoreCell({ value, scoredAt }) {
   );
 }
 
+/**
+ * Campaign-outcome chip cluster (plan: admin-prospects-outcome-column):
+ * held alarm → outcome in the campaign's own voice → pipeline status ONLY
+ * when it isn't the default 'new' → screening verdict. Shared by the desktop
+ * table cell and the mobile card row so the two can never disagree.
+ */
+function OutcomeChips({ p, held }) {
+  return (
+    <>
+      {held
+        ? <Chip tone="hold" glyph="◆">{heldLabel(p).short}</Chip>
+        : (() => {
+          const chip = rowChipFor(p.draw, p.reward ? [p.reward] : []);
+          const pipeline = p.leadStatus && p.leadStatus !== 'new' && (
+            <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>
+              {STATUS_LABELS[p.leadStatus] || p.leadStatus}
+            </Chip>
+          );
+          if (!chip && !pipeline) {
+            return <span className="av2-mono" aria-label="No outcome yet" style={{ fontSize: 11, color: 'var(--ink-3)', paddingTop: 2 }}>—</span>;
+          }
+          return (
+            <>
+              {chip && <Chip tone={chip.tone}>{chip.label}</Chip>}
+              {pipeline}
+            </>
+          );
+        })()}
+      {p.screeningVerdict && !String(p.quarantineReason || '').startsWith('screening_') && (
+        <span
+          title={p.screeningVerdict === 'qualified'
+            ? 'Passed the AI screening call — SG/PR, in age range, agreed to meet a consultant'
+            : p.screeningVerdict === 'not_qualified'
+              ? 'Did not pass the AI screening call'
+              : 'AI screening result'}
+          style={{ display: 'inline-flex' }}
+        >
+          <Chip
+            tone={p.screeningVerdict === 'qualified' ? 'ok' : p.screeningVerdict === 'not_qualified' ? 'bad' : 'warn'}
+            glyph={p.screeningVerdict === 'qualified' ? '✓' : p.screeningVerdict === 'not_qualified' ? '✗' : '☎'}
+          >
+            {p.screeningVerdict === 'qualified' ? 'AI qualified'
+              : p.screeningVerdict === 'not_qualified' ? 'AI failed'
+                : 'AI screen'}
+          </Chip>
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Mobile lead card (design 1694f8b2): tap opens/toggles, long-press selects. */
+function MobileLeadRow({ p, selecting, isSelected, onTap, onLongPress }) {
+  const lp = useLongPress(onLongPress);
+  const held = !!p.quarantinedAt;
+  const agent = p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : '';
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onTap}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(); } }}
+      {...lp}
+      className="av2-card"
+      style={{
+        display: 'block', width: '100%', textAlign: 'left', padding: '11px 13px', cursor: 'pointer',
+        background: isSelected ? 'var(--accent-soft)' : 'var(--surface)',
+        borderColor: isSelected ? 'var(--accent)' : 'var(--line)',
+        WebkitUserSelect: 'none', userSelect: 'none',
+      }}
+    >
+      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        {selecting && <CheckboxGlyph checked={isSelected} />}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {p.firstName} {p.lastName}
+        </span>
+        <span className="av2-mono" style={{ flex: 'none', fontSize: 9.5, color: 'var(--ink-3)' }}>{fmtRelative(p.createdAt)}</span>
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
+        <span className="av2-mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', flex: 'none' }}>{p.phone || '—'}</span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {p.campaign?.name || '—'}
+        </span>
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+        <OutcomeChips p={p} held={held} />
+        <span style={{ flex: 1, minWidth: 24, textAlign: 'right', fontSize: 11, fontWeight: 600, color: agent ? 'var(--ink-2)' : 'var(--warn)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {agent || (p.externalAgentId ? 'External' : held ? '' : 'Unassigned')}
+        </span>
+        {p.score != null && (
+          <span className="av2-mono" style={{ flex: 'none', fontSize: 10.5, color: 'var(--ink-2)' }} title={`Lead score ${p.score}/100`}>
+            Score {p.score}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 function SortHeader({ label, field, sort, onSort, width, align }) {
   const active = sort === field || sort === `-${field}`;
   const desc = sort === `-${field}`;
@@ -133,6 +236,13 @@ export default function AdminV2Prospects() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const mobile = useAdminV2Mobile();
+  // Mobile-only UI state: which bottom sheet is up, the filter draft it edits
+  // (applied to the URL in one patch), explicit select mode, agent search.
+  const [sheet, setSheet] = useState(null); // 'filters' | 'assign' | 'confirmDelete'
+  const [filterDraft, setFilterDraft] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [agentQ, setAgentQ] = useState('');
 
   // Open a lead's full-page profile, carrying the CURRENT list URL as
   // state.from so the page's back link restores these exact filters (§3.8).
@@ -311,6 +421,254 @@ export default function AdminV2Prospects() {
   const rangeStart = total === 0 ? 0 : (filters.page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(filters.page * PAGE_SIZE, total);
 
+  /* ── Mobile (design 1694f8b2): card list, filter sheet, select mode ── */
+  if (mobile) {
+    const selecting = selectMode || selected.size > 0;
+    const filterCount = filters.status.length + filters.source.length + (filters.assignment ? 1 : 0);
+    const pillStyle = (on) => ({
+      minHeight: 36, padding: '0 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'var(--font-ui)',
+      fontSize: 12, fontWeight: 700, background: on ? 'var(--ink)' : 'var(--surface)',
+      color: on ? 'var(--canvas)' : 'var(--ink-2)', border: `1px solid ${on ? 'var(--ink)' : 'var(--line-strong)'}`,
+    });
+    const openFiltersSheet = () => {
+      setFilterDraft({ status: [...filters.status], source: [...filters.source], assignment: filters.assignment, sort: filters.sort });
+      setSheet('filters');
+    };
+    const draftToggle = (key, value) => setFilterDraft((d) => {
+      const cur = new Set(d[key]);
+      if (cur.has(value)) cur.delete(value); else cur.add(value);
+      return { ...d, [key]: [...cur] };
+    });
+    const applyDraft = () => {
+      patch({
+        status: filterDraft.status.join(',') || null,
+        source: filterDraft.source.join(',') || null,
+        assignment: filterDraft.assignment || null,
+        sort: filterDraft.sort === '-createdAt' ? null : filterDraft.sort,
+        page: null,
+      });
+      setSheet(null);
+    };
+    const exitSelect = () => { setSelected(new Set()); setSelectMode(false); };
+    const agentNeedle = agentQ.trim().toLowerCase();
+    const agentRows = (agentOptions.data || []).filter((a) => !agentNeedle
+      || [a.name, a.email, a.phone].filter(Boolean).some((s) => s.toLowerCase().includes(agentNeedle)));
+    const toggleSwitch = (on) => (
+      <span aria-hidden="true" style={{ width: 44, height: 26, flex: 'none', borderRadius: 13, position: 'relative', transition: 'background .15s', background: on ? 'var(--accent)' : 'var(--line-strong)' }}>
+        <span style={{ position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)', transition: 'left .15s', left: on ? 21 : 3 }} />
+      </span>
+    );
+
+    return (
+      <div>
+        {/* Search + Filters */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div className="av2-input" style={{ flex: 1, height: 44, minWidth: 0 }}>
+            <span aria-hidden="true" style={{ color: 'var(--ink-3)' }}>⌕</span>
+            <input
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              placeholder="Name, phone, email…"
+              aria-label="Search prospects"
+              style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, minWidth: 0, font: 'inherit', color: 'inherit', fontSize: 13.5 }}
+            />
+            {searchDraft && (
+              <button type="button" onClick={() => setSearchDraft('')} aria-label="Clear search" style={{ background: 'var(--surface-2)', border: 'none', borderRadius: '50%', width: 20, height: 20, cursor: 'pointer', color: 'var(--ink-2)', fontSize: 11, lineHeight: 1, flex: 'none', padding: 0 }}>✕</button>
+            )}
+          </div>
+          <button type="button" onClick={openFiltersSheet} style={{ height: 44, flex: 'none', display: 'flex', alignItems: 'center', gap: 7, padding: '0 13px', background: 'var(--surface)', border: '1px solid var(--line-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
+            <svg viewBox="0 0 24 24" style={{ width: 14, height: 14 }} aria-hidden="true">
+              <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            Filters
+            {filterCount > 0 && (
+              <span className="av2-mono" style={{ fontSize: 10, fontWeight: 600, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 6, padding: '1px 6px' }}>{filterCount}</span>
+            )}
+          </button>
+        </div>
+
+        {/* Applied filter chips — horizontal scroll */}
+        {activeChips.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '9px 14px 1px', margin: '0 -14px' }}>
+            {activeChips.map((c) => (
+              <button key={c.key} type="button" className="av2-filterchip" onClick={c.clear} aria-label={`Remove filter ${c.label}`} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+                {c.label} ✕
+              </button>
+            ))}
+            <button
+              type="button" className="av2-filterchip" style={{ background: 'transparent', color: 'var(--ink-3)', flex: 'none', whiteSpace: 'nowrap' }}
+              onClick={() => { setSearchDraft(''); setSearchParams(new URLSearchParams(), { replace: true }); }}
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+
+        {/* Meta + select toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 2px 8px' }}>
+          <span className="av2-mono" style={{ fontSize: 10, letterSpacing: '.13em', color: 'var(--ink-3)', textTransform: 'uppercase', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {total.toLocaleString('en-SG')} lead{total === 1 ? '' : 's'}{total > 0 ? ` · ${rangeStart}–${rangeEnd}` : ''}
+          </span>
+          <button type="button" onClick={() => (selecting ? exitSelect() : setSelectMode(true))} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 700, color: 'var(--accent-text)', padding: '4px 2px' }}>
+            {selecting ? 'Done' : 'Select'}
+          </button>
+        </div>
+
+        {/* Card list */}
+        {prospects.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={92} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {prospects.isError && <div className="av2-card"><ErrorState error={prospects.error} onRetry={prospects.refetch} /></div>}
+        {!prospects.isLoading && !prospects.isError && rows.length === 0 && (
+          <div className="av2-card">
+            <EmptyState
+              title="No leads match"
+              hint="Loosen the filters or clear the search — nothing in the pipeline matches this slice."
+              action={activeChips.length > 0 && (
+                <button type="button" className="av2-btn av2-btn--sm" onClick={() => { setSearchDraft(''); setSearchParams(new URLSearchParams(), { replace: true }); }}>Clear filters</button>
+              )}
+            />
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((p) => (
+            <MobileLeadRow
+              key={p.id}
+              p={p}
+              selecting={selecting}
+              isSelected={selected.has(p.id)}
+              onTap={() => { if (selecting) toggleOne(p.id); else openLead(p.id); }}
+              onLongPress={() => { if (!selecting) { setSelectMode(true); toggleOne(p.id); } }}
+            />
+          ))}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 2px' }}>
+            <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+              {rangeStart}–{rangeEnd} of {total.toLocaleString('en-SG')}
+            </span>
+            <span style={{ flex: 1 }} />
+            <button type="button" className="av2-btn av2-btn--sm" disabled={filters.page <= 1} onClick={() => patch({ page: String(filters.page - 1) })}>← Prev</button>
+            <button type="button" className="av2-btn av2-btn--sm" disabled={filters.page >= totalPages} onClick={() => patch({ page: String(filters.page + 1) })}>Next →</button>
+          </div>
+        )}
+
+        {/* Select-mode action bar (replaces the tab bar while active) */}
+        {selecting && (
+          <MobileSelectBar
+            count={selected.size}
+            onCancel={exitSelect}
+            actions={[
+              { label: 'Assign', tone: 'primary', disabled: selected.size === 0 || assignMutation.isPending, run: () => { setAgentQ(''); setSheet('assign'); } },
+              { label: 'Return', disabled: selected.size === 0 || returnMutation.isPending, run: () => { returnMutation.mutate(); setSelectMode(false); } },
+              { label: 'CSV', disabled: selected.size === 0, run: exportSelection },
+              { label: 'Delete', tone: 'danger', disabled: selected.size === 0, run: () => setSheet('confirmDelete') },
+            ]}
+          />
+        )}
+
+        {/* Filters sheet */}
+        <MobileSheet open={sheet === 'filters' && !!filterDraft} onClose={() => setSheet(null)} label="Filters">
+          {filterDraft && (
+            <>
+              <SheetHead
+                title="Filters"
+                action={(
+                  <button type="button" onClick={() => setFilterDraft({ status: [], source: [], assignment: '', sort: '-createdAt' })} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700, color: 'var(--ink-3)', padding: '6px 2px' }}>
+                    Clear all
+                  </button>
+                )}
+              />
+              <div className="av2-mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-3)', paddingBottom: 7 }}>Status</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 14 }}>
+                {LEAD_STATUSES.map((s) => (
+                  <button key={s} type="button" aria-pressed={filterDraft.status.includes(s)} onClick={() => draftToggle('status', s)} style={pillStyle(filterDraft.status.includes(s))}>
+                    {STATUS_LABELS[s] || s}
+                  </button>
+                ))}
+              </div>
+              <div className="av2-mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-3)', paddingBottom: 7 }}>Source</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 14 }}>
+                {LEAD_SOURCES.map((s) => (
+                  <button key={s} type="button" aria-pressed={filterDraft.source.includes(s)} onClick={() => draftToggle('source', s)} style={pillStyle(filterDraft.source.includes(s))}>
+                    {SOURCE_LABELS[s] || s}
+                  </button>
+                ))}
+              </div>
+              {[['held', '◆ Held only', 'Quarantined — no funded agent, screening, DNC'], ['unassigned', 'Unassigned only', 'Captured but not delivered to any agent']].map(([key, label, hint]) => (
+                <button key={key} type="button" onClick={() => setFilterDraft((d) => ({ ...d, assignment: d.assignment === key ? '' : key }))} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 48, padding: '4px 2px', background: 'transparent', border: 'none', borderTop: '1px solid var(--line)', cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-ui)' }}>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{label}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: 'var(--ink-3)', marginTop: 1 }}>{hint}</span>
+                  </span>
+                  {toggleSwitch(filterDraft.assignment === key)}
+                </button>
+              ))}
+              <div className="av2-mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-3)', padding: '12px 0 7px', borderTop: '1px solid var(--line)' }}>Sort</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 16 }}>
+                {[['-createdAt', 'Newest'], ['createdAt', 'Oldest'], ['-score', 'Score high'], ['firstName', 'Name A–Z']].map(([v, label]) => (
+                  <button key={v} type="button" aria-pressed={filterDraft.sort === v} onClick={() => setFilterDraft((d) => ({ ...d, sort: v }))} style={pillStyle(filterDraft.sort === v)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={applyDraft} style={{ width: '100%', height: 48, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 14, fontWeight: 700 }}>
+                Apply filters
+              </button>
+            </>
+          )}
+        </MobileSheet>
+
+        {/* Assign sheet */}
+        <MobileSheet open={sheet === 'assign'} onClose={() => setSheet(null)} label="Assign to agent">
+          <SheetHead title={`Assign ${selected.size} lead${selected.size === 1 ? '' : 's'}`} kicker="wallet charged on assignment" />
+          <div className="av2-input" style={{ height: 44, marginBottom: 10, background: 'var(--surface-2)' }}>
+            <span aria-hidden="true" style={{ color: 'var(--ink-3)' }}>⌕</span>
+            <input value={agentQ} onChange={(e) => setAgentQ(e.target.value)} placeholder="Search agents…" aria-label="Search agents" style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, minWidth: 0, font: 'inherit', color: 'inherit', fontSize: 13 }} />
+          </div>
+          {agentOptions.isLoading && <div style={{ padding: 8 }}><Skeleton height={44} /></div>}
+          {!agentOptions.isLoading && agentRows.length === 0 && (
+            <div className="av2-mono" style={{ padding: '16px 4px', fontSize: 11, color: 'var(--ink-3)', textAlign: 'center' }}>No agents match</div>
+          )}
+          {agentRows.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => { assignMutation.mutate({ agentId: a.id, agentName: a.name }); setSheet(null); setSelectMode(false); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 56, padding: '8px 4px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--line)', cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-ui)', color: 'var(--ink)' }}
+            >
+              <span style={{ width: 34, height: 34, flex: 'none', borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 700 }}>
+                {(a.name || '?').split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase()}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{a.name}</span>
+                <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {[a.phone, a.email].filter(Boolean).join(' · ') || '—'}
+                </span>
+              </span>
+              <span style={{ color: 'var(--ink-3)', flex: 'none' }} aria-hidden="true">›</span>
+            </button>
+          ))}
+        </MobileSheet>
+
+        {/* Delete confirm sheet */}
+        <MobileSheet open={sheet === 'confirmDelete'} onClose={() => setSheet(null)} label="Delete leads">
+          <SheetConfirm
+            title={`Delete ${selected.size} lead${selected.size === 1 ? '' : 's'}?`}
+            body="This permanently removes the selected leads and their activity history. It cannot be undone."
+            label={deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+            onConfirm={() => { deleteMutation.mutate(); setSheet(null); setSelectMode(false); }}
+            onCancel={() => setSheet(null)}
+          />
+        </MobileSheet>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader title="Prospects" meta={`${total.toLocaleString('en-SG')} LEADS · SERVER-SIDE 25/PAGE`}>
@@ -450,52 +808,8 @@ export default function AdminV2Prospects() {
               </span>
               <span className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 11, color: 'var(--ink-2)' }}>{p.phone || '—'}</span>
               <span style={{ width: 130, flex: 'none', display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                {/* Campaign-outcome precedence (plan: admin-prospects-outcome-column):
-                    held alarm → outcome in the campaign's own voice → pipeline
-                    status ONLY when it isn't the default 'new' → screening.
-                    A lead with nothing yet is silent (muted dash) — no "New" wall. */}
-                {held
-                  ? <Chip tone="hold" glyph="◆">{heldLabel(p).short}</Chip>
-                  : (() => {
-                    const chip = rowChipFor(p.draw, p.reward ? [p.reward] : []);
-                    const pipeline = p.leadStatus && p.leadStatus !== 'new' && (
-                      <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>
-                        {STATUS_LABELS[p.leadStatus] || p.leadStatus}
-                      </Chip>
-                    );
-                    if (!chip && !pipeline) {
-                      return <span className="av2-mono" aria-label="No outcome yet" style={{ fontSize: 11, color: 'var(--ink-3)', paddingTop: 2 }}>—</span>;
-                    }
-                    return (
-                      <>
-                        {chip && <Chip tone={chip.tone}>{chip.label}</Chip>}
-                        {pipeline}
-                      </>
-                    );
-                  })()}
-                {/* AI-screening verdict — a permanent fact independent of the
-                    pipeline status. Skipped when the row is already a screening
-                    HOLD (the hold chip conveys it); the useful case is a
-                    RELEASED lead that passed, which otherwise reads only silence. */}
-                {p.screeningVerdict && !String(p.quarantineReason || '').startsWith('screening_') && (
-                  <span
-                    title={p.screeningVerdict === 'qualified'
-                      ? 'Passed the AI screening call — SG/PR, in age range, agreed to meet a consultant'
-                      : p.screeningVerdict === 'not_qualified'
-                        ? 'Did not pass the AI screening call'
-                        : 'AI screening result'}
-                    style={{ display: 'inline-flex' }}
-                  >
-                    <Chip
-                      tone={p.screeningVerdict === 'qualified' ? 'ok' : p.screeningVerdict === 'not_qualified' ? 'bad' : 'warn'}
-                      glyph={p.screeningVerdict === 'qualified' ? '✓' : p.screeningVerdict === 'not_qualified' ? '✗' : '☎'}
-                    >
-                      {p.screeningVerdict === 'qualified' ? 'AI qualified'
-                        : p.screeningVerdict === 'not_qualified' ? 'AI failed'
-                          : 'AI screen'}
-                    </Chip>
-                  </span>
-                )}
+                {/* Chip cluster shared with the mobile card — see OutcomeChips. */}
+                <OutcomeChips p={p} held={held} />
               </span>
               <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                 {p.campaign && (

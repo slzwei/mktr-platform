@@ -12,8 +12,9 @@ import { toast } from 'sonner';
 import { fetchCohorts, fetchCohortFacets, archiveCohort } from '@/api/adminV2';
 import { fmtNumber, fmtRelative } from '@/lib/adminV2/format';
 import { summarizeDefinition } from '@/lib/adminV2/cohorts';
-import { PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
+import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import CohortBuilder from '@/components/adminv2/CohortBuilder';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
@@ -26,6 +27,7 @@ export default function AdminV2Cohorts() {
   const [confirmArchive, setConfirmArchive] = useState(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const mobile = useAdminV2Mobile();
 
   const archive = useMutation({
     mutationFn: (id) => archiveCohort(id),
@@ -38,6 +40,121 @@ export default function AdminV2Cohorts() {
   });
 
   const rows = cohorts.data?.rows || [];
+
+  // Shared overlays — mounted by both the mobile and desktop branches so the
+  // builder/confirm state machines stay single-sourced.
+  const overlays = (
+    <>
+      {building && <CohortBuilder onClose={() => setBuilding(false)} onSaved={(c) => { if (c?.id) navigate(`/admin/cohorts/${c.id}`); }} />}
+
+      <AlertDialog open={!!confirmArchive} onOpenChange={(open) => { if (!open) setConfirmArchive(null); }}>
+        <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
+          <AlertDialogHeader>
+            <AlertDialogTitle style={{ color: 'var(--ink)' }}>Archive “{confirmArchive?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
+              It disappears from this list. Nothing is deleted — past sends keep their history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); archive.mutate(confirmArchive.id); }}
+              disabled={archive.isPending}
+              style={{ background: 'var(--bad)', color: '#fff' }}
+            >
+              {archive.isPending ? 'Archiving…' : 'Archive'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+
+  /* ── Mobile (design 1694f8b2): meta row + cohort cards ── */
+  if (mobile) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 10px' }}>
+          <span className="av2-mono" style={{ flex: 1, minWidth: 0, fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtNumber(rows.length)} cohort{rows.length === 1 ? '' : 's'} · consent-gated
+          </span>
+          <button type="button" onClick={() => setBuilding(true)} style={{ flex: 'none', height: 38, display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700 }}>
+            + New cohort
+          </button>
+        </div>
+
+        {cohorts.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} height={104} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {cohorts.isError && <div className="av2-card"><ErrorState error={cohorts.error} onRetry={cohorts.refetch} /></div>}
+        {!cohorts.isLoading && !cohorts.isError && rows.length === 0 && (
+          <div className="av2-card">
+            <EmptyState
+              title="No cohorts yet"
+              hint="A cohort is a saved audience definition — “everyone from the Tokyo draw” — that stays current on its own."
+              action={<button type="button" className="av2-btn av2-btn--primary av2-btn--sm" onClick={() => setBuilding(true)}>Build the first one</button>}
+            />
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((c) => {
+            const hasSnap = c.lastReachableCount !== null && c.lastReachableCount !== undefined;
+            const totalSnap = c.lastTotalCount ?? 0;
+            const excludedSnap = hasSnap ? Math.max(0, totalSnap - c.lastReachableCount) : null;
+            const gate = c.definition?.marketingContext?.campaignId ? 'campaign' : 'brand-wide';
+            return (
+              <div
+                key={c.id}
+                className="av2-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/admin/cohorts/${c.id}`)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) navigate(`/admin/cohorts/${c.id}`); }}
+                style={{ padding: '12px 13px', cursor: 'pointer' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
+                  <button
+                    type="button"
+                    className="av2-btn av2-btn--ghost av2-btn--sm"
+                    style={{ flex: 'none', color: 'var(--bad)' }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmArchive(c); }}
+                  >
+                    Archive
+                  </button>
+                </div>
+                <div className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {summarizeDefinition(c.definition, facets.data)} · {c.lastPreviewAt ? `snapshot ${fmtRelative(c.lastPreviewAt)}` : 'no snapshot yet'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 10 }}>
+                  {[
+                    ['match', hasSnap ? fmtNumber(totalSnap) : '—', 'var(--ink)'],
+                    ['reachable', hasSnap ? fmtNumber(c.lastReachableCount) : '—', 'var(--ok)'],
+                    ['excluded', hasSnap ? fmtNumber(excludedSnap) : '—', excludedSnap ? 'var(--warn)' : 'var(--ink-3)'],
+                  ].map(([label, value, color]) => (
+                    <span key={label}>
+                      <span className="av2-mono" style={{ display: 'block', fontSize: 14, fontWeight: 600, color }}>{value}</span>
+                      <span style={{ display: 'block', fontSize: 9.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', marginTop: 1 }}>{label}</span>
+                    </span>
+                  ))}
+                  <span style={{ marginLeft: 'auto', flex: 'none' }}><Chip tone="accent">{gate}</Chip></span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="av2-caption" style={{ padding: '14px 4px 0', lineHeight: 1.5 }}>
+          Reachable = consented ∧ phone-verified ∧ not unsubscribed ∧ 18+ (binding safeguard) — every send re-checks each person again at send time.
+        </div>
+
+        {overlays}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -118,28 +235,7 @@ export default function AdminV2Cohorts() {
         Reachable = consented ∧ phone-verified ∧ not unsubscribed ∧ 18+ (binding safeguard) — every send re-checks each person again at send time.
       </div>
 
-      {building && <CohortBuilder onClose={() => setBuilding(false)} onSaved={(c) => { if (c?.id) navigate(`/admin/cohorts/${c.id}`); }} />}
-
-      <AlertDialog open={!!confirmArchive} onOpenChange={(open) => { if (!open) setConfirmArchive(null); }}>
-        <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
-          <AlertDialogHeader>
-            <AlertDialogTitle style={{ color: 'var(--ink)' }}>Archive “{confirmArchive?.name}”?</AlertDialogTitle>
-            <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
-              It disappears from this list. Nothing is deleted — past sends keep their history.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); archive.mutate(confirmArchive.id); }}
-              disabled={archive.isPending}
-              style={{ background: 'var(--bad)', color: '#fff' }}
-            >
-              {archive.isPending ? 'Archiving…' : 'Archive'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {overlays}
     </div>
   );
 }

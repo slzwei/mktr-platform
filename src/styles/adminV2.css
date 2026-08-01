@@ -306,6 +306,51 @@ body[data-theme='dark'] .admin-v2 {
   --ring: 232.6 100% 71.4%;
 }
 
+/* ── Mobile layer (≤767px) — design source 1694f8b2 "MKTR Ops Console Mobile" ──
+   The shell + pages branch in JS on useAdminV2Mobile(); this block only holds
+   what CSS must own: keyframes, the 12-col grid collapse, and a safety net
+   that keeps any not-yet-converted fake-table swipeable instead of clipped. */
+@keyframes av2m-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes av2m-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes av2m-slide-up {
+  from { transform: translateY(14px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .av2m-sheet, .av2m-selectbar { animation: none !important; }
+}
+
+@media (max-width: 767px) {
+  /* Desktop 12-col grids (dashboard, detail pages) stack to one column.
+     !important because the span lives in each child's inline style. */
+  .admin-v2 .av2-grid12 > * { grid-column: span 12 / span 12 !important; }
+
+  /* Fake-tables not yet given a mobile card layout: let the card scroll
+     sideways so the rightmost columns stay reachable (cards ship
+     overflow:hidden; rows would otherwise clip silently). */
+  .admin-v2 .av2-card:has(.av2-thead) { overflow-x: auto !important; }
+  .admin-v2 .av2-card:has(.av2-thead) .av2-thead,
+  .admin-v2 .av2-card:has(.av2-thead) .av2-row { min-width: max-content; }
+
+  /* Desktop floating bulk bar, if reached on mobile: full-width above the
+     tab bar instead of centre-floating off both edges. */
+  .admin-v2 .av2-bulkbar {
+    left: 10px; right: 10px; transform: none;
+    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+    flex-wrap: wrap; max-width: none;
+  }
+
+  /* Page headers tighten up on a phone. */
+  .admin-v2 .av2-h1 { font-size: 19px; }
+  .admin-v2 .av2-kpi { font-size: 34px; }
+}
+
 /* The design-editor PREVIEW renders the real customer page inline (no iframe —
    Radix portals must reach the top document). It must show the CUSTOMER look,
    never admin chrome: restore the app's original tokens + font. Safe outside

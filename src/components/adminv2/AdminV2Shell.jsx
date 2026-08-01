@@ -6,13 +6,21 @@
  * attention bell, avatar menu). [data-theme] dark swap persisted to
  * localStorage. Wraps every v2 admin screen; legacy pages keep their own
  * shell until their PR lands.
+ *
+ * ≤767px the same shell renders the MOBILE chrome instead (design source
+ * 1694f8b2 "MKTR Ops Console Mobile"): 56px top bar (back/M tile · title ·
+ * search · bell · avatar→More) + fixed bottom tab bar (Home / Leads /
+ * Campaigns / Money / More). SGT clock + theme toggle move to /admin/more.
  */
-import { useEffect, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { NAV } from '@/lib/adminV2/nav';
 import GlobalSearch from './GlobalSearch';
 import NotificationsBell from './NotificationsBell';
+import MobileTabBar from './mobile/MobileTabBar';
+import { AdminV2ShellContext } from './mobile/shellContext';
+import { useAdminV2Mobile } from './mobile/useAdminV2Mobile';
 import '@/styles/adminV2.css';
 
 const THEME_KEY = 'mktr_admin_v2_theme';
@@ -45,13 +53,47 @@ function initialsOf(user) {
   return (user?.email || 'OP').slice(0, 2).toUpperCase();
 }
 
+/* Mobile top-bar identity per route: title, root (M tile, no back) or the
+   parent to fall back to when there's no in-app history to pop. Order
+   matters — first match wins, so /admin/campaigns/… specials precede :id. */
+const MOBILE_ROUTES = [
+  [/^\/admindashboard/, { title: 'MKTR', sub: 'OPS CONSOLE', root: true }],
+  [/^\/adminprospects/, { title: 'Leads', root: true }],
+  [/^\/admin\/leads\//, { title: 'Lead', parent: '/AdminProspects' }],
+  [/^\/admin\/campaigns\/(new|workspace)/, { title: 'Campaign', parent: '/AdminCampaigns' }],
+  [/^\/admin\/campaigns\/[^/]+\/(edit|workspace|studio)/, { title: 'Campaign', parent: '/AdminCampaigns' }],
+  [/^\/admin\/campaigns\//, { title: 'Campaign', parent: '/AdminCampaigns' }],
+  [/^\/admincampaigns/, { title: 'Campaigns', root: true }],
+  [/^\/adminwallets/, { title: 'Money', root: true }],
+  [/^\/adminagents/, { title: 'Money', root: true }],
+  [/^\/admin\/more/, { title: 'More', root: true }],
+  [/^\/adminpeople/, { title: 'People', parent: '/admin/more' }],
+  [/^\/admin\/cohorts\//, { title: 'Cohort', parent: '/AdminCohorts' }],
+  [/^\/admincohorts/, { title: 'Cohorts', parent: '/admin/more' }],
+  [/^\/admin\/broadcasts\//, { title: 'Push', parent: '/AdminBroadcasts' }],
+  [/^\/adminbroadcasts/, { title: 'Email Pushes', parent: '/admin/more' }],
+  [/^\/adminagentgroups/, { title: 'Agent Groups', parent: '/admin/more' }],
+  [/^\/adminqrcodes/, { title: 'QR Codes', parent: '/admin/more' }],
+  [/^\/adminshortlinks/, { title: 'Short Links', parent: '/admin/more' }],
+  [/^\/adminusers/, { title: 'Users', parent: '/admin/more' }],
+  [/^\/adminaisettings/, { title: 'AI Settings', parent: '/admin/more' }],
+];
+
+function mobileRouteInfo(pathname) {
+  const p = pathname.toLowerCase();
+  const hit = MOBILE_ROUTES.find(([rx]) => rx.test(p));
+  return hit ? hit[1] : { title: 'MKTR', sub: 'OPS CONSOLE', root: true };
+}
+
 export default function AdminV2Shell({ children, fullBleed = false, legacyBridge = false }) {
   const [theme, setTheme] = useAdminV2Theme();
   const [clock, setClock] = useState(sgtClock);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const isMobile = useAdminV2Mobile();
 
   useEffect(() => {
     const t = setInterval(() => setClock(sgtClock()), 15_000);
@@ -82,7 +124,96 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
     }
   };
 
+  const ctx = useMemo(
+    () => ({ theme, setTheme, signOut: handleSignOut, user, isMobile }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme, user, isMobile],
+  );
+
+  /* ── Mobile chrome ─────────────────────────────────────────────────── */
+  if (isMobile) {
+    const info = mobileRouteInfo(location.pathname);
+    const goBack = () => {
+      // RR7 tracks the in-app history depth on history.state.idx — pop when
+      // we navigated here, hard-fall to the parent on a cold deep link.
+      if (window.history.state?.idx > 0) navigate(-1);
+      else navigate(info.parent || '/AdminDashboard');
+    };
+    return (
+      <AdminV2ShellContext.Provider value={ctx}>
+        <div className={legacyBridge ? 'admin-v2 av2-legacy-bridge' : 'admin-v2'} data-theme={theme}>
+          <header
+            style={{
+              position: 'sticky', top: 0, zIndex: 50, boxSizing: 'border-box',
+              display: 'flex', alignItems: 'center', gap: 8,
+              height: 'calc(56px + env(safe-area-inset-top, 0px))',
+              padding: 'env(safe-area-inset-top, 0px) 10px 0 10px',
+              background: 'var(--canvas)', borderBottom: '1px solid var(--line)',
+            }}
+          >
+            {info.root ? (
+              <Link to="/AdminDashboard" aria-label="Dashboard" style={{ display: 'flex', flex: 'none' }}>
+                <span style={{ width: 32, height: 32, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>M</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={goBack}
+                aria-label="Back"
+                style={{ width: 44, height: 44, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', marginLeft: -6, padding: 0 }}
+              >
+                <svg viewBox="0 0 24 24" style={{ width: 20, height: 20 }} aria-hidden="true">
+                  <path d="M14.5 5 8 12l6.5 7" fill="none" stroke="var(--ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)' }}>
+                {info.title}
+              </span>
+              {(info.sub || info.root) && (
+                <span className="av2-mono" style={{ display: 'block', fontSize: 9, letterSpacing: '.14em', color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {info.sub || 'ALL TIMES SGT · CURRENCY SGD'}
+                </span>
+              )}
+            </span>
+            <GlobalSearch variant="icon" />
+            <NotificationsBell />
+            <button
+              type="button"
+              onClick={() => navigate('/admin/more')}
+              title="Account"
+              aria-label="Account & more"
+              style={{
+                width: 32, height: 32, flex: 'none', borderRadius: '50%', border: 'none', cursor: 'pointer',
+                background: 'var(--ink)', color: 'var(--canvas)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700,
+                fontFamily: 'var(--font-ui)',
+              }}
+            >
+              {initialsOf(user)}
+            </button>
+          </header>
+
+          <main
+            className={legacyBridge ? 'av2-bridge-tokens' : undefined}
+            style={fullBleed
+              ? { width: '100%', minWidth: 0, minHeight: '60vh' }
+              : { width: '100%', boxSizing: 'border-box', minHeight: '60vh', padding: '10px 14px calc(120px + env(safe-area-inset-bottom, 0px))' }}
+          >
+            {children}
+          </main>
+
+          {/* Full-bleed editor surfaces keep their own footers clear of chrome. */}
+          {!fullBleed && <MobileTabBar />}
+        </div>
+      </AdminV2ShellContext.Provider>
+    );
+  }
+
+  /* ── Desktop chrome ────────────────────────────────────────────────── */
   return (
+    <AdminV2ShellContext.Provider value={ctx}>
     <div className={legacyBridge ? 'admin-v2 av2-legacy-bridge' : 'admin-v2'} data-theme={theme}>
       <div style={{ display: 'flex', minHeight: '100vh' }}>
         {/* ── Sidebar (228px fixed) ── */}
@@ -219,5 +350,6 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
       {/* Toasts render through the app-wide sonner Toaster (App.jsx) — a second
           mount here would double-render every toast. */}
     </div>
+    </AdminV2ShellContext.Provider>
   );
 }

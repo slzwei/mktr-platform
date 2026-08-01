@@ -16,8 +16,11 @@ import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import WalletLedgerList from '@/components/adminv2/WalletLedgerList';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
+import MobileSheet, { SheetHead } from '@/components/adminv2/mobile/MobileSheet';
+import MoneySegments from '@/components/adminv2/mobile/MoneySegments';
 
-function AdjustDialog({ wallet, onClose }) {
+function AdjustDialog({ wallet, onClose, mobile }) {
   const [amount, setAmount] = useState('');
   const [direction, setDirection] = useState('credit');
   const [note, setNote] = useState('');
@@ -50,20 +53,8 @@ function AdjustDialog({ wallet, onClose }) {
     onError: (e) => toast.error(e?.message || 'Adjustment failed'),
   });
 
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose(); }}>
-      <DialogContent
-        className="admin-v2"
-        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 440 }}
-        onInteractOutside={(e) => { if (mutation.isPending) e.preventDefault(); }}
-        onEscapeKeyDown={(e) => { if (mutation.isPending) e.preventDefault(); }}
-      >
-        <DialogHeader>
-          <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>Manual adjustment</DialogTitle>
-          <DialogDescription style={{ color: 'var(--ink-2)', fontSize: 11.5, textAlign: 'left' }}>
-            {wallet.name} · balance {fmtSGDExact(wallet.walletBalanceCents)} — the exception path. Top-ups happen in the agent app; refunds only via campaign takedown.
-          </DialogDescription>
-        </DialogHeader>
+  const body = (
+    <>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           {[['credit', '+ Credit'], ['debit', '\u2212 Debit']].map(([v, label]) => (
             <button
@@ -104,21 +95,60 @@ function AdjustDialog({ wallet, onClose }) {
           <input className="av2-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. duplicate delivery on 2 leads — goodwill credit" />
         </label>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button type="button" className="av2-btn" disabled={mutation.isPending} onClick={onClose}>Cancel</button>
-          <button type="button" className="av2-btn av2-btn--primary" disabled={!valid || mutation.isPending} onClick={() => mutation.mutate()}>
+          <button type="button" className="av2-btn" disabled={mutation.isPending} onClick={onClose} style={mobile ? { flex: 1, justifyContent: 'center' } : undefined}>Cancel</button>
+          <button type="button" className="av2-btn av2-btn--primary" disabled={!valid || mutation.isPending} onClick={() => mutation.mutate()} style={mobile ? { flex: 2, justifyContent: 'center' } : undefined}>
             {mutation.isPending ? 'Applying\u2026' : `Apply ${direction === 'credit' ? '+' : '\u2212'}${amountValid ? fmtSGDExact(cents) : ''}`}
           </button>
         </div>
+    </>
+  );
+
+  if (mobile) {
+    return (
+      <MobileSheet open onClose={() => { if (!mutation.isPending) onClose(); }} label="Manual adjustment">
+        <SheetHead
+          title="Manual adjustment"
+          kicker={`${wallet.name} \u00b7 balance ${fmtSGDExact(wallet.walletBalanceCents)}`}
+        />
+        <div style={{ fontSize: 11.5, color: 'var(--ink-2)', lineHeight: 1.5, paddingBottom: 12 }}>
+          The exception path. Top-ups happen in the agent app; refunds only via campaign takedown.
+        </div>
+        {body}
+      </MobileSheet>
+    );
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose(); }}>
+      <DialogContent
+        className="admin-v2"
+        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 440 }}
+        onInteractOutside={(e) => { if (mutation.isPending) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (mutation.isPending) e.preventDefault(); }}
+      >
+        <DialogHeader>
+          <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>Manual adjustment</DialogTitle>
+          <DialogDescription style={{ color: 'var(--ink-2)', fontSize: 11.5, textAlign: 'left' }}>
+            {wallet.name} \u00b7 balance {fmtSGDExact(wallet.walletBalanceCents)} \u2014 the exception path. Top-ups happen in the agent app; refunds only via campaign takedown.
+          </DialogDescription>
+        </DialogHeader>
+        {body}
       </DialogContent>
     </Dialog>
   );
 }
 
-function LedgerDrawer({ wallet, onClose }) {
+function LedgerDrawer({ wallet, onClose, mobile }) {
   if (!wallet) return null;
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
+      <SheetContent
+        side={mobile ? 'bottom' : 'right'}
+        className="admin-v2"
+        style={mobile
+          ? { maxHeight: '84dvh', height: 'auto', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderTop: '1px solid var(--line)', borderRadius: '18px 18px 0 0', display: 'flex', flexDirection: 'column' }
+          : { width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}
+      >
         <SheetHeader style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
           <SheetTitle style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', fontFamily: 'var(--font-ui)', textAlign: 'left' }}>
             {wallet.name} — ledger
@@ -139,6 +169,7 @@ export default function AdminV2Wallets() {
   const wallets = useWallets();
   const [ledgerFor, setLedgerFor] = useState(null);
   const [adjustFor, setAdjustFor] = useState(null);
+  const mobile = useAdminV2Mobile();
 
   // ?focus=<agentId> deep-link (design contract — the Agents page "Ledger →"
   // lands here with that agent's drawer open). Closing clears the param so
@@ -165,6 +196,82 @@ export default function AdminV2Wallets() {
 
   const floatCents = rows.reduce((s, w) => s + (w.walletBalanceCents || 0), 0);
   const committedCents = rows.reduce((s, w) => s + (w.committedValueCents || 0), 0);
+
+  /* ── Mobile (design 1694f8b2 Money tab): segmented header + wallet cards ── */
+  if (mobile) {
+    return (
+      <div>
+        <div className="av2-mono" style={{ fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px 10px' }}>
+          {fmtNumber(rows.length)} external agents · float {fmtSGD(floatCents)} · committed {fmtSGD(committedCents)}
+        </div>
+        <MoneySegments active="wallets" />
+
+        {wallets.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} height={124} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {wallets.isError && <div className="av2-card"><ErrorState error={wallets.error} onRetry={wallets.refetch} /></div>}
+        {!wallets.isLoading && !wallets.isError && rows.length === 0 && (
+          <div className="av2-card">
+            <EmptyState
+              title="No external agents yet"
+              hint="Wallets appear when mktr-leads agents are synced. Balances stay S$0 until the wallet goes live and agents top up."
+            />
+          </div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((w) => (
+            <div key={w.id} className="av2-card" style={{ padding: '12px 13px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.name}</span>
+                    {w.isActive === false && <Chip tone="warn">Inactive</Chip>}
+                  </span>
+                  <span className="av2-mono" style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-3)', marginTop: 1, textTransform: 'uppercase' }}>
+                    last activity {w.lastActivityAt ? fmtRelative(w.lastActivityAt) : '—'}
+                  </span>
+                </span>
+                <span style={{ flex: 'none', textAlign: 'right' }}>
+                  <span className="av2-mono" style={{ display: 'block', fontSize: 17, fontWeight: 600, letterSpacing: '-0.02em', color: w.walletBalanceCents === 0 ? 'var(--warn)' : 'var(--ink)' }}>
+                    {fmtSGDExact(w.walletBalanceCents)}
+                  </span>
+                  {w.walletBalanceCents === 0 && (
+                    <span style={{ display: 'inline-block', fontSize: 9.5, fontWeight: 700, background: 'var(--warn-soft)', color: 'var(--warn)', borderRadius: 5, padding: '1px 6px', marginTop: 2 }}>Wallet empty</span>
+                  )}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 9 }}>
+                {(w.openCommitments || []).length === 0
+                  ? <Chip>No open commitments</Chip>
+                  : (w.openCommitments || []).map((oc) => (
+                    <Chip key={oc.assignmentId} tone="accent">
+                      {oc.campaign || 'campaign'} · {fmtNumber(oc.remaining)} @ {fmtSGD(oc.unitPriceCents)}
+                    </Chip>
+                  ))}
+              </div>
+              <div style={{ display: 'flex', gap: 7, marginTop: 11 }}>
+                <button type="button" onClick={() => setLedgerFor(w)} style={{ flex: 1, height: 38, background: 'var(--surface-2)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>
+                  Ledger
+                </button>
+                <button type="button" onClick={() => setAdjustFor(w)} style={{ flex: 1, height: 38, background: 'var(--accent-soft)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12, fontWeight: 700, color: 'var(--accent-text)' }}>
+                  Adjust
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="av2-caption" style={{ padding: '14px 4px 0', lineHeight: 1.5 }}>
+          Top-ups happen in the agents’ own app and are non-refundable to cash; the only automatic refund is a campaign takedown returning undelivered commitments as credits.
+        </div>
+
+        <LedgerDrawer wallet={ledgerFor || focusWallet} onClose={() => { setLedgerFor(null); clearFocus(); }} mobile />
+        {adjustFor && <AdjustDialog wallet={adjustFor} onClose={() => setAdjustFor(null)} mobile />}
+      </div>
+    );
+  }
 
   return (
     <div>

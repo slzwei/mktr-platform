@@ -11,13 +11,14 @@ import { useAgentGroups, useAgentOptions, useWallets } from '@/hooks/queries/use
 import { createAgentGroup, updateAgentGroup, deleteAgentGroup } from '@/api/adminV2';
 import { fmtNumber } from '@/lib/adminV2/format';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 
-function GroupEditor({ group, onClose }) {
+function GroupEditor({ group, onClose, mobile }) {
   const isNew = !group?.id;
   const [name, setName] = useState(group?.name || '');
   const [description, setDescription] = useState(group?.description || '');
@@ -63,7 +64,13 @@ function GroupEditor({ group, onClose }) {
 
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
+      <SheetContent
+        side={mobile ? 'bottom' : 'right'}
+        className="admin-v2"
+        style={mobile
+          ? { maxHeight: '84dvh', height: 'auto', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderTop: '1px solid var(--line)', borderRadius: '18px 18px 0 0', display: 'flex', flexDirection: 'column' }
+          : { width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}
+      >
         <SheetHeader style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
           <SheetTitle style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', fontFamily: 'var(--font-ui)', textAlign: 'left' }}>
             {isNew ? 'New agent group' : `Edit ${group.name}`}
@@ -131,9 +138,9 @@ function GroupEditor({ group, onClose }) {
             <div className="av2-caption" style={{ marginTop: 6 }}>Members are stored by phone; agents without a phone can’t join a group.</div>
           </div>
         </div>
-        <div style={{ padding: 16, borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button type="button" className="av2-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="av2-btn av2-btn--primary" disabled={!name.trim() || save.isPending || agents.isError || agents.isLoading} onClick={() => save.mutate()}>
+        <div style={{ padding: mobile ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : 16, borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end', flex: 'none' }}>
+          <button type="button" className="av2-btn" onClick={onClose} style={mobile ? { flex: 1, justifyContent: 'center' } : undefined}>Cancel</button>
+          <button type="button" className="av2-btn av2-btn--primary" disabled={!name.trim() || save.isPending || agents.isError || agents.isLoading} onClick={() => save.mutate()} style={mobile ? { flex: 2, justifyContent: 'center' } : undefined}>
             {save.isPending ? 'Saving…' : isNew ? 'Create group' : 'Save changes'}
           </button>
         </div>
@@ -148,6 +155,7 @@ export default function AdminV2AgentGroups() {
   const [editor, setEditor] = useState(null); // null | {} (new) | group
   const [confirmDelete, setConfirmDelete] = useState(null);
   const queryClient = useQueryClient();
+  const mobile = useAdminV2Mobile();
 
   const fundedIds = useMemo(
     () => new Set((wallets.data || []).filter((w) => w.walletBalanceCents > 0).map((w) => w.id)),
@@ -165,6 +173,114 @@ export default function AdminV2AgentGroups() {
   });
 
   const rows = groups.data || [];
+
+  // Shared overlays — the editor drawer (responsive side) + delete confirm,
+  // mounted by both branches.
+  const overlays = (
+    <>
+      {editor !== null && <GroupEditor group={editor.id ? editor : null} onClose={() => setEditor(null)} mobile={mobile} />}
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}>
+        <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
+          <AlertDialogHeader>
+            <AlertDialogTitle style={{ color: 'var(--ink)' }}>Delete “{confirmDelete?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
+              The group and its member list are removed. Agents themselves are untouched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); remove.mutate(confirmDelete.id); }}
+              disabled={remove.isPending}
+              style={{ background: 'var(--bad)', color: '#fff' }}
+            >
+              {remove.isPending ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+
+  /* ── Mobile (design 1694f8b2): meta row + group cards ── */
+  if (mobile) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 10px' }}>
+          <span className="av2-mono" style={{ flex: 1, minWidth: 0, fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtNumber(rows.length)} group{rows.length === 1 ? '' : 's'} · named member collections
+          </span>
+          <button type="button" onClick={() => setEditor({})} style={{ flex: 'none', height: 38, display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700 }}>
+            + New group
+          </button>
+        </div>
+
+        {groups.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} height={96} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {groups.isError && <div className="av2-card"><ErrorState error={groups.error} onRetry={groups.refetch} /></div>}
+        {!groups.isLoading && !groups.isError && rows.length === 0 && (
+          <div className="av2-card">
+            <EmptyState title="No groups yet" hint="Groups are reusable agent pickers — create one to speed up assignment." action={<button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditor({})}>New group</button>} />
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((g) => {
+            const members = g.members || [];
+            const funded = members.filter((m) => m.userId && fundedIds.has(m.userId)).length;
+            return (
+              <div
+                key={g.id}
+                className="av2-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => setEditor(g)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) setEditor(g); }}
+                style={{ padding: '12px 13px', cursor: 'pointer' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</span>
+                  <span style={{ flex: 'none' }}>
+                    {wallets.isLoading
+                      ? <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>…</span>
+                      : wallets.isError
+                        ? <span className="av2-mono" title="Wallet data failed to load" style={{ fontSize: 11, color: 'var(--ink-3)' }}>—</span>
+                        : <Chip tone={funded < members.length && members.length > 0 ? 'warn' : 'ok'}>{funded}/{members.length} funded</Chip>}
+                  </span>
+                </div>
+                {g.description && (
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-2)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.description}</div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <span className="av2-mono" style={{ flex: 1, minWidth: 0, fontSize: 10.5, letterSpacing: '.06em', color: 'var(--ink-3)', textTransform: 'uppercase' }}>
+                    {fmtNumber(members.length)} member{members.length === 1 ? '' : 's'}
+                  </span>
+                  <button
+                    type="button"
+                    className="av2-btn av2-btn--ghost av2-btn--sm"
+                    style={{ flex: 'none', color: 'var(--bad)' }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDelete(g); }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="av2-caption" style={{ padding: '14px 4px 0', lineHeight: 1.5 }}>
+          “Funded” counts members holding wallet credits — external agents only in v1. Round-robin routing itself is driven by commitments, not group membership.
+        </div>
+
+        {overlays}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -217,28 +333,7 @@ export default function AdminV2AgentGroups() {
         “Funded” counts members holding wallet credits — external agents only in v1. Round-robin routing itself is driven by commitments, not group membership.
       </div>
 
-      {editor !== null && <GroupEditor group={editor.id ? editor : null} onClose={() => setEditor(null)} />}
-
-      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}>
-        <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
-          <AlertDialogHeader>
-            <AlertDialogTitle style={{ color: 'var(--ink)' }}>Delete “{confirmDelete?.name}”?</AlertDialogTitle>
-            <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
-              The group and its member list are removed. Agents themselves are untouched.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); remove.mutate(confirmDelete.id); }}
-              disabled={remove.isPending}
-              style={{ background: 'var(--bad)', color: '#fff' }}
-            >
-              {remove.isPending ? 'Deleting…' : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {overlays}
     </div>
   );
 }

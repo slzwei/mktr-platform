@@ -13,6 +13,7 @@ import { useCampaignLeaderboard } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtRelative } from '@/lib/adminV2/format';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 
 const fetchQrTags = async ({ search, campaignId }) => {
   const qs = new URLSearchParams({ limit: '200' });
@@ -64,7 +65,7 @@ function CreateDialog({ campaigns, onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !create.isPending) onClose(); }}>
-      <DialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 460 }}>
+      <DialogContent variant="sheet" className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 460 }}>
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>New promotional QR</DialogTitle>
           <DialogDescription style={{ color: 'var(--ink-2)', fontSize: 11.5, textAlign: 'left' }}>
@@ -115,6 +116,7 @@ export default function AdminV2QRCodes() {
     () => [...(tags.data?.rows || [])].sort((a, b) => (b.scanCount || 0) - (a.scanCount || 0)),
     [tags.data]
   );
+  const mobile = useAdminV2Mobile();
 
   const handleDownload = async (tag) => {
     setDownloading(tag.id);
@@ -126,6 +128,86 @@ export default function AdminV2QRCodes() {
       setDownloading('');
     }
   };
+
+  /* ── Mobile (design 1694f8b2 "MKTR Ops Console Mobile"): QR tag cards ── */
+  if (mobile) {
+    const total = tags.data?.total ?? 0;
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10 }}>
+          <div className="av2-mono" style={{ flex: 1, minWidth: 0, fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtNumber(total)} tags{total > rows.length && rows.length > 0 ? ` · showing first ${fmtNumber(rows.length)}` : ''} · sorted by scans
+          </div>
+          <button type="button" onClick={() => setCreating(true)} style={{ flex: 'none', height: 38, display: 'inline-flex', alignItems: 'center', padding: '0 14px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700 }}>
+            + New QR
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 8, paddingBottom: 10 }}>
+          <div className="av2-input" style={{ height: 44 }}>
+            <span aria-hidden="true" style={{ color: 'var(--ink-3)' }}>⌕</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search label"
+              aria-label="Search QR tags"
+              style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, minWidth: 0, font: 'inherit', color: 'inherit', fontSize: 13 }}
+            />
+          </div>
+          <select
+            className="av2-input"
+            style={{ height: 44, appearance: 'auto' }}
+            value={campaignFilter}
+            onChange={(e) => setCampaignFilter(e.target.value)}
+            aria-label="Filter by campaign"
+          >
+            <option value="">All campaigns</option>
+            {campaignOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+
+        {tags.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={90} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {tags.isError && <div className="av2-card"><ErrorState error={tags.error} onRetry={tags.refetch} /></div>}
+        {!tags.isLoading && !tags.isError && rows.length === 0 && (
+          <div className="av2-card"><EmptyState title="No QR tags match" hint="Create one, or clear the filters." /></div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((t) => (
+            <div key={t.id} className="av2-card" style={{ padding: '11px 13px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span aria-hidden="true" style={{ width: 38, height: 38, flex: 'none', borderRadius: 9, background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▦</span>
+                <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label || t.name || t.slug}</span>
+                  {t.active === false && <Chip tone="warn">Inactive</Chip>}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Download ${t.label || t.name || t.slug} QR image`}
+                  disabled={downloading === t.id}
+                  onClick={() => handleDownload(t)}
+                  style={{ flex: 'none', width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: 'none', borderRadius: 9, cursor: 'pointer', color: 'var(--ink)', fontSize: 15, opacity: downloading === t.id ? 0.5 : 1 }}
+                >
+                  ↓
+                </button>
+              </div>
+              <div className="av2-mono" style={{ margin: '7px 0 0 48px', fontSize: 10.5, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {t.slug ? `/t/${t.slug} · ` : ''}{t.campaign?.name || '—'}
+              </div>
+              <div className="av2-mono" style={{ margin: '3px 0 0 48px', fontSize: 10, color: 'var(--ink-3)' }}>
+                {fmtNumber(t.scanCount || 0)} scans · {fmtNumber(t.uniqueScanCount || 0)} unique · last scan {t.lastScanned ? fmtRelative(t.lastScanned) : '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {creating && <CreateDialog campaigns={campaignOptions} onClose={() => setCreating(false)} />}
+      </div>
+    );
+  }
 
   return (
     <div>

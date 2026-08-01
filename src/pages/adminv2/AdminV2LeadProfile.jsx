@@ -30,6 +30,9 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
 } from '@/components/ui/alert-dialog';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
+import MobileSheet, { SheetHead, SheetMenuItem } from '@/components/adminv2/mobile/MobileSheet';
+import { MobileActionBar, MobilePrimaryBtn, MobileMoreBtn } from '@/components/adminv2/mobile/MobileBars';
 
 // ── shared bits ─────────────────────────────────────────────────────────────
 
@@ -1138,6 +1141,9 @@ export default function AdminV2LeadProfile() {
   const [menu, setMenu] = useState(null);
   const [menuAction, setMenuAction] = useState(null);
   const [menuTarget, setMenuTarget] = useState(null);
+  const mobile = useAdminV2Mobile();
+  // Mobile ⋯ overflow sheet (Return to held / Delete live there on phones).
+  const [mobileMenu, setMobileMenu] = useState(false);
   // Consent-version click-through: null | { version, loading, clauses?, missing? }
   const [consentCopyView, setConsentCopyView] = useState(null);
   const openConsentCopy = useCallback(async (version) => {
@@ -1371,14 +1377,18 @@ export default function AdminV2LeadProfile() {
 
   return (
     <div>
-      {/* ── Sticky command bar (all views) ── */}
-      <div style={{ position: 'sticky', top: 64, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', background: 'var(--canvas)', borderBottom: '1px solid var(--line)', marginBottom: 16 }}>
+      {/* ── Command bar: sticky under the desktop topbar; on mobile a plain
+             identity row (actions live in the bottom action bar instead) ── */}
+      <div style={mobile
+        ? { display: 'flex', alignItems: 'center', gap: 10, padding: '2px 0 10px', marginBottom: 12, borderBottom: '1px solid var(--line)' }
+        : { position: 'sticky', top: 64, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', background: 'var(--canvas)', borderBottom: '1px solid var(--line)', marginBottom: 16 }}>
         <Link to={from} style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent-text)', textDecoration: 'none', flex: 'none' }}>← {fromLabel}</Link>
         <span aria-hidden="true" style={{ width: 1, height: 16, background: 'var(--line-strong)', flex: 'none' }} />
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.08em', color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {`${canonicalName.toUpperCase()}${phone ? ` · ${phone}` : ''}`}
         </span>
         <span style={{ flex: 1 }} />
+        {!mobile && (
         <div style={{ position: 'relative', flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
           <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--line-strong)', color: 'var(--bad)' }} onClick={() => openAction('delete')}>Delete</button>
           {/* Erased people cannot be re-dispatched — the backend bulk paths
@@ -1439,6 +1449,7 @@ export default function AdminV2LeadProfile() {
             </>
           )}
         </div>
+        )}
       </div>
 
       {/* ── Page-level banners ── */}
@@ -1840,6 +1851,91 @@ export default function AdminV2LeadProfile() {
               />
             )}
           </div>
+        </>
+      )}
+
+      {/* ── Mobile: fixed action bar + sheet variants of the command menus ── */}
+      {mobile && (
+        <>
+          <MobileActionBar>
+            {erased ? (
+              <button
+                type="button"
+                onClick={() => openAction('delete')}
+                style={{ flex: 1, height: 48, background: 'var(--surface)', color: 'var(--bad)', border: '1px solid var(--bad)', borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 14, fontWeight: 700, boxShadow: 'var(--shadow)' }}
+              >
+                Delete
+              </button>
+            ) : (
+              <>
+                <MobilePrimaryBtn onClick={() => openAction('assign')} disabled={assignMutation.isPending}>
+                  {view === 'profile' ? 'Assign to agent' : currentSignup?.agentName ? 'Reassign' : 'Assign this lead'}
+                </MobilePrimaryBtn>
+                <MobileMoreBtn onClick={() => setMobileMenu(true)} />
+              </>
+            )}
+          </MobileActionBar>
+
+          <MobileSheet open={mobileMenu} onClose={() => setMobileMenu(false)} label="Lead actions">
+            <SheetHead title={canonicalName} kicker={phone || 'lead actions'} />
+            {!erased && (
+              <SheetMenuItem
+                label="Return to held"
+                sub="Pull back from the agent · refund the wallet charge"
+                onClick={() => { setMobileMenu(false); openAction('return'); }}
+              />
+            )}
+            <SheetMenuItem
+              label="Delete lead"
+              danger
+              sub="Removes the signup and its history · can't be undone"
+              onClick={() => { setMobileMenu(false); openAction('delete'); }}
+            />
+          </MobileSheet>
+
+          <MobileSheet open={!!menu} onClose={() => { setMenu(null); setMenuAction(null); }} label={menuAction === 'assign' ? 'Assign lead' : menuAction === 'return' ? 'Return lead' : 'Pick campaign'}>
+            {menu === 'campaign' && (
+              <>
+                <SheetHead title="Which campaign's lead?" kicker={menuAction === 'assign' ? 'then pick an agent' : `${menuAction} that signup`} />
+                {railSignups.map((s) => (
+                  <button
+                    key={s.prospectId}
+                    type="button"
+                    onClick={() => pickCampaign(s)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 56, padding: '9px 12px', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 12, marginBottom: 7, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-ui)', color: 'var(--ink)', boxSizing: 'border-box' }}
+                  >
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.campaign?.name || 'No campaign'}</span>
+                      <span className="av2-mono" style={{ display: 'block', fontSize: 10.5, color: 'var(--ink-3)', marginTop: 1 }}>
+                        agent: {s.agentName || (s.externalBuyer ? 'external buyer' : 'unassigned')}
+                      </span>
+                    </span>
+                    <span style={{ color: 'var(--ink-3)', flex: 'none' }} aria-hidden="true">›</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {menu === 'agent' && (
+              <>
+                <SheetHead title={`Assign ${menuTargetSignup?.campaign?.name || 'this'} lead`} kicker="wallet charged on assignment" />
+                {agentOptions.isLoading && <div style={{ padding: 8 }}><Skeleton height={44} /></div>}
+                {(agentOptions.data || []).map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => { setMenu(null); assignMutation.mutate({ targetId: menuTarget || prospectId, agentId: a.id, agentName: a.name }); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 52, padding: '8px 4px', background: 'transparent', border: 'none', borderBottom: '1px solid var(--line)', cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-ui)', color: 'var(--ink)' }}
+                  >
+                    <span style={{ width: 34, height: 34, flex: 'none', borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 700 }}>
+                      {(a.name || '?').split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase()}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700 }}>{a.name}</span>
+                    <span className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', flex: 'none' }}>LYFE</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </MobileSheet>
         </>
       )}
 

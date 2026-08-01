@@ -10,6 +10,7 @@ import { apiClient } from '@/api/client';
 import { fmtNumber, fmtRelative, fmtDate } from '@/lib/adminV2/format';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { useAdminV2Mobile } from '@/components/adminv2/mobile/useAdminV2Mobile';
 
 const fetchStaff = async () => {
   const resp = await apiClient.get('/users?role=admin&limit=100');
@@ -40,7 +41,7 @@ function InviteDialog({ onClose }) {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !invite.isPending) onClose(); }}>
-      <DialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 440 }}>
+      <DialogContent variant="sheet" className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 440 }}>
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>Invite an admin</DialogTitle>
           <DialogDescription style={{ color: 'var(--ink-2)', fontSize: 11.5, textAlign: 'left' }}>
@@ -69,7 +70,61 @@ function InviteDialog({ onClose }) {
 export default function AdminV2Users() {
   const staff = useQuery({ queryKey: ['adminV2', 'staff'], queryFn: fetchStaff, staleTime: 30_000 });
   const [inviting, setInviting] = useState(false);
+  const mobile = useAdminV2Mobile();
   const rows = staff.data?.rows || [];
+
+  /* ── Mobile (design 1694f8b2 "MKTR Ops Console Mobile"): admin roster cards ── */
+  if (mobile) {
+    const total = staff.data?.total ?? 0;
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10 }}>
+          <div className="av2-mono" style={{ flex: 1, minWidth: 0, fontSize: 10, letterSpacing: '.12em', color: 'var(--ink-3)', textTransform: 'uppercase', padding: '2px 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {fmtNumber(total)} back-office admins{total > rows.length && rows.length > 0 ? ` · showing first ${fmtNumber(rows.length)}` : ''}
+          </div>
+          <button type="button" onClick={() => setInviting(true)} style={{ flex: 'none', height: 38, display: 'inline-flex', alignItems: 'center', padding: '0 14px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 12.5, fontWeight: 700 }}>
+            + Invite admin
+          </button>
+        </div>
+
+        {staff.isLoading && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} height={80} style={{ borderRadius: 14 }} />)}
+          </div>
+        )}
+        {staff.isError && <div className="av2-card"><ErrorState error={staff.error} onRetry={staff.refetch} /></div>}
+        {!staff.isLoading && !staff.isError && rows.length === 0 && (
+          <div className="av2-card"><EmptyState title="No staff users" hint="Invite the first admin to share the console." /></div>
+        )}
+        <div style={{ display: 'grid', gap: 8 }}>
+          {rows.map((u) => {
+            const st = statusOf(u);
+            const name = u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email;
+            const initials = (name.split(/\s+/).map((x) => x[0]).filter(Boolean).slice(0, 2).join('') || '?').toUpperCase();
+            return (
+              <div key={u.id} className="av2-card" style={{ padding: '11px 13px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span aria-hidden="true" style={{ width: 36, height: 36, flex: 'none', borderRadius: '50%', background: 'var(--surface-2)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                    {initials}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+                    <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
+                  </span>
+                  <span style={{ flex: 'none' }}><Chip tone={st.tone}>{st.label}</Chip></span>
+                </div>
+                <div className="av2-mono" style={{ margin: '8px 0 0 46px', fontSize: 10, color: 'var(--ink-3)' }}>
+                  last active {u.lastLogin ? fmtRelative(u.lastLogin) : st.label === 'Invited' ? 'never' : '—'} · joined {fmtDate(u.createdAt)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {inviting && <InviteDialog onClose={() => setInviting(false)} />}
+      </div>
+    );
+  }
 
   return (
     <div>
