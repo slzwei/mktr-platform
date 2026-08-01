@@ -77,6 +77,26 @@ export function totalPrizeQuantity(ld) {
 }
 
 /**
+ * THE multi-prize fail-closed guard (P4-1): the draw engine resolves exactly
+ * ONE claimed winner today, so a NORMALIZED draw whose prizes total more than
+ * one unit 422s with DRAW_MULTI_PRIZE_UNSUPPORTED. One code, one message
+ * core; call sites append their own context via `suffix` (readiness keeps a
+ * prose copy for tone — its lowercase issue code is a separate namespace).
+ * Phase 3 (multi-winner engine) removes this.
+ */
+export function assertSingleWinnerDraw(ld, { suffix = '.' } = {}) {
+  const total = totalPrizeQuantity(ld);
+  if (total > 1) {
+    const err = new AppError(
+      `This draw promises ${total} prizes, but multi-winner draw execution isn't live yet${suffix}`,
+      422
+    );
+    err.data = { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' };
+    throw err;
+  }
+}
+
+/**
  * Normalize a raw luckyDraw value into the canonical shape, or undefined when
  * the input isn't a plain object (caller should drop the key entirely).
  */

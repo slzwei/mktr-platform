@@ -9,7 +9,7 @@ import {
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
-import { normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
+import { normalizeLuckyDraw, assertSingleWinnerDraw } from '../utils/luckyDraw.js';
 import { getSystemAgentId } from './systemAgent.js';
 
 /**
@@ -169,15 +169,7 @@ export function makeLuckyDrawService(overrides = {}) {
     // Fail-closed until the multi-winner engine ships: this engine resolves
     // exactly ONE claimed winner per draw (a claimed attempt is terminal), so
     // a multi-prize config must not mint a record it cannot deliver.
-    const totalPrizes = totalPrizeQuantity(normalizeLuckyDraw(ld));
-    if (totalPrizes > 1) {
-      const err = new AppError(
-        `This draw promises ${totalPrizes} prizes, but multi-winner draw execution isn't live yet.`,
-        422
-      );
-      err.data = { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' };
-      throw err;
-    }
+    assertSingleWinnerDraw(normalizeLuckyDraw(ld));
     const closesAtMs = ld.closesAt ? sgtDayEndExclusiveMs(ld.closesAt) : null;
     if (closesAtMs === null) {
       throw new AppError('luckyDraw.closesAt (YYYY-MM-DD) is required to create a draw', 422);

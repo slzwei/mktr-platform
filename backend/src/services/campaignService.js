@@ -8,7 +8,7 @@ import { logger } from '../utils/logger.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
-import { applyLuckyDrawPolicy, normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
+import { applyLuckyDrawPolicy, normalizeLuckyDraw, assertSingleWinnerDraw } from '../utils/luckyDraw.js';
 import { PASS_THEMES } from '../utils/drawTheme.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
 import { normalizeBrief, deriveArchetype, hasBrief } from '../utils/campaignBrief.js';
@@ -474,15 +474,7 @@ export async function getCampaign(id, req) {
 export function assertDrawActivatable(designConfig) {
   const ld = normalizeLuckyDraw(getStoredLuckyDraw(designConfig));
   if (!ld || ld.enabled !== true) return;
-  const total = totalPrizeQuantity(ld);
-  if (total > 1) {
-    const err = new AppError(
-      `This draw promises ${total} prizes, but multi-winner draw execution isn't live yet — the campaign can stay a draft (or paused) but cannot be active.`,
-      422
-    );
-    err.data = { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' };
-    throw err;
-  }
+  assertSingleWinnerDraw(ld, { suffix: ' — the campaign can stay a draft (or paused) but cannot be active.' });
 }
 
 /**
