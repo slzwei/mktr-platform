@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import fetch from 'node-fetch';
+import { makeWaGraphClient, otpSender } from './waGraphClient.js';
+import { maskPhonePrefixed } from './phoneMask.js';
 import { Campaign, Verification } from '../models/index.js';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { AppError } from '../middleware/errorHandler.js';
@@ -48,7 +50,6 @@ const snsClient = new SNSClient({
 });
 
 // Meta WhatsApp Graph API config (version aligned with metaCapiService.js; all overridable via env)
-const META_GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v21.0';
 const WA_TEMPLATE_NAME = process.env.META_WA_TEMPLATE_NAME || 'auth_otp';
 const WA_TEMPLATE_LANG = process.env.META_WA_TEMPLATE_LANG || 'en_US';
 
@@ -63,10 +64,12 @@ const generateCode = () => crypto.randomInt(100000, 1000000).toString();
  * numbers out of them means there is nothing there to erase. Mirrors the same
  * helper in lyfe-app's custom-sms-hook.
  */
-const maskPhone = (phone) => {
-  const s = String(phone || '');
-  return s.length < 7 ? '***' : `${s.slice(0, 3)}****${s.slice(-4)}`;
-};
+// One shared Graph client for the OTP path — node-fetch injected so the
+// existing test seam (unstable_mockModule('node-fetch')) keeps working.
+const waClient = makeWaGraphClient({ fetch });
+
+// '+6591234567' → '+65****4567' — shared display mask (P4-2, phoneMask.js).
+const maskPhone = maskPhonePrefixed;
 
 // Helper to send WhatsApp via Meta Graph API.
 //
@@ -77,49 +80,30 @@ const maskPhone = (phone) => {
 // (waWebhookService.js:137,145-148). Full reasoning and the send-path
 // inventory: redeemOps/waMessageOwnership.js.
 const sendWhatsAppOtpMeta = async (phone, code) => {
-  const phoneId = process.env.META_WA_PHONE_NUMBER_ID;
-  const accessToken = process.env.META_WA_ACCESS_TOKEN;
+  // Sender resolution (P4-2): legacy META_WA_* pair first — it is a separate
+  // sender number in prod whose statuses the webhook skips — falling back to
+  // the unified WHATSAPP_* family. See waGraphClient.otpSender.
+  const { phoneId, token } = otpSender();
 
-  if (!phoneId || !accessToken) {
+  if (!phoneId || !token) {
     throw new Error('Meta WhatsApp credentials missing');
   }
 
   const to = phone.replace('+', '');
-  const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`;
-
-  const body = {
-    messaging_product: "whatsapp",
-    to: to,
-    type: "template",
-    template: {
-      name: WA_TEMPLATE_NAME,
-      language: { code: WA_TEMPLATE_LANG },
-      components: [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: code }
-          ]
-        },
-        {
-          type: "button",
-          sub_type: "url",
-          index: 0,
-          parameters: [
-            { type: "text", text: code }
-          ]
-        }
-      ]
-    }
-  };
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
+  // The shared client brings the 3-attempt 5xx/network retry the OTP path
+  // never had (the reward path gained it after the 2026-07-20 incident; a
+  // dropped OTP blocks signup, so it needs it MORE).
+  const response = await waClient.sendTemplate({
+    phoneId,
+    token,
+    to,
+    name: WA_TEMPLATE_NAME,
+    language: WA_TEMPLATE_LANG,
+    components: [
+      { type: 'body', parameters: [{ type: 'text', text: code }] },
+      { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: code }] },
+    ],
+    label: 'otp_send',
   });
 
   if (!response.ok) {

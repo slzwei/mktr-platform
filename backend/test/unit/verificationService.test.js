@@ -124,6 +124,25 @@ describe('verificationService (unit)', () => {
       expect(snsClientSend).toHaveBeenCalled();  // SMS actually dispatched
     });
 
+    it('retries a transient 5xx on the WhatsApp OTP send and still delivers via WhatsApp (P4-2)', async () => {
+      // The OTP path historically had NO retry — the shared waGraphClient
+      // brings the reward path's 3-attempt policy. Two 500s then success:
+      // the send must recover WITHOUT falling back to SMS.
+      Campaign.findByPk.mockResolvedValue({ id: 'camp-1', design_config: { otpChannel: 'whatsapp' } });
+      fetchMock
+        .mockResolvedValueOnce({ status: 500, ok: false, json: () => Promise.resolve({}) })
+        .mockResolvedValueOnce({ status: 500, ok: false, json: () => Promise.resolve({}) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ messages: [{ id: 'wa-retry-ok' }] }) });
+
+      const result = await sendVerificationCode({ phone: '91234567', countryCode: '+65', campaignId: 'camp-1' });
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(result.status).toBe('pending');
+      expect(result.channel).toBe('whatsapp');
+      expect(result.messageId).toBe('wa-retry-ok');
+      expect(snsClientSend).not.toHaveBeenCalled(); // no SMS fallback needed
+    });
+
     it('uses SMS channel when no campaignId is provided', async () => {
       const result = await sendVerificationCode({ phone: '91234567' });
 
