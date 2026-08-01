@@ -1,3 +1,4 @@
+import { isPlainObject, cleanString } from './objects.js';
 /**
  * design_config.featuredDrop — the redeem.sg homepage publication settings.
  *
@@ -15,17 +16,6 @@ const MAX_VALUE_LABEL = 12;
 const MAX_EMOJI = 8;
 const MAX_CAP = 100000;
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-function isPlainObject(v) {
-  return Object.prototype.toString.call(v) === '[object Object]';
-}
-
-function cleanString(v, max) {
-  if (typeof v !== 'string') return undefined;
-  const t = v.trim();
-  if (!t) return undefined;
-  return t.slice(0, max);
-}
 
 /**
  * Normalize a raw featuredDrop value into the canonical shape, or undefined

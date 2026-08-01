@@ -24,6 +24,7 @@ import { AppError } from '../middleware/appError.js';
 import { PASS_THEMES } from './drawTheme.js';
 import { cleanYmd } from './sgtTime.js';
 import { MAX_PRIZE_NAME, MAX_PRIZE_ROWS, MAX_PRIZE_QTY } from './luckyDrawCaps.js';
+import { isPlainObject, cleanString } from './objects.js';
 
 const MAX_PRIZE = 80; // legacy manual `prize` cap — unchanged so stored rows never drift
 // Derived summaries are bounded by construction (8 × (4 + 80) + 7 × 3 = 693);
@@ -35,17 +36,6 @@ const MAX_MULTIPLIER = 100;
 const DEFAULT_MULTIPLIER = 10;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
-
-function isPlainObject(v) {
-  return Object.prototype.toString.call(v) === '[object Object]';
-}
-
-function cleanString(v, max) {
-  if (typeof v !== 'string') return undefined;
-  const t = v.trim();
-  if (!t) return undefined;
-  return t.slice(0, max);
-}
 
 /** Valid structured rows only: plain objects with a non-empty name; qty coerced to 1..MAX_PRIZE_QTY. */
 function cleanPrizes(raw) {

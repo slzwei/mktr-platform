@@ -1,3 +1,4 @@
+import { isPlainObject, cleanString } from './objects.js';
 /**
  * design_config marketplace keys — normalization + publication policy.
  *
@@ -58,17 +59,6 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export const MARKETPLACE_CAMPAIGN_TYPES = ['lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing'];
 
 const SLOT_RE = /^\d{2}:\d{2}$/;
-
-function isPlainObject(v) {
-  return Object.prototype.toString.call(v) === '[object Object]';
-}
-
-function cleanString(v, max) {
-  if (typeof v !== 'string') return undefined;
-  const t = v.trim();
-  if (!t) return undefined;
-  return t.slice(0, max);
-}
 
 function cleanEnum(v, allowed) {
   return typeof v === 'string' && allowed.includes(v) ? v : undefined;
