@@ -50,12 +50,9 @@ describe('getDefaultRouteForRole()', () => {
  expect(getDefaultRouteForRole('agent')).toBe('/AgentDashboard');
  });
 
- it('returns /FleetOwnerDashboard for fleet_owner', () => {
- expect(getDefaultRouteForRole('fleet_owner')).toBe('/FleetOwnerDashboard');
- });
-
- it('returns /DriverDashboard for driver_partner', () => {
- expect(getDefaultRouteForRole('driver_partner')).toBe('/DriverDashboard');
+ it('falls back to /Homepage for the retired fleet/driver roles (P2-7)', () => {
+ expect(getDefaultRouteForRole('fleet_owner')).toBe('/Homepage');
+ expect(getDefaultRouteForRole('driver_partner')).toBe('/Homepage');
  });
 
  it('returns /Onboarding for customer', () => {
@@ -104,12 +101,9 @@ describe('getPostAuthRedirectPath()', () => {
  expect(getPostAuthRedirectPath({ role: 'agent', approvalStatus: 'approved' })).toBe('/AgentDashboard');
  });
 
- it('returns /FleetOwnerDashboard for approved fleet_owner', () => {
- expect(getPostAuthRedirectPath({ role: 'fleet_owner', approvalStatus: 'approved' })).toBe('/FleetOwnerDashboard');
- });
-
- it('returns /DriverDashboard for approved driver_partner', () => {
- expect(getPostAuthRedirectPath({ role: 'driver_partner', approvalStatus: 'approved' })).toBe('/DriverDashboard');
+ it('sends approved retired-role users to /Homepage (P2-7)', () => {
+ expect(getPostAuthRedirectPath({ role: 'fleet_owner', approvalStatus: 'approved' })).toBe('/Homepage');
+ expect(getPostAuthRedirectPath({ role: 'driver_partner', approvalStatus: 'approved' })).toBe('/Homepage');
  });
 
  it('prefers approvalStatus over status field', () => {

@@ -5,7 +5,6 @@ import {
  LayoutDashboard,
  Users,
  QrCode,
- Car,
  DollarSign,
  FileText,
  Settings,
@@ -57,23 +56,9 @@ const getNavigationItems = (user) => {
  ],
  },
  {
- label: 'Fleet',
- items: [
- { title: 'Fleet Management', url: '/AdminFleet', icon: Car },
- { title: 'Vehicle Fleet', url: '/AdminVehicles', icon: Car },
- { title: 'Fleet Map', url: '/AdminFleetMap', icon: Car },
- { title: 'Tablet Devices', url: '/AdminDevices', icon: Settings },
- ],
- },
- {
- label: 'Finance',
- items: [{ title: 'Commissions', url: '/AdminCommissions', icon: DollarSign }],
- },
- {
  label: 'System',
  items: [
  { title: 'Users', url: '/AdminUsers', icon: Users },
- { title: 'App Versions', url: '/AdminApkManager', icon: Settings },
  { title: 'AI Settings', url: '/AdminAISettings', icon: Bot },
  ],
  },
@@ -83,19 +68,6 @@ const getNavigationItems = (user) => {
  { title: 'Dashboard', url: '/AgentDashboard', icon: LayoutDashboard },
  { title: 'My Prospects', url: '/MyProspects', icon: Users },
  { title: 'Edit Profile', url: '/profile', icon: Settings },
- ];
-
- const fleetOwnerItems = [
- { title: 'Dashboard', url: '/FleetOwnerDashboard', icon: LayoutDashboard },
- { title: 'My Fleet', url: '/AdminFleet', icon: Car },
- { title: 'My Commissions', url: '/AdminCommissions', icon: DollarSign },
- ];
-
- const driverPartnerItems = [
- { title: 'Dashboard', url: '/DriverDashboard', icon: LayoutDashboard },
- { title: 'Profile', url: '/DriverProfile', icon: Settings },
- { title: 'Payout History', url: '/DriverPayoutHistory', icon: DollarSign },
- { title: 'Payslip', url: '/DriverPayslip', icon: FileText },
  ];
 
  // Redeem Ops — flag-gated internal staff surface (docs/redeem-ops/ROUTE_MAP.md §2).
@@ -128,8 +100,6 @@ const getNavigationItems = (user) => {
  // Non-admin roles: wrap flat items in a single section with no label
  const wrapFlat = (items) => [{ label: null, items }];
  if (user.role === 'agent') return wrapFlat(agentItems);
- if (user.role === 'fleet_owner') return wrapFlat(fleetOwnerItems);
- if (user.role === 'driver_partner') return wrapFlat(driverPartnerItems);
  return [];
 };
 
@@ -137,8 +107,6 @@ const getNavigationItems = (user) => {
 const getUserDisplayRole = (user) => {
  if (user.role === 'admin') return 'Administrator';
  if (user.role === 'agent') return 'Sales Agent';
- if (user.role === 'fleet_owner') return 'Fleet Owner';
- if (user.role === 'driver_partner') return 'Driver Partner';
  if (user.role === 'redeem_ops') return 'Redeem Ops';
  return 'User';
 };
