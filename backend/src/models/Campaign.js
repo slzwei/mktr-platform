@@ -1,5 +1,6 @@
 import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
+import { SLUG_RE } from '../utils/slug.js';
 
 const Campaign = sequelize.define('Campaign', {
   id: {
@@ -212,7 +213,7 @@ const Campaign = sequelize.define('Campaign', {
   slug: {
     type: DataTypes.STRING(80),
     allowNull: true,
-    validate: { is: /^[a-z0-9-]{3,80}$/ },
+    validate: { is: SLUG_RE },
     comment: 'Marketplace URL handle (/offers/:slug, /flow/:slug only). Immutable once firstActivatedAt is set.'
   },
   firstActivatedAt: {

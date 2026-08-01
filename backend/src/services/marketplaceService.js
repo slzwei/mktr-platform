@@ -1,3 +1,4 @@
+import { isValidSlug } from '../utils/slug.js';
 /**
  * Marketplace read model — the public campaign list/detail behind
  * GET /api/marketplace/campaigns[/:slug] (redeem.sg consumer marketplace).
@@ -318,7 +319,7 @@ export async function listMarketplaceCampaigns({ now = Date.now() } = {}) {
  * ended/sold-out state).
  */
 export async function getMarketplaceCampaign(slug, { now = new Date() } = {}) {
-  if (typeof slug !== 'string' || !/^[a-z0-9-]{3,80}$/.test(slug)) return null;
+  if (!isValidSlug(slug)) return null;
   const campaign = await Campaign.findOne({ where: { slug }, attributes: CAMPAIGN_ATTRS });
   if (!campaign || !passesStaticGate(campaign)) return null;
   const ops = await composeOps(campaign.id, { now });
@@ -355,7 +356,7 @@ export async function previewMarketplaceCampaign(campaignId, { now = new Date(),
 
 /** Slug availability for the designer (authenticated). */
 export async function checkSlugAvailability(slug, { excludeCampaignId } = {}) {
-  if (typeof slug !== 'string' || !/^[a-z0-9-]{3,80}$/.test(slug)) {
+  if (!isValidSlug(slug)) {
     return { valid: false, available: false };
   }
   const where = { slug };

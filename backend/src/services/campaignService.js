@@ -14,6 +14,7 @@ import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/ma
 import { normalizeBrief, deriveArchetype, hasBrief } from '../utils/campaignBrief.js';
 import { buildDrawTermsHtml } from '../utils/drawTermsTemplate.js';
 import { checkDrawConsistency } from '../utils/drawConsistency.js';
+import { SLUG_RE } from '../utils/slug.js';
 import {
   classifyDesignConfigVersion,
   clampDesignConfigV2,
@@ -100,7 +101,6 @@ const drawFactsOf = (doc) => {
   return JSON.stringify([ld.enabled, ld.prize, ld.prizes, ld.closesAt, ld.boostClosesAt, ld.multiplier]);
 };
 
-const SLUG_RE = /^[a-z0-9-]{3,80}$/;
 
 /**
  * Strip HTML tags from a user-supplied campaign name. The name is interpolated
