@@ -165,9 +165,6 @@ export const requireAdmin = requireRole('admin');
 // Agent or Admin middleware
 export const requireAgentOrAdmin = requireRole('agent', 'admin');
 
-// Fleet Owner or Admin middleware
-export const requireFleetOwnerOrAdmin = requireRole('fleet_owner', 'admin');
-
 // Optional authentication (doesn't fail if no token)
 export const optionalAuth = async (req, res, next) => {
   try {

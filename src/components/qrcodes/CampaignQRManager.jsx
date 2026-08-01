@@ -5,12 +5,10 @@ import { Badge } from"@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from"@/components/ui/tabs";
 import ArrowLeft from"lucide-react/icons/arrow-left";
 import QrCode from"lucide-react/icons/qr-code";
-import Car from"lucide-react/icons/car";
 import Tag from"lucide-react/icons/tag";
 
 import ExistingQRCodes from"./ExistingQRCodes";
 import PromotionalQRForm from"./PromotionalQRForm";
-import CarQRDirectory from"./CarQRDirectory";
 
 export default function CampaignQRManager({ campaign, onBack, embedded = false }) {
  const [qrTags, setQrTags] = useState([]);
@@ -49,14 +47,7 @@ export default function CampaignQRManager({ campaign, onBack, embedded = false }
  setActiveTab("existing");
  };
 
- const handleAssignedFromCar = () => {
- // Refresh but keep user on the Car tab
- handleRefreshQRTags();
- setActiveTab("car");
- };
-
  const promotionalQRs = qrTags.filter(qr => qr.type === 'promo');
- const carQRs = qrTags.filter(qr => qr.type === 'car');
 
  return (
  <div className={embedded ? "" : "p-6 lg:p-8 bg-muted min-h-screen"}>
@@ -78,7 +69,7 @@ export default function CampaignQRManager({ campaign, onBack, embedded = false }
  {campaign.is_active ?"Active":"Inactive"}
  </Badge>
  <span className="text-muted-foreground text-sm">
- {promotionalQRs.length} Promotional • {carQRs.length} Car QRs
+ {promotionalQRs.length} Promotional
  </span>
  </div>
  </div>
@@ -86,7 +77,7 @@ export default function CampaignQRManager({ campaign, onBack, embedded = false }
  )}
 
  <Tabs value={activeTab} onValueChange={setActiveTab}>
- <TabsList className="grid w-full grid-cols-3 mb-8">
+ <TabsList className="grid w-full grid-cols-2 mb-8">
  <TabsTrigger value="existing" className="flex items-center gap-2">
  <QrCode className="w-4 h-4"/>
  Existing QR Codes ({qrTags.length})
@@ -94,10 +85,6 @@ export default function CampaignQRManager({ campaign, onBack, embedded = false }
  <TabsTrigger value="promotional" className="flex items-center gap-2">
  <Tag className="w-4 h-4"/>
  Generate Promotional QR
- </TabsTrigger>
- <TabsTrigger value="car" className="flex items-center gap-2">
- <Car className="w-4 h-4"/>
- Car QR Directory
  </TabsTrigger>
  </TabsList>
 
@@ -110,16 +97,9 @@ export default function CampaignQRManager({ campaign, onBack, embedded = false }
  </TabsContent>
 
  <TabsContent value="promotional">
- <PromotionalQRForm 
+ <PromotionalQRForm
  campaign={campaign}
  onQRGenerated={handleQRGenerated}
- />
- </TabsContent>
-
- <TabsContent value="car">
- <CarQRDirectory 
- campaign={campaign}
- onAssigned={handleAssignedFromCar}
  />
  </TabsContent>
  </Tabs>

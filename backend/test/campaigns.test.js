@@ -473,8 +473,8 @@ describe('Campaign with dates', () => {
   })
 })
 
-describe('Campaign with commission amounts', () => {
-  it('POST /api/campaigns — stores commission_amount_driver and commission_amount_fleet', async () => {
+describe('Campaign with commission amounts (retired — P2-8)', () => {
+  it('POST /api/campaigns rejects the retired commission fields', async () => {
     const res = await request(app)
       .post('/api/campaigns')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -487,10 +487,7 @@ describe('Campaign with commission amounts', () => {
         commission_amount_fleet: 10.00
       })
 
-    expect(res.status).toBe(201)
-    const c = res.body.data.campaign
-    expect(parseFloat(c.commission_amount_driver)).toBe(25.50)
-    expect(parseFloat(c.commission_amount_fleet)).toBe(10.00)
+    expect(res.status).toBe(400)
   })
 })
 

@@ -92,16 +92,6 @@ describe('AdminCampaignForm', () => {
  expect(screen.getByText('End Date')).toBeInTheDocument();
  });
 
- it('renders driver commission input', () => {
- renderForm();
- expect(screen.getByLabelText('Driver Commission (SGD)')).toBeInTheDocument();
- });
-
- it('renders fleet owner commission input', () => {
- renderForm();
- expect(screen.getByLabelText('Fleet Owner Commission (SGD)')).toBeInTheDocument();
- });
-
  it('renders Cancel button', () => {
  renderForm();
  expect(screen.getByText('Cancel')).toBeInTheDocument();
@@ -127,11 +117,6 @@ describe('AdminCampaignForm', () => {
  it('renders Campaign Details card', () => {
  renderForm();
  expect(screen.getByText('Campaign Details')).toBeInTheDocument();
- });
-
- it('renders Commissions card', () => {
- renderForm();
- expect(screen.getByText('Commissions')).toBeInTheDocument();
  });
 
  it('no longer renders the (removed) Default Assignment Mode card — assignment moved to QR tags', () => {

@@ -59,8 +59,6 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
     max_age: initial?.max_age ?? 65,
     start_date: toDateInput(initial?.start_date) || toDateInput(new Date()),
     end_date: toDateInput(initial?.end_date),
-    commission_amount_driver: initial?.commission_amount_driver ?? '',
-    commission_amount_fleet: initial?.commission_amount_fleet ?? '',
     enforceLeadQuota: initial?.enforceLeadQuota === true,
     leadPriceDollars: initial?.leadPriceCents != null ? String(initial.leadPriceCents / 100) : '',
     metaPixelId: initial?.metaPixelId || '',
@@ -237,8 +235,6 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
       end_date: form.end_date
         ? new Date(form.end_date).toISOString()
         : (draw && form.drawClosesAt ? new Date(form.drawClosesAt).toISOString() : undefined),
-      commission_amount_driver: form.commission_amount_driver === '' ? null : Number(form.commission_amount_driver),
-      commission_amount_fleet: form.commission_amount_fleet === '' ? null : Number(form.commission_amount_fleet),
       enforceLeadQuota: form.enforceLeadQuota,
       leadPriceCents: (() => {
         const n = Number(form.leadPriceDollars);
@@ -433,10 +429,6 @@ export default function CampaignDetailsTab({ initial, type, draw = false, drawEd
             <p className="text-xs text-muted-foreground">
               What external agents pay per lead when committing wallet credits to this campaign. Leave blank to keep it closed to commitments.
             </p>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2"><Label htmlFor="cad">Driver commission (SGD)</Label><Input id="cad" type="number" step="0.01" min="0" value={form.commission_amount_driver} onChange={(e) => set('commission_amount_driver', e.target.value)} placeholder="0.00" /></div>
-            <div className="space-y-2"><Label htmlFor="caf">Fleet commission (SGD)</Label><Input id="caf" type="number" step="0.01" min="0" value={form.commission_amount_fleet} onChange={(e) => set('commission_amount_fleet', e.target.value)} placeholder="0.00" /></div>
           </div>
         </CardContent>
       </Card>

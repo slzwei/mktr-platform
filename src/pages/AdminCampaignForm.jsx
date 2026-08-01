@@ -34,8 +34,6 @@ export default function AdminCampaignForm() {
  start_date: new Date(),
  end_date: new Date(),
  is_active: true,
- commission_amount_driver: '',
- commission_amount_fleet: '',
  ad_playlist: [],
  });
 
@@ -65,8 +63,6 @@ export default function AdminCampaignForm() {
  start_date: campaign.start_date ? parseISO(campaign.start_date) : new Date(),
  end_date: campaign.end_date ? parseISO(campaign.end_date) : new Date(),
  is_active: campaign.is_active !== undefined ? campaign.is_active : true,
- commission_amount_driver: campaign.commission_amount_driver ?? '',
- commission_amount_fleet: campaign.commission_amount_fleet ?? '',
  ad_playlist: campaign.ad_playlist || [],
  });
  } else {
@@ -161,10 +157,6 @@ export default function AdminCampaignForm() {
  start_date: formData.start_date.toISOString(),
  end_date: formData.end_date.toISOString(),
  ad_playlist: formData.ad_playlist,
- commission_amount_driver:
- formData.commission_amount_driver === '' ? null : Number(formData.commission_amount_driver),
- commission_amount_fleet:
- formData.commission_amount_fleet === '' ? null : Number(formData.commission_amount_fleet),
  };
 
  if (isEditMode) {
@@ -316,30 +308,6 @@ export default function AdminCampaignForm() {
  />
  )}
 
- <Card>
- <CardHeader>
- <CardTitle>Commissions</CardTitle>
- <CardDescription>Set the payout amounts for this campaign.</CardDescription>
- </CardHeader>
- <CardContent className="space-y-4">
- <div className="grid grid-cols-2 gap-4">
- <div className="space-y-2">
- <Label htmlFor="commission_amount_driver">Driver Commission (SGD)</Label>
- <Input
- id="commission_amount_driver" name="commission_amount_driver" type="number" step="0.01" min="0" value={formData.commission_amount_driver}
- onChange={handleChange}
- placeholder="0.00" />
- </div>
- <div className="space-y-2">
- <Label htmlFor="commission_amount_fleet">Fleet Owner Commission (SGD)</Label>
- <Input
- id="commission_amount_fleet" name="commission_amount_fleet" type="number" step="0.01" min="0" value={formData.commission_amount_fleet}
- onChange={handleChange}
- placeholder="0.00" />
- </div>
- </div>
- </CardContent>
- </Card>
  </div>
 
  {/* Sidebar Area */}

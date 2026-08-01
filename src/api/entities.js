@@ -3,17 +3,9 @@ import { entities } from './client.js';
 
 export const Campaign = entities.Campaign;
 
-export const Car = entities.Car;
-
 export const Prospect = entities.Prospect;
 
 export const QrTag = entities.QrTag;
-
-export const Commission = entities.Commission;
-
-export const FleetOwner = entities.FleetOwner;
-
-export const Driver = entities.Driver;
 
 export const LeadPackage = entities.LeadPackage;
 

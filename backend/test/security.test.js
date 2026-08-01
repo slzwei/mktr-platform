@@ -25,8 +25,6 @@ describe('Authentication enforcement', () => {
     ['GET', '/api/campaigns'],
     ['GET', '/api/prospects'],
     ['GET', '/api/agents'],
-    ['GET', '/api/fleet/owners'],
-    ['GET', '/api/commissions'],
     ['GET', '/api/users'],
     ['GET', '/api/notifications'],
   ]
@@ -56,26 +54,6 @@ describe('Mass assignment prevention', () => {
   beforeAll(async () => {
     const { token } = await createTestUser({ role: 'admin' })
     adminToken = token
-  })
-
-  it('POST /api/fleet/owners strips dangerous fields from creation', async () => {
-    const res = await request(app)
-      .post('/api/fleet/owners')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        full_name: 'Test Fleet Owner',
-        email: `fleet-mass-${Date.now()}@test.com`,
-        phone: '12345678',
-        company_name: 'Test Co',
-        id: '00000000-0000-0000-0000-000000000000',
-        createdAt: '2000-01-01',
-        balance: 999999
-      })
-
-    if (res.status === 201 || res.status === 200) {
-      const data = res.body.data?.fleetOwner || res.body.data
-      expect(data?.id).not.toBe('00000000-0000-0000-0000-000000000000')
-    }
   })
 
   it('PUT /api/prospects/:id without auth returns 401', async () => {
@@ -132,13 +110,6 @@ describe('SQL injection prevention', () => {
       .set('Authorization', `Bearer ${adminToken}`)
     expect([200, 400, 500]).toContain(res.status)
     // The important thing: the app did not crash
-  })
-
-  it('rejects SQL injection in fleet owner search param', async () => {
-    const res = await request(app)
-      .get('/api/fleet/owners?search=1%27%20OR%201%3D1%20--')
-      .set('Authorization', `Bearer ${adminToken}`)
-    expect([200, 400]).toContain(res.status)
   })
 
   it('handles UNION-based SQL injection in search param', async () => {
@@ -198,15 +169,14 @@ describe('XSS prevention in request body', () => {
     }
   })
 
-  it('does not reflect XSS in fleet owner name field', async () => {
+  it('does not reflect XSS in agent invite name field', async () => {
     const res = await request(app)
-      .post('/api/fleet/owners')
+      .post('/api/agents/invite')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         full_name: '"><img src=x onerror=alert(1)>',
-        email: `xss-fleet-${Date.now()}@test.com`,
-        phone: '91234567',
-        company_name: 'XSS Co'
+        email: `xss-agent-${Date.now()}@test.com`,
+        phone: '91234567'
       })
     // Should succeed or be rejected by validation — not crash
     expect([200, 201, 400]).toContain(res.status)
@@ -354,19 +324,11 @@ describe('Non-UUID ID rejection', () => {
     expect(res.body.success).toBe(false)
   })
 
-  it('rejects non-UUID id in GET /api/fleet/owners/:id', async () => {
+  it('rejects non-UUID id in GET /api/agents/:id', async () => {
     const res = await request(app)
-      .get('/api/fleet/owners/../../etc/passwd')
+      .get('/api/agents/../../etc/passwd')
       .set('Authorization', `Bearer ${adminToken}`)
     expect([400, 404]).toContain(res.status)
-  })
-
-  it('rejects non-UUID id in PUT /api/fleet/cars/:id', async () => {
-    const res = await request(app)
-      .put('/api/fleet/cars/DROP-TABLE')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ color: 'Red' })
-    expect([400, 404, 500]).toContain(res.status)
   })
 
   it('rejects numeric id where UUID is expected', async () => {
@@ -486,41 +448,6 @@ describe('Retell webhook signature edge cases', () => {
       .send(JSON.parse(body))
     // Either rejected (401) or accepted (200) — but should not crash
     expect([200, 401, 503]).toContain(res.status)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Device key brute-force resistance
-// ---------------------------------------------------------------------------
-describe('Device key brute-force resistance', () => {
-  it('rejects multiple failed provisioning check attempts without crashing', async () => {
-    const results = []
-    for (let i = 0; i < 5; i++) {
-      const res = await request(app)
-        .get(`/api/provision/check/BADCODE${i}`)
-      results.push(res.status)
-    }
-    // All should return 404 (not found) or 429 (rate limited) — never 500
-    results.forEach(status => {
-      expect([404, 429]).toContain(status)
-    })
-  })
-
-  it('provisioning session creation is rate-limited under sustained load', async () => {
-    const promises = []
-    for (let i = 0; i < 12; i++) {
-      promises.push(
-        request(app)
-          .post('/api/provision/session')
-          .send({})
-      )
-    }
-    const results = await Promise.all(promises)
-    const statuses = results.map(r => r.status)
-    // Should see either valid responses or 429 rate limits — not server errors
-    statuses.forEach(status => {
-      expect([200, 201, 400, 429]).toContain(status)
-    })
   })
 })
 

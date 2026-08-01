@@ -101,12 +101,8 @@ vi.mock('../client.js', () => {
  return {
  entities: {
  Campaign: new CampaignEntity(),
- Car: new BaseEntity('/fleet/cars', 'cars', 'car'),
  Prospect: new ProspectEntity(),
  QrTag: new BaseEntity('/qrcodes', 'qrTags', 'qrTag'),
- Commission: new BaseEntity('/commissions', 'commissions', 'commission'),
- FleetOwner: new BaseEntity('/fleet/owners', 'fleetOwners', 'fleetOwner'),
- Driver: new BaseEntity('/fleet/drivers', 'drivers', 'driver'),
  LeadPackage: new BaseEntity('/lead-packages', 'packages', 'package'),
  User: new UserEntity(),
  },
@@ -114,18 +110,13 @@ vi.mock('../client.js', () => {
  auth: {},
  dashboard: {},
  agents: {},
- fleet: {},
  };
 });
 
 import {
  Campaign,
- Car,
  Prospect,
  QrTag,
- Commission,
- FleetOwner,
- Driver,
  LeadPackage,
  User,
 } from '../entities';
@@ -135,28 +126,12 @@ describe('entities exports', () => {
  expect(Campaign).toBeDefined();
  });
 
- it('exports Car entity', () => {
- expect(Car).toBeDefined();
- });
-
  it('exports Prospect entity', () => {
  expect(Prospect).toBeDefined();
  });
 
  it('exports QrTag entity', () => {
  expect(QrTag).toBeDefined();
- });
-
- it('exports Commission entity', () => {
- expect(Commission).toBeDefined();
- });
-
- it('exports FleetOwner entity', () => {
- expect(FleetOwner).toBeDefined();
- });
-
- it('exports Driver entity', () => {
- expect(Driver).toBeDefined();
  });
 
  it('exports LeadPackage entity', () => {

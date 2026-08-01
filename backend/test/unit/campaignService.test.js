@@ -74,7 +74,6 @@ class AppError extends Error {
   }
 }
 
-const pushSendEvent = jest.fn();
 
 // ── Register module mocks ──
 
@@ -102,10 +101,6 @@ jest.unstable_mockModule('../../src/services/storage.js', () => ({
 
 jest.unstable_mockModule('../../src/middleware/errorHandler.js', () => ({
   AppError,
-}));
-
-jest.unstable_mockModule('../../src/services/pushService.js', () => ({
-  pushService: { sendEvent: pushSendEvent },
 }));
 
 // Wallet takedown-refund dep of archiveCampaign — mocked so this suite never
@@ -181,7 +176,6 @@ function resetAllMocks() {
   storageService.isEnabled.mockReset().mockReturnValue(false);
   storageService.deleteObject.mockReset();
 
-  pushSendEvent.mockReset();
 }
 
 // ── Tests ──
@@ -481,8 +475,6 @@ describe('campaignService (unit)', () => {
         start_date: '2026-01-01',
         end_date: '2026-12-31',
         is_active: true,
-        commission_amount_driver: 50,
-        commission_amount_fleet: 100,
       };
 
       await campaignService.createCampaign(body, { id: 'user-1', role: 'admin' });
@@ -491,8 +483,6 @@ describe('campaignService (unit)', () => {
       expect(createArg.name).toBe('New Campaign');
       expect(createArg.min_age).toBe(21);
       expect(createArg.max_age).toBe(55);
-      expect(createArg.commission_amount_driver).toBe(50);
-      expect(createArg.commission_amount_fleet).toBe(100);
     });
 
     it('sets createdBy from user.id', async () => {
@@ -610,15 +600,6 @@ describe('campaignService (unit)', () => {
       } catch (err) {
         expect(err.statusCode).toBe(404);
       }
-    });
-
-    it('notifies devices after update (fan-out)', async () => {
-      Campaign.findOne.mockResolvedValue(makeCampaignInstance());
-      Device.findAll.mockResolvedValue([{ id: 'device-1' }]);
-
-      await campaignService.updateCampaign('camp-1', { name: 'X' }, makeReq());
-
-      expect(Device.findAll).toHaveBeenCalled();
     });
 
     // The draw pass colourway is a NARROW top-level field, deliberately not a

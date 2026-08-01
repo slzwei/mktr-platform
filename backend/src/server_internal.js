@@ -248,9 +248,7 @@ export const init = async (app) => {
 
   // Domain-prefixed health endpoints (feature-flagged)
   if (String(process.env.ENABLE_DOMAIN_PREFIXES || 'false').toLowerCase() === 'true') {
-    app.get('/api/adtech/health', (req, res) => res.json({ ok: true, service: 'adtech' }));
     app.get('/api/leadgen/health', (req, res) => res.json({ ok: true, service: 'leadgen' }));
-    app.get('/api/fleet/health', (req, res) => res.json({ ok: true, service: 'fleet' }));
     app.get('/api/admin/health', (req, res) => res.json({ ok: true, service: 'admin' }));
   }
 

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
-import { Campaign, QrTag, Prospect, Commission, Device, CampaignMediaItem, CampaignAgentAssignment, DrawTermsVersion, Draw, sequelize } from '../models/index.js';
+import { Campaign, QrTag, Prospect, Commission, CampaignMediaItem, CampaignAgentAssignment, DrawTermsVersion, Draw, sequelize } from '../models/index.js';
 import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -502,7 +502,7 @@ export function assertDrawActivatable(designConfig) {
  * Create a new campaign.
  */
 export async function createCampaign(body, user) {
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
 
   const safeName = sanitizeCampaignName(name);
 
@@ -525,8 +525,6 @@ export async function createCampaign(body, user) {
     }
     campaignData.slug = slug;
   }
-  if (commission_amount_driver !== undefined) campaignData.commission_amount_driver = commission_amount_driver;
-  if (commission_amount_fleet !== undefined) campaignData.commission_amount_fleet = commission_amount_fleet;
   if (defaultAssignmentMode !== undefined) campaignData.defaultAssignmentMode = defaultAssignmentMode;
   if (enforceLeadQuota !== undefined) campaignData.enforceLeadQuota = enforceLeadQuota;
   if (body.metaPixelId !== undefined) campaignData.metaPixelId = body.metaPixelId || null;
@@ -657,14 +655,14 @@ export async function createCampaign(body, user) {
 }
 
 /**
- * Update a campaign. Triggers device fan-out if content changed.
+ * Update a campaign.
  */
 export async function updateCampaign(id, body, req) {
   const where = buildOwnerWhere(req, { id });
   const campaign = await Campaign.findOne({ where });
   if (!campaign) throw new AppError('Campaign not found or access denied', 404);
 
-  const { name, type, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
+  const { name, type, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
 
   const updateData = {};
   if (name) updateData.name = sanitizeCampaignName(name);
@@ -739,8 +737,6 @@ export async function updateCampaign(id, body, req) {
     updateData.design_config = await ensureDrawTermsVersion(updateData.design_config, campaign.id, req.user?.id);
     designRollbackApplied = isDesignRollback;
   }
-  if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
-  if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
   if (defaultAssignmentMode !== undefined) updateData.defaultAssignmentMode = defaultAssignmentMode;
   if (enforceLeadQuota !== undefined) updateData.enforceLeadQuota = enforceLeadQuota;
   if (body.metaPixelId !== undefined) updateData.metaPixelId = body.metaPixelId || null;
@@ -884,9 +880,6 @@ export async function updateCampaign(id, body, req) {
     await syncMediaItems(id, ad_playlist || []);
   }
 
-  // Fan-out: notify devices assigned to this campaign
-  await notifyDevices(id);
-
   // Return with backward-compatible virtual fields for API compatibility
   const mediaItems = await CampaignMediaItem.findAll({
     where: { campaignId: id },
@@ -1012,9 +1005,6 @@ export async function setCampaignLaunchState(id, state, req) {
   }
   invalidateMarketplaceCache();
   invalidateFeaturedDropsCache();
-
-  // Fan-out: refresh device manifests (same as updateCampaign content changes).
-  await notifyDevices(id);
 
   return campaign.toJSON();
 }
@@ -1465,26 +1455,4 @@ function mediaItemsToPlaylist(mediaItems) {
       url: m.url,
       duration: m.durationSecs != null ? m.durationSecs * 1000 : 0
     }));
-}
-
-async function notifyDevices(campaignId) {
-  try {
-    const { pushService } = await import('./pushService.js');
-    const affectedDevices = await Device.findAll({
-      where: {
-        [Op.or]: [
-          { campaignId },
-          { campaignIds: { [Op.contains]: [campaignId] } }
-        ]
-      },
-      attributes: ['id']
-    });
-
-    affectedDevices.forEach(d => {
-      pushService.sendEvent(d.id, 'REFRESH_MANIFEST', {
-        timestamp: Date.now(),
-        reason: 'campaign_content_update'
-      });
-    });
-  } catch (_) { /* non-fatal */ }
 }
