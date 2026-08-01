@@ -73,6 +73,24 @@ jobs:
         # the pipe masked jest's exit code — it enforced nothing.)
         run: cd backend && npm test -- --coverage --testPathPattern="test/(unit/|integration/)"
 
+  e2e-smoke:
+    name: E2E Smoke (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+      # Backend-free smoke only: the 6 pre-admin-v2 specs that needed a seeded
+      # backend (and asserted since-deleted commission/v1-admin UI) were
+      # archived by P3-7. playwright.config.js auto-starts the vite dev server.
+      - name: Run smoke spec
+        run: npx playwright test e2e/smoke.spec.js
+
   frontend-test:
     name: Frontend Tests
     runs-on: ubuntu-latest
