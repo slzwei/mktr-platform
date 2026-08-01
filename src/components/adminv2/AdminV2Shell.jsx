@@ -18,6 +18,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { NAV } from '@/lib/adminV2/nav';
 import GlobalSearch from './GlobalSearch';
 import NotificationsBell from './NotificationsBell';
+import MktrWordmark from '@/components/brand/MktrWordmark';
 import MobileTabBar from './mobile/MobileTabBar';
 import { AdminV2ShellContext } from './mobile/shellContext';
 import { useAdminV2Mobile } from './mobile/useAdminV2Mobile';
@@ -57,7 +58,7 @@ function initialsOf(user) {
    parent to fall back to when there's no in-app history to pop. Order
    matters — first match wins, so /admin/campaigns/… specials precede :id. */
 const MOBILE_ROUTES = [
-  [/^\/admindashboard/, { title: 'MKTR', sub: 'OPS CONSOLE', root: true }],
+  [/^\/admindashboard/, { title: 'MKTR', sub: 'OPS CONSOLE', root: true, brand: true }],
   [/^\/adminprospects/, { title: 'Leads', root: true }],
   [/^\/admin\/leads\//, { title: 'Lead', parent: '/AdminProspects' }],
   [/^\/admin\/campaigns\/(new|workspace)/, { title: 'Campaign', parent: '/AdminCampaigns' }],
@@ -82,7 +83,7 @@ const MOBILE_ROUTES = [
 function mobileRouteInfo(pathname) {
   const p = pathname.toLowerCase();
   const hit = MOBILE_ROUTES.find(([rx]) => rx.test(p));
-  return hit ? hit[1] : { title: 'MKTR', sub: 'OPS CONSOLE', root: true };
+  return hit ? hit[1] : { title: 'MKTR', sub: 'OPS CONSOLE', root: true, brand: true };
 }
 
 export default function AdminV2Shell({ children, fullBleed = false, legacyBridge = false }) {
@@ -169,7 +170,7 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
             )}
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontWeight: 800, fontSize: 16, letterSpacing: '-0.01em', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)' }}>
-                {info.title}
+                {info.brand ? <MktrWordmark size={16} /> : info.title}
               </span>
               {(info.sub || info.root) && (
                 <span className="av2-mono" style={{ display: 'block', fontSize: 9, letterSpacing: '.14em', color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -228,7 +229,7 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
           <Link to="/AdminDashboard" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 16px 14px', color: 'var(--ink)', textDecoration: 'none' }}>
             <span style={{ width: 32, height: 32, flex: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>M</span>
             <span>
-              <span style={{ display: 'block', fontWeight: 800, fontSize: 16, letterSpacing: '.01em', lineHeight: 1.1 }}>MKTR</span>
+              <MktrWordmark size={16} style={{ marginBottom: 3 }} />
               <span className="av2-mono" style={{ display: 'block', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>OPS CONSOLE</span>
             </span>
           </Link>
