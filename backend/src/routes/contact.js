@@ -1,6 +1,7 @@
 import express from 'express';
 import Joi from 'joi';
 import rateLimit from 'express-rate-limit';
+import { validate } from '../middleware/validation.js';
 import * as contactController from '../controllers/contactController.js';
 
 export const meta = {
@@ -32,20 +33,8 @@ const contactSchema = Joi.object({
   message: Joi.string().min(10).max(5000).required()
 });
 
-// Joi validation middleware
-const validateContact = (req, res, next) => {
-  const { error, value } = contactSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
-  if (error) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid contact submission',
-      errors: error.details.map(d => ({ field: d.path.join('.'), message: d.message }))
-    });
-  }
-  req.body = value;
-  next();
-};
-
-router.post('/', contactLimiter, validateContact, contactController.submitContact);
+// Shared validate() (P4-6 — this file used to carry its own copy);
+// stripUnknown keeps the old behaviour of persisting only whitelisted keys.
+router.post('/', contactLimiter, validate(contactSchema, { stripUnknown: true }), contactController.submitContact);
 
 export default router;
