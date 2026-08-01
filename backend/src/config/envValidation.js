@@ -73,6 +73,48 @@ export function validateEnv() {
     console.warn('⚠️ WhatsApp OTP partially configured — both META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN are required. WhatsApp sends will fail and fall back to SMS until both are set.');
   }
 
+  // Boolean feature flags are compared with === 'true' throughout the code, so
+  // a typo ("ture", "1", "yes") silently disables the feature with no error.
+  // Warn on any set-but-not-boolean value. (P3-1 — several of these silently
+  // dark whole modules: a fresh deploy 404s all of Redeem Ops when
+  // REDEEM_OPS_ENABLED is mistyped.)
+  const booleanFlags = [
+    'WEBHOOK_ENABLED', 'TRUST_PROXY', 'DB_SSL', 'ENABLE_DOMAIN_PREFIXES',
+    'DESIGN_CONFIG_V2_WRITES_ENABLED', 'MARKETPLACE_INHERIT_ENABLED',
+    'MARKETPLACE_QR_REDIRECT_ENABLED', 'MARKETPLACE_PUBLIC_API_ENABLED',
+    'REDEEM_OPS_ENABLED', 'REDEEM_OPS_ENTITLEMENTS_ENABLED',
+    'REDEEM_OPS_CADENCES_ENABLED', 'REDEEM_OPS_CADENCES_AI_ENABLED',
+    'REDEEM_OPS_WHATSAPP_ENABLED',
+    'DISCOVERY_ENABLED', 'DISCOVERY_IG_ENABLED', 'DISCOVERY_AI_TERMS_ENABLED',
+    'DISCOVERY_SEARCH_TERMS_ENABLED', 'DISCOVERY_TERRITORIES_ENABLED',
+    'DISCOVERY_RESULT_QUOTA_ENABLED',
+    'RETELL_SCREENING_ENABLED', 'SCREENING_DRY_RUN', 'HELD_LEAD_PING_ENABLED',
+    'META_CAPI_ENABLED', 'TIKTOK_EVENTS_API_ENABLED',
+    'REDEEMED_AUDIENCE_SYNC_ENABLED', 'REDEEMED_AUDIENCE_REQUIRE_CONSENT',
+    'BILLING_ENABLED', 'AGENT_WALLET_ENABLED',
+    'ADMIN_LEAD_OPS_EXTERNAL_ENABLED', 'ADMIN_PACKAGES_EXTERNAL_ENABLED',
+    'AGENT_PACKAGES_EXTERNAL_ENABLED', 'HELD_LEADS_EXTERNAL_ENABLED',
+    'LEAD_TIMELINE_EXTERNAL_ENABLED', 'SCORING_CONFIG_ADMIN_ENABLED',
+    'DNC_API_ENABLED', 'DNC_BACKFILL_ENABLED',
+    'DRAW_BOOST_AUTOPROVISION_ENABLED', 'DRAW_RECORD_AUTOCREATE_ENABLED',
+    'ENRICHMENT_MAP_ARTIFACT_JOBS', 'ENRICHMENT_SCORING_ENABLED',
+    'LYFE_LEAD_SUPPRESSED_ENABLED', 'MKTR_LEADS_LEAD_SUPPRESSED_ENABLED',
+    'SYNC_AGENT_CRON', 'WHATSAPP_QR_HEADER', 'ENABLE_AUTH_MAPPING',
+  ];
+  const mistyped = booleanFlags.filter((k) => {
+    const v = process.env[k];
+    return v !== undefined && v !== '' && !['true', 'false'].includes(String(v).toLowerCase());
+  });
+  if (mistyped.length > 0) {
+    console.warn(`⚠️ Boolean flags with non-boolean values (treated as FALSE by === 'true' checks): ${mistyped.map((k) => `${k}="${process.env[k]}"`).join(', ')}`);
+  }
+
+  // ENABLE_AUTH_MAPPING auto-creates a local account (emailVerified: true) for
+  // any JWKS-verified token with an unknown email — shout when it is live.
+  if (String(process.env.ENABLE_AUTH_MAPPING || '').toLowerCase() === 'true') {
+    console.warn('⚠️ ENABLE_AUTH_MAPPING=true — JWKS-verified tokens with unknown emails will AUTO-CREATE user accounts (emailVerified: true). Make sure this is intentional.');
+  }
+
   // Redeem-Ops consumer WhatsApp delivery (trial-reward PR E) ships dark —
   // REDEEM_OPS_WHATSAPP_ENABLED defaults false. Warn only when the flag is ON
   // but the dedicated Redeem WABA creds are missing: every reward send would
