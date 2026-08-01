@@ -130,21 +130,8 @@ export function refreshToken(userId) {
 /**
  * Get user profile with role-specific associations.
  */
-export async function getProfile(userId, userRole) {
-  const includeOptions = [];
-
-  if (userRole === 'fleet_owner') {
-    includeOptions.push({ association: 'fleetOwnerProfile' });
-  } else if (userRole === 'driver') {
-    includeOptions.push({ association: 'driverProfile' });
-  }
-  includeOptions.push({ association: 'payout', required: false });
-
-  const user = await User.findByPk(userId, {
-    include: includeOptions,
-  });
-
-  return user;
+export async function getProfile(userId) {
+  return User.findByPk(userId);
 }
 
 /**

@@ -33,6 +33,13 @@ const sequelize = {
   transaction: jest.fn(async (cb) => cb(mockTransaction)),
   fn: jest.fn((name, col) => `${name}(${col})`),
   col: jest.fn((n) => n),
+  // Raw commissions pre-check (the Commission model is retired): a to_regclass
+  // probe first, then a COUNT. Route on the SQL text.
+  query: jest.fn((sql) =>
+    String(sql).includes('to_regclass')
+      ? Promise.resolve([[{ reg: 'commissions' }]])
+      : Promise.resolve([[{ count: 0 }]])
+  ),
 };
 
 const AppError = class extends Error {
@@ -252,8 +259,10 @@ describe('userService (unit)', () => {
         .rejects.toThrow('Cannot delete user who created campaigns');
     });
 
-    it('throws 409 when user has commissions', async () => {
-      Commission.count.mockResolvedValue(1);
+    it('throws 409 when user has historical commission rows (raw-SQL pre-check)', async () => {
+      sequelize.query
+        .mockImplementationOnce(() => Promise.resolve([[{ reg: 'commissions' }]])) // probe
+        .mockImplementationOnce(() => Promise.resolve([[{ count: 1 }]])); // count
 
       await expect(permanentlyDeleteUser('user-1', 'admin-1'))
         .rejects.toThrow('Cannot delete user with commissions');

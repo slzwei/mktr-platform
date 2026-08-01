@@ -113,28 +113,26 @@ describe('dashboardService (unit)', () => {
   // ── getOverview ──
 
   describe('getOverview', () => {
-    it('returns admin stats for admin role', async () => {
+    it('returns admin stats for admin role — retired commission/fleet/impression keys gone', async () => {
       const result = await service.getOverview('admin-1', 'admin', '30d');
 
       expect(result).toHaveProperty('users');
       expect(result).toHaveProperty('campaigns');
       expect(result).toHaveProperty('prospects');
-      expect(result).toHaveProperty('commissions');
       expect(result).toHaveProperty('qrCodes');
-      expect(result).toHaveProperty('fleet');
-      expect(result).toHaveProperty('impressions');
       expect(result).toHaveProperty('recentActivities');
+      expect(result).not.toHaveProperty('commissions');
+      expect(result).not.toHaveProperty('fleet');
+      expect(result).not.toHaveProperty('impressions');
     });
 
-    it('returns agent stats for agent role', async () => {
-      mocks.Commission.sum.mockResolvedValue(500);
-
+    it('returns agent stats for agent role — no commissions key', async () => {
       const result = await service.getOverview('agent-1', 'agent', '30d');
 
       expect(result).toHaveProperty('prospects');
-      expect(result).toHaveProperty('commissions');
       expect(result).toHaveProperty('campaigns');
       expect(result).toHaveProperty('recentProspects');
+      expect(result).not.toHaveProperty('commissions');
     });
 
     it('scopes agent stats to the given userId', async () => {
@@ -148,22 +146,10 @@ describe('dashboardService (unit)', () => {
       expect(hasAgentScope).toBe(true);
     });
 
-    it('returns fleet owner stats for fleet_owner role', async () => {
-      mocks.Car.findAll.mockResolvedValue([]);
-
+    it('returns customer stats for the retired fleet_owner role', async () => {
       const result = await service.getOverview('fleet-user-1', 'fleet_owner', '30d');
 
-      expect(result).toHaveProperty('fleet');
-      expect(result).toHaveProperty('drivers');
-      expect(result).toHaveProperty('qrCodes');
-    });
-
-    it('returns error when fleet owner profile not found', async () => {
-      mocks.FleetOwner.findOne.mockResolvedValue(null);
-
-      const result = await service.getOverview('unknown', 'fleet_owner', '30d');
-
-      expect(result).toEqual({ error: 'Fleet owner profile not found' });
+      expect(result).toEqual({ interactions: { total: 0, recent: 0 } });
     });
 
     it('returns customer stats for unknown role', async () => {
@@ -211,10 +197,10 @@ describe('dashboardService (unit)', () => {
       expect(result).toHaveProperty('prospectsByStatus');
     });
 
-    it('returns commission analytics for type=commissions', async () => {
+    it('returns empty object for the retired commissions type', async () => {
       const result = await service.getAnalytics('user-1', 'admin', 'commissions', '30d', {});
 
-      expect(result).toHaveProperty('commissionTrend');
+      expect(result).toEqual({});
     });
 
     it('returns campaign analytics for type=campaigns', async () => {
@@ -236,54 +222,4 @@ describe('dashboardService (unit)', () => {
     });
   });
 
-  // ── getDriverScans ──
-
-  describe('getDriverScans', () => {
-    it('returns trend and total', async () => {
-      mocks.Prospect.findAll.mockResolvedValue([]);
-
-      const result = await service.getDriverScans('driver-1', '30d');
-
-      expect(result).toHaveProperty('trend');
-      expect(result).toHaveProperty('total');
-      expect(result.total).toBe(0);
-    });
-
-    it('builds daily trend buckets for 7d period', async () => {
-      mocks.Prospect.findAll.mockResolvedValue([]);
-
-      const result = await service.getDriverScans('driver-1', '7d');
-
-      expect(result.trend.length).toBeGreaterThan(0);
-    });
-  });
-
-  // ── getDriverCommissions ──
-
-  describe('getDriverCommissions', () => {
-    it('returns mapped commission data', async () => {
-      const mockProspect = {
-        id: 'p-1',
-        createdAt: new Date().toISOString(),
-        campaign: { id: 'camp-1', name: 'Test', commission_amount_driver: 10 },
-        qrTag: { car: {} },
-      };
-      mocks.Prospect.findAll.mockResolvedValue([mockProspect]);
-
-      const result = await service.getDriverCommissions('driver-1', '30d');
-
-      expect(result).toHaveLength(1);
-      expect(result[0]).toHaveProperty('id', 'p-1');
-      expect(result[0]).toHaveProperty('status', 'pending');
-      expect(result[0]).toHaveProperty('amount_driver', 10);
-    });
-
-    it('returns empty array when no prospects found', async () => {
-      mocks.Prospect.findAll.mockResolvedValue([]);
-
-      const result = await service.getDriverCommissions('driver-1', '30d');
-
-      expect(result).toEqual([]);
-    });
-  });
 });

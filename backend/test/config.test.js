@@ -1,6 +1,6 @@
 import './setup.js'
 import { getApp, closeDb, createTestUser } from './helpers.js'
-import { Campaign, Prospect, QrTag, Car } from '../src/models/index.js'
+import { Campaign, Prospect, QrTag } from '../src/models/index.js'
 
 let _app
 let adminUser
@@ -270,87 +270,6 @@ describe('QrTag model tags getter/setter', () => {
     const qr = QrTag.build({})
     qr.tags = null
     expect(qr.getDataValue('tags')).toBe('[]')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Car model features getter/setter
-// ---------------------------------------------------------------------------
-describe('Car model features getter/setter', () => {
-  it('getter parses JSON string into array', () => {
-    const car = Car.build({
-      make: 'Toyota', model: 'Camry', year: 2023,
-      plate_number: 'TEST1', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001'
-    })
-    car.setDataValue('features', '["bluetooth","gps"]')
-    expect(car.features).toEqual(['bluetooth', 'gps'])
-  })
-
-  it('getter returns empty array for null', () => {
-    const car = Car.build({
-      make: 'Toyota', model: 'Camry', year: 2023,
-      plate_number: 'TEST2', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001'
-    })
-    car.setDataValue('features', null)
-    expect(car.features).toEqual([])
-  })
-
-  it('setter stringifies array to JSON', () => {
-    const car = Car.build({
-      make: 'Toyota', model: 'Camry', year: 2023,
-      plate_number: 'TEST3', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001'
-    })
-    car.features = ['sunroof', 'heated_seats']
-    expect(car.getDataValue('features')).toBe('["sunroof","heated_seats"]')
-  })
-
-  it('setter handles null by storing empty array', () => {
-    const car = Car.build({
-      make: 'Toyota', model: 'Camry', year: 2023,
-      plate_number: 'TEST4', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001'
-    })
-    car.features = null
-    expect(car.getDataValue('features')).toBe('[]')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Car model validators
-// ---------------------------------------------------------------------------
-describe('Car model validators', () => {
-  it('rejects year before 1900', async () => {
-    const car = Car.build({
-      make: 'OldCar', model: 'Ancient', year: 1800,
-      plate_number: 'OLD1', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001'
-    })
-    await expect(car.validate()).rejects.toThrow()
-  })
-
-  it('rejects negative mileage', async () => {
-    const car = Car.build({
-      make: 'Toyota', model: 'Camry', year: 2023,
-      plate_number: 'NEG1', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001',
-      mileage: -100
-    })
-    await expect(car.validate()).rejects.toThrow()
-  })
-
-  it('rejects VIN that is not exactly 17 characters', async () => {
-    const car = Car.build({
-      make: 'Toyota', model: 'Camry', year: 2023,
-      plate_number: 'VIN1', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001',
-      vin: 'SHORT'
-    })
-    await expect(car.validate()).rejects.toThrow()
-  })
-
-  it('accepts valid VIN of exactly 17 characters', async () => {
-    const car = Car.build({
-      make: 'Toyota', model: 'Camry', year: 2023,
-      plate_number: 'VIN2', type: 'sedan', fleet_owner_id: '00000000-0000-0000-0000-000000000001',
-      vin: '12345678901234567'
-    })
-    await expect(car.validate()).resolves.toBeDefined()
   })
 })
 

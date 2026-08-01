@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { init } from '../src/server_internal.js';
 import { sequelize } from '../src/database/connection.js';
-import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup, AgentGroupMember, Attribution, QrScan, LeadPackage, LeadPackageAssignment, RedeemOpsCategory } from '../src/models/index.js';
+import { User, Campaign, Prospect, QrTag, AgentGroup, AgentGroupMember, Attribution, QrScan, LeadPackage, LeadPackageAssignment, RedeemOpsCategory } from '../src/models/index.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 let _app = null;
@@ -93,33 +93,76 @@ export async function createTestProspect(campaignId, overrides = {}) {
 }
 
 /**
- * Create a test commission for an agent and campaign.
+ * The retired-domain tables (commissions/cars/fleet_owners) are created by
+ * NOTHING on a fresh database — historically sequelize.sync() built them from
+ * the now-deleted models, and no migration has their CREATE TABLE. Long-lived
+ * databases (prod, reused local test DBs) still have them with historical
+ * rows; a fresh CI database does not. Tests that exercise the surviving
+ * raw-SQL paths (erasure scrub, delete pre-check, car-QR idempotency) create
+ * prod-shaped husks here so both worlds behave identically.
  */
-export async function createTestCommission(agentId, campaignId, overrides = {}) {
-  return Commission.create({
-    agentId,
-    campaignId,
-    amount: overrides.amount || 50.00,
-    type: overrides.type || 'conversion',
-    status: overrides.status || 'pending',
-    description: overrides.description || 'Test commission',
-    earnedDate: overrides.earnedDate || new Date(),
-    ...overrides
-  });
+export async function ensureRetiredTables() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS fleet_owners (
+      id UUID PRIMARY KEY,
+      full_name VARCHAR(255),
+      email VARCHAR(255),
+      phone VARCHAR(50),
+      company_name VARCHAR(255),
+      "createdAt" TIMESTAMPTZ NOT NULL,
+      "updatedAt" TIMESTAMPTZ NOT NULL
+    )`);
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS cars (
+      id UUID PRIMARY KEY,
+      make VARCHAR(255),
+      model VARCHAR(255),
+      year INTEGER,
+      plate_number VARCHAR(50),
+      type VARCHAR(50),
+      status VARCHAR(50),
+      fleet_owner_id UUID,
+      "createdAt" TIMESTAMPTZ NOT NULL,
+      "updatedAt" TIMESTAMPTZ NOT NULL
+    )`);
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS commissions (
+      id UUID PRIMARY KEY,
+      "agentId" UUID,
+      "campaignId" UUID,
+      "prospectId" UUID,
+      amount NUMERIC(10,2),
+      type VARCHAR(50),
+      status VARCHAR(50),
+      description TEXT,
+      metadata JSONB,
+      "earnedDate" TIMESTAMPTZ,
+      "createdAt" TIMESTAMPTZ NOT NULL,
+      "updatedAt" TIMESTAMPTZ NOT NULL
+    )`);
 }
 
 /**
- * Create a test fleet owner.
+ * Create a test fleet owner via raw SQL (see ensureRetiredTables — the model
+ * is retired). Raw inserts must name createdAt/updatedAt explicitly.
  */
 export async function createTestFleetOwner(overrides = {}) {
+  await ensureRetiredTables();
   const n = uid();
-  return FleetOwner.create({
-    full_name: overrides.full_name || `Fleet Owner ${n}`,
-    email: overrides.email || `fleet-${n}-${Date.now()}@test.com`,
-    phone: overrides.phone || `8${String(Date.now()).slice(-7)}`,
-    company_name: overrides.company_name || `Fleet Co ${n}`,
-    ...overrides
-  });
+  const [[row]] = await sequelize.query(
+    `INSERT INTO fleet_owners (id, full_name, email, phone, company_name, "createdAt", "updatedAt")
+     VALUES (gen_random_uuid(), :fullName, :email, :phone, :companyName, now(), now())
+     RETURNING *`,
+    {
+      replacements: {
+        fullName: overrides.full_name || `Fleet Owner ${n}`,
+        email: overrides.email || `fleet-${n}-${Date.now()}@test.com`,
+        phone: overrides.phone || `8${String(Date.now()).slice(-7)}`,
+        companyName: overrides.company_name || `Fleet Co ${n}`,
+      },
+    }
+  );
+  return row;
 }
 
 /**
@@ -174,20 +217,28 @@ export async function createTestAgentGroup(createdBy, agents = [], overrides = {
 }
 
 /**
- * Create a test car belonging to a fleet owner.
+ * Create a test car via raw SQL (Car model retired — see ensureRetiredTables).
  */
 export async function createTestCar(fleetOwnerId, overrides = {}) {
+  await ensureRetiredTables();
   const n = uid();
-  return Car.create({
-    make: overrides.make || 'Toyota',
-    model: overrides.model || `Camry-${n}`,
-    year: overrides.year || 2023,
-    plate_number: overrides.plate_number || `TEST${n}${Date.now().toString().slice(-4)}`,
-    type: overrides.type || 'sedan',
-    status: overrides.status || 'active',
-    fleet_owner_id: fleetOwnerId,
-    ...overrides
-  });
+  const [[row]] = await sequelize.query(
+    `INSERT INTO cars (id, make, model, year, plate_number, type, status, fleet_owner_id, "createdAt", "updatedAt")
+     VALUES (gen_random_uuid(), :make, :model, :year, :plateNumber, :type, :status, :fleetOwnerId, now(), now())
+     RETURNING *`,
+    {
+      replacements: {
+        make: overrides.make || 'Toyota',
+        model: overrides.model || `Camry-${n}`,
+        year: overrides.year || 2023,
+        plateNumber: overrides.plate_number || `TEST${n}${Date.now().toString().slice(-4)}`,
+        type: overrides.type || 'sedan',
+        status: overrides.status || 'active',
+        fleetOwnerId,
+      },
+    }
+  );
+  return row;
 }
 
 /**

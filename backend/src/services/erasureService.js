@@ -433,12 +433,22 @@ export function makeErasureService(overrides = {}) {
         // 9. Commission free text embeds the lead's name ("Lead conversion:
         // First Last"); metadata is operator-supplied JSON — both scrubbed.
         // Financials/status/paymentInfo (the AGENT's payout data) stay.
-        const [, cMeta] = await d.sequelize.query(
-          `UPDATE commissions SET description = NULL, metadata = '{"erased":true}', "updatedAt" = now()
-            WHERE "prospectId" IN (:pids)`,
-          { replacements: { pids }, transaction: t }
+        // The Commission model is retired: the table exists on long-lived
+        // databases (holding historical rows to scrub) but a FRESH install
+        // never creates it — probe first so erasure doesn't 500 there.
+        const [[cReg]] = await d.sequelize.query(
+          "SELECT to_regclass('public.commissions') AS reg", { transaction: t }
         );
-        report.commissions = rowCount(cMeta);
+        if (cReg.reg) {
+          const [, cMeta] = await d.sequelize.query(
+            `UPDATE commissions SET description = NULL, metadata = '{"erased":true}', "updatedAt" = now()
+              WHERE "prospectId" IN (:pids)`,
+            { replacements: { pids }, transaction: t }
+          );
+          report.commissions = rowCount(cMeta);
+        } else {
+          report.commissions = 0;
+        }
 
         // 13. Share links: expire + unlink + strip the ref= param out of the
         // public target (clicks are the VISITORS' data and keep aggregates).

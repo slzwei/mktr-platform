@@ -38,15 +38,6 @@ export const getAgentProspects = asyncHandler(async (req, res) => {
   });
 });
 
-export const getAgentCommissions = asyncHandler(async (req, res) => {
-  const result = await agentService.getAgentCommissions(req.params.id, req.query, req.user);
-
-  res.json({
-    success: true,
-    data: result
-  });
-});
-
 export const getAgentCampaigns = asyncHandler(async (req, res) => {
   const result = await agentService.getAgentCampaigns(req.params.id, req.query, req.user);
 

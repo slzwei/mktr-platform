@@ -911,49 +911,19 @@ describe('authService (unit)', () => {
   // ────────────────────────────────────────────────
 
   describe('getProfile', () => {
-    it('returns user with fleet_owner associations', async () => {
+    it('returns the user via a plain lookup (role-specific includes retired)', async () => {
       mocks.User.findByPk.mockResolvedValue(mocks.mockUser);
 
-      const result = await authService.getProfile('user-1', 'fleet_owner');
+      const result = await authService.getProfile('user-1');
 
-      expect(mocks.User.findByPk).toHaveBeenCalledWith('user-1', {
-        include: expect.arrayContaining([
-          { association: 'fleetOwnerProfile' },
-          { association: 'payout', required: false },
-        ]),
-      });
-      expect(result).toBeDefined();
-    });
-
-    it('returns user with driver associations', async () => {
-      mocks.User.findByPk.mockResolvedValue(mocks.mockUser);
-
-      const result = await authService.getProfile('user-1', 'driver');
-
-      expect(mocks.User.findByPk).toHaveBeenCalledWith('user-1', {
-        include: expect.arrayContaining([
-          { association: 'driverProfile' },
-          { association: 'payout', required: false },
-        ]),
-      });
-      expect(result).toBeDefined();
-    });
-
-    it('returns user with only payout association for other roles', async () => {
-      mocks.User.findByPk.mockResolvedValue(mocks.mockUser);
-
-      const result = await authService.getProfile('user-1', 'customer');
-
-      expect(mocks.User.findByPk).toHaveBeenCalledWith('user-1', {
-        include: [{ association: 'payout', required: false }],
-      });
+      expect(mocks.User.findByPk).toHaveBeenCalledWith('user-1');
       expect(result).toBeDefined();
     });
 
     it('returns null when user not found', async () => {
       mocks.User.findByPk.mockResolvedValue(null);
 
-      const result = await authService.getProfile('nonexistent', 'customer');
+      const result = await authService.getProfile('nonexistent');
 
       expect(result).toBeNull();
     });

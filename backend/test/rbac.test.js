@@ -106,22 +106,21 @@ describe('Agent-or-Admin endpoints reject unauthorized roles', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Driver/Fleet-specific endpoints — reject wrong roles
+// Driver dashboard endpoints are RETIRED (fleet teardown) — routes removed
 // ---------------------------------------------------------------------------
-describe('Driver-specific endpoints reject non-driver roles', () => {
-  const driverEndpoints = [
+describe('Retired driver endpoints are gone', () => {
+  const retiredEndpoints = [
     { method: 'GET', path: '/api/dashboard/driver/scans' },
     { method: 'GET', path: '/api/dashboard/driver/commissions' },
   ]
 
-  const forbiddenRoles = ['agent', 'customer', 'fleet_owner']
-
-  for (const endpoint of driverEndpoints) {
-    for (const role of forbiddenRoles) {
-      it(`${endpoint.method} ${endpoint.path} returns 403 for ${role}`, async () => {
-        await expectForbidden(endpoint.method, endpoint.path, tokens[role].token)
-      })
-    }
+  for (const endpoint of retiredEndpoints) {
+    it(`${endpoint.method} ${endpoint.path} returns 404 even for admin`, async () => {
+      const res = await request(app)
+        .get(endpoint.path)
+        .set('Authorization', `Bearer ${tokens.admin.token}`)
+      expect(res.status).toBe(404)
+    })
   }
 })
 
@@ -302,20 +301,20 @@ describe('Agent role can access agent-or-admin endpoints', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Driver partner can access driver-specific endpoints
+// Driver dashboard endpoints are retired — gone even for the driver role
 // ---------------------------------------------------------------------------
-describe('Driver partner can access driver endpoints', () => {
-  it('GET /api/dashboard/driver/scans returns 200 for driver_partner', async () => {
+describe('Driver endpoints are retired for driver_partner too', () => {
+  it('GET /api/dashboard/driver/scans returns 404 for driver_partner', async () => {
     const res = await request(app)
       .get('/api/dashboard/driver/scans')
       .set('Authorization', `Bearer ${tokens.driver_partner.token}`)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
   })
 
-  it('GET /api/dashboard/driver/commissions returns 200 for driver_partner', async () => {
+  it('GET /api/dashboard/driver/commissions returns 404 for driver_partner', async () => {
     const res = await request(app)
       .get('/api/dashboard/driver/commissions')
       .set('Authorization', `Bearer ${tokens.driver_partner.token}`)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(404)
   })
 })

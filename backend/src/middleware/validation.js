@@ -88,8 +88,9 @@ export const schemas = {
   // Campaign schemas — fields match what `campaignService.createCampaign` /
   // `updateCampaign` actually destructure (snake_case is intentional; the
   // table has both camelCase and snake_case columns from a half-migration).
-  // ad_playlist + assigned_agents are normalized into join tables by the
-  // service layer; we accept them as opaque arrays here.
+  // assigned_agents is normalized into a join table by the service layer.
+  // ad_playlist (retired tablet media) is accepted-and-stripped so a stale
+  // cached bundle that still sends it doesn't 400 — the service never sees it.
   campaignCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
     type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz', 'guided_review').optional(),
@@ -105,7 +106,7 @@ export const schemas = {
     assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
     design_config: Joi.object().optional(),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    ad_playlist: Joi.array().items(Joi.object()).optional(),
+    ad_playlist: Joi.any().strip(),
     enforceLeadQuota: Joi.boolean().optional(),
     metaPixelId: Joi.string().max(64).optional().allow(null, ''),
     tiktokPixelId: Joi.string().max(64).optional().allow(null, ''),
@@ -129,7 +130,7 @@ export const schemas = {
     assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
     design_config: Joi.object().optional(),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    ad_playlist: Joi.array().items(Joi.object()).optional(),
+    ad_playlist: Joi.any().strip(),
     enforceLeadQuota: Joi.boolean().optional(),
     metaPixelId: Joi.string().max(64).optional().allow(null, ''),
     tiktokPixelId: Joi.string().max(64).optional().allow(null, ''),
