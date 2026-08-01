@@ -8,6 +8,7 @@ The Express/Node.js monolith behind every MKTR surface. It captures leads (QR / 
 
 - **Node.js ≥ 18** (CI on 20), **Express 5.2**, ES modules
 - **PostgreSQL** via **Sequelize 6.35** (`pg` 8.11) — Postgres-only; `connection.js` requires `DB_HOST` and enables SSL in production (`DB_SSL` / `DB_CA_CERT` to tune)
+  - `pg-hstore` looks unimported but is REQUIRED: Sequelize's postgres dialect `require()`s it at runtime (`sequelize/lib/dialects/postgres/hstore.js`) — removing it breaks boot. Do not "clean it up".
 - **Pino** structured logging (`pino-http`) · **Sentry** (`@sentry/node`, tagged `service: mktr-backend`)
 - **JWT** (`jsonwebtoken`) + **Google OAuth** (`google-auth-library`) · **bcryptjs** · **jose** (JWKS)
 - **Joi** validation (`middleware/validation.js`) · **Helmet** · **express-rate-limit** · **compression** · **cookie-parser** · **CORS**

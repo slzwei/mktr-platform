@@ -21,7 +21,7 @@ export default {
   // threshold releases the accumulated heap between suites, which BOUNDS the
   // growth instead of just raising the ceiling until the next suite breaks it.
   workerIdleMemoryLimit: '1GB',
-  // forceExit needed: Express + morgan + process.on handlers keep Node alive
+  // forceExit needed: Express + pino-http + process.on handlers keep Node alive
   forceExit: true,
   // Set env vars before any modules are loaded (JWT_SECRET, NODE_ENV)
   setupFiles: ['./test/setup.js'],
