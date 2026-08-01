@@ -12,7 +12,7 @@ import {
   IdempotencyKey,
   sequelize,
 } from '../models/index.js';
-import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
+import { resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
 import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
@@ -182,7 +182,6 @@ const PROSPECT_UPDATE_FIELDS = [
 const defaultDeps = {
   models: { Prospect, User, Campaign, QrTag, Attribution, ProspectActivity, AgentGroup, AgentGroupMember, IdempotencyKey },
   sequelize,
-  resolveAssignedAgentId,
   resolveLeadRouting,
   getSystemAgentId,
   resolveLeadAssignment,

@@ -293,10 +293,3 @@ export function makeClaimService(overrides = {}) {
   };
 }
 
-const _default = makeClaimService();
-export const claimPartner = _default.claimPartner;
-export const claimPartnersBulk = _default.claimPartnersBulk;
-export const releasePartner = _default.releasePartner;
-export const releasePartnersBulk = _default.releasePartnersBulk;
-export const assignPartner = _default.assignPartner;
-export const assignPartnersBulk = _default.assignPartnersBulk;

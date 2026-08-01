@@ -30,14 +30,8 @@ import { refundCampaignCommitments } from './walletService.js';
  * Boost-rail ensure hook (PR-2, draw-launch-integrity §5.1 / old-plan F2).
  * Lazy dynamic import: campaignService's static graph feeds many unit suites
  * that never touch draws — the redeemOps model surface must not enter it.
- * Overridable seam for tests.
  */
-let _ensureDrawBoostRail = null;
-export function setEnsureDrawBoostRail(fn) {
-  _ensureDrawBoostRail = typeof fn === 'function' ? fn : null;
-}
 async function ensureRail(args) {
-  if (_ensureDrawBoostRail) return _ensureDrawBoostRail(args);
   const mod = await import('./redeemOps/drawBoostProvisioningService.js');
   return mod.ensureDrawBoostRail(args);
 }
@@ -1055,7 +1049,7 @@ export async function duplicateCampaign(id, body, req) {
   const original = await Campaign.findOne({ where });
   if (!original) throw new AppError('Campaign not found or access denied', 404);
 
-  const { metrics: _discardedMetrics, ...rest } = original.toJSON();
+  const rest = original.toJSON();
   // Sanitise the DERIVED default too: a pre-fix row whose stored name carries
   // markup must not re-propagate it through duplication (or into the copy's
   // generated draw terms below).

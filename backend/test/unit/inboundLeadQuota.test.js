@@ -23,7 +23,6 @@ function commonMocks(campaign, prospect) {
     Campaign: { findByPk: jest.fn().mockResolvedValue(campaign), findOne: jest.fn().mockResolvedValue(campaign) },
     ProspectActivity: { create: jest.fn().mockResolvedValue({}) },
     sequelize: { transaction: jest.fn().mockResolvedValue(mockTx) },
-    resolveAssignedAgentId: jest.fn(),
     resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'package' }),
     chargeLeadCredit: jest.fn().mockResolvedValue(true),
     // decideAssignment intentionally NOT overridden → uses the real (pure) impl.

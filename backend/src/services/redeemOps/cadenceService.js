@@ -67,7 +67,7 @@ const DISPOSITION_LABELS = {
 };
 
 /** Honest activity for each (channel, disposition) — §5.2.5. */
-export function activityForDisposition(channel, disposition) {
+function activityForDisposition(channel, disposition) {
   if (disposition === 'replied') {
     const type = { whatsapp: 'whatsapp_reply', email: 'email_reply', call: 'call_connected', instagram_dm: 'instagram_dm' }[channel] || 'follow_up';
     return { type, direction: 'inbound' };
@@ -898,7 +898,7 @@ export function makeCadenceService(overrides = {}) {
     pauseEnrollment, resumeEnrollment, stopEnrollment,
     getPartnerCadence, hookHandlers, reconcile,
     // exported for tests
-    sgtWindowClamp, activityForDisposition, validateBuilderDefinition,
+    sgtWindowClamp,
   };
 }
 

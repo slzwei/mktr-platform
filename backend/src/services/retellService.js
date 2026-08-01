@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { sequelize, Prospect, IdempotencyKey, User, Campaign } from '../models/index.js';
 import ProspectActivity from '../models/ProspectActivity.js';
-import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId } from './systemAgent.js';
+import { resolveLeadRouting, getSystemAgentId } from './systemAgent.js';
 import { chargeLeadCredit } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
 import { dispatchEvent } from './webhookService.js';
@@ -37,7 +37,6 @@ const defaultDeps = {
   Campaign,
   ProspectActivity,
   sequelize,
-  resolveAssignedAgentId,
   resolveLeadRouting,
   getSystemAgentId,
   chargeLeadCredit,

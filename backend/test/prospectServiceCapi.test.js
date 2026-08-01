@@ -50,7 +50,6 @@ function buildDeps(overrides = {}) {
   return {
     models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
     sequelize,
-    resolveAssignedAgentId: jest.fn().mockResolvedValue(null),
     getSystemAgentId: jest.fn().mockResolvedValue(null),
     deductLeadCredit: jest.fn().mockResolvedValue(),
     buildProspectWhere: jest.fn(),

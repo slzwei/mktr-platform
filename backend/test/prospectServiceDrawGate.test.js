@@ -64,7 +64,6 @@ function buildDeps({ campaign = null, phoneVerified = () => false, overrides = {
       transaction: jest.fn().mockImplementation(async (cb) => cb({})),
       literal: jest.fn().mockImplementation((s) => ({ literal: s })),
     },
-    resolveAssignedAgentId: jest.fn().mockResolvedValue(null),
     getSystemAgentId: jest.fn().mockResolvedValue(null),
     deductLeadCredit: jest.fn().mockResolvedValue(),
     buildProspectWhere: jest.fn(),

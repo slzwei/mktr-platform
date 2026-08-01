@@ -23,7 +23,6 @@ function buildService(campaign) {
       AgentGroupMember: { findAll: async () => [] },
     },
     sequelize: { transaction: async (fn) => fn(fakeTx), literal: (s) => s },
-    resolveAssignedAgentId: async () => null,
     // Quota-era routing pass (single resolver) — keep it DB-free: no agent, fallback
     // route, soft campaign ⇒ decideAssignment (pure) returns plain "assign".
     resolveLeadRouting: async () => ({ agentId: null, via: 'fallback' }),

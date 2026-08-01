@@ -13,13 +13,9 @@ import { renderLeadConfirmation } from './email-templates/leadConfirmation.js';
 const MKTR_FROM = process.env.EMAIL_FROM_MKTR || process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@mktr.sg';
 const REDEEM_FROM = process.env.EMAIL_FROM_REDEEM || 'noreply@redeem.sg';
 
-export function resolveEmailFrom(context = 'mktr') {
+function resolveEmailFrom(context = 'mktr') {
   if (context === 'redeem' || context === 'public') return REDEEM_FROM;
   return MKTR_FROM;
-}
-
-export function brandFromContext(context = 'mktr') {
-  return context === 'redeem' || context === 'public' ? 'Redeem' : 'MKTR';
 }
 
 let cachedTransporter = null;
