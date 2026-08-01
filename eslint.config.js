@@ -47,13 +47,14 @@ export default [
       ],
     },
   },
-  // Node environment for config and scripts
+  // Node environment for config and scripts. globals.node supplies
+  // __dirname/require/module/process — no-undef stays ON so a typo'd
+  // identifier anywhere in the backend fails lint (P3-5).
   {
     files: [
       'vite.config.js',
       'tailwind.config.js',
       '**/*.config.js',
-      'test-login.js',
       'backend/**/*.{js,jsx}',
     ],
     languageOptions: {
@@ -63,12 +64,8 @@ export default [
         Buffer: 'readonly',
       },
     },
-    rules: {
-      // Config files often use Node globals like __dirname/require/module
-      'no-undef': 'off',
-    },
   },
-  // Jest globals for backend tests
+  // Jest globals for backend tests (no-undef stays ON here too)
   {
     files: ['backend/**/*.test.js', 'backend/test/**/*.js'],
     languageOptions: {
@@ -76,9 +73,6 @@ export default [
         ...globals.jest,
         ...globals.node,
       },
-    },
-    rules: {
-      'no-undef': 'off',
     },
   },
   // UI primitives often use custom attributes from third-party libs

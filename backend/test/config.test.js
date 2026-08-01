@@ -2,11 +2,10 @@ import './setup.js'
 import { getApp, closeDb, createTestUser } from './helpers.js'
 import { Campaign, Prospect, QrTag } from '../src/models/index.js'
 
-let _app
 let adminUser
 
 beforeAll(async () => {
-  app = await getApp()
+  await getApp() // boot the app (models + DB) — nothing here hits HTTP routes
   const admin = await createTestUser({ role: 'admin' })
   adminUser = admin.user
 })
