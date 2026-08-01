@@ -85,27 +85,13 @@ const AdminV2Users = lazy(() => import('./adminv2/AdminV2Users'));
 const AdminV2AISettings = lazy(() => import('./adminv2/AdminV2AISettings'));
 const AdminCampaignForm = lazy(() => import('./AdminCampaignForm'));
 const AdminAgentDetail = lazy(() => import('./AdminAgentDetail'));
-const AdminFleet = lazy(() => import('./AdminFleet'));
 const AdminCampaignWorkspace = lazy(() => import('./AdminCampaignWorkspace'));
 // Campaign Studio — the permanent full-viewport design_config v2 editor
 // (rollout completed; the classic standalone designer is retired).
 const AdminCampaignStudio = lazy(() => import('./AdminCampaignStudio'));
-const AdminCommissions = lazy(() => import('./AdminCommissions'));
 const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
-const AdminDevices = lazy(() => import('./AdminDevices'));
-const AdminVehicles = lazy(() => import('./AdminVehicles'));
-const AdminFleetMap = lazy(() => import('./AdminFleetMap'));
-
-const AdminDeviceLogs = lazy(() => import('./AdminDeviceLogs'));
-const ProvisionDevice = lazy(() => import('./ProvisionDevice')); // Added
-const AdminApkManager = lazy(() => import('./AdminApkManager')); // Added
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 
-const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
-const DriverDashboard = lazy(() => import('./DriverDashboard'));
-const DriverProfile = lazy(() => import('./DriverProfile'));
-const DriverPayoutHistory = lazy(() => import('./DriverPayoutHistory'));
-const DriverPayslip = lazy(() => import('./DriverPayslip'));
 const MyProspects = lazy(() => import('./MyProspects'));
 const ProspectDetailPage = lazy(() => import('./ProspectDetailPage'));
 const AgentProfile = lazy(() => import('./AgentProfile'));
@@ -434,8 +420,8 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- {/* Campaign Studio — chromeless full-viewport takeover (own top bar + exit),
- like /provision/:code. The permanent design surface since the teardown PR. */}
+ {/* Campaign Studio — chromeless full-viewport takeover (own top bar + exit).
+ The permanent design surface since the teardown PR. */}
  <Route
  path="/admin/campaigns/:id/studio" element={
  <ProtectedRoute requiredRole="admin">
@@ -491,15 +477,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- <Route
- path="/AdminFleet" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminFleet />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
  {/* Legacy designer URL (teardown PR): the page is gone — old links land on
  the workspace Design tab (guided_review keeps its classic editor there;
  everything else gets the Open-in-Studio entry). */}
@@ -507,15 +484,6 @@ function PagesContent() {
  path="/AdminCampaignDesigner" element={
  <ProtectedRoute requiredRole="admin">
  <LegacyDesignerRedirect />
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminCommissions" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminCommissions />
- </DashboardLayout>
  </ProtectedRoute>
  }
  />
@@ -527,68 +495,6 @@ function PagesContent() {
  <AdminV2Shell legacyBridge>
  <AdminLeadPackages />
  </AdminV2Shell>
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminDevices" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminDevices />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminFleetMap" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminFleetMap />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- {/* Alias for lowercase compatibility */}
- <Route
- path="/admin/vehicles" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminVehicles />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminVehicles" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminVehicles />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/admin/devices/:id/logs" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminDeviceLogs />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/provision/:code" element={
- <ProtectedRoute requiredRole="admin">
- <ProvisionDevice />
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminApkManager" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminApkManager />
- </DashboardLayout>
  </ProtectedRoute>
  }
  />
@@ -618,55 +524,6 @@ function PagesContent() {
  <ProtectedRoute requiredRole="agent">
  <DashboardLayout>
  <ProspectDetailPage />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
-
- {/* Protected Fleet Owner routes */}
- <Route
- path="/FleetOwnerDashboard" element={
- <ProtectedRoute requiredRole="fleet_owner">
- <DashboardLayout>
- <FleetOwnerDashboard />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
-
- {/* Protected Driver Partner routes */}
- <Route
- path="/DriverDashboard" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverDashboard />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/DriverProfile" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverProfile />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/DriverPayoutHistory" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverPayoutHistory />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/DriverPayslip" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverPayslip />
  </DashboardLayout>
  </ProtectedRoute>
  }

@@ -22,8 +22,6 @@ const PERIOD_OPTIONS = {
 const ROLE_BADGE_STYLES = {
     admin: 'bg-destructive/10 text-destructive border-destructive/30',
     agent: 'bg-info/10 text-info border-info/30',
-    fleet_owner: 'bg-success/10 text-success border-success/30',
-    driver_partner: 'bg-warning/10 text-warning border-warning/30',
 };
 
 export default function DashboardHeader({

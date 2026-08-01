@@ -220,7 +220,6 @@ export default function Contact() {
  <SelectItem value="property_agent">Property Agent</SelectItem>
  <SelectItem value="financial_advisor">Financial Advisor</SelectItem>
  <SelectItem value="agency_manager">Agency Manager</SelectItem>
- <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
  <SelectItem value="other">Other</SelectItem>
  </SelectContent>
  </Select>
