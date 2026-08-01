@@ -1,4 +1,4 @@
-import { sgtDayEndExclusiveMs } from './sgtTime.js';
+import { sgtDayEndExclusiveMs, longDate } from './sgtTime.js';
 
 /**
  * drawConsistency — the promise-vs-facts lint for lucky-draw campaigns
@@ -27,18 +27,9 @@ import { sgtDayEndExclusiveMs } from './sgtTime.js';
  * DB and can run identically in the save gate and the readiness loader.
  */
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-/** '2026-09-30' → '30 September 2026' (the template's long-date shape). */
-export function longDate(ymd) {
-  const m = typeof ymd === 'string' ? ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
-  if (!m) return '';
-  const month = MONTHS[Number(m[2]) - 1];
-  return month ? `${Number(m[3])} ${month} ${m[1]}` : '';
-}
+// The long-date formatter lives in sgtTime.js (P4-1: this file carried a
+// verbatim drifted-in-waiting copy while already importing sgtTime).
+export { longDate };
 
 const NAMED_ENTITIES = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
