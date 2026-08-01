@@ -57,14 +57,9 @@ const PersonalDataPolicy = lazy(() => import('./PersonalDataPolicy'));
 const LeadsPrivacy = lazy(() => import('./LeadsPrivacy'));
 const DevRoutes = lazy(() => import('../dev/DevRoutes'));
 
-const AdminDashboard = lazy(() => import('./AdminDashboard'));
-const AdminProspects = lazy(() => import('./AdminProspects'));
-
-// ── Switchboard admin v2 (docs/plans/mktr-admin-rebuild-implementation.md
-// Phase C) — dark until VITE_ADMIN_V2_ENABLED=true is baked into the build.
-// Flag ON swaps the SAME admin URLs onto the v2 screens (bookmarks survive);
-// un-rebuilt routes keep their legacy pages until their PR lands.
-const ADMIN_V2 = import.meta.env.VITE_ADMIN_V2_ENABLED === 'true';
+// ── Switchboard admin v2 — the permanent admin surface (hard cut; the
+// VITE_ADMIN_V2_ENABLED flag is retired). Legacy /Admin* URLs are kept on the
+// v2 screens so bookmarks survive.
 const AdminV2Shell = lazy(() => import('@/components/adminv2/AdminV2Shell'));
 const AdminV2Dashboard = lazy(() => import('./adminv2/AdminV2Dashboard'));
 const AdminV2Prospects = lazy(() => import('./adminv2/AdminV2Prospects'));
@@ -85,19 +80,14 @@ const AdminV2Users = lazy(() => import('./adminv2/AdminV2Users'));
 const AdminV2AISettings = lazy(() => import('./adminv2/AdminV2AISettings'));
 // Mobile hub tab — the sidebar long-tail lives here on phones (v2-only route).
 const AdminV2More = lazy(() => import('./adminv2/AdminV2More'));
-const AdminCampaigns = lazy(() => import('./AdminCampaigns'));
 const AdminCampaignForm = lazy(() => import('./AdminCampaignForm'));
-const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
-const AdminAgents = lazy(() => import('./AdminAgents'));
 const AdminAgentDetail = lazy(() => import('./AdminAgentDetail'));
-const AdminUsers = lazy(() => import('./AdminUsers'));
 const AdminFleet = lazy(() => import('./AdminFleet'));
 const AdminCampaignWorkspace = lazy(() => import('./AdminCampaignWorkspace'));
 // Campaign Studio — the permanent full-viewport design_config v2 editor
 // (rollout completed; the classic standalone designer is retired).
 const AdminCampaignStudio = lazy(() => import('./AdminCampaignStudio'));
 const AdminCommissions = lazy(() => import('./AdminCommissions'));
-const AdminShortLinks = lazy(() => import('./AdminShortLinks'));
 const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
 const AdminDevices = lazy(() => import('./AdminDevices'));
 const AdminVehicles = lazy(() => import('./AdminVehicles'));
@@ -106,8 +96,6 @@ const AdminFleetMap = lazy(() => import('./AdminFleetMap'));
 const AdminDeviceLogs = lazy(() => import('./AdminDeviceLogs'));
 const ProvisionDevice = lazy(() => import('./ProvisionDevice')); // Added
 const AdminApkManager = lazy(() => import('./AdminApkManager')); // Added
-const AdminAgentGroups = lazy(() => import('./AdminAgentGroups'));
-const AdminAISettings = lazy(() => import('./AdminAISettings'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
@@ -295,49 +283,30 @@ function PagesContent() {
  <Route
  path="/AdminDashboard" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2Dashboard />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminDashboard />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/AdminShortLinks" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2ShortLinks />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminShortLinks />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/AdminProspects" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2Prospects />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminProspects />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
- {ADMIN_V2 && (
  <Route
  path="/admin/campaigns/:id" element={
  <ProtectedRoute requiredRole="admin">
@@ -347,8 +316,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/admin/leads/:prospectId" element={
  <ProtectedRoute requiredRole="admin">
@@ -358,8 +325,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/AdminPeople" element={
  <ProtectedRoute requiredRole="admin">
@@ -369,8 +334,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/admin/more" element={
  <ProtectedRoute requiredRole="admin">
@@ -380,8 +343,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/AdminCohorts" element={
  <ProtectedRoute requiredRole="admin">
@@ -391,8 +352,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/admin/cohorts/:id" element={
  <ProtectedRoute requiredRole="admin">
@@ -402,8 +361,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/AdminBroadcasts" element={
  <ProtectedRoute requiredRole="admin">
@@ -413,8 +370,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/admin/broadcasts/:id" element={
  <ProtectedRoute requiredRole="admin">
@@ -424,8 +379,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
- {ADMIN_V2 && (
  <Route
  path="/AdminWallets" element={
  <ProtectedRoute requiredRole="admin">
@@ -435,49 +388,30 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
  <Route
  path="/AdminCampaigns" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2Campaigns />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminCampaigns />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/admin/campaigns/new" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell legacyBridge>
  <AdminCampaignForm />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminCampaignForm />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/admin/campaigns/:id/edit" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell legacyBridge>
  <AdminCampaignForm />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminCampaignForm />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
@@ -485,30 +419,18 @@ function PagesContent() {
  <Route
  path="/admin/campaigns/workspace" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell fullBleed legacyBridge>
  <AdminCampaignWorkspace />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminCampaignWorkspace />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/admin/campaigns/:id/workspace" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell fullBleed legacyBridge>
  <AdminCampaignWorkspace />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminCampaignWorkspace />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
@@ -524,69 +446,48 @@ function PagesContent() {
  <Route
  path="/AdminQRCodes" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2QRCodes />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminQRCodes />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/AdminAgentGroups" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2AgentGroups />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminAgentGroups />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/AdminAgents" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2Agents />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminAgents />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
+ {/* Legacy per-agent drill-down — nothing links here since the v1 agent
+ table died, but the URL survives for bookmarks. Renders in the v2 shell
+ (the v2 list's drawer has no deep-linkable route to fold this into). */}
  <Route
  path="/AdminAgents/:agentId" element={
  <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
+ <AdminV2Shell legacyBridge>
  <AdminAgentDetail />
- </DashboardLayout>
+ </AdminV2Shell>
  </ProtectedRoute>
  }
  />
  <Route
  path="/AdminUsers" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2Users />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminUsers />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
@@ -618,12 +519,14 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
+ {/* Still linked from AdminV2Wallets ("Manage packages") — v2 shell so the
+ hop stays inside the v2 chrome. */}
  <Route
  path="/AdminLeadPackages" element={
  <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
+ <AdminV2Shell legacyBridge>
  <AdminLeadPackages />
- </DashboardLayout>
+ </AdminV2Shell>
  </ProtectedRoute>
  }
  />
@@ -785,15 +688,9 @@ function PagesContent() {
  <Route
  path="/AdminAISettings" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2AISettings />
  </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminAISettings />
- </DashboardLayout>
- )}
  </ProtectedRoute>
  }
  />
