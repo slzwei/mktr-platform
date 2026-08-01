@@ -13,6 +13,7 @@ import {
   sequelize,
 } from '../models/index.js';
 import { resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
+import { makeIdempotencyOps } from './idempotencyProtocol.js';
 import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
@@ -241,6 +242,7 @@ const defaultDeps = {
 export function makeProspectService(overrides = {}) {
   const d = { ...defaultDeps, ...overrides };
   const m = { ...defaultDeps.models, ...(overrides.models || {}) };
+  const idem = makeIdempotencyOps(m.IdempotencyKey);
 
   /**
    * Create a new prospect (lead capture).
@@ -2681,11 +2683,9 @@ export function makeProspectService(overrides = {}) {
     const IDEMP_SCOPE = 'external:held-assign';
 
     // Replay: a retried request with the same key returns the first result verbatim.
-    if (idempotencyKey) {
-      const existing = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
-      if (existing && existing.expiresAt > new Date() && existing.responseBody) {
-        return existing.responseBody;
-      }
+    {
+      const replay = await idem.replayIfDone(IDEMP_SCOPE, idempotencyKey);
+      if (replay) return replay;
     }
 
     // Load the prospect FIRST so a retry after a successful release reports
@@ -2788,15 +2788,7 @@ export function makeProspectService(overrides = {}) {
       // Record idempotency atomically with the release so an exact retry replays this
       // result verbatim. A concurrent same-key duplicate loses the unique PK and rolls
       // back — harmless, since the held-only release already prevents any double effect.
-      if (idempotencyKey) {
-        await m.IdempotencyKey.create({
-          key: idempotencyKey,
-          scope: IDEMP_SCOPE,
-          responseBody: result,
-          responseCode: 200,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        }, { transaction: t });
-      }
+      await idem.recordResult(IDEMP_SCOPE, idempotencyKey, result, { transaction: t });
 
       await t.commit();
     } catch (err) {
@@ -2804,9 +2796,9 @@ export function makeProspectService(overrides = {}) {
       // A concurrent request with the SAME idempotency key won the unique PK — replay
       // its recorded result instead of surfacing a 500 (the held-only release already
       // guaranteed no double effect).
-      if (idempotencyKey && (err?.name === 'SequelizeUniqueConstraintError' || err?.original?.code === '23505')) {
-        const winner = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
-        if (winner?.responseBody) return winner.responseBody;
+      {
+        const winner = await idem.replayOnUniqueRace(IDEMP_SCOPE, idempotencyKey, err);
+        if (winner) return winner;
       }
       throw err;
     }
@@ -2837,33 +2829,13 @@ export function makeProspectService(overrides = {}) {
     // Claim the idempotency key FIRST (unique PK) so concurrent / retried same-key requests can
     // never both run assignProspect (which always charges + dispatches). A completed claim replays
     // its result; a still-running claim reports in_progress (the caller retries).
-    if (idempotencyKey) {
-      const existing = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
-      if (existing) return existing.responseBody ?? { status: 'error', error: 'in_progress' };
-      try {
-        await m.IdempotencyKey.create({
-          key: idempotencyKey, scope: IDEMP_SCOPE, responseBody: null, responseCode: null,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        });
-      } catch (err) {
-        if (err?.name === 'SequelizeUniqueConstraintError' || err?.original?.code === '23505') {
-          const winner = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
-          return winner?.responseBody ?? { status: 'error', error: 'in_progress' };
-        }
-        throw err;
-      }
+    {
+      const claim = await idem.claimOrReplay(IDEMP_SCOPE, idempotencyKey);
+      if (!claim.claimed) return claim.replay;
     }
 
     // Record the outcome (success OR validation failure) on the claimed key so a retry replays it.
-    const record = async (result) => {
-      if (idempotencyKey) {
-        await m.IdempotencyKey.update(
-          { responseBody: result, responseCode: 200 },
-          { where: { key: idempotencyKey, scope: IDEMP_SCOPE } },
-        ).catch(() => {});
-      }
-      return result;
-    };
+    const record = (result) => idem.recordClaimed(IDEMP_SCOPE, idempotencyKey, result);
 
     // Resolve the destination by mktrLeadsId ONLY (excludes Lyfe / provenance-less users).
     const agent = agentMktrLeadsId
@@ -2935,11 +2907,9 @@ export function makeProspectService(overrides = {}) {
     } = opts;
     const IDEMP_SCOPE = 'external:admin-return-held';
 
-    if (idempotencyKey) {
-      const existing = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
-      if (existing && existing.expiresAt > new Date() && existing.responseBody) {
-        return existing.responseBody;
-      }
+    {
+      const replay = await idem.replayIfDone(IDEMP_SCOPE, idempotencyKey);
+      if (replay) return replay;
     }
 
     const prospect = await m.Prospect.findOne({ where: { id: prospectId, ...(scopeWhere || {}) } });
@@ -3039,22 +3009,14 @@ export function makeProspectService(overrides = {}) {
         result = { status: 'returned', leadId: prospectId };
       }
 
-      if (idempotencyKey) {
-        await m.IdempotencyKey.create({
-          key: idempotencyKey,
-          scope: IDEMP_SCOPE,
-          responseBody: result,
-          responseCode: 200,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        }, { transaction: t });
-      }
+      await idem.recordResult(IDEMP_SCOPE, idempotencyKey, result, { transaction: t });
 
       await t.commit();
     } catch (err) {
       await t.rollback();
-      if (idempotencyKey && (err?.name === 'SequelizeUniqueConstraintError' || err?.original?.code === '23505')) {
-        const winner = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
-        if (winner?.responseBody) return winner.responseBody;
+      {
+        const winner = await idem.replayOnUniqueRace(IDEMP_SCOPE, idempotencyKey, err);
+        if (winner) return winner;
       }
       throw err;
     }
