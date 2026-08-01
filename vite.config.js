@@ -85,7 +85,6 @@ function brandSeoFiles() {
     'Disallow: /PendingApproval',
     'Disallow: /auth/',
     'Disallow: /api/',
-    'Disallow: /preview',
     '',
     `Sitemap: ${base}/sitemap.xml`,
     '',

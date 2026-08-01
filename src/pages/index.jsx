@@ -19,18 +19,13 @@ function LegacyDesignerRedirect() {
 }
 
 const LeadCapture = lazy(() => import('./LeadCapture'));
-const LeadCaptureDemo = lazy(() => import('./LeadCaptureDemo'));
+// Visual-QA demo with mock campaign data — dev-only, stripped from production builds
+const LeadCaptureDemo = import.meta.env.DEV ? lazy(() => import('./LeadCaptureDemo')) : null;
 const RewardClaim = lazy(() => import('./RewardClaim'));
 const ScreeningCallback = lazy(() => import('./ScreeningCallback'));
 const PublicPreview = lazy(() => import('./public/Preview'));
 const TrackRedirect = lazy(() => import('./TrackRedirect'));
 const ShareRedirect = lazy(() => import('./ShareRedirect'));
-
-// Design exploration prototypes — safe to delete src/pages/preview/ once a direction is picked
-const PreviewHub = lazy(() => import('./preview/PreviewHub'));
-const AtelierPreview = lazy(() => import('./preview/AtelierPreview'));
-const AuroraPreview = lazy(() => import('./preview/AuroraPreview'));
-const SpecimenPreview = lazy(() => import('./preview/SpecimenPreview'));
 
 const Homepage = lazy(() => import('./Homepage'));
 const RedeemHome = lazy(() => import('./RedeemHome'));
@@ -266,7 +261,7 @@ function PagesContent() {
  <Route path="/legal/:doc" element={<MarketplaceStatic mode="legal" />} />
  </>
  )}
- <Route path="/LeadCapture/demo" element={<LeadCaptureDemo />} />
+ {import.meta.env.DEV && <Route path="/LeadCapture/demo" element={<LeadCaptureDemo />} />}
  <Route path="/p/:slug" element={<PublicPreview />} />
  <Route path="/t/:slug" element={<TrackRedirect />} />
  <Route path="/share/:slug" element={<ShareRedirect />} />
@@ -274,12 +269,6 @@ function PagesContent() {
  <Route path="/r/:token" element={<RewardClaim />} />
  {/* Screening-callback opt-in — the draw_callback_optin WhatsApp button lands here (?t=token) */}
  <Route path="/callback" element={<ScreeningCallback />} />
-
- {/* Design exploration prototypes — mktr build only */}
- <Route path="/preview" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <PreviewHub />} />
- <Route path="/preview/atelier" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <AtelierPreview />} />
- <Route path="/preview/aurora" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <AuroraPreview />} />
- <Route path="/preview/specimen" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <SpecimenPreview />} />
 
  {/* Public marketing — brand-aware (D2: redeem hides Homepage/Features/Pricing/About). */}
  <Route path="/Homepage" element={brand.showHomepage ? <Homepage /> : <NotFoundForBrand />} />
