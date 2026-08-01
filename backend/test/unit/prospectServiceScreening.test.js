@@ -51,7 +51,6 @@ function buildDeps(overrides = {}) {
   return {
     models,
     sequelize,
-    resolveAssignedAgentId: jest.fn().mockResolvedValue(null),
     resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'package' }),
     getSystemAgentId: jest.fn().mockResolvedValue(null),
     decideAssignment: jest.fn().mockResolvedValue({ action: 'assign', assignedAgentId: 'agent-1', charged: false, via: 'package' }),

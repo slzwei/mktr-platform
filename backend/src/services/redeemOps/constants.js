@@ -103,7 +103,6 @@ export const TASK_PRIORITIES = ['low', 'medium', 'high'];
 // ── Cadences (docs/plans/redeem-ops-cadences.md §4.7) ───────────────────────
 
 export const CADENCE_CHANNELS = ['call', 'whatsapp', 'email', 'instagram_dm', 'visit', 'custom'];
-export const CADENCE_STEP_MODES = ['manual', 'auto']; // 'auto' reserved for P3 email
 export const CADENCE_TIME_WINDOWS = ['any', 'morning', 'afternoon', 'off_peak'];
 export const CADENCE_ENROLLMENT_STATES = ['active', 'paused', 'completed', 'exited'];
 export const CADENCE_EXIT_REASONS = [

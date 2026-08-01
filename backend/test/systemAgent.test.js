@@ -38,9 +38,9 @@ async function postProspect(payload, token = adminToken) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. resolveAssignedAgentId — tested via POST /api/prospects
+// 1. Lead assignment routing (resolveLeadRouting) — tested via POST /api/prospects
 // ---------------------------------------------------------------------------
-describe('resolveAssignedAgentId', () => {
+describe('lead assignment routing', () => {
   let campaign;
 
   beforeAll(async () => {

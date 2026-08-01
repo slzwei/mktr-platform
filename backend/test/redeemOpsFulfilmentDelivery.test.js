@@ -24,8 +24,6 @@ const sendEmailMock = jest.fn().mockResolvedValue({ success: true });
 // Mirror EVERY named export — a missing name is an ESM link error in any
 // module that imports it.
 jest.unstable_mockModule('../src/services/mailer.js', () => ({
-  resolveEmailFrom: () => 'noreply@test.local',
-  brandFromContext: () => 'Redeem',
   getTransporter: () => null,
   sendEmail: (...args) => sendEmailMock(...args),
   sendLeadAssignmentEmail: jest.fn().mockResolvedValue({ success: true }),

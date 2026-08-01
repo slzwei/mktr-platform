@@ -62,18 +62,6 @@ export async function getSystemAgentId() {
   return initSystemAgent();
 }
 
-async function findFirstActiveAgentByIds(candidateIds = []) {
-  if (!Array.isArray(candidateIds) || candidateIds.length === 0) return null;
-  const users = await User.findAll({ where: { id: candidateIds, role: 'agent', isActive: true } });
-  const byId = new Set(candidateIds);
-  // preserve order from candidateIds
-  for (const id of candidateIds) {
-    const found = users.find(u => u.id === id);
-    if (found) return found.id;
-  }
-  return null;
-}
-
 /**
  * Resolve a lead's agent AND report which route chose it, so lead-quota enforcement
  * can tell an exempt route (authenticated self / admin-explicit) from a gated route
@@ -81,9 +69,6 @@ async function findFirstActiveAgentByIds(candidateIds = []) {
  *
  * Returns { agentId, via } with via ∈ 'self' | 'admin' | 'qr' | 'package' | 'fallback'.
  * 'fallback' means nothing matched and agentId is the System Agent (or DEFAULT_AGENT_ID).
- * The tier logic is byte-for-byte the previous resolveAssignedAgentId; that function is
- * now a thin wrapper that returns `.agentId`, so retell / meta / createProspect are
- * unchanged until they opt into routing-aware behaviour.
  */
 export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId, qrTagId }) {
   // 1) If requester is an agent, they self-assign
@@ -174,16 +159,7 @@ export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId
 }
 
 /**
- * Back-compat wrapper: returns just the resolved agent id (System Agent on fallback),
- * exactly as before. Existing callers (retell / meta / createProspect) are unchanged.
- */
-export async function resolveAssignedAgentId(ctx) {
-  const { agentId } = await resolveLeadRouting(ctx);
-  return agentId;
-}
-
-/**
- * Cross-pool assignment resolver (Phase 0.7). Like resolveAssignedAgentId, but
+ * Cross-pool assignment resolver (Phase 0.7). Like resolveLeadRouting, but
  * the campaign round-robin spans BOTH internal Lyfe agents (lead packages) AND
  * external buyers (eligible for the campaign with leadBalance > 0). Returns a
  * tagged result so the caller knows which table the assignee lives in — which

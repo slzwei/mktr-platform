@@ -38,7 +38,6 @@ function buildService({ campaign } = {}) {
       AgentGroupMember: { findAll: async () => [] },
     },
     sequelize: { transaction: async (fn) => fn(fakeTx), literal: (s) => s },
-    resolveAssignedAgentId: async () => null,
     resolveLeadRouting: async () => ({ agentId: null, via: 'fallback' }),
     getSystemAgentId: async () => null,
     deductLeadCredit: async () => true,

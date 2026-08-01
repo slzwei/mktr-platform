@@ -1107,7 +1107,6 @@ export function makeDiscoveryService(overrides = {}) {
     reconcileStuckRuns, purgeExpiredCandidates,
     verifyWebhookSecret, classifyAgainstPartners, materializeCandidates,
     materializeInstagramHashtagCandidates, applyEnrichment,
-    applyPlaceMemory, buildMemoryEnrichment,
   };
 }
 

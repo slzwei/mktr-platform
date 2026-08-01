@@ -71,7 +71,6 @@ function buildMocks() {
     transaction: jest.fn().mockResolvedValue(mockTransaction),
   };
 
-  const resolveAssignedAgentId = jest.fn().mockResolvedValue('agent-1');
   const resolveLeadRouting = jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'package' });
   const getSystemAgentId = jest.fn().mockResolvedValue('system-agent-id');
   const chargeLeadCredit = jest.fn().mockResolvedValue(true);
@@ -101,7 +100,6 @@ function buildMocks() {
     Campaign,
     ProspectActivity,
     sequelize,
-    resolveAssignedAgentId,
     resolveLeadRouting,
     getSystemAgentId,
     chargeLeadCredit,
@@ -231,7 +229,6 @@ describe('retellService (unit)', () => {
         Campaign: mocks.Campaign,
         ProspectActivity: mocks.ProspectActivity,
         sequelize: mocks.sequelize,
-        resolveAssignedAgentId: mocks.resolveAssignedAgentId,
         resolveLeadRouting: mocks.resolveLeadRouting,
         getSystemAgentId: mocks.getSystemAgentId,
         chargeLeadCredit: mocks.chargeLeadCredit,
@@ -529,7 +526,6 @@ describe('retellService (unit)', () => {
         Campaign: mocks.Campaign,
         ProspectActivity: mocks.ProspectActivity,
         sequelize: mocks.sequelize,
-        resolveAssignedAgentId: mocks.resolveAssignedAgentId,
         resolveLeadRouting: mocks.resolveLeadRouting,
         chargeLeadCredit: mocks.chargeLeadCredit,
         dispatchEvent: mocks.dispatchEvent,

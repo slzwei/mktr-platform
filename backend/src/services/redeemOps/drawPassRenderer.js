@@ -1,6 +1,6 @@
 import QRCode from 'qrcode';
 import { loadEngine, el, txt, clean, renderSquarePng } from './cardEngine.js';
-import { PASS_THEMES, DEFAULT_PASS_THEME, resolvePassTheme } from '../../utils/drawTheme.js';
+import { resolvePassTheme } from '../../utils/drawTheme.js';
 
 /**
  * "Vault" lucky-draw pass compositor — the two images of the draw journey
@@ -53,7 +53,6 @@ function compactDate(long) {
     .join(' ');
 }
 
-export { PASS_THEMES, DEFAULT_PASS_THEME };
 
 /**
  * Colorway tokens, ported 1:1 from the artifact. `metal` is the gradient the
@@ -305,4 +304,4 @@ export async function renderDrawPassPng({
   return renderSquarePng(card, SIZE, { satori, Resvg, fonts });
 }
 
-export default { renderDrawPassPng, PASS_THEMES, DEFAULT_PASS_THEME };
+export default { renderDrawPassPng };

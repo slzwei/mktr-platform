@@ -12,7 +12,6 @@ import {
   screeningCallWindow,
   screeningDialDelaySeconds,
 } from '../utils/screeningEnv.js';
-import { SCREENING_REASONS } from './screeningConstants.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -117,8 +116,6 @@ export function screeningApplies({ campaign, prospect }, cfg = screeningConfig()
   if (prospect.externalAgentId) return false;
   return phoneVerificationIsCurrent(prospect);
 }
-
-export { SCREENING_REASONS };
 
 // ---------------------------------------------------------------------------
 // Internals

@@ -8,7 +8,7 @@ import { Sentry } from '../utils/sentryInit.js';
 const AUTO_DISABLE_THRESHOLD = 50;
 
 /** Events whose payloads embed the full lead PII — the "historically targeted" markers. */
-export const PAYLOAD_EVENT_TYPES = ['lead.created', 'lead.assigned'];
+const PAYLOAD_EVENT_TYPES = ['lead.created', 'lead.assigned'];
 
 /**
  * After a flush that targeted leads with payload events, nudge the
@@ -115,10 +115,6 @@ export function makeWebhookService(overrides = {}) {
         deliveryQueue.push(run);
       }
     });
-  }
-
-  function getQueueStats() {
-    return { activeDeliveries, queueDepth: deliveryQueue.length, droppedDeliveries };
   }
 
   /**
@@ -608,7 +604,7 @@ export function makeWebhookService(overrides = {}) {
   }
 
   return { dispatchEvent, persistEventDeliveries, flushDeliveries, attemptDelivery, retryDelivery, retryAllFailed,
-           getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, getQueueStats, recoverPendingRetries,
+           getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, recoverPendingRetries,
            hasDeliverableSubscriber, historicallyTargetedSubscribers };
 }
 

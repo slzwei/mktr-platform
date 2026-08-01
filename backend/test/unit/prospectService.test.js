@@ -121,7 +121,6 @@ function buildMocks() {
     literal: jest.fn((expr) => expr),
   };
 
-  const resolveAssignedAgentId = jest.fn().mockResolvedValue('agent-1');
   const resolveLeadRouting = jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
   const getSystemAgentId = jest.fn().mockResolvedValue('system-agent-id');
   const deductLeadCredit = jest.fn().mockResolvedValue(true);
@@ -151,7 +150,6 @@ function buildMocks() {
     mockTransaction,
     models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
     sequelize,
-    resolveAssignedAgentId,
     resolveLeadRouting,
     getSystemAgentId,
     deductLeadCredit,
@@ -169,7 +167,6 @@ function makeService(mocks, extra = {}) {
   return makeProspectService({
     models: mocks.models,
     sequelize: mocks.sequelize,
-    resolveAssignedAgentId: mocks.resolveAssignedAgentId,
     resolveLeadRouting: mocks.resolveLeadRouting,
     getSystemAgentId: mocks.getSystemAgentId,
     deductLeadCredit: mocks.deductLeadCredit,

@@ -1360,7 +1360,7 @@ export function makeEntitlementService(overrides = {}) {
   return {
     issueForProspect, unlockEntitlement, undoSessionUnlock, issueManual, cancelEntitlement, resendDelivery,
     expireReservations, reconcileMissedLeads, reconcileMissedDeliveries, purgeIssuanceSkips,
-    listEntitlements, verificationStampOf,
+    listEntitlements,
     cancelLiveEntitlementsForProspectTx,
     queueDelivery, // exported for tests: the per-channel fan-out contract (PR E)
   };

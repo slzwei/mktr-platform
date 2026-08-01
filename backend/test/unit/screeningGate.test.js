@@ -11,8 +11,8 @@ import {
   makeScreeningGate,
   screeningConfig,
   screeningApplies,
-  SCREENING_REASONS,
 } from '../../src/services/screeningGate.js';
+import { SCREENING_REASONS } from '../../src/services/screeningConstants.js';
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
 

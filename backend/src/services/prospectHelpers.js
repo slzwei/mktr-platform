@@ -66,7 +66,7 @@ export function externalIdForDestination(agent, destination) {
  * never screened. `qualified: null` + `unreachable: true` = released unscreened
  * after the retry policy exhausted.
  */
-export function screeningPayloadBlock(prospect) {
+function screeningPayloadBlock(prospect) {
   if (!prospect) return null;
   const meta = prospect.screeningMetadata;
   if (!meta && !prospect.screeningVerdict) return null;

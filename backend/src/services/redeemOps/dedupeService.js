@@ -129,5 +129,3 @@ export function makeDedupeService(overrides = {}) {
   return { findDuplicates, trgmAvailable };
 }
 
-const _default = makeDedupeService();
-export const findDuplicates = _default.findDuplicates;
