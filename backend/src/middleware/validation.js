@@ -60,7 +60,7 @@ export const schemas = {
     firstName: Joi.string().min(1).max(50),
     lastName: Joi.string().min(1).max(50),
     phone: Joi.string().min(10).max(20).optional(),
-    role: Joi.string().valid('customer', 'driver_partner', 'fleet_owner').optional()
+    role: Joi.string().valid('customer').optional()
   }).custom((value, helpers) => {
     const hasFull = !!value.full_name || !!value.fullName;
     const hasParts = !!value.firstName && !!value.lastName;
@@ -104,8 +104,6 @@ export const schemas = {
     is_active: Joi.boolean().optional(),
     assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
     design_config: Joi.object().optional(),
-    commission_amount_driver: Joi.number().min(0).optional().allow(null),
-    commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
     ad_playlist: Joi.array().items(Joi.object()).optional(),
     enforceLeadQuota: Joi.boolean().optional(),
@@ -130,8 +128,6 @@ export const schemas = {
     is_active: Joi.boolean().optional(),
     assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
     design_config: Joi.object().optional(),
-    commission_amount_driver: Joi.number().min(0).optional().allow(null),
-    commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
     ad_playlist: Joi.array().items(Joi.object()).optional(),
     enforceLeadQuota: Joi.boolean().optional(),
@@ -149,34 +145,6 @@ export const schemas = {
     // must not read as a draw-fact edit). Service enforces admin + the enum.
     drawPassTheme: Joi.string().max(16).optional()
   }).min(1),
-
-  // Car schemas
-  carCreate: Joi.object({
-    make: Joi.string().min(1).max(50).required(),
-    model: Joi.string().min(1).max(50).required(),
-    year: Joi.number().min(1900).max(new Date().getFullYear() + 1).required(),
-    color: Joi.string().max(30).optional(),
-    plate_number: Joi.string().min(1).max(20).required(),
-    vin: Joi.string().length(17).optional(),
-    type: Joi.string().valid('sedan', 'suv', 'truck', 'van', 'coupe', 'hatchback', 'convertible', 'other').required(),
-    status: Joi.string().valid('active', 'inactive', 'maintenance', 'retired').optional(),
-    fleet_owner_id: Joi.string().uuid().required(),
-    location: Joi.object().optional(),
-    features: Joi.array().items(Joi.string()).optional(),
-    mileage: Joi.number().min(0).optional(),
-    fuelType: Joi.string().valid('gasoline', 'diesel', 'electric', 'hybrid', 'other').optional()
-  }),
-
-  // Fleet Owner schemas
-  fleetOwnerCreate: Joi.object({
-    full_name: Joi.string().min(1).max(100).required(),
-    email: Joi.string().email().required(),
-    phone: Joi.string().max(20).optional(),
-    company_name: Joi.string().max(100).optional(),
-    uen: Joi.string().max(50).optional(),
-    payout_method: Joi.string().valid('PayNow', 'Bank Transfer').optional(),
-    status: Joi.string().valid('active', 'inactive').optional()
-  }),
 
   // Bulk lead ops (admin). Max 200 ids matches the list endpoint's page-size clamp —
   // a bulk op can never outgrow what one page of selection could have produced.
@@ -340,7 +308,6 @@ export const schemas = {
     assignedAgentName: Joi.string().max(100).allow('', null).optional()
   }),
 
-  // NOTE: Removed duplicate fleetOwnerCreate schema that conflicted with app's current model
 
   // NOTE: `driverCreate` schema removed 2026-05-13. There is no
   // `POST /api/fleet/drivers` (or any `/drivers`) route on the backend; the

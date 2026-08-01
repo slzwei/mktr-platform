@@ -142,14 +142,6 @@ describe('Auth middleware – edge cases', () => {
     expect(res.body.success).toBe(false)
   })
 
-  it('returns 403 when agent accesses fleet owner create (admin-only)', async () => {
-    const res = await request(app)
-      .post('/api/fleet/owners')
-      .set('Authorization', `Bearer ${agent1Token}`)
-      .send({ full_name: 'Test', email: 'test@test.com', phone: '91234567' })
-    expect([401, 403]).toContain(res.status)
-  })
-
   it('returns 403 when agent accesses users list (admin-only)', async () => {
     const res = await request(app)
       .get('/api/users')

@@ -53,22 +53,11 @@ describe('Admin-only endpoints reject non-admin roles', () => {
     { method: 'GET',    path: '/api/agents' },
     { method: 'GET',    path: '/api/agents/leaderboard/performance' },
     { method: 'POST',   path: '/api/agents/invite' },
-    { method: 'POST',   path: '/api/commissions' },
-    { method: 'GET',    path: '/api/commissions/agents/00000000-0000-0000-0000-000000000001/summary' },
-    { method: 'PATCH',  path: '/api/commissions/00000000-0000-0000-0000-000000000001/approve' },
-    { method: 'PATCH',  path: '/api/commissions/00000000-0000-0000-0000-000000000001/pay' },
-    { method: 'PATCH',  path: '/api/commissions/bulk/approve' },
-    { method: 'PUT',    path: '/api/commissions/00000000-0000-0000-0000-000000000001' },
-    { method: 'POST',   path: '/api/fleet/owners' },
-    { method: 'PUT',    path: '/api/fleet/owners/00000000-0000-0000-0000-000000000001' },
-    { method: 'DELETE', path: '/api/fleet/owners/00000000-0000-0000-0000-000000000001' },
     { method: 'POST',   path: '/api/qrcodes' },
     { method: 'PUT',    path: '/api/qrcodes/00000000-0000-0000-0000-000000000001' },
     { method: 'DELETE', path: '/api/qrcodes/00000000-0000-0000-0000-000000000001' },
     { method: 'POST',   path: '/api/qrcodes/bulk' },
     { method: 'DELETE', path: '/api/campaigns/00000000-0000-0000-0000-000000000001/permanent' },
-    { method: 'GET',    path: '/api/devices' },
-    { method: 'PATCH',  path: '/api/devices/00000000-0000-0000-0000-000000000001' },
   ]
 
   const nonAdminRoles = ['agent', 'customer', 'driver_partner', 'fleet_owner']
@@ -100,7 +89,6 @@ describe('Agent-or-Admin endpoints reject unauthorized roles', () => {
     { method: 'GET',    path: '/api/prospects/stats/overview' },
     { method: 'GET',    path: '/api/users/stats/overview' },
     { method: 'GET',    path: '/api/users/agents/list' },
-    { method: 'GET',    path: '/api/commissions/stats/overview' },
     { method: 'GET',    path: '/api/dashboard/analytics' },
     { method: 'POST',   path: '/api/lead-packages' },
     { method: 'POST',   path: '/api/lead-packages/assign' },
@@ -250,27 +238,6 @@ describe('Public endpoints accessible without auth', () => {
     expect(res.body.status).toBe('OK')
   })
 
-  it('POST /api/provision/session works without auth', async () => {
-    const res = await request(app)
-      .post('/api/provision/session')
-      .send({})
-    // Should not require auth
-    expect(res.status).not.toBe(401)
-    expect([200, 201, 400, 429]).toContain(res.status)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Admin-only provisioning fulfill endpoint
-// ---------------------------------------------------------------------------
-describe('Provisioning fulfill requires admin', () => {
-  const nonAdminRoles = ['agent', 'customer', 'driver_partner', 'fleet_owner']
-
-  for (const role of nonAdminRoles) {
-    it(`POST /api/provision/fulfill returns 403 for ${role}`, async () => {
-      await expectForbidden('POST', '/api/provision/fulfill', tokens[role].token)
-    })
-  }
 })
 
 // ---------------------------------------------------------------------------
@@ -287,13 +254,6 @@ describe('Admin role can access admin endpoints', () => {
   it('GET /api/agents returns 200 for admin', async () => {
     const res = await request(app)
       .get('/api/agents')
-      .set('Authorization', `Bearer ${tokens.admin.token}`)
-    expect(res.status).toBe(200)
-  })
-
-  it('GET /api/devices returns 200 for admin', async () => {
-    const res = await request(app)
-      .get('/api/devices')
       .set('Authorization', `Bearer ${tokens.admin.token}`)
     expect(res.status).toBe(200)
   })

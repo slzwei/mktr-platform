@@ -38,9 +38,6 @@ jest.unstable_mockModule('../src/middleware/tenant.js', () => ({
 jest.unstable_mockModule('../src/services/storage.js', () => ({
   storageService: {},
 }));
-jest.unstable_mockModule('../src/services/pushService.js', () => ({
-  pushService: { sendEvent: jest.fn() },
-}));
 jest.unstable_mockModule('../src/services/walletService.js', () => ({
   refundCampaignCommitments: jest.fn(async () => ({ refunded: 0, totalCents: 0 })),
 }));
