@@ -362,6 +362,21 @@ export async function bootstrapDatabase() {
             // active draw rails under 20% remaining get another default block.
             const { topUpDrawBoostAllocations } = await import('../services/redeemOps/drawBoostProvisioningService.js');
             await topUpDrawBoostAllocations();
+            // Inventory ledger ⇄ counter reconciliation (P2-11): a pure
+            // detector — logs drift loudly, never mutates (self-healing would
+            // hide the bug that caused it). This is the sweep that would have
+            // caught the redemption-reverse counter asymmetry.
+            const { default: inventory } = await import('../services/redeemOps/inventoryService.js');
+            const { RewardOffer } = await import('../models/index.js');
+            const offers = await RewardOffer.findAll({ attributes: ['id', 'title'] });
+            for (const offer of offers) {
+              const { consistent, derived, actual } = await inventory.reconcile(offer.id);
+              if (!consistent) {
+                logger.warn('[RedeemOps] inventory ledger/counter drift detected', {
+                  offerId: offer.id, offerTitle: offer.title, derived, actual,
+                });
+              }
+            }
           } catch (err) {
             logger.warn('[RedeemOps] fulfilment sweep failed (non-fatal)', { error: err?.message });
           }
