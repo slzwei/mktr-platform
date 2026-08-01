@@ -539,7 +539,7 @@ export function makeProspectService(overrides = {}) {
     if (allowExternal) {
       const r = await d.resolveLeadAssignment({
         reqUser: user,
-        requestedAgentId: body.assignedAgentId,
+        requestedAgentId: safeBody.assignedAgentId,
         campaignId: incoming.campaignId,
         qrTagId: incoming.qrTagId,
         allowExternal: true,
@@ -558,7 +558,7 @@ export function makeProspectService(overrides = {}) {
     } else {
       const routing = await d.resolveLeadRouting({
         reqUser: user,
-        requestedAgentId: body.assignedAgentId,
+        requestedAgentId: safeBody.assignedAgentId,
         campaignId: incoming.campaignId,
         qrTagId: incoming.qrTagId,
       });
@@ -709,7 +709,7 @@ export function makeProspectService(overrides = {}) {
     // leave dob optional keep behaving exactly as before, so this can never
     // start rejecting entrants on a live funnel that was set up to allow them.
     const dobRequired = sourceDesign.requiredFields?.dob === true;
-    const parsedDob = body.date_of_birth ? new Date(body.date_of_birth) : null;
+    const parsedDob = safeBody.date_of_birth ? new Date(safeBody.date_of_birth) : null;
     const dobUsable = !!parsedDob && !isNaN(parsedDob.getTime());
     if (dobRequired && !dobUsable) {
       throw new d.AppError('Date of birth is required for this campaign.', 422);
@@ -744,27 +744,27 @@ export function makeProspectService(overrides = {}) {
         incoming.demographics = {
           ...(incoming.demographics || {}),
           age: age,
-          dateOfBirth: body.date_of_birth,
+          dateOfBirth: safeBody.date_of_birth,
         };
       }
     }
 
     // Handle Postal Code -> Location mapping
-    if (body.postal_code) {
+    if (safeBody.postal_code) {
       incoming.location = {
         ...(incoming.location || {}),
-        zipCode: body.postal_code,
-        postalCode: body.postal_code,
+        zipCode: safeBody.postal_code,
+        postalCode: safeBody.postal_code,
       };
     }
 
     // Handle Education and Income mapping
-    if (body.education_level || body.monthly_income) {
+    if (safeBody.education_level || safeBody.monthly_income) {
       incoming.demographics = {
         ...(incoming.demographics || {}),
       };
-      if (body.education_level) incoming.demographics.education = body.education_level;
-      if (body.monthly_income) incoming.demographics.income = body.monthly_income;
+      if (safeBody.education_level) incoming.demographics.education = safeBody.education_level;
+      if (safeBody.monthly_income) incoming.demographics.income = safeBody.monthly_income;
     }
 
     // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
