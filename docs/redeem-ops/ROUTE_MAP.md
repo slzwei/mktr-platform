@@ -24,7 +24,7 @@
 | POST `/partners/:id/merge` | partners.merge | `{ duplicateId, reason }` — re-points children, audits. |
 | GET `/partners/:id/timeline` | partners.view | Activities + stage events + assignment events, chronological, paginated (lazy-load). |
 | POST `/partners/:id/activities` | activities.log | Log outreach activity (type/direction/summary/outcome/occurredAt/contactId). |
-| PATCH `/activities/:id` | activities.edit (own) | Correction (audited before/after); DELETE not exposed — `POST /activities/:id/void`. |
+| PATCH `/activities/:id` | activities.edit (own) | Correction (audited before/after); DELETE not exposed — `POST /activities/:id/void`. **API-only today: no SPA edit/void affordance yet** (P2-11 keep — designed correction path, UI never landed). |
 | GET/POST `/partners/:id/contacts`, PATCH/`archive` `/contacts/:id` | contacts.manage | |
 | GET/POST `/partners/:id/locations`, PATCH `/locations/:id` | locations.manage | |
 | GET/PATCH `/partners/:id/onboarding` | onboarding.manage | Checklist read/update (Phase 4). |
@@ -48,7 +48,7 @@
 | GET `/tasks` | tasks.manage (own scope) | Filters: assignee (bdm+ may query others), status, due window (`today|overdue|upcoming`), partner. |
 | POST `/tasks` | tasks.manage | Create (title, partnerId, contactId?, assignee, dueAt, priority, type). |
 | PATCH `/tasks/:id` | tasks.manage (own/team) | Edit / status transitions; completion stamps completedAt/By. |
-| GET `/pools` · POST `/pools` · PATCH `/pools/:id` | pools.manage (GET: claim_next) | Pool CRUD. |
+| GET `/pools` · POST `/pools` · PATCH `/pools/:id` | pools.manage (GET: claim_next) | Pool CRUD. **PATCH is API-only today: the SPA has no rename/retire affordance yet** (P2-11 keep). |
 | POST `/pools/:id/members` | pools.manage | Add partners (bulk ids). |
 | POST `/pools/:id/claim-next` | pools.claim_next | **SKIP LOCKED** next eligible prospect → atomic claim; `204` when pool exhausted. |
 | GET `/team/pipeline` | pipeline.view_team | Manager board: stage × owner counts + drill-down list. |
@@ -80,7 +80,7 @@
 | Method & path | Capability |
 |---|---|
 | GET `/entitlements` (filters: activation, status, expiring) | entitlements.view |
-| POST `/entitlements` (manual issue `{activationId, prospectId}`) | entitlements.issue_manual |
+| POST `/entitlements` (manual issue `{activationId, prospectId}`) — **API-only today: RedemptionsPage checks the capability but the issuance form never landed** (P2-11 keep) | entitlements.issue_manual |
 | PATCH `/entitlements/:id/cancel` | entitlements.issue_manual |
 | POST `/redemptions/verify` (`{token}` → entitlement summary + validity; idempotent) | redemptions.verify |
 | POST `/redemptions/complete` (`{token, locationId?, method}` → atomic issued→redeemed) | redemptions.verify |

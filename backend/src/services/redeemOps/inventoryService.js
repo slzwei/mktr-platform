@@ -180,7 +180,8 @@ export function makeInventoryService(overrides = {}) {
     });
   }
 
-  /** Ledger ⇄ counter reconciliation (test-time assertion; future cron). */
+  /** Ledger ⇄ counter reconciliation — asserted in tests and swept every
+   *  15 min by the fulfilment sweep (bootstrap.js), which logs any drift. */
   async function reconcile(offerId) {
     const offer = await d.RewardOffer.findByPk(offerId);
     if (!offer) throw new AppError('Reward offer not found', 404);
