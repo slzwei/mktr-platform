@@ -1,6 +1,7 @@
 import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 import { SLUG_RE } from '../utils/slug.js';
+import { CAMPAIGN_TYPE_IDS, DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 
 const Campaign = sequelize.define('Campaign', {
   id: {
@@ -24,9 +25,9 @@ const Campaign = sequelize.define('Campaign', {
     defaultValue: 'draft'
   },
   type: {
-    type: DataTypes.ENUM('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz', 'guided_review'),
+    type: DataTypes.ENUM(...CAMPAIGN_TYPE_IDS),
     allowNull: true,
-    defaultValue: 'lead_generation'
+    defaultValue: DEFAULT_CAMPAIGN_TYPE
   },
   budget: {
     type: DataTypes.DECIMAL(10, 2),

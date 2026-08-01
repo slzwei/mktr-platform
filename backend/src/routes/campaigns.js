@@ -78,7 +78,7 @@ router.get('/', authenticateToken, campaignController.listCampaigns);
  *             required: [name, type]
  *             properties:
  *               name: { type: string }
- *               type: { type: string, enum: [lead_generation, brand_awareness, product_promotion, event_marketing, quiz, guided_review] }
+ *               type: { $ref: '#/components/schemas/CampaignType' }
  *               start_date: { type: string, format: date }
  *               end_date: { type: string, format: date }
  *               is_active: { type: boolean }

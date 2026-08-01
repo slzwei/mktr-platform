@@ -1,4 +1,5 @@
 import { isValidSlug } from '../utils/slug.js';
+import { DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 /**
  * Marketplace read model — the public campaign list/detail behind
  * GET /api/marketplace/campaigns[/:slug] (redeem.sg consumer marketplace).
@@ -217,7 +218,7 @@ export function passesStaticGate(campaign) {
   // / distribution.host — accessors never throw).
   if (getStoredMarketplaceListed(dc) !== true) return false;
   if (getStoredHostChoice(dc) !== 'redeem') return false;
-  const type = campaign.type || 'lead_generation';
+  const type = campaign.type || DEFAULT_CAMPAIGN_TYPE;
   if (!MARKETPLACE_CAMPAIGN_TYPES.includes(type)) return false;
   return true;
 }
@@ -348,7 +349,7 @@ export async function previewMarketplaceCampaign(campaignId, { now = new Date(),
     active: campaign.is_active === true && campaign.status === 'active',
     marketplaceListed: getStoredMarketplaceListed(campaign.design_config) === true,
     redeemHost: getStoredHostChoice(campaign.design_config) === 'redeem',
-    supportedType: MARKETPLACE_CAMPAIGN_TYPES.includes(campaign.type || 'lead_generation'),
+    supportedType: MARKETPLACE_CAMPAIGN_TYPES.includes(campaign.type || DEFAULT_CAMPAIGN_TYPE),
     opsResolvable: !!ops,
   };
   return dto;
