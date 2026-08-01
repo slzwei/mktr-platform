@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { apiClient as api } from '../api/client';
 import { formatDistanceToNow, format } from 'date-fns';
-// import { AssignCampaignDialog } from '../components/devices/AssignCampaignDialog'; // Moved to Vehicle level
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
