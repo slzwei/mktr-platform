@@ -103,7 +103,6 @@ vi.mock('../client.js', () => {
  Campaign: new CampaignEntity(),
  Prospect: new ProspectEntity(),
  QrTag: new BaseEntity('/qrcodes', 'qrTags', 'qrTag'),
- Commission: new BaseEntity('/commissions', 'commissions', 'commission'),
  LeadPackage: new BaseEntity('/lead-packages', 'packages', 'package'),
  User: new UserEntity(),
  },
@@ -118,7 +117,6 @@ import {
  Campaign,
  Prospect,
  QrTag,
- Commission,
  LeadPackage,
  User,
 } from '../entities';
@@ -134,10 +132,6 @@ describe('entities exports', () => {
 
  it('exports QrTag entity', () => {
  expect(QrTag).toBeDefined();
- });
-
- it('exports Commission entity', () => {
- expect(Commission).toBeDefined();
  });
 
  it('exports LeadPackage entity', () => {

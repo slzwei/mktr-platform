@@ -68,11 +68,6 @@ class APIClient {
  const url = `${this.baseURL}${endpoint}`;
  const token = this.getToken();
 
- // Debug authentication - removed for security
- // if (endpoint.includes('/fleet/cars') && options.method === 'POST') {
- // console.debug('🔍 API Request Debug: ' + endpoint);
- // }
-
  const config = {
  method: 'GET',
  headers: {
@@ -549,28 +544,6 @@ class QrTagEntity extends BaseEntity {
  }
 }
 
-// Commission Entity
-class CommissionEntity extends BaseEntity {
- constructor() {
- super('/commissions', 'commissions', 'commission');
- }
-
- async approve(id, notes) {
- const response = await apiClient.patch(`${this.endpoint}/${id}/approve`, { notes });
- return response.data;
- }
-
- async markPaid(id, paymentData) {
- const response = await apiClient.patch(`${this.endpoint}/${id}/pay`, paymentData);
- return response.data;
- }
-
- async getStats(period = 'month') {
- const response = await apiClient.get(`${this.endpoint}/stats/overview`, { period });
- return response.data;
- }
-}
-
 // Lead Package Entity
 class LeadPackageEntity extends BaseEntity {
  constructor() {
@@ -637,7 +610,6 @@ export const entities = {
  Campaign: new CampaignEntity(),
  Prospect: new ProspectEntity(),
  QrTag: new QrTagEntity(),
- Commission: new CommissionEntity(),
  LeadPackage: new LeadPackageEntity(),
  User: new UserEntity(),
 };

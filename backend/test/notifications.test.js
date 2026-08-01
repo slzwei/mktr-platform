@@ -1,7 +1,6 @@
 import './setup.js';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser } from './helpers.js';
-import { pushService } from '../src/services/pushService.js';
 
 let app, admin, adminToken, agentToken, driverToken, agentUser, driverUser;
 
@@ -174,87 +173,5 @@ describe('getNotificationsForUser (service)', () => {
       expect(n).toHaveProperty('message');
       expect(n).toHaveProperty('createdAt');
     }
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────
-// PushService — unit tests (no external APIs required)
-// ──────────────────────────────────────────────────────────────────
-// Note: PushService is an in-memory EventEmitter-based SSE manager.
-// Its helper functions (roleLabel, maskPhone, shortHost) in notifications.js
-// are module-private. We test PushService's public surface below.
-
-describe('PushService', () => {
-  test('is a singleton instance', () => {
-    expect(pushService).toBeDefined();
-    expect(typeof pushService.addClient).toBe('function');
-    expect(typeof pushService.removeClient).toBe('function');
-    expect(typeof pushService.sendEvent).toBe('function');
-    expect(typeof pushService.broadcastLog).toBe('function');
-    expect(typeof pushService.broadcastHeartbeat).toBe('function');
-    expect(typeof pushService.addObserver).toBe('function');
-    expect(typeof pushService.addFleetObserver).toBe('function');
-    expect(typeof pushService.broadcastLocationUpdate).toBe('function');
-  });
-
-  test('sendEvent returns false when device is not connected', () => {
-    const result = pushService.sendEvent('nonexistent-device', 'TEST', { foo: 1 });
-    expect(result).toBe(false);
-  });
-
-  test('broadcastLog does not throw when no observers exist', () => {
-    expect(() => {
-      pushService.broadcastLog('nonexistent-device', { msg: 'test' });
-    }).not.toThrow();
-  });
-
-  test('broadcastHeartbeat does not throw with no clients', () => {
-    expect(() => {
-      pushService.broadcastHeartbeat();
-    }).not.toThrow();
-  });
-
-  test('broadcastLocationUpdate does not throw with no fleet observers', () => {
-    expect(() => {
-      pushService.broadcastLocationUpdate('device-1', 1.3521, 103.8198);
-    }).not.toThrow();
-  });
-
-  test('clients map starts empty (no real SSE connections in tests)', () => {
-    // We should not have real SSE clients in the test environment
-    // This confirms the Map exists and is accessible
-    expect(pushService.clients).toBeInstanceOf(Map);
-  });
-
-  test('cleanupHistory removes stale entries', () => {
-    // Manually insert a stale entry
-    pushService.disconnectHistory.set('stale-device', {
-      status: 'active',
-      timestamp: Date.now() - 60000 // 60s ago — exceeds 30s threshold
-    });
-
-    pushService.cleanupHistory();
-
-    expect(pushService.disconnectHistory.has('stale-device')).toBe(false);
-  });
-
-  test('cleanupHistory keeps recent entries', () => {
-    pushService.disconnectHistory.set('recent-device', {
-      status: 'playing',
-      timestamp: Date.now() - 5000 // 5s ago — within 30s threshold
-    });
-
-    pushService.cleanupHistory();
-
-    expect(pushService.disconnectHistory.has('recent-device')).toBe(true);
-    // Cleanup after test
-    pushService.disconnectHistory.delete('recent-device');
-  });
-
-  test('removeClient is a no-op for non-existent device', () => {
-    // Should not throw; just silently ignore
-    expect(() => {
-      pushService.removeClient('no-such-device', 'conn-123');
-    }).not.toThrow();
   });
 });

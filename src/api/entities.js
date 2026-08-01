@@ -7,8 +7,6 @@ export const Prospect = entities.Prospect;
 
 export const QrTag = entities.QrTag;
 
-export const Commission = entities.Commission;
-
 export const LeadPackage = entities.LeadPackage;
 
 // User entity for CRUD operations

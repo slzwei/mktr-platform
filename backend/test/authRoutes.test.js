@@ -214,13 +214,15 @@ describe('Auth Routes', () => {
       expect(profile.body.data.user.role).toBe('customer')
     })
 
-    it('register ignores a client-supplied role (defense in depth)', async () => {
+    it('register rejects a client-supplied privileged role at validation (defense in depth)', async () => {
+      // Since the fleet teardown (P2-8) the register schema only admits
+      // 'customer' — an injected role now fails at the door instead of
+      // being silently coerced.
       const email = `role-inject-${Date.now()}@test.com`
       const reg = await request(app)
         .post('/api/auth/register')
         .send({ email, password: 'Password123!', firstName: 'Role', lastName: 'Inject', role: 'fleet_owner' })
-      expect(reg.status).toBe(201)
-      expect(reg.body.data.user.role).toBe('customer')
+      expect(reg.status).toBe(400)
     })
   })
 })
