@@ -138,20 +138,25 @@ describe('Campaign role-based access', () => {
     expect(res.status).toBe(201)
   })
 
-  it('agent sees only own or public campaigns', async () => {
-    // Create a non-public campaign for admin
+  it('agent sees only own or public campaigns — the P0-1 leak stays closed', async () => {
+    // A private campaign owned by SOMEONE ELSE must be absent from an agent's
+    // list. The old version of this test only asserted Array.isArray — it
+    // passed straight through the P0-1 role-scoping leak. Self-contained:
+    // both campaigns are created here so the test bites even in isolation.
     await createTestCampaign(adminUser.id, { name: 'Admin Private', isPublic: false })
+    await createTestCampaign(agentUser.id, { name: 'Agent Own Scoped', isPublic: false })
 
     const res = await request(app)
-      .get('/api/campaigns')
+      .get('/api/campaigns?limit=200')
       .set('Authorization', `Bearer ${agentToken}`)
 
     expect(res.status).toBe(200)
-    // Agent should not see admin's private campaigns
     const campaigns = res.body.data.campaigns
-    const _adminPrivate = campaigns.filter(c => c.name === 'Admin Private' && c.createdBy === adminUser.id)
-    // This could still be empty if the agent created it, so we just check the response is valid
-    expect(Array.isArray(campaigns)).toBe(true)
+    // Positive control: the agent's own private campaign IS visible…
+    expect(campaigns.some(c => c.name === 'Agent Own Scoped')).toBe(true)
+    // …and the other owner's private campaign is NOT.
+    const adminPrivate = campaigns.filter(c => c.name === 'Admin Private')
+    expect(adminPrivate).toHaveLength(0)
   })
 
   it('unauthenticated user cannot create campaigns', async () => {
@@ -159,7 +164,8 @@ describe('Campaign role-based access', () => {
       .post('/api/campaigns')
       .send({ name: 'Unauthorized', type: 'lead_generation' })
 
-    expect([401, 403]).toContain(res.status)
+    // authenticateToken responds 401 "Access token required" when no token at all
+    expect(res.status).toBe(401)
   })
 })
 
@@ -565,38 +571,43 @@ describe('Campaign metrics endpoint', () => {
     })
   })
 
-  // Skipped: metrics are now computed from real data (migration 017 dropped the
-  // JSON column). The PATCH endpoint is kept for backward compatibility but is a
-  // no-op write — it returns computed metrics, so writing arbitrary values and
-  // reading them back no longer works.
-  it.skip('PATCH /api/campaigns/:id/metrics — merges metrics', async () => {
+  // Current contract (migration 017): the PATCH endpoint is a documented no-op
+  // WRITE — it ignores the body entirely and returns metrics COMPUTED from real
+  // data (prospects/qr_tags). These tests pin that contract.
+  it('PATCH /api/campaigns/:id/metrics — ignores the body, returns computed metrics', async () => {
     const res = await request(app)
       .patch(`/api/campaigns/${metricsCampaign.id}/metrics`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ metrics: { views: 50, clicks: 10 } })
+      .send({ metrics: { views: 50, clicks: 10, leads: 999 } })
 
     expect(res.status).toBe(200)
-    expect(res.body.data.campaign.metrics.views).toBe(50)
-    expect(res.body.data.campaign.metrics.clicks).toBe(10)
+    const { metrics } = res.body.data.campaign
+    // Computed from real data: this fresh campaign has no prospects or scans,
+    // so the written values must NOT come back.
+    expect(metrics.leads).toBe(0)
+    expect(metrics.conversions).toBe(0)
+    expect(metrics.views).toBe(0)
+    expect(metrics.clicks).toBe(0)
+    // The commission-era revenue field is retired (P2-9)
+    expect(metrics).not.toHaveProperty('revenue')
   })
 
-  it.skip('PATCH /api/campaigns/:id/metrics — preserves existing metrics not sent', async () => {
-    // First set some values
+  it('PATCH /api/campaigns/:id/metrics — repeat writes stay no-ops (computed each read)', async () => {
     await request(app)
       .patch(`/api/campaigns/${metricsCampaign.id}/metrics`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ metrics: { views: 100, leads: 20 } })
 
-    // Now update only clicks
     const res = await request(app)
       .patch(`/api/campaigns/${metricsCampaign.id}/metrics`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ metrics: { clicks: 30 } })
 
     expect(res.status).toBe(200)
-    expect(res.body.data.campaign.metrics.views).toBe(100)
-    expect(res.body.data.campaign.metrics.clicks).toBe(30)
-    expect(res.body.data.campaign.metrics.leads).toBe(20)
+    const { metrics } = res.body.data.campaign
+    expect(metrics.views).toBe(0)
+    expect(metrics.clicks).toBe(0)
+    expect(metrics.leads).toBe(0)
   })
 
   it('PATCH /api/campaigns/:id/metrics — 404 for non-existent campaign', async () => {
@@ -903,17 +914,17 @@ describe('Campaign error paths — create missing required fields', () => {
         is_active: true
       })
 
-    // Should be 400 or a validation error (could be 500 if no validation)
-    expect([400, 500]).toContain(res.status)
+    // Joi campaignCreate requires `name` — validation middleware answers 400
+    expect(res.status).toBe(400)
   })
 
-  it('POST /api/campaigns — empty body returns error', async () => {
+  it('POST /api/campaigns — empty body returns 400 (name required)', async () => {
     const res = await request(app)
       .post('/api/campaigns')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({})
 
-    expect([400, 500]).toContain(res.status)
+    expect(res.status).toBe(400)
   })
 })
 
@@ -934,25 +945,27 @@ describe('Campaign error paths — invalid pagination', () => {
       .get('/api/campaigns?page=0&limit=0')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    // Should not crash — either returns results with defaults or empty
-    expect([200, 400]).toContain(res.status)
+    // getCampaigns clamps pagination (page → ≥1, limit → 1..200): always 200
+    expect(res.status).toBe(200)
+    expect(res.body.data.pagination.currentPage).toBe(1)
   })
 
-  it('GET /api/campaigns?page=-1&limit=-5 — handles negative pagination', async () => {
+  it('GET /api/campaigns?page=-1&limit=-5 — clamps negative pagination to page 1', async () => {
     const res = await request(app)
       .get('/api/campaigns?page=-1&limit=-5')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect([200, 400]).toContain(res.status)
+    expect(res.status).toBe(200)
+    expect(res.body.data.pagination.currentPage).toBe(1)
   })
 
-  it('GET /api/campaigns?page=abc — handles non-numeric page', async () => {
+  it('GET /api/campaigns?page=abc — clamps non-numeric pagination to defaults', async () => {
     const res = await request(app)
       .get('/api/campaigns?page=abc&limit=xyz')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    // Should not crash
-    expect([200, 400]).toContain(res.status)
+    expect(res.status).toBe(200)
+    expect(res.body.data.pagination.currentPage).toBe(1)
   })
 })
 
