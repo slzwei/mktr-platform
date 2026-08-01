@@ -364,5 +364,72 @@ export const schemas = {
     full_name: Joi.string().trim().min(1).max(120).optional(),
     email: Joi.string().trim().email().allow('', null).optional(),
     agency: Joi.string().trim().max(120).allow('', null).optional()
-  }).min(1)
+  }).min(1),
+
+  // ── users.js / agents.js admin writes (P4-6) — previously accepted arbitrary
+  // bodies. Field lists mirror exactly what the services read (userService
+  // createUser/updateUser/inviteUser/updateApprovalStatus, agentService
+  // updateAgent) and the real client payloads (src/api/client.js
+  // UserEntity.invite / agents.invite / BaseEntity.update). Types stay loose
+  // where the service/normalizers own the format (phone) so sloppy-but-working
+  // callers keep working; unknown keys pass through untouched (no stripUnknown),
+  // as the services already ignore them.
+  userCreate: Joi.object({
+    email: Joi.string().email().required(),
+    firstName: Joi.string().max(100).optional(),
+    lastName: Joi.string().max(100).allow('', null).optional(),
+    phone: Joi.string().max(32).allow('', null).optional(),
+    role: Joi.string().valid('admin', 'agent', 'fleet_owner', 'driver_partner', 'customer', 'redeem_ops').optional(),
+    isActive: Joi.boolean().optional(),
+    owed_leads_count: Joi.number().integer().min(0).optional()
+  }),
+
+  // (Named adminUserUpdate — `userUpdate` above is /auth/profile's self-service schema.)
+  adminUserUpdate: Joi.object({
+    firstName: Joi.string().max(100).optional(),
+    lastName: Joi.string().max(100).allow('', null).optional(),
+    phone: Joi.string().max(32).allow('', null).optional(),
+    avatar: Joi.string().max(2048).allow('', null).optional(),
+    dateOfBirth: Joi.date().iso().allow('', null).optional(),
+    // Admin-gated fields — the service ignores them for non-admins.
+    role: Joi.string().valid('admin', 'agent', 'fleet_owner', 'driver_partner', 'customer', 'redeem_ops').optional(),
+    isActive: Joi.boolean().optional(),
+    owed_leads_count: Joi.number().integer().min(0).optional(),
+    email: Joi.string().email().optional()
+  }),
+
+  // Invite roles = userService.inviteUser's allowlist ('customer' is not invitable).
+  userInvite: Joi.object({
+    email: Joi.string().email().required(),
+    full_name: Joi.string().max(200).allow('', null).optional(),
+    role: Joi.string().valid('agent', 'fleet_owner', 'driver_partner', 'redeem_ops', 'admin').required(),
+    owed_leads_count: Joi.number().integer().min(0).optional()
+  }),
+
+  userBulkDelete: Joi.object({
+    ids: Joi.array().items(Joi.string().uuid()).min(1).max(500).required()
+  }),
+
+  userStatusPatch: Joi.object({
+    isActive: Joi.boolean().required()
+  }),
+
+  userApprovalPatch: Joi.object({
+    approvalStatus: Joi.string().valid('pending', 'approved', 'rejected').required()
+  }),
+
+  agentInvite: Joi.object({
+    email: Joi.string().email().required(),
+    full_name: Joi.string().max(200).allow('', null).optional(),
+    phone: Joi.string().max(32).allow('', null).optional(),
+    owed_leads_count: Joi.number().integer().min(0).optional()
+  }),
+
+  agentUpdate: Joi.object({
+    firstName: Joi.string().max(100).optional(),
+    lastName: Joi.string().max(100).allow('', null).optional(),
+    phone: Joi.string().max(32).allow('', null).optional(),
+    avatar: Joi.string().max(2048).allow('', null).optional(),
+    isActive: Joi.boolean().optional()
+  })
 };

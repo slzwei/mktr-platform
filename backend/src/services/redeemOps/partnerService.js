@@ -635,6 +635,21 @@ export function makePartnerService(overrides = {}) {
       if (body[f] !== undefined) updates[f] = body[f];
     }
     if (updates.type && !ACTIVITY_TYPES.includes(updates.type)) throw new AppError('Unknown activity type', 400);
+    // P4-6: this was the one write in the slice passing raw fields through —
+    // an arbitrary string persisted into `direction`. Edits REJECT junk (unlike
+    // logActivityTx's create-time clamp: silently rewriting a stored valid
+    // value would corrupt the timeline, not default it).
+    if (updates.direction !== undefined && !['outbound', 'inbound', 'internal'].includes(updates.direction)) {
+      throw new AppError('direction must be outbound, inbound or internal', 400);
+    }
+    if (updates.occurredAt !== undefined) {
+      const ts = new Date(updates.occurredAt);
+      if (Number.isNaN(ts.getTime())) throw new AppError('occurredAt must be a valid date', 400);
+      updates.occurredAt = ts;
+    }
+    if (updates.summary !== undefined && !String(updates.summary).trim()) {
+      throw new AppError('Summary is required', 400); // parity with logActivity — no blank timeline rows
+    }
     const before = {};
     for (const k of Object.keys(updates)) before[k] = activity.get(k);
 
