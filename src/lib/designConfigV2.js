@@ -16,33 +16,108 @@
 
 export const DESIGN_CONFIG_VERSION = 2;
 
-export const TEMPLATE_IDS = [
-  'editorial', 'poster', 'split', 'spotlight', 'express', 'journey',
-  // Draw-focused directions (drawTemplates.jsx, design review 2026-07-22).
-  'postcard', 'gazette', 'nightfall', 'stub', 'checklist',
-];
+/** Server/editor length + range limits per v2 key (Phase 5 handoff §01). */
+export const LIMITS = {
+  wordmark: 40, headline: 80, subheadline: 150, story: 1200, emphasis: 160,
+  heroCtaLabel: 40, submitLabel: 40, advertiserName: 60, regulatory: 1000,
+  brand: 80, terms: 10000, dropTitle: 40, dropValue: 12, dropEmoji: 8,
+  mkTitle: 120, mkValue: 80, mkAlt: 120, mkNote: 400, quizIntroH: 80,
+  quizIntroS: 160, quizStart: 40, qPrompt: 140, qOption: 80, pTitle: 40,
+  pDesc: 400, pCta: 40, pAngle: 80,
+  mediaAlt: 120, formWidthMin: 300, formWidthMax: 600, trustLine: 80,
+  // Draw-chrome copy overrides (content.drawCopy — v2-only, dropped on downgrade)
+  drawTrustRow: 80, drawScamLine: 120, drawWinnersNote: 120,
+  drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
+  // Submit CTA font size in px (content.submitFontSize — v2-only, L7)
+  submitFontSizeMin: 12, submitFontSizeMax: 24,
+};
+
+/**
+ * THE template registry (P4-4): adding a template = ONE entry here (mirrored
+ * in the twin). Key order IS template order — TEMPLATE_IDS derives from it.
+ *
+ *   draw   — draw-focused direction (drawTemplates.jsx); DRAW_TEMPLATE_IDS
+ *            derives from this flag.
+ *   params — the editor-seed parameter defaults. One bag, every template
+ *            persists its params across switches; first Studio use seeds
+ *            these. Migration seeds the bag but copies editorial.formWidth
+ *            ONLY when v1 stored one (v1's RENDER default when absent is 480,
+ *            not the editor-seed 400 — omitting preserves it).
+ *   rules  — declarative refinements the server clamp interprets on top of
+ *            its generic type-of-default pass (designConfigV2Clamp.js,
+ *            backend-only; the mirror carries them inertly for parity):
+ *              oneOf: [...]        enum membership, else the param default
+ *              maxLen: N           length-capped string, else the default
+ *              range: [min, max]   rounded int clamp; optional: true means
+ *                                  absent/junk DROPS the key entirely
+ *            Params without a rule get generic typing only.
+ */
+export const TEMPLATE_REGISTRY = {
+  editorial: {
+    params: { formWidth: 400, cardStyle: 'raised' },
+    rules: { formWidth: { range: [LIMITS.formWidthMin, LIMITS.formWidthMax], optional: true } },
+  },
+  poster: {
+    params: { overlay: 'dusk', formReveal: 'inline' },
+    rules: { overlay: { oneOf: ['dusk', 'plain'] } },
+  },
+  split: {
+    params: { mediaSide: 'left', mediaFit: 'cover' },
+    rules: { mediaSide: { oneOf: ['left', 'right'] }, mediaFit: { oneOf: ['cover', 'contain'] } },
+  },
+  spotlight: {
+    params: { introStyle: 'immersive', revealArt: 'meter' },
+    rules: { introStyle: { oneOf: ['immersive', 'card'] }, revealArt: { oneOf: ['meter', 'plain'] } },
+  },
+  express: {
+    params: { trustLine: '', storyFold: false },
+    rules: { trustLine: { maxLen: LIMITS.trustLine } },
+  },
+  journey: {
+    params: { sectionRhythm: 'alternate', stickyCta: true },
+    rules: { sectionRhythm: { oneOf: ['alternate', 'stacked'] } },
+  },
+  postcard: {
+    draw: true,
+    params: { mediaSide: 'left', cardStyle: 'float', factStyle: 'numbered' },
+    rules: {
+      mediaSide: { oneOf: ['left', 'right'] },
+      cardStyle: { oneOf: ['float', 'flush'] },
+      factStyle: { oneOf: ['numbered', 'inline'] },
+    },
+  },
+  gazette: {
+    draw: true,
+    params: { ruleDensity: 'airy', accentUse: 'fill', showSerial: true },
+    rules: { ruleDensity: { oneOf: ['airy', 'dense'] }, accentUse: { oneOf: ['text', 'fill'] } },
+  },
+  nightfall: {
+    draw: true,
+    params: { overlayTone: 'ink', showCountdown: true, ctaStyle: 'bar' },
+    rules: { overlayTone: { oneOf: ['dusk', 'ink'] }, ctaStyle: { oneOf: ['bar', 'pill'] } },
+  },
+  stub: {
+    draw: true,
+    params: { ticketTone: 'paper', showSerial: true, stubEdge: 'bottom' },
+    rules: { ticketTone: { oneOf: ['paper', 'accent'] }, stubEdge: { oneOf: ['top', 'bottom'] } },
+  },
+  checklist: {
+    draw: true,
+    params: { boostStep: 'inline', heroBand: true, railStyle: 'line' },
+    rules: { boostStep: { oneOf: ['inline', 'footnote'] }, railStyle: { oneOf: ['line', 'dots'] } },
+  },
+};
+
+export const TEMPLATE_IDS = Object.keys(TEMPLATE_REGISTRY);
 
 /** The draw-focused subset — canonical source for every consumer (PagePanel,
  * AI look gating); drawTemplates.jsx's registry is test-pinned to equal it. */
-export const DRAW_TEMPLATE_IDS = ['postcard', 'gazette', 'nightfall', 'stub', 'checklist'];
+export const DRAW_TEMPLATE_IDS = TEMPLATE_IDS.filter((id) => TEMPLATE_REGISTRY[id].draw === true);
 
-/** Per-template parameter defaults — one bag, every template persists its
- * params across switches; first Studio use seeds these. Migration seeds the
- * bag but copies editorial.formWidth ONLY when v1 stored one (v1's RENDER
- * default when absent is 480, not the editor-seed 400 — omitting preserves it). */
-export const TEMPLATE_PARAM_DEFAULTS = {
-  editorial: { formWidth: 400, cardStyle: 'raised' },
-  poster: { overlay: 'dusk', formReveal: 'inline' },
-  split: { mediaSide: 'left', mediaFit: 'cover' },
-  spotlight: { introStyle: 'immersive', revealArt: 'meter' },
-  express: { trustLine: '', storyFold: false },
-  journey: { sectionRhythm: 'alternate', stickyCta: true },
-  postcard: { mediaSide: 'left', cardStyle: 'float', factStyle: 'numbered' },
-  gazette: { ruleDensity: 'airy', accentUse: 'fill', showSerial: true },
-  nightfall: { overlayTone: 'ink', showCountdown: true, ctaStyle: 'bar' },
-  stub: { ticketTone: 'paper', showSerial: true, stubEdge: 'bottom' },
-  checklist: { boostStep: 'inline', heroBand: true, railStyle: 'line' },
-};
+/** Per-template parameter defaults, derived from the registry (see above). */
+export const TEMPLATE_PARAM_DEFAULTS = Object.fromEntries(
+  TEMPLATE_IDS.map((id) => [id, TEMPLATE_REGISTRY[id].params])
+);
 
 export const THEME_RADIUS_IDS = ['soft', 'sharp', 'round'];
 export const THEME_BACKGROUNDS = ['plain', 'wash', 'grain'];
@@ -75,22 +150,6 @@ export const THEME_PRESETS = [
 ];
 
 export const PRESET_IDS = THEME_PRESETS.map((p) => p.id);
-
-/** Server/editor length + range limits per v2 key (Phase 5 handoff §01). */
-export const LIMITS = {
-  wordmark: 40, headline: 80, subheadline: 150, story: 1200, emphasis: 160,
-  heroCtaLabel: 40, submitLabel: 40, advertiserName: 60, regulatory: 1000,
-  brand: 80, terms: 10000, dropTitle: 40, dropValue: 12, dropEmoji: 8,
-  mkTitle: 120, mkValue: 80, mkAlt: 120, mkNote: 400, quizIntroH: 80,
-  quizIntroS: 160, quizStart: 40, qPrompt: 140, qOption: 80, pTitle: 40,
-  pDesc: 400, pCta: 40, pAngle: 80,
-  mediaAlt: 120, formWidthMin: 300, formWidthMax: 600, trustLine: 80,
-  // Draw-chrome copy overrides (content.drawCopy — v2-only, dropped on downgrade)
-  drawTrustRow: 80, drawScamLine: 120, drawWinnersNote: 120,
-  drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
-  // Submit CTA font size in px (content.submitFontSize — v2-only, L7)
-  submitFontSizeMin: 12, submitFontSizeMax: 24,
-};
 
 /** v2 field ids (array order = render order) and the v1 long-id mapping. */
 export const FIELD_IDS = ['name', 'email', 'phone', 'dob', 'postal', 'education', 'salary'];

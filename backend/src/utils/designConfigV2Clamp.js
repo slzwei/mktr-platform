@@ -36,8 +36,7 @@ import {
   marketplaceToV1,
   PRESET_IDS,
   readLegacyView,
-  TEMPLATE_IDS,
-  TEMPLATE_PARAM_DEFAULTS,
+  TEMPLATE_REGISTRY,
   THEME_BACKGROUNDS,
   THEME_PRESETS,
   THEME_RADIUS_IDS,
@@ -194,11 +193,27 @@ export function getStoredAi(doc) {
 
 // ───────────────────────── v2 subtree clamps ─────────────────────────
 
-function clampTemplate(raw) {
-  const id = cleanEnum(isPlainObject(raw) ? raw.id : undefined, TEMPLATE_IDS, 'editorial');
+/**
+ * Template params clamp — driven ENTIRELY by TEMPLATE_REGISTRY (P4-4). The
+ * generic pass types every param from its default (boolean strict-true,
+ * number via Number(), string via typeof), then the entry's declarative
+ * `rules` refine:
+ *   oneOf  — enum membership, else the param default
+ *   maxLen — length-capped string read from the RAW input, else the default
+ *   range  — [min, max] rounded-integer clamp; `optional: true` means
+ *            absent/junk DROPS the key (the render default applies) instead
+ *            of pinning to a bound (editorial.formWidth's absent-stays-absent
+ *            contract — render default 480, not the editor seed).
+ * Adding a template (or a rule) is one registry entry — nothing here changes.
+ * The registry parameter is a test seam (registry-extension test).
+ */
+export function clampTemplate(raw, registry = TEMPLATE_REGISTRY) {
+  const ids = Object.keys(registry);
+  const id = cleanEnum(isPlainObject(raw) ? raw.id : undefined, ids, ids[0]);
   const incomingParams = isPlainObject(raw) && isPlainObject(raw.params) ? raw.params : {};
   const params = {};
-  for (const [tpl, defaults] of Object.entries(TEMPLATE_PARAM_DEFAULTS)) {
+  for (const [tpl, entry] of Object.entries(registry)) {
+    const defaults = entry.params;
     const inc = isPlainObject(incomingParams[tpl]) ? incomingParams[tpl] : {};
     const out = {};
     for (const [key, def] of Object.entries(defaults)) {
@@ -209,46 +224,17 @@ function clampTemplate(raw) {
         out[key] = Number.isFinite(n) ? n : def;
       } else out[key] = typeof v === 'string' ? v : def;
     }
-    // editorial.formWidth range + express.trustLine length — the only
-    // non-enum params with server limits.
-    if (tpl === 'editorial') {
-      const n = Number(inc.formWidth);
-      if (Number.isFinite(n)) out.formWidth = Math.min(LIMITS.formWidthMax, Math.max(LIMITS.formWidthMin, Math.round(n)));
-      else delete out.formWidth; // absent stays absent (render default 480)
-    }
-    if (tpl === 'poster') out.overlay = cleanEnum(out.overlay, ['dusk', 'plain'], 'dusk');
-    if (tpl === 'split') {
-      out.mediaSide = cleanEnum(out.mediaSide, ['left', 'right'], 'left');
-      out.mediaFit = cleanEnum(out.mediaFit, ['cover', 'contain'], 'cover');
-    }
-    if (tpl === 'spotlight') {
-      out.introStyle = cleanEnum(out.introStyle, ['immersive', 'card'], 'immersive');
-      out.revealArt = cleanEnum(out.revealArt, ['meter', 'plain'], 'meter');
-    }
-    if (tpl === 'express') out.trustLine = cleanString(inc.trustLine, LIMITS.trustLine) ?? '';
-    if (tpl === 'journey') out.sectionRhythm = cleanEnum(out.sectionRhythm, ['alternate', 'stacked'], 'alternate');
-    // Draw-focused templates (drawTemplates.jsx) — booleans (showSerial,
-    // showCountdown, heroBand) are already typed by the generic pass above.
-    if (tpl === 'postcard') {
-      out.mediaSide = cleanEnum(out.mediaSide, ['left', 'right'], 'left');
-      out.cardStyle = cleanEnum(out.cardStyle, ['float', 'flush'], 'float');
-      out.factStyle = cleanEnum(out.factStyle, ['numbered', 'inline'], 'numbered');
-    }
-    if (tpl === 'gazette') {
-      out.ruleDensity = cleanEnum(out.ruleDensity, ['airy', 'dense'], 'airy');
-      out.accentUse = cleanEnum(out.accentUse, ['text', 'fill'], 'fill');
-    }
-    if (tpl === 'nightfall') {
-      out.overlayTone = cleanEnum(out.overlayTone, ['dusk', 'ink'], 'ink');
-      out.ctaStyle = cleanEnum(out.ctaStyle, ['bar', 'pill'], 'bar');
-    }
-    if (tpl === 'stub') {
-      out.ticketTone = cleanEnum(out.ticketTone, ['paper', 'accent'], 'paper');
-      out.stubEdge = cleanEnum(out.stubEdge, ['top', 'bottom'], 'bottom');
-    }
-    if (tpl === 'checklist') {
-      out.boostStep = cleanEnum(out.boostStep, ['inline', 'footnote'], 'inline');
-      out.railStyle = cleanEnum(out.railStyle, ['line', 'dots'], 'line');
+    for (const [key, rule] of Object.entries(entry.rules || {})) {
+      if (rule.oneOf) {
+        out[key] = cleanEnum(out[key], rule.oneOf, defaults[key]);
+      } else if (rule.maxLen !== undefined) {
+        out[key] = cleanString(inc[key], rule.maxLen) ?? defaults[key];
+      } else if (rule.range) {
+        const n = Number(inc[key]);
+        if (Number.isFinite(n)) out[key] = Math.min(rule.range[1], Math.max(rule.range[0], Math.round(n)));
+        else if (rule.optional) delete out[key];
+        else out[key] = defaults[key];
+      }
     }
     params[tpl] = out;
   }
