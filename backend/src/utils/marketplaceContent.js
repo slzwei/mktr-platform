@@ -54,9 +54,10 @@ export const MODES = ['physical', 'online', 'hybrid'];
 export const QR_ENTRIES = ['direct', 'detail'];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-/** Campaign types that can be marketplace-listed. quiz/guided_review have
- * their own qualification funnels the generic flow would silently bypass. */
-export const MARKETPLACE_CAMPAIGN_TYPES = ['lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing'];
+/** Campaign types that can be marketplace-listed — derived from the type
+ * registry's `marketplace` flag; re-exported here so existing importers keep
+ * their path. */
+export { MARKETPLACE_CAMPAIGN_TYPES } from './campaignTypes.js';
 
 const SLOT_RE = /^\d{2}:\d{2}$/;
 

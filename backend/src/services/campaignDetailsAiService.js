@@ -4,6 +4,7 @@ import { getRuntimeAiSettings } from './aiSettingsService.js';
 import { requestStructuredJson } from './guidedReviewAiService.js';
 import { withOrgStyle } from './redeemOps/aiSuggestShared.js';
 import { cleanYmd } from '../utils/sgtTime.js';
+import { AI_TYPE_LABELS, DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 
 /**
  * "Fill it for me" for the new-campaign Details form (workspace create flow):
@@ -29,15 +30,9 @@ export function sgtToday(now = Date.now()) {
   return new Date(now + 8 * 3600e3).toISOString().slice(0, 10);
 }
 
-const TYPE_LABELS = {
-  lead_generation: 'standard lead-generation campaign',
-  quiz: 'interactive personality-quiz campaign for paid social',
-  guided_review: 'long-form guided-review campaign that qualifies intent before a consultation',
-  brand_awareness: 'brand-awareness campaign',
-  product_promotion: 'product-promotion campaign',
-  event_marketing: 'event-marketing campaign',
-  lucky_draw: 'lucky-draw campaign (verified entries, one winner pool, optional session boost)',
-};
+// The prompt-context labels live in the type registry (utils/campaignTypes.js)
+// alongside the enum they describe.
+const TYPE_LABELS = AI_TYPE_LABELS;
 
 export function detailsDraftSchema(draw) {
   const properties = {
@@ -74,7 +69,7 @@ export function buildDetailsDraftPrompts({ type, draw, brief, today, settings = 
   const base = [
     "You draft the setup fields for a Singapore consumer campaign on MKTR's redeem.sg platform.",
     `Today is ${today} (Singapore time). All dates are YYYY-MM-DD calendar dates.`,
-    `The operator is creating a ${TYPE_LABELS[type] || TYPE_LABELS.lead_generation}.`,
+    `The operator is creating a ${TYPE_LABELS[type] || TYPE_LABELS[DEFAULT_CAMPAIGN_TYPE]}.`,
     'Fill every schema field from the brief. Be concrete and faithful to the brief — never invent an offer the brief does not imply.',
     'name: internal but presentable — the offer plus a timeframe when one is implied (e.g. "iPhone 17 Lucky Draw — August 2026").',
     'startDate: today unless the brief implies a later start. endDate: only when the brief implies one; otherwise return an empty string.',
@@ -157,7 +152,7 @@ export async function generateCampaignDetailsDraft(body, userId, overrides = {})
     now: () => Date.now(),
     ...overrides,
   };
-  const type = body.type || 'lead_generation';
+  const type = body.type || DEFAULT_CAMPAIGN_TYPE;
   const draw = type === 'lucky_draw';
   const today = sgtToday(d.now());
 

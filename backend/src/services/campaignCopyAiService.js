@@ -1,5 +1,6 @@
 import { Campaign } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 import { logger } from '../utils/logger.js';
 import { getRuntimeAiSettings } from './aiSettingsService.js';
 import { requestStructuredJson } from './guidedReviewAiService.js';
@@ -205,7 +206,7 @@ export function computeMarketplaceGate(campaign, ops) {
     active: campaign.is_active === true && campaign.status === 'active',
     marketplaceListed: getStoredMarketplaceListed(campaign.design_config) === true,
     redeemHost: getStoredHostChoice(campaign.design_config) === 'redeem',
-    supportedType: MARKETPLACE_CAMPAIGN_TYPES.includes(campaign.type || 'lead_generation'),
+    supportedType: MARKETPLACE_CAMPAIGN_TYPES.includes(campaign.type || DEFAULT_CAMPAIGN_TYPE),
     opsResolvable: !!ops,
   };
 }
@@ -232,7 +233,7 @@ export function buildCampaignContext(campaign, gate = null) {
   const blocks = isObj(legacy.content_blocks) ? legacy.content_blocks : {};
   return {
     campaignName: campaign.name || '',
-    campaignType: campaign.type || 'lead_generation',
+    campaignType: campaign.type || DEFAULT_CAMPAIGN_TYPE,
     // The STORED campaign brief (campaigns.targetAudience) as fixed enum→
     // phrase facts — the AI's only durable audience signal (the campaign name
     // was the whole signal before this). null = pre-brief campaign, no

@@ -12,6 +12,7 @@ import { applyLuckyDrawPolicy, normalizeLuckyDraw, assertSingleWinnerDraw } from
 import { PASS_THEMES } from '../utils/drawTheme.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
 import { normalizeBrief, deriveArchetype, hasBrief } from '../utils/campaignBrief.js';
+import { DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 import { buildDrawTermsHtml } from '../utils/drawTermsTemplate.js';
 import { checkDrawConsistency } from '../utils/drawConsistency.js';
 import { SLUG_RE } from '../utils/slug.js';
@@ -494,7 +495,7 @@ export async function createCampaign(body, user) {
     is_active: is_active !== undefined ? is_active : true,
     createdBy: user.id,
     status: is_active ? 'active' : 'draft',
-    type: body.type || 'lead_generation'
+    type: body.type || DEFAULT_CAMPAIGN_TYPE
   };
   if (campaignData.is_active) campaignData.firstActivatedAt = new Date();
   if (body.slug !== undefined && body.slug !== null && body.slug !== '') {

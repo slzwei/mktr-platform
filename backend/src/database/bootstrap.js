@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import { sequelize } from './connection.js';
 import { initSystemAgent } from '../services/systemAgent.js';
 import { validateEnv } from '../config/envValidation.js';
+import { DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 import { validateGoogleOAuthConfig } from '../controllers/authController.js';
 import { runMigrations } from './runMigrations.js';
 import { logger } from '../utils/logger.js';
@@ -631,7 +632,7 @@ async function ensureRetellCampaigns() {
 
     await Campaign.create({
       name: campaignName,
-      type: 'lead_generation',
+      type: DEFAULT_CAMPAIGN_TYPE,
       status: 'active',
       is_active: true,
       description: `Auto-created campaign for Retell AI agent: ${agent.name}. Leads from successful phone calls are captured here automatically.`,

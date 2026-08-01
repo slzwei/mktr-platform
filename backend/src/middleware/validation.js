@@ -1,5 +1,6 @@
 import Joi from 'joi';
 import { logger } from '../utils/logger.js';
+import { CAMPAIGN_TYPE_IDS } from '../utils/campaignTypes.js';
 
 // Validation middleware.
 //
@@ -93,7 +94,7 @@ export const schemas = {
   // cached bundle that still sends it doesn't 400 — the service never sees it.
   campaignCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
-    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz', 'guided_review').optional(),
+    type: Joi.string().valid(...CAMPAIGN_TYPE_IDS).optional(),
     // Campaign brief (campaigns.targetAudience) — shape + required picks are
     // enforced by the service via normalizeBrief (utils/campaignBrief.js);
     // format-only here, same split as design_config/slug.
@@ -118,7 +119,7 @@ export const schemas = {
 
   campaignUpdate: Joi.object({
     name: Joi.string().min(1).max(100).optional(),
-    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz', 'guided_review').optional(),
+    type: Joi.string().valid(...CAMPAIGN_TYPE_IDS).optional(),
     // Campaign brief — omit to leave the stored brief untouched; when present
     // the service enforces a full valid brief (there is no clearing door).
     targetAudience: Joi.object().optional(),

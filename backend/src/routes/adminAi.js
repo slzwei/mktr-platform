@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import Joi from 'joi';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
+import { AI_CAMPAIGN_TYPE_IDS, DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 import * as aiController from '../controllers/aiController.js';
 import { TEMPLATE_IDS } from '../utils/designConfigV2.js';
 
@@ -54,8 +55,8 @@ const briefSchema = Joi.object({
 // 'lucky_draw' is the create-flow pseudo-type → draw fields included).
 const detailsDraftSchema = Joi.object({
   type: Joi.string()
-    .valid('lead_generation', 'quiz', 'guided_review', 'brand_awareness', 'product_promotion', 'event_marketing', 'lucky_draw')
-    .default('lead_generation'),
+    .valid(...AI_CAMPAIGN_TYPE_IDS)
+    .default(DEFAULT_CAMPAIGN_TYPE),
   brief: Joi.string().trim().min(5).max(2000).required(),
 });
 

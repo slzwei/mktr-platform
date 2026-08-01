@@ -1,4 +1,5 @@
 import swaggerJsdoc from 'swagger-jsdoc';
+import { CAMPAIGN_TYPE_IDS, DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 
 const options = {
   definition: {
@@ -20,6 +21,13 @@ const options = {
         },
       },
       schemas: {
+        // Derived from the campaign-type registry — route docs $ref this
+        // instead of restating the enum.
+        CampaignType: {
+          type: 'string',
+          enum: CAMPAIGN_TYPE_IDS,
+          default: DEFAULT_CAMPAIGN_TYPE,
+        },
         Error: {
           type: 'object',
           properties: {
