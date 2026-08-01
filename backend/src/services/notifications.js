@@ -1,9 +1,7 @@
 import { Op } from 'sequelize';
-import { User, Prospect, ProspectActivity, QrScan, QrTag, Car, Campaign, FleetOwner } from '../models/index.js';
+import { User, Prospect, ProspectActivity, QrScan, QrTag, Campaign } from '../models/index.js';
 
 function roleLabel(role) {
-  if (role === 'driver_partner') return 'driver';
-  if (role === 'fleet_owner') return 'fleet owner';
   return role || 'user';
 }
 
@@ -44,27 +42,24 @@ function mapProspectCreated(a, prospect) {
   const src = prospect?.leadSource || a?.metadata?.leadSource || 'unknown';
   const agentName = prospect?.assignedAgent?.fullName || prospect?.assignedAgent?.email || 'TBD';
   const qr = prospect?.qrTag;
-  const car = qr?.car;
   const qrInfo = qr?.label || qr?.slug ? ` • QR: ${qr?.label || qr?.slug}` : '';
-  const carInfo = car?.plate_number ? ` • Car: ${car.plate_number}` : '';
   return {
     id: `lead_${a.id}`,
     type: 'lead_created',
     title: `New lead${campaignName}`,
-    message: `${name}${phoneMasked ? ` (${phoneMasked})` : ''} • source: ${src} • assigned: ${agentName}${qrInfo}${carInfo}`,
+    message: `${name}${phoneMasked ? ` (${phoneMasked})` : ''} • source: ${src} • assigned: ${agentName}${qrInfo}`,
     createdAt: a.createdAt,
     link: '/AdminProspects',
     meta: {
       prospectId: prospect?.id,
       campaignId: prospect?.campaignId,
       assignedAgentId: prospect?.assignedAgentId,
-      qrTagId: qr?.id,
-      carId: car?.id
+      qrTagId: qr?.id
     }
   };
 }
 
-function mapQrScan(s, qr, car) {
+function mapQrScan(s, qr) {
   const where = s.geoCity ? ` in ${s.geoCity}` : '';
   const host = shortHost(s.referer);
   const from = host ? ` from ${host}` : '';
@@ -73,10 +68,10 @@ function mapQrScan(s, qr, car) {
     id: `scan_${s.id}`,
     type: 'qr_scan',
     title: `QR scanned: ${qr?.label || qr?.slug || 'QR'}`,
-    message: `${car?.plate_number ? `Car ${car.plate_number} • ` : ''}${s.device || 'device'}${where}${from}${campaignName}`,
+    message: `${s.device || 'device'}${where}${from}${campaignName}`,
     createdAt: s.ts,
     link: '/AdminQRCodes',
-    meta: { qrTagId: qr?.id, carId: car?.id, slug: qr?.slug, campaignId: qr?.campaignId }
+    meta: { qrTagId: qr?.id, slug: qr?.slug, campaignId: qr?.campaignId }
   };
 }
 
@@ -106,7 +101,7 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
           as: 'prospect',
           include: [
             { model: Campaign, as: 'campaign' },
-            { model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car' }] },
+            { model: QrTag, as: 'qrTag' },
             { model: User, as: 'assignedAgent' }
           ]
         }],
@@ -117,10 +112,10 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
     tasks.push(
       QrScan.findAll({
         where: createdSince ? { ts: whereTime } : undefined,
-        include: [{ model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car' }, { model: Campaign, as: 'campaign' }] }],
+        include: [{ model: QrTag, as: 'qrTag', include: [{ model: Campaign, as: 'campaign' }] }],
         limit,
         order: [['ts', 'DESC']]
-      }).then(rows => rows.map(s => mapQrScan(s, s.qrTag, s.qrTag?.car)))
+      }).then(rows => rows.map(s => mapQrScan(s, s.qrTag)))
     );
   } else if (role === 'agent') {
     tasks.push(
@@ -132,7 +127,7 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
           where: { assignedAgentId: user.id },
           include: [
             { model: Campaign, as: 'campaign' },
-            { model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car' }] },
+            { model: QrTag, as: 'qrTag' },
             { model: User, as: 'assignedAgent' }
           ]
         }],
@@ -140,38 +135,8 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
         order: [['createdAt', 'DESC']]
       }).then(rows => rows.map(a => mapProspectCreated(a, a.prospect)))
     );
-  } else if (role === 'driver_partner') {
-    tasks.push(
-      QrScan.findAll({
-        where: createdSince ? { ts: whereTime } : undefined,
-        include: [{
-          model: QrTag, as: 'qrTag', include: [
-            { model: Car, as: 'car', required: true, where: { current_driver_id: user.id } },
-            { model: Campaign, as: 'campaign' }
-          ]
-        }],
-        limit,
-        order: [['ts', 'DESC']]
-      }).then(rows => rows.map(s => mapQrScan(s, s.qrTag, s.qrTag?.car)))
-    );
-  } else if (role === 'fleet_owner') {
-    const fo = await FleetOwner.findOne({ where: { userId: user.id } });
-    const fleetOwnerId = fo?.id || null;
-    tasks.push(
-      QrScan.findAll({
-        where: createdSince ? { ts: whereTime } : undefined,
-        include: [{
-          model: QrTag, as: 'qrTag', include: [
-            { model: Car, as: 'car', required: true, where: fleetOwnerId ? { fleet_owner_id: fleetOwnerId } : {} },
-            { model: Campaign, as: 'campaign' }
-          ]
-        }],
-        limit,
-        order: [['ts', 'DESC']]
-      }).then(rows => rows.map(s => mapQrScan(s, s.qrTag, s.qrTag?.car)))
-    );
   } else {
-    // Other roles: show nothing for now
+    // Other roles (including the retired driver/fleet ones): nothing.
   }
 
   const results = (await Promise.all(tasks)).flat();

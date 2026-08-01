@@ -13,7 +13,7 @@ import {
   getApp, closeDb, createTestUser, createTestCampaign, createTestQrTag, createTestAttribution,
 } from '../helpers.js';
 import {
-  sequelize, Consumer, Prospect, ProspectActivity, Commission,
+  sequelize, Consumer, Prospect, ProspectActivity,
   RewardEntitlement, RedemptionEvent, Redemption, Draw, DrawEntry, DrawAttempt,
   ShortLink, WebhookSubscriber, WebhookDelivery, Verification, WaitlistSignup,
   ConsentEvent, ConsumerSuppression, PartnerOrganisation, RewardOffer, Activation,
@@ -290,12 +290,14 @@ describe('PDPA erasure — full matrix', () => {
       status: 'success', responseCode: 200,
     });
 
-    // Commission with the lead's name; activity metadata with a full snapshot.
-    await Commission.create({
-      type: 'conversion', amount: 50, status: 'pending',
-      description: 'Lead conversion: Erin Tan', agentId: agent.user.id,
-      campaignId: campaign1.id, prospectId: prospect1.id, earnedDate: new Date(),
-    });
+    // Historical commission row with the lead's name (model retired; the table
+    // and the erasure scrub both remain — seed via raw SQL, createdAt/updatedAt
+    // named explicitly because the test schema has no DB defaults for them).
+    await sequelize.query(
+      `INSERT INTO commissions (id, type, amount, status, description, "agentId", "campaignId", "prospectId", "earnedDate", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), 'conversion', 50, 'pending', 'Lead conversion: Erin Tan', :agentId, :campaignId, :prospectId, now(), now(), now())`,
+      { replacements: { agentId: agent.user.id, campaignId: campaign1.id, prospectId: prospect1.id } }
+    );
     await ProspectActivity.create({
       prospectId: prospect1.id, type: 'updated', actorUserId: admin.user.id,
       description: 'Prospect updated by admin',
@@ -446,7 +448,10 @@ describe('PDPA erasure — full matrix', () => {
   });
 
   test('commissions: description scrubbed, financials kept', async () => {
-    const c = await Commission.findOne({ where: { prospectId: prospect1.id } });
+    const [[c]] = await sequelize.query(
+      'SELECT description, amount, status FROM commissions WHERE "prospectId" = :pid',
+      { replacements: { pid: prospect1.id } }
+    );
     expect(c.description).toBeNull();
     expect(Number(c.amount)).toBe(50);
     expect(c.status).toBe('pending');

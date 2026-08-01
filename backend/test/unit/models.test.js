@@ -7,7 +7,6 @@ import '../setup.js';
 
 import User from '../../src/models/User.js';
 import Prospect from '../../src/models/Prospect.js';
-import Commission from '../../src/models/Commission.js';
 import Campaign from '../../src/models/Campaign.js';
 import QrTag from '../../src/models/QrTag.js';
 import LeadPackage from '../../src/models/LeadPackage.js';
@@ -114,48 +113,6 @@ describe('Sequelize Models (definitions & validations)', () => {
       expect(attrs(Prospect).campaignId.references.model).toBe('campaigns');
       expect(attrs(Prospect).assignedAgentId.references.model).toBe('users');
       expect(attrs(Prospect).qrTagId.references.model).toBe('qr_tags');
-    });
-  });
-
-  // ──────────────────────────────────────────────
-  // Commission
-  // ──────────────────────────────────────────────
-
-  describe('Commission', () => {
-    it('has status ENUM with expected values', () => {
-      const statusAttr = attrs(Commission).status;
-      expect(statusAttr.type.values).toEqual(
-        expect.arrayContaining(['pending', 'approved', 'paid', 'disputed', 'cancelled'])
-      );
-    });
-
-    it('defaults status to pending', () => {
-      expect(attrs(Commission).status.defaultValue).toBe('pending');
-    });
-
-    it('has amount as DECIMAL(10,2)', () => {
-      const amountAttr = attrs(Commission).amount;
-      expect(amountAttr).toBeDefined();
-      expect(amountAttr.allowNull).toBe(false);
-    });
-
-    it('has type ENUM with expected values', () => {
-      const typeAttr = attrs(Commission).type;
-      expect(typeAttr.type.values).toEqual(
-        expect.arrayContaining(['lead_generation', 'conversion', 'referral', 'bonus', 'penalty'])
-      );
-    });
-
-    it('has earnedDate with default NOW', () => {
-      const earnedAttr = attrs(Commission).earnedDate;
-      expect(earnedAttr).toBeDefined();
-      // DataTypes.NOW
-      expect(earnedAttr.defaultValue).toBeDefined();
-    });
-
-    it('has foreign key to users (agentId)', () => {
-      expect(attrs(Commission).agentId.references.model).toBe('users');
-      expect(attrs(Commission).agentId.allowNull).toBe(false);
     });
   });
 

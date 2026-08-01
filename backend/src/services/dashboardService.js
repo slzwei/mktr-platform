@@ -1,7 +1,6 @@
 import { Op } from 'sequelize';
 import {
-  User, Campaign, Prospect, QrTag, Commission,
-  Car, Driver, FleetOwner, Impression,
+  User, Campaign, Prospect, QrTag,
   WebhookDelivery, WebhookSubscriber, LeadPackageAssignment, sequelize
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
@@ -75,7 +74,6 @@ export async function getOverview(userId, userRole, period = '30d') {
   switch (userRole) {
     case 'admin': return getAdminStats(startDate, now, safePeriod);
     case 'agent': return getAgentStats(userId, startDate, now);
-    case 'fleet_owner': return getFleetOwnerStats(userId, startDate, now);
     default: return getCustomerStats(userId);
   }
 }
@@ -100,17 +98,14 @@ async function getAdminStats(startDate, endDate, period = '30d') {
     return cached.result;
   }
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
   // Prospects can be assigned through EITHER assignee FK (internal users OR
   // the ExternalAgent buyer pool) — "assigned" must count both.
   const anyAssignee = { [Op.or]: [{ assignedAgentId: { [Op.ne]: null } }, { externalAgentId: { [Op.ne]: null } }] };
 
   const [
     totalUsers, activeUsers, totalCampaigns, activeCampaigns,
-    totalProspects, newProspects, totalCommissions, pendingCommissions,
-    totalQrTags, totalScans, totalCars, activeCars, impressionsToday,
+    totalProspects, newProspects,
+    totalQrTags, totalScans,
     periodTotal, periodAssigned, periodConverted
   ] = await Promise.all([
     safeCount(User),
@@ -119,13 +114,8 @@ async function getAdminStats(startDate, endDate, period = '30d') {
     safeCount(Campaign, { where: { [Op.or]: [{ status: 'active' }, { is_active: true }] } }),
     safeCount(Prospect),
     safeCount(Prospect, { where: { createdAt: { [Op.gte]: startDate } } }),
-    safeSum(Commission, 'amount'),
-    safeSum(Commission, 'amount', { where: { status: 'pending' } }),
     safeCount(QrTag),
     safeSum(QrTag, 'scanCount'),
-    safeCount(Car),
-    safeCount(Car, { where: { status: 'active' } }),
-    safeCount(Impression, { where: { occurredAt: { [Op.gte]: todayStart } } }),
     // Phase B additions — period-scoped; existing `total` (all-time) and `new`
     // keep their semantics for the legacy dashboard during coexistence.
     safeCount(Prospect, { where: { createdAt: { [Op.gte]: startDate } } }),
@@ -147,10 +137,7 @@ async function getAdminStats(startDate, endDate, period = '30d') {
       converted: periodConverted,
       conversionRate: periodTotal > 0 ? Number(((periodConverted / periodTotal) * 100).toFixed(1)) : 0
     },
-    commissions: { total: totalCommissions, pending: pendingCommissions },
     qrCodes: { total: totalQrTags, totalScans },
-    fleet: { totalCars, activeCars },
-    impressions: { today: impressionsToday },
     recentActivities
   };
 
@@ -393,15 +380,11 @@ export async function getFunnel(period = '30d') {
 async function getAgentStats(userId, startDate, endDate) {
   const [
     assignedProspects, newProspects, convertedProspects,
-    totalCommissions, pendingCommissions, paidCommissions,
     myCampaigns, activeCampaigns
   ] = await Promise.all([
     Prospect.count({ where: { assignedAgentId: userId } }),
     Prospect.count({ where: { assignedAgentId: userId, createdAt: { [Op.gte]: startDate } } }),
     Prospect.count({ where: { assignedAgentId: userId, leadStatus: 'won' } }),
-    Commission.sum('amount', { where: { agentId: userId } }).then(v => v || 0),
-    Commission.sum('amount', { where: { agentId: userId, status: 'pending' } }).then(v => v || 0),
-    Commission.sum('amount', { where: { agentId: userId, status: 'paid' } }).then(v => v || 0),
     Campaign.count({ where: { createdBy: userId } }),
     Campaign.count({ where: { createdBy: userId, status: 'active' } })
   ]);
@@ -417,49 +400,10 @@ async function getAgentStats(userId, startDate, endDate) {
     include: [{ association: 'campaign', attributes: ['id', 'name'] }]
   });
 
-  const commissionTrend = await getCommissionTrend(userId, startDate, endDate);
-
   return {
     prospects: { assigned: assignedProspects, new: newProspects, converted: convertedProspects, conversionRate: parseFloat(conversionRate) },
-    commissions: { total: totalCommissions, pending: pendingCommissions, paid: paidCommissions, trend: commissionTrend },
     campaigns: { total: myCampaigns, active: activeCampaigns },
     recentProspects
-  };
-}
-
-// ---- Fleet Owner Stats ----
-
-async function getFleetOwnerStats(userId, startDate, endDate) {
-  const fleetOwner = await FleetOwner.findOne({ where: { userId } });
-  if (!fleetOwner) return { error: 'Fleet owner profile not found' };
-
-  const [totalCars, activeCars, totalDrivers, activeDrivers, totalQrTags, totalScans] = await Promise.all([
-    Car.count({ where: { fleetOwnerId: fleetOwner.id } }),
-    Car.count({ where: { fleetOwnerId: fleetOwner.id, status: 'active' } }),
-    Driver.count({ where: { fleetOwnerId: fleetOwner.id } }),
-    Driver.count({ where: { fleetOwnerId: fleetOwner.id, status: 'active' } }),
-    QrTag.count({ include: [{ association: 'car', where: { fleetOwnerId: fleetOwner.id } }] }),
-    QrTag.sum('scanCount', { include: [{ association: 'car', where: { fleetOwnerId: fleetOwner.id } }] }).then(v => v || 0)
-  ]);
-
-  const utilizationRate = totalCars > 0 ? (activeCars / totalCars * 100).toFixed(2) : 0;
-
-  const carsByStatus = await Car.findAll({
-    where: { fleetOwnerId: fleetOwner.id },
-    attributes: ['status', [sequelize.fn('COUNT', sequelize.col('status')), 'count']],
-    group: ['status']
-  });
-
-  const recentActivities = await getFleetActivities(fleetOwner.id, 10);
-
-  return {
-    fleet: {
-      totalCars, activeCars, utilizationRate: parseFloat(utilizationRate),
-      carsByStatus: carsByStatus.map(i => ({ status: i.status, count: parseInt(i.dataValues.count) }))
-    },
-    drivers: { total: totalDrivers, active: activeDrivers },
-    qrCodes: { total: totalQrTags, totalScans },
-    recentActivities
   };
 }
 
@@ -478,79 +422,10 @@ export async function getAnalytics(userId, userRole, type, period = '30d', filte
 
   switch (type) {
     case 'prospects': return getProspectAnalytics(userId, userRole, startDate, now, filters);
-    case 'commissions': return getCommissionAnalytics(userId, userRole, startDate, now, filters);
     case 'campaigns': return getCampaignAnalytics(userId, userRole, startDate, now, filters);
     case 'qr_codes': return getQRAnalytics(userId, userRole, startDate, now);
     default: return {};
   }
-}
-
-export async function getDriverScans(userId, period = '30d') {
-  const now = new Date();
-  const days = period === '7d' ? 7 : period === '30d' ? 30 : 1;
-  const startDate = period === 'all' ? null
-    : period === '1d' ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-  const whereProspect = {};
-  if (startDate) whereProspect.createdAt = { [Op.gte]: startDate, [Op.lte]: now };
-
-  const prospects = await Prospect.findAll({
-    where: whereProspect,
-    include: [{ association: 'qrTag', required: true, include: [{ association: 'car', required: true, where: { current_driver_id: userId } }] }],
-    attributes: ['id', 'createdAt']
-  });
-
-  let trend = [];
-  if (period === 'all') {
-    trend = [];
-  } else if (period === '1d') {
-    const buckets = Array.from({ length: 24 }, (_, h) => ({ label: `${h}:00`, count: 0 }));
-    for (const p of prospects) {
-      const dt = new Date(p.createdAt);
-      if (dt >= startDate && dt <= now) buckets[dt.getHours()].count += 1;
-    }
-    trend = buckets;
-  } else {
-    const map = new Map();
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      map.set(d.toISOString().split('T')[0], 0);
-    }
-    for (const p of prospects) {
-      const key = new Date(p.createdAt).toISOString().split('T')[0];
-      if (map.has(key)) map.set(key, (map.get(key) || 0) + 1);
-    }
-    trend = Array.from(map.entries()).map(([day, count]) => ({ label: day.slice(5), count }));
-  }
-
-  return { trend, total: prospects.length };
-}
-
-export async function getDriverCommissions(userId, period = '30d') {
-  const now = new Date();
-  const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
-  const startDate = period === 'all' ? null : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-  const whereProspect = {};
-  if (startDate) whereProspect.createdAt = { [Op.gte]: startDate, [Op.lte]: now };
-
-  const prospects = await Prospect.findAll({
-    where: whereProspect,
-    include: [
-      { association: 'campaign', attributes: ['id', 'name', 'commission_amount_driver'] },
-      { association: 'qrTag', required: true, include: [{ association: 'car', required: true, where: { current_driver_id: userId } }] }
-    ],
-    order: [['createdAt', 'DESC']]
-  });
-
-  return prospects.map(p => ({
-    id: p.id,
-    status: 'pending',
-    created_date: p.createdAt,
-    campaign: p.campaign ? { id: p.campaign.id, name: p.campaign.name } : null,
-    amount_driver: Number(p.campaign?.commission_amount_driver || 0)
-  }));
 }
 
 // ---- Helpers ----
@@ -571,27 +446,6 @@ async function getUserGrowthTrend(startDate, endDate) {
   while (d <= endDate) {
     const key = d.toISOString().slice(0, 10);
     trend.push({ date: key, count: dayMap.get(key) || 0 });
-    d.setDate(d.getDate() + 1);
-  }
-  return trend;
-}
-
-async function getCommissionTrend(userId, startDate, endDate) {
-  const whereClause = userId ? 'AND "agentId" = :userId' : '';
-  const [results] = await sequelize.query(`
-    SELECT DATE("earnedDate") AS day, COALESCE(SUM(amount), 0)::float AS total
-    FROM commissions
-    WHERE "earnedDate" BETWEEN :start AND :end ${whereClause}
-    GROUP BY DATE("earnedDate")
-    ORDER BY day
-  `, { replacements: { start: startDate, end: endDate, userId } });
-
-  const dayMap = new Map(results.map(r => [r.day, parseFloat(r.total)]));
-  const trend = [];
-  const d = new Date(startDate);
-  while (d <= endDate) {
-    const key = d.toISOString().slice(0, 10);
-    trend.push({ date: key, amount: dayMap.get(key) || 0 });
     d.setDate(d.getDate() + 1);
   }
   return trend;
@@ -641,20 +495,6 @@ async function getRecentActivities(limit) {
   return activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, limit);
 }
 
-async function getFleetActivities(fleetOwnerId, limit) {
-  const recentAssignments = await Car.findAll({
-    where: { fleetOwnerId, currentDriverId: { [Op.not]: null } },
-    limit, order: [['updatedAt', 'DESC']],
-    include: [{ association: 'currentDriver', include: [{ association: 'user', attributes: ['firstName', 'lastName'] }] }]
-  });
-
-  return recentAssignments.map(car => ({
-    type: 'car_assignment', id: car.id,
-    description: `${car.make} ${car.model} assigned to ${car.currentDriver?.user?.firstName || 'Unknown'} ${car.currentDriver?.user?.lastName || ''}`,
-    timestamp: car.updatedAt
-  })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, limit);
-}
-
 async function getProspectAnalytics(userId, userRole, startDate, endDate, filters) {
   const where = { createdAt: { [Op.gte]: startDate, [Op.lte]: endDate } };
   if (userRole === 'agent') where.assignedAgentId = userId;
@@ -678,24 +518,6 @@ async function getProspectAnalytics(userId, userRole, startDate, endDate, filter
   return { prospectsByStatus };
 }
 
-async function getCommissionAnalytics(userId, userRole, startDate, endDate, filters) {
-  const where = { earnedDate: { [Op.gte]: startDate, [Op.lte]: endDate } };
-  if (userRole === 'agent') where.agentId = userId;
-  if (filters.agentId && userRole === 'admin') where.agentId = filters.agentId;
-
-  const commissionTrend = await Commission.findAll({
-    where,
-    attributes: [
-      [sequelize.fn('DATE', sequelize.col('earnedDate')), 'date'],
-      [sequelize.fn('SUM', sequelize.col('amount')), 'amount'],
-      [sequelize.fn('COUNT', sequelize.col('id')), 'count']
-    ],
-    group: [sequelize.fn('DATE', sequelize.col('earnedDate'))],
-    order: [[sequelize.fn('DATE', sequelize.col('earnedDate')), 'ASC']]
-  });
-  return { commissionTrend };
-}
-
 async function getCampaignAnalytics(userId, userRole, startDate, endDate, filters) {
   const where = { createdAt: { [Op.gte]: startDate, [Op.lte]: endDate } };
   if (userRole !== 'admin') where.createdBy = userId;
@@ -714,7 +536,7 @@ async function getCampaignAnalytics(userId, userRole, startDate, endDate, filter
   }
 
   // Bulk queries grouped by campaignId instead of N calls to computeCampaignMetrics
-  const [leadCounts, conversionCounts, scanSums, revenueSums] = await Promise.all([
+  const [leadCounts, conversionCounts, scanSums] = await Promise.all([
     Prospect.findAll({
       where: { campaignId: { [Op.in]: campaignIds } },
       attributes: ['campaignId', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
@@ -730,17 +552,11 @@ async function getCampaignAnalytics(userId, userRole, startDate, endDate, filter
       attributes: ['campaignId', [sequelize.fn('SUM', sequelize.col('scanCount')), 'total']],
       group: ['campaignId'], raw: true
     }),
-    Commission.findAll({
-      where: { campaignId: { [Op.in]: campaignIds }, status: 'paid' },
-      attributes: ['campaignId', [sequelize.fn('SUM', sequelize.col('amount')), 'total']],
-      group: ['campaignId'], raw: true
-    }),
   ]);
 
   const leadsMap = new Map(leadCounts.map(r => [r.campaignId, parseInt(r.count)]));
   const convsMap = new Map(conversionCounts.map(r => [r.campaignId, parseInt(r.count)]));
   const scansMap = new Map(scanSums.map(r => [r.campaignId, parseInt(r.total) || 0]));
-  const revMap = new Map(revenueSums.map(r => [r.campaignId, parseFloat(r.total) || 0]));
 
   const campaignPerformance = campaigns.map(c => {
     const plain = c.toJSON();
@@ -750,7 +566,6 @@ async function getCampaignAnalytics(userId, userRole, startDate, endDate, filter
       conversions: convsMap.get(c.id) || 0,
       views: scans,
       clicks: scans,
-      revenue: revMap.get(c.id) || 0,
       referrals: 0,
     };
     return plain;

@@ -240,25 +240,15 @@ describe('campaignService (unit)', () => {
       expect(result.clicks).toBe(42);
     });
 
-    it('returns revenue from paid commissions, defaulting null to 0', async () => {
+    it('has no revenue field — the commission domain is retired', async () => {
       Prospect.count.mockResolvedValue(0);
       QrTag.sum.mockResolvedValue(0);
-      Commission.sum.mockResolvedValue(null);
 
       const result = await campaignService.computeCampaignMetrics('camp-1');
 
-      expect(result.revenue).toBe(0);
-    });
-
-    it('returns correct revenue when paid commissions exist', async () => {
-      Prospect.count.mockResolvedValue(0);
-      QrTag.sum.mockResolvedValue(0);
-      Commission.sum.mockResolvedValue(2500.50);
-
-      const result = await campaignService.computeCampaignMetrics('camp-1');
-
-      expect(result.revenue).toBe(2500.50);
+      expect(result).not.toHaveProperty('revenue');
       expect(result.referrals).toBe(0);
+      expect(Commission.sum).not.toHaveBeenCalled();
     });
   });
 
@@ -393,8 +383,8 @@ describe('campaignService (unit)', () => {
       const callArg = Campaign.findAndCountAll.mock.calls[0][0];
       const includeAssociations = callArg.include.map(i => i.association);
       expect(includeAssociations).toContain('creator');
-      expect(includeAssociations).toContain('mediaItems');
       expect(includeAssociations).toContain('assignedAgents');
+      expect(includeAssociations).not.toContain('mediaItems'); // retired tablet media
     });
   });
 
@@ -408,7 +398,6 @@ describe('campaignService (unit)', () => {
         toJSON: () => ({
           id: 'camp-1',
           name: 'Test Campaign',
-          mediaItems: [{ id: 'mi-1', mediaType: 'video', url: 'https://cdn.example.com/v.mp4', durationSecs: 10, sortOrder: 0 }],
           assignedAgents: [{ id: 'agent-1' }],
         }),
       };
@@ -417,9 +406,7 @@ describe('campaignService (unit)', () => {
       const result = await campaignService.getCampaign('camp-1', makeReq());
 
       expect(result.id).toBe('camp-1');
-      expect(result.ad_playlist).toHaveLength(1);
-      expect(result.ad_playlist[0].type).toBe('video');
-      expect(result.ad_playlist[0].duration).toBe(10000); // seconds * 1000
+      expect(result).not.toHaveProperty('ad_playlist'); // retired tablet media
       expect(result.assigned_agents).toEqual(['agent-1']);
     });
 
@@ -438,7 +425,7 @@ describe('campaignService (unit)', () => {
 
     it('includes qrTags, prospects, leadPackages, and other associations', async () => {
       Campaign.findOne.mockResolvedValue({
-        toJSON: () => ({ id: 'camp-1', mediaItems: [], assignedAgents: [] }),
+        toJSON: () => ({ id: 'camp-1', assignedAgents: [] }),
       });
 
       await campaignService.getCampaign('camp-1', makeReq());
@@ -449,8 +436,8 @@ describe('campaignService (unit)', () => {
       expect(includeAssociations).toContain('qrTags');
       expect(includeAssociations).toContain('prospects');
       expect(includeAssociations).toContain('leadPackages');
-      expect(includeAssociations).toContain('mediaItems');
       expect(includeAssociations).toContain('assignedAgents');
+      expect(includeAssociations).not.toContain('mediaItems'); // retired tablet media
     });
   });
 
@@ -849,28 +836,15 @@ describe('campaignService (unit)', () => {
   // ────────────────────────────────────────────────
 
   describe('permanentlyDeleteCampaign', () => {
-    it('deletes an archived campaign with no pending commissions', async () => {
+    it('deletes an archived campaign — the retired commission gate no longer blocks', async () => {
       const inst = makeCampaignInstance({ status: 'archived' });
       Campaign.findOne.mockResolvedValue(inst);
-      Commission.count.mockResolvedValue(0);
 
       await campaignService.permanentlyDeleteCampaign('camp-1', makeReq());
 
       expect(inst.destroy).toHaveBeenCalled();
-    });
-
-    it('throws 409 when campaign has pending/approved commissions', async () => {
-      Campaign.findOne.mockResolvedValue(makeCampaignInstance({ status: 'archived' }));
-      Commission.count.mockResolvedValue(3);
-
-      await expect(campaignService.permanentlyDeleteCampaign('camp-1', makeReq()))
-        .rejects.toThrow('Cannot delete campaign with pending/approved commissions');
-
-      try {
-        await campaignService.permanentlyDeleteCampaign('camp-1', makeReq());
-      } catch (err) {
-        expect(err.statusCode).toBe(409);
-      }
+      // Historical commission rows are ON DELETE SET NULL — no pre-check runs.
+      expect(Commission.count).not.toHaveBeenCalled();
     });
 
     it('throws 400 when campaign is not archived', async () => {
@@ -1234,14 +1208,13 @@ describe('campaignService (unit)', () => {
         .mockResolvedValueOnce(30)
         .mockResolvedValueOnce(8);
       QrTag.sum.mockResolvedValue(100);
-      Commission.sum.mockResolvedValue(5000);
 
       const result = await campaignService.updateCampaignMetrics('camp-1', {}, makeReq());
 
       expect(result.metrics.leads).toBe(30);
       expect(result.metrics.conversions).toBe(8);
       expect(result.metrics.views).toBe(100);
-      expect(result.metrics.revenue).toBe(5000);
+      expect(result.metrics).not.toHaveProperty('revenue'); // retired with commissions
     });
 
     it('throws 404 when campaign not found', async () => {

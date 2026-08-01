@@ -226,7 +226,7 @@ describe('notificationHelpers (unit)', () => {
       expect(User.findAll).toHaveBeenCalled();
     });
 
-    it('includes QR and car info in lead notification', async () => {
+    it('includes QR info in lead notification (car info retired with the fleet domain)', async () => {
       User.findAll.mockResolvedValue([]);
       QrScan.findAll.mockResolvedValue([]);
 
@@ -235,7 +235,7 @@ describe('notificationHelpers (unit)', () => {
       const lead = result.find(r => r.type === 'lead_created');
       if (lead) {
         expect(lead.message).toContain('QR: QR-Front');
-        expect(lead.message).toContain('Car: SGA1234B');
+        expect(lead.message).not.toContain('Car:');
       }
     });
   });

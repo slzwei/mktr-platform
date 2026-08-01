@@ -406,11 +406,10 @@ describe('Campaign with design_config', () => {
   })
 })
 
-describe('Campaign with ad_playlist', () => {
-  it('POST /api/campaigns — stores ad_playlist array', async () => {
+describe('Campaign ad_playlist retired (accepted-and-stripped)', () => {
+  it('POST /api/campaigns — a stale client sending ad_playlist still succeeds; nothing is stored', async () => {
     const playlist = [
-      { id: 'ad1', type: 'image', url: 'https://example.com/ad1.jpg', duration: 10 },
-      { id: 'ad2', type: 'video', url: 'https://example.com/ad2.mp4', duration: 15 }
+      { id: 'ad1', type: 'image', url: 'https://example.com/ad1.jpg', duration: 10 }
     ]
     const res = await request(app)
       .post('/api/campaigns')
@@ -424,20 +423,20 @@ describe('Campaign with ad_playlist', () => {
       })
 
     expect(res.status).toBe(201)
-    expect(res.body.data.campaign.ad_playlist).toHaveLength(2)
-    expect(res.body.data.campaign.ad_playlist[0].url).toBe('https://example.com/ad1.jpg')
+    expect(res.body.data.campaign.ad_playlist).toBeUndefined()
   })
 
-  it('PUT /api/campaigns/:id — updates ad_playlist', async () => {
+  it('PUT /api/campaigns/:id — ad_playlist in the body is ignored, update succeeds', async () => {
     const campaign = await createTestCampaign(adminUser.id, { name: 'Playlist Update' })
     const playlist = [{ id: 'ad3', type: 'image', url: 'https://example.com/ad3.png', duration: 8 }]
     const res = await request(app)
       .put(`/api/campaigns/${campaign.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ ad_playlist: playlist })
+      .send({ name: 'Playlist Update Renamed', ad_playlist: playlist })
 
     expect(res.status).toBe(200)
-    expect(res.body.data.campaign.ad_playlist).toHaveLength(1)
+    expect(res.body.data.campaign.ad_playlist).toBeUndefined()
+    expect(res.body.data.campaign.name).toBe('Playlist Update Renamed')
   })
 })
 
@@ -766,29 +765,26 @@ describe('Campaign error paths — restore non-archived', () => {
   })
 })
 
-describe('Campaign error paths — delete with commissions', () => {
-  it('DELETE /api/campaigns/:id/permanent — returns 409 when campaign has pending commissions', async () => {
-    const { Commission } = await import('../src/models/index.js')
+describe('Campaign permanent delete — retired commission gate no longer blocks', () => {
+  it('DELETE /api/campaigns/:id/permanent — succeeds even with a historical pending commission', async () => {
+    const { sequelize } = await import('../src/models/index.js')
     const campaign = await createTestCampaign(adminUser.id, {
       name: 'Has Commissions',
       status: 'archived'
     })
-    // Create a pending commission tied to this campaign
-    await Commission.create({
-      agentId: agentUser.id,
-      campaignId: campaign.id,
-      amount: 100,
-      type: 'conversion',
-      status: 'pending',
-      description: 'Test commission for delete test',
-      earnedDate: new Date()
-    })
+    // Historical commission row (model retired; table remains) — raw SQL with
+    // explicit createdAt/updatedAt since the test schema has no DB defaults.
+    await sequelize.query(
+      `INSERT INTO commissions (id, "agentId", "campaignId", amount, type, status, description, "earnedDate", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), :agentId, :campaignId, 100, 'conversion', 'pending', 'Test commission for delete test', now(), now(), now())`,
+      { replacements: { agentId: agentUser.id, campaignId: campaign.id } }
+    )
 
     const res = await request(app)
       .delete(`/api/campaigns/${campaign.id}/permanent`)
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect(res.status).toBe(409)
+    expect(res.status).toBe(200)
   })
 })
 

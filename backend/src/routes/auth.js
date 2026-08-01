@@ -48,8 +48,5 @@ router.post('/accept-invite', auth.acceptInvite);
 // NOTE: the self-service role endpoint was REMOVED (P0-2). It let any
 // registered customer promote themselves to 'agent'. Agents join via the
 // invitation flow (accept-invite) only; driver/fleet roles are retired.
-router.post('/onboarding/payout', authenticateToken, auth.savePayout);
-router.post('/onboarding/car', authenticateToken, auth.createCar);
-router.post('/onboarding/cars/bulk', authenticateToken, auth.bulkCreateCars);
 
 export default router;

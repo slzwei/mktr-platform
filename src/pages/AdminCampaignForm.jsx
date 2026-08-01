@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Campaign } from '@/api/entities';
-import { integrations } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { format, parseISO } from 'date-fns';
-import { Calendar as CalendarIcon, ArrowLeft, Upload, Trash2, Loader2, Video, Image as ImageIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import CampaignBriefFields, { briefDraftFromCampaign, briefDraftComplete, briefDraftToPayload } from '@/components/campaigns/workspace/CampaignBriefFields';
 import CreateScoringBlock from '@/components/adminv2/CreateScoringBlock';
@@ -34,12 +33,10 @@ export default function AdminCampaignForm() {
  start_date: new Date(),
  end_date: new Date(),
  is_active: true,
- ad_playlist: [],
  });
 
  const [loading, setLoading] = useState(false);
  const [fetching, setFetching] = useState(isEditMode);
- const [uploading, setUploading] = useState(false);
  // Campaign brief — objective + product gate creation (the server 422s without them).
  const [brief, setBrief] = useState(() => briefDraftFromCampaign(null));
  const scoringRef = useRef(null);
@@ -63,7 +60,6 @@ export default function AdminCampaignForm() {
  start_date: campaign.start_date ? parseISO(campaign.start_date) : new Date(),
  end_date: campaign.end_date ? parseISO(campaign.end_date) : new Date(),
  is_active: campaign.is_active !== undefined ? campaign.is_active : true,
- ad_playlist: campaign.ad_playlist || [],
  });
  } else {
  toast.error('Campaign not found');
@@ -88,38 +84,6 @@ export default function AdminCampaignForm() {
 
  const handleSwitchChange = (checked) => {
  setFormData((prev) => ({ ...prev, is_active: checked }));
- };
-
- const handleFileUpload = async (e) => {
- const file = e.target.files[0];
- if (!file) return;
-
- setUploading(true);
- try {
- const type = file.type.startsWith('video/') ? 'video' : 'image';
- const response = await integrations.Core.UploadFile(file, 'campaign_media');
- const fileData = response.file;
-
- const newMedia = {
- id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
- type: type,
- url: fileData.url,
- duration: type === 'image' ? 10000 : 0,
- };
-
- setFormData((prev) => ({ ...prev, ad_playlist: [newMedia] }));
- toast.success('Media uploaded successfully');
- } catch (error) {
- console.error('Upload failed', error);
- toast.error('Upload failed: ' + (error.message || 'Unknown error'));
- } finally {
- setUploading(false);
- e.target.value = '';
- }
- };
-
- const removeMedia = () => {
- setFormData((prev) => ({ ...prev, ad_playlist: [] }));
  };
 
  const handleSubmit = async (e) => {
@@ -156,7 +120,6 @@ export default function AdminCampaignForm() {
  is_active: formData.is_active,
  start_date: formData.start_date.toISOString(),
  end_date: formData.end_date.toISOString(),
- ad_playlist: formData.ad_playlist,
  };
 
  if (isEditMode) {
@@ -325,71 +288,6 @@ export default function AdminCampaignForm() {
  </div>
  </CardContent>
  </Card>
-
- {/* Conditionally render Ad Media for PHV Campaigns */}
- {isPHV && (
- <Card className="border-info/30 bg-primary/10/20">
- <CardHeader>
- <CardTitle className="flex items-center gap-2 text-primary">
- <Video className="w-5 h-5"/>
- Ad Media (Tablet Display)
- </CardTitle>
- <CardDescription className="text-primary/80">
- Required for PHV campaigns. Upload a video or image to display on tablets.
- </CardDescription>
- </CardHeader>
- <CardContent>
- {formData.ad_playlist && formData.ad_playlist.length > 0 ? (
- <div className="relative group rounded-lg overflow-hidden border bg-foreground/5 aspect-video w-full">
- {formData.ad_playlist[0].type === 'video' ? (
- <div className="w-full h-full flex items-center justify-center bg-foreground">
- <video src={formData.ad_playlist[0].url} className="w-full h-full object-contain" controls />
- </div>
- ) : (
- <img
- src={formData.ad_playlist[0].url}
- alt="Ad Asset" className="w-full h-full object-contain" />
- )}
-
- <div className="absolute top-2 right-2">
- <Button
- type="button" variant="destructive" size="icon" aria-label="Remove media" className="h-8 w-8 shadow-sm" onClick={removeMedia}
- >
- <Trash2 className="h-4 w-4" aria-hidden="true" />
- </Button>
- </div>
-
- <div className="absolute bottom-2 left-2 bg-foreground/70 text-background text-xs px-2 py-1 rounded flex items-center">
- {formData.ad_playlist[0].type === 'video' ? (
- <Video className="h-3 w-3 mr-1"/>
- ) : (
- <ImageIcon className="h-3 w-3 mr-1"/>
- )}
- {formData.ad_playlist[0].type === 'video' ? 'Video' : 'Image (10s)'}
- </div>
- </div>
- ) : (
- <div
- className="flex flex-col items-center justify-center border-2 border-dashed border-info/30 rounded-lg p-6 hover:bg-primary/10 transition-colors cursor-pointer text-center bg-card" onClick={() => document.getElementById('media-upload-page').click()}
- >
- <input
- id="media-upload-page" type="file" accept="image/*,video/*" className=" hidden" onChange={handleFileUpload}
- disabled={uploading}
- />
- {uploading ? (
- <Loader2 className="h-8 w-8 text-primary animate-spin mb-2"/>
- ) : (
- <Upload className="h-8 w-8 text-primary mb-2"/>
- )}
- <div className="text-sm font-medium text-info">
- {uploading ? 'Uploading...' : 'Click to upload'}
- </div>
- <p className="text-xs text-primary mt-1">Images/Videos (Max 50MB)</p>
- </div>
- )}
- </CardContent>
- </Card>
- )}
 
  <div className="flex gap-4">
  <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/AdminCampaigns')}>

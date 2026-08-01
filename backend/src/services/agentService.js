@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { User, Prospect, Commission, Campaign, LeadPackage, LeadPackageAssignment, sequelize } from '../models/index.js';
+import { User, Prospect, Campaign, LeadPackage, LeadPackageAssignment, sequelize } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { getSystemAgentId } from './systemAgent.js';
 import { sendRoleInvitation } from './invitationService.js';
@@ -7,7 +7,7 @@ import { getAgentInviteEmail, getAgentInviteSubject, getAgentInviteText } from '
 
 // Re-export helpers from focused modules so existing `import * as agentService` still works
 export { getAssignedCampaignCounts, getAgentPackageBreakdowns, computeAgentStats, computeAgentStatsFromCounts } from './agentStatsHelpers.js';
-export { getAgentMonthlyPerformance, getCommissionLeaderboard, getConversionLeaderboard, getProspectLeaderboard, getLeaderboard } from './agentLeaderboardService.js';
+export { getAgentMonthlyPerformance, getConversionLeaderboard, getProspectLeaderboard, getLeaderboard } from './agentLeaderboardService.js';
 
 // Internal imports used by functions in this file
 import { getAssignedCampaignCounts, getAgentPackageBreakdowns, computeAgentStatsFromCounts } from './agentStatsHelpers.js';
@@ -170,13 +170,6 @@ export async function getAgentDetail(agentId, requestingUser) {
         ]
       },
       {
-        association: 'commissions',
-        include: [
-          { association: 'campaign', attributes: ['id', 'name'] },
-          { association: 'prospect', attributes: ['id', 'firstName', 'lastName'] }
-        ]
-      },
-      {
         association: 'createdCampaigns',
         include: [
           { association: 'prospects', attributes: ['id', 'leadStatus'] }
@@ -202,12 +195,6 @@ export async function getAgentDetail(agentId, requestingUser) {
     return acc;
   }, {});
 
-  const totalCommissions = agent.commissions.reduce((sum, c) => sum + parseFloat(c.amount), 0);
-  const commissionsByStatus = agent.commissions.reduce((acc, commission) => {
-    acc[commission.status] = (acc[commission.status] || 0) + parseFloat(commission.amount);
-    return acc;
-  }, {});
-
   // Monthly performance (last 12 months)
   const monthlyPerformance = await getAgentMonthlyPerformance(agentId);
 
@@ -218,11 +205,6 @@ export async function getAgentDetail(agentId, requestingUser) {
         total: totalProspects,
         byStatus: prospectsByStatus,
         conversionRate: totalProspects > 0 ? (prospectsByStatus.won || 0) / totalProspects * 100 : 0
-      },
-      commissions: {
-        total: totalCommissions,
-        byStatus: commissionsByStatus,
-        average: agent.commissions.length > 0 ? totalCommissions / agent.commissions.length : 0
       },
       campaigns: {
         total: agent.createdCampaigns.length,
@@ -321,78 +303,6 @@ export async function getAgentProspects(agentId, query, requestingUser) {
 
   return {
     prospects,
-    pagination: {
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(count / limit),
-      totalItems: count,
-      itemsPerPage: parseInt(limit)
-    }
-  };
-}
-
-/**
- * Get paginated commissions for an agent.
- */
-export async function getAgentCommissions(agentId, query, requestingUser) {
-  if (requestingUser.role !== 'admin' && requestingUser.id !== agentId) {
-    throw new AppError('Access denied', 403);
-  }
-
-  const { page = 1, limit = 10, status, type, period } = query;
-  const offset = (page - 1) * limit;
-
-  const whereConditions = { agentId };
-
-  if (status) {
-    whereConditions.status = status;
-  }
-
-  if (type) {
-    whereConditions.type = type;
-  }
-
-  if (period) {
-    const startDate = periodToStartDate(period);
-    whereConditions.earnedDate = {
-      [Op.gte]: startDate,
-      [Op.lte]: new Date()
-    };
-  }
-
-  const { count, rows: commissions } = await Commission.findAndCountAll({
-    where: whereConditions,
-    limit: parseInt(limit),
-    offset: parseInt(offset),
-    order: [['earnedDate', 'DESC']],
-    include: [
-      {
-        association: 'campaign',
-        attributes: ['id', 'name', 'type']
-      },
-      {
-        association: 'prospect',
-        attributes: ['id', 'firstName', 'lastName', 'email']
-      },
-      {
-        association: 'leadPackage',
-        attributes: ['id', 'name', 'type', 'price']
-      }
-    ]
-  });
-
-  // Calculate totals
-  const totalAmount = commissions.reduce((sum, c) => sum + parseFloat(c.amount), 0);
-  const paidAmount = commissions.filter(c => c.status === 'paid').reduce((sum, c) => sum + parseFloat(c.amount), 0);
-  const pendingAmount = commissions.filter(c => c.status === 'pending').reduce((sum, c) => sum + parseFloat(c.amount), 0);
-
-  return {
-    commissions,
-    summary: {
-      totalAmount,
-      paidAmount,
-      pendingAmount,
-      averageCommission: commissions.length > 0 ? totalAmount / commissions.length : 0
-    },
     pagination: {
       currentPage: parseInt(page),
       totalPages: Math.ceil(count / limit),

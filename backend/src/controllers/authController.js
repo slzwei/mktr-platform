@@ -3,7 +3,6 @@ import { OAuth2Client } from 'google-auth-library';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import * as authService from '../services/authService.js';
-import * as onboardingService from '../services/onboardingService.js';
 import { setAuthCookie, clearAuthCookie } from '../utils/authCookie.js';
 
 const OAUTH_STATE_COOKIE = 'oauth_state';
@@ -160,7 +159,7 @@ export const login = asyncHandler(async (req, res) => {
 });
 
 export const getProfile = asyncHandler(async (req, res) => {
-  const user = await authService.getProfile(req.user.id, req.user.role);
+  const user = await authService.getProfile(req.user.id);
 
   res.json({
     success: true,
@@ -342,47 +341,3 @@ export const logout = asyncHandler(async (req, res) => {
   });
 });
 
-// ─── Onboarding controller methods (delegate to onboardingService) ──────────
-
-export const savePayout = asyncHandler(async (req, res) => {
-  const { method, paynowId, bankName, bankAccount } = req.body;
-
-  const payout = await onboardingService.savePayout(req.user.id, {
-    method,
-    paynowId,
-    bankName,
-    bankAccount,
-  });
-
-  res.json({ success: true, data: { payout } });
-});
-
-export const createCar = asyncHandler(async (req, res) => {
-  const { plate_number, make, model } = req.body;
-
-  const car = await onboardingService.createCar(
-    req.user.id,
-    req.user.role,
-    req.user.email,
-    req.user.fullName,
-    req.user.phone,
-    { plateNumber: plate_number, make, model }
-  );
-
-  res.status(201).json({ success: true, data: { car } });
-});
-
-export const bulkCreateCars = asyncHandler(async (req, res) => {
-  const { cars } = req.body;
-
-  const created = await onboardingService.bulkCreateCars(
-    req.user.id,
-    req.user.email,
-    req.user.fullName,
-    req.user.phone,
-    req.user.role,
-    cars
-  );
-
-  res.status(201).json({ success: true, data: { cars: created } });
-});

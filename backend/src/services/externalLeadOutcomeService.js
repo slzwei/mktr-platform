@@ -23,12 +23,11 @@
  *
  * ── Side-effects on `won` ────────────────────────────────────────────────
  *
- * Internal wins (prospectService.updateProspect) create a Commission for the
- * assigned agent and stamp conversionDate. An external win stamps
- * conversionDate (it IS a conversion for reporting) but creates NO commission:
+ * Internal wins (prospectService.updateProspect) stamp conversionDate. An
+ * external win stamps conversionDate too (it IS a conversion for reporting):
  * the "assigned agent" on a buyer-delivered prospect is the buyer's mirror
- * users row (users.mktrLeadsId) — buyers pay for leads, they don't earn
- * internal commissions.
+ * users row (users.mktrLeadsId) — buyers pay for leads. (The retired
+ * commission mint that internal wins used to perform is gone entirely.)
  *
  * ── Idempotency ──────────────────────────────────────────────────────────
  *

@@ -781,7 +781,7 @@ describe('prospectService (unit)', () => {
       ).rejects.toThrow('Lead must be assigned to a real agent before marking as won');
     });
 
-    it('creates commission on status change to won', async () => {
+    it('stamps conversionDate on status change to won — no commission (retired domain)', async () => {
       const prospect = {
         ...mocks.mockProspect,
         leadStatus: 'contacted',
@@ -795,16 +795,10 @@ describe('prospectService (unit)', () => {
 
       await service.updateProspect('prospect-1', { leadStatus: 'won' }, user);
 
-      expect(mocks.models.Commission.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'conversion',
-          status: 'pending',
-          agentId: 'agent-1',
-          prospectId: 'prospect-1',
-          campaignId: 'camp-1',
-        }),
-        { transaction: mocks.mockTransaction }
-      );
+      const [updateArg] = prospect.update.mock.calls[0];
+      expect(updateArg.leadStatus).toBe('won');
+      expect(updateArg.conversionDate).toBeInstanceOf(Date);
+      expect(mocks.models.Commission.create).not.toHaveBeenCalled();
     });
 
     it('does not create commission when status does not change to won', async () => {
@@ -869,7 +863,7 @@ describe('prospectService (unit)', () => {
       expect(mocks.processLeadOutcome).not.toHaveBeenCalled();
     });
 
-    it('won commits status + conversionDate + commission in ONE transaction', async () => {
+    it('won updates status + conversionDate in one plain update (no transaction needed)', async () => {
       const prospect = {
         ...mocks.mockProspect,
         leadStatus: 'contacted',
@@ -886,11 +880,8 @@ describe('prospectService (unit)', () => {
       const [updateArg, updateOpts] = prospect.update.mock.calls[0];
       expect(updateArg.leadStatus).toBe('won');
       expect(updateArg.conversionDate).toBeInstanceOf(Date);
-      expect(updateOpts).toEqual({ transaction: mocks.mockTransaction });
-      expect(mocks.models.Commission.create).toHaveBeenCalledWith(
-        expect.anything(),
-        { transaction: mocks.mockTransaction }
-      );
+      expect(updateOpts).toBeUndefined();
+      expect(mocks.models.Commission.create).not.toHaveBeenCalled();
     });
 
     // ── admin-recorded down-funnel CAPI hook (Phase 3) ──

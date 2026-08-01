@@ -5,7 +5,6 @@ import {
   User,
   Campaign,
   QrTag,
-  Commission,
   Attribution,
   ProspectActivity,
   AgentGroup,
@@ -181,7 +180,7 @@ const PROSPECT_UPDATE_FIELDS = [
 ];
 
 const defaultDeps = {
-  models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember, IdempotencyKey },
+  models: { Prospect, User, Campaign, QrTag, Attribution, ProspectActivity, AgentGroup, AgentGroupMember, IdempotencyKey },
   sequelize,
   resolveAssignedAgentId,
   resolveLeadRouting,
@@ -1493,10 +1492,6 @@ export function makeProspectService(overrides = {}) {
           association: 'qrTag',
           attributes: ['id', 'name', 'type', 'location'],
         },
-        {
-          association: 'commissions',
-          attributes: ['id', 'type', 'amount', 'status', 'earnedDate'],
-        },
         // Named external buyer — profile mode only (the association exists but
         // was never loaded; keep the classic payload byte-identical). Name and
         // agency ONLY: never phone/email/balance on an admin lead view.
@@ -1637,11 +1632,10 @@ export function makeProspectService(overrides = {}) {
       safeUpdates.consumerId = null;
     }
 
-    // Won-transition precondition runs BEFORE any mutation (Codex R1 #5).
-    // Previously prospect.update() autocommitted the status and THEN the
-    // System-Agent rule threw — the lead stayed persisted as 'won' with no
-    // commission, and every retry saw oldStatus === 'won' so neither the
-    // commission nor any downstream hook could ever fire.
+    // Won-transition precondition runs BEFORE any mutation (Codex R1 #5):
+    // a lead may only be marked won while assigned to a real agent (assignment
+    // integrity for down-funnel attribution — the retired commission mint is
+    // gone, the rule stays).
     const becomingWon = oldStatus !== 'won' && safeUpdates.leadStatus === 'won';
     if (becomingWon) {
       const systemId = await d.getSystemAgentId();
@@ -1652,27 +1646,7 @@ export function makeProspectService(overrides = {}) {
 
     try {
       if (becomingWon) {
-        // Status, conversion date and commission commit or fail TOGETHER —
-        // no more autocommitted 'won' stranded without its commission.
-        await d.sequelize.transaction(async (t) => {
-          await prospect.update({ ...safeUpdates, conversionDate: new Date() }, { transaction: t });
-          if (prospect.assignedAgentId) {
-            const commissionAmount = parseFloat(process.env.DEFAULT_COMMISSION_AMOUNT || '50');
-            await m.Commission.create(
-              {
-                type: 'conversion',
-                amount: commissionAmount,
-                status: 'pending',
-                description: `Lead conversion: ${prospect.firstName} ${prospect.lastName}`,
-                agentId: prospect.assignedAgentId,
-                campaignId: prospect.campaignId,
-                prospectId: prospect.id,
-                earnedDate: new Date(),
-              },
-              { transaction: t }
-            );
-          }
-        });
+        await prospect.update({ ...safeUpdates, conversionDate: new Date() });
       } else {
         await prospect.update(safeUpdates);
       }

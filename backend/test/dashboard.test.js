@@ -33,9 +33,10 @@ describe('Dashboard overview', () => {
     expect(res.body.data.stats.users).toBeDefined()
     expect(res.body.data.stats.campaigns).toBeDefined()
     expect(res.body.data.stats.prospects).toBeDefined()
-    expect(res.body.data.stats.commissions).toBeDefined()
     expect(res.body.data.stats.qrCodes).toBeDefined()
-    expect(res.body.data.stats.fleet).toBeDefined()
+    // Retired domains — keys removed with the commission/fleet teardown
+    expect(res.body.data.stats.commissions).toBeUndefined()
+    expect(res.body.data.stats.fleet).toBeUndefined()
     expect(res.body.data.stats.users.total).toBeGreaterThanOrEqual(1)
   })
 
@@ -47,8 +48,8 @@ describe('Dashboard overview', () => {
     expect(res.status).toBe(200)
     expect(res.body.data.stats.prospects).toBeDefined()
     expect(res.body.data.stats.prospects.assigned).toBeGreaterThanOrEqual(0)
-    expect(res.body.data.stats.commissions).toBeDefined()
     expect(res.body.data.stats.campaigns).toBeDefined()
+    expect(res.body.data.stats.commissions).toBeUndefined() // retired domain
   })
 
   it('supports different period params (7d, 30d, 90d)', async () => {
@@ -79,13 +80,14 @@ describe('Dashboard analytics', () => {
     expect(res.body.data.analytics).toBeDefined()
   })
 
-  it('GET /api/dashboard/analytics?type=commissions — returns commission analytics', async () => {
+  it('GET /api/dashboard/analytics?type=commissions — retired type yields empty analytics', async () => {
     const res = await request(app)
       .get('/api/dashboard/analytics?type=commissions&period=30d')
       .set('Authorization', `Bearer ${adminToken}`)
 
     expect(res.status).toBe(200)
     expect(res.body.data.type).toBe('commissions')
+    expect(res.body.data.analytics).toEqual({})
   })
 
   it('GET /api/dashboard/analytics?type=campaigns — returns campaign analytics', async () => {
@@ -128,17 +130,13 @@ describe('Dashboard overview stats structure', () => {
     expect(typeof stats.prospects.total).toBe('number')
     expect(stats.prospects.total).toBeGreaterThanOrEqual(0)
 
-    // commissions
-    expect(stats.commissions).toHaveProperty('total')
-    expect(stats.commissions).toHaveProperty('pending')
-
     // qrCodes
     expect(stats.qrCodes).toHaveProperty('total')
     expect(stats.qrCodes).toHaveProperty('totalScans')
 
-    // fleet
-    expect(stats.fleet).toHaveProperty('totalCars')
-    expect(stats.fleet).toHaveProperty('activeCars')
+    // retired domains stay gone
+    expect(stats.commissions).toBeUndefined()
+    expect(stats.fleet).toBeUndefined()
   })
 
   it('GET /api/dashboard/overview — response includes lastUpdated timestamp', async () => {
@@ -212,15 +210,14 @@ describe('Dashboard overview — expanded coverage', () => {
     expect(Array.isArray(stats.recentActivities)).toBe(true)
   })
 
-  it('GET /api/dashboard/overview?period=90d — admin stats include impressions.today', async () => {
+  it('GET /api/dashboard/overview?period=90d — impressions key retired with the fleet teardown', async () => {
     const res = await request(app)
       .get('/api/dashboard/overview?period=90d')
       .set('Authorization', `Bearer ${adminToken}`)
 
     expect(res.status).toBe(200)
     const { stats } = res.body.data
-    expect(stats.impressions).toBeDefined()
-    expect(typeof stats.impressions.today).toBe('number')
+    expect(stats.impressions).toBeUndefined()
   })
 
   it('GET /api/dashboard/overview?period=7d — admin users.growth is an array', async () => {
@@ -239,17 +236,15 @@ describe('Dashboard overview — expanded coverage', () => {
     }
   })
 
-  it('GET /api/dashboard/overview — agent stats include commissions breakdown', async () => {
+  it('GET /api/dashboard/overview — agent stats carry no commissions breakdown (retired)', async () => {
     const res = await request(app)
       .get('/api/dashboard/overview?period=30d')
       .set('Authorization', `Bearer ${agentToken}`)
 
     expect(res.status).toBe(200)
     const { stats } = res.body.data
-    expect(stats.commissions).toHaveProperty('total')
-    expect(stats.commissions).toHaveProperty('pending')
-    expect(stats.commissions).toHaveProperty('paid')
-    expect(typeof stats.commissions.total).toBe('number')
+    expect(stats.commissions).toBeUndefined()
+    expect(stats.prospects).toBeDefined()
   })
 
   it('GET /api/dashboard/overview — agent stats include recentProspects', async () => {

@@ -18,10 +18,4 @@ router.get('/attention', authenticateToken, requireRole('admin'), asyncHandler(c
 router.get('/series', authenticateToken, requireRole('admin'), asyncHandler(ctrl.getSeries));
 router.get('/funnel', authenticateToken, requireRole('admin'), asyncHandler(ctrl.getFunnel));
 
-// Driver Partner: successful submissions trend
-router.get('/driver/scans', authenticateToken, requireRole('driver_partner', 'admin'), asyncHandler(ctrl.getDriverScans));
-
-// Driver Partner: computed commissions
-router.get('/driver/commissions', authenticateToken, requireRole('driver_partner', 'admin'), asyncHandler(ctrl.getDriverCommissions));
-
 export default router;

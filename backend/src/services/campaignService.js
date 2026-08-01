@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
-import { Campaign, QrTag, Prospect, Commission, CampaignMediaItem, CampaignAgentAssignment, DrawTermsVersion, Draw, sequelize } from '../models/index.js';
+import { Campaign, QrTag, Prospect, CampaignAgentAssignment, DrawTermsVersion, Draw, sequelize } from '../models/index.js';
 import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -294,11 +294,10 @@ export async function ensureDrawTermsVersion(designConfig, campaignId, userId, d
  * Replaces the old read-modify-write `campaign.metrics` pattern that had a race condition.
  */
 export async function computeCampaignMetrics(campaignId) {
-  const [leads, conversions, scans, revenue] = await Promise.all([
+  const [leads, conversions, scans] = await Promise.all([
     Prospect.count({ where: { campaignId } }),
     Prospect.count({ where: { campaignId, leadStatus: 'won' } }),
     QrTag.sum('scanCount', { where: { campaignId } }).then(v => v || 0),
-    Commission.sum('amount', { where: { campaignId, status: 'paid' } }).then(v => v || 0),
   ]);
 
   return {
@@ -306,7 +305,6 @@ export async function computeCampaignMetrics(campaignId) {
     conversions,
     views: scans,
     clicks: scans,
-    revenue,
     referrals: 0,
   };
 }
@@ -415,7 +413,6 @@ export async function listCampaigns(user, query, req) {
     },
     include: [
       { association: 'creator', attributes: ['id', 'firstName', 'lastName', 'email'] },
-      { association: 'mediaItems', attributes: ['id', 'mediaType', 'url', 'durationSecs', 'sortOrder'] },
       { association: 'assignedAgents', attributes: ['id', 'firstName', 'lastName', 'email'] }
     ]
   });
@@ -423,7 +420,6 @@ export async function listCampaigns(user, query, req) {
   // Attach backward-compatible virtual fields
   const campaignsJson = campaigns.map(c => {
     const plain = c.toJSON();
-    plain.ad_playlist = mediaItemsToPlaylist(plain.mediaItems);
     plain.assigned_agents = agentsToIdList(plain.assignedAgents);
     return plain;
   });
@@ -451,8 +447,7 @@ export async function getCampaign(id, req) {
       { association: 'creator', attributes: ['id', 'firstName', 'lastName', 'email'] },
       {
         association: 'qrTags',
-        attributes: ['id', 'label', 'name', 'type', 'campaignId', 'carId'],
-        include: [{ association: 'car', attributes: ['id', 'make', 'model', 'plate_number'] }]
+        attributes: ['id', 'label', 'name', 'type', 'campaignId'],
       },
       {
         association: 'prospects',
@@ -460,7 +455,6 @@ export async function getCampaign(id, req) {
         include: [{ association: 'assignedAgent', attributes: ['id', 'firstName', 'lastName', 'email'] }]
       },
       { association: 'leadPackages', attributes: ['id', 'name', 'type', 'price', 'leadCount'] },
-      { association: 'mediaItems', attributes: ['id', 'mediaType', 'url', 'durationSecs', 'sortOrder'] },
       { association: 'assignedAgents', attributes: ['id', 'firstName', 'lastName', 'email'] }
     ]
   });
@@ -469,7 +463,6 @@ export async function getCampaign(id, req) {
 
   // Attach backward-compatible virtual fields
   const plain = campaign.toJSON();
-  plain.ad_playlist = mediaItemsToPlaylist(plain.mediaItems);
   plain.assigned_agents = agentsToIdList(plain.assignedAgents);
   return plain;
 }
@@ -502,7 +495,7 @@ export function assertDrawActivatable(designConfig) {
  * Create a new campaign.
  */
 export async function createCampaign(body, user) {
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, defaultAssignmentMode, enforceLeadQuota } = body;
 
   const safeName = sanitizeCampaignName(name);
 
@@ -633,23 +626,12 @@ export async function createCampaign(body, user) {
     await syncAgentAssignments(campaign.id, assigned_agents);
   }
 
-  // Write media items to normalized table
-  if (ad_playlist && Array.isArray(ad_playlist) && ad_playlist.length > 0) {
-    await syncMediaItems(campaign.id, ad_playlist);
-  }
-
   // Return with backward-compatible virtual fields for API compatibility
-  const mediaItems = await CampaignMediaItem.findAll({
-    where: { campaignId: campaign.id },
-    order: [['sortOrder', 'ASC']]
-  });
   const agentRows = await CampaignAgentAssignment.findAll({
     where: { campaignId: campaign.id },
     attributes: ['agentId']
   });
   const plain = campaign.toJSON();
-  plain.mediaItems = mediaItems.map(m => m.toJSON());
-  plain.ad_playlist = mediaItemsToPlaylist(plain.mediaItems);
   plain.assigned_agents = agentRows.map(r => r.agentId);
   return plain;
 }
@@ -662,7 +644,7 @@ export async function updateCampaign(id, body, req) {
   const campaign = await Campaign.findOne({ where });
   if (!campaign) throw new AppError('Campaign not found or access denied', 404);
 
-  const { name, type, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
+  const { name, type, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, defaultAssignmentMode, enforceLeadQuota } = body;
 
   const updateData = {};
   if (name) updateData.name = sanitizeCampaignName(name);
@@ -875,23 +857,12 @@ export async function updateCampaign(id, body, req) {
     await syncAgentAssignments(id, assigned_agents || []);
   }
 
-  // Sync media items to normalized table when ad_playlist is provided
-  if (ad_playlist !== undefined) {
-    await syncMediaItems(id, ad_playlist || []);
-  }
-
   // Return with backward-compatible virtual fields for API compatibility
-  const mediaItems = await CampaignMediaItem.findAll({
-    where: { campaignId: id },
-    order: [['sortOrder', 'ASC']]
-  });
   const agentRows = await CampaignAgentAssignment.findAll({
     where: { campaignId: id },
     attributes: ['agentId']
   });
   const plain = campaign.toJSON();
-  plain.mediaItems = mediaItems.map(m => m.toJSON());
-  plain.ad_playlist = mediaItemsToPlaylist(plain.mediaItems);
   plain.assigned_agents = agentRows.map(r => r.agentId);
   return plain;
 }
@@ -1067,14 +1038,11 @@ export async function permanentlyDeleteCampaign(id, req) {
     throw new AppError('Campaign must be archived before permanent deletion', 400);
   }
 
-  // Block deletion if campaign has pending/approved commissions
-  const commissionCount = await Commission.count({
-    where: { campaignId: id, status: { [Op.in]: ['pending', 'approved'] } }
-  });
-  if (commissionCount > 0) {
-    throw new AppError('Cannot delete campaign with pending/approved commissions', 409);
-  }
-
+  // The old pending/approved-commission delete gate is retired with the
+  // commission domain: commissions.campaignId is ON DELETE SET NULL (migration
+  // 014), so historical rows survive the delete with the ref nulled, and the
+  // wallet ledger — the live financial record — is likewise SET NULL and
+  // append-only. Nothing financial blocks a permanent campaign delete.
   await deleteStorageAssets(campaign);
   await campaign.destroy();
 }
@@ -1223,35 +1191,12 @@ export async function duplicateCampaign(id, body, req) {
     );
   }
 
-  // Duplicate media items from the original campaign
-  const originalMedia = await CampaignMediaItem.findAll({
-    where: { campaignId: id },
-    order: [['sortOrder', 'ASC']]
-  });
-  if (originalMedia.length > 0) {
-    await CampaignMediaItem.bulkCreate(
-      originalMedia.map(m => ({
-        campaignId: copy.id,
-        mediaType: m.mediaType,
-        url: m.url,
-        durationSecs: m.durationSecs,
-        sortOrder: m.sortOrder
-      }))
-    );
-  }
-
   // Return with backward-compatible virtual fields
-  const mediaItems = await CampaignMediaItem.findAll({
-    where: { campaignId: copy.id },
-    order: [['sortOrder', 'ASC']]
-  });
   const agentRows = await CampaignAgentAssignment.findAll({
     where: { campaignId: copy.id },
     attributes: ['agentId']
   });
   const plain = copy.toJSON();
-  plain.mediaItems = mediaItems.map(m => m.toJSON());
-  plain.ad_playlist = mediaItemsToPlaylist(plain.mediaItems);
   plain.assigned_agents = agentRows.map(r => r.agentId);
   return plain;
 }
@@ -1346,10 +1291,13 @@ async function detachCarQrTags(campaignId) {
 async function deleteStorageAssets(campaign) {
   if (!storageService.isEnabled()) return;
 
-  const mediaItems = await CampaignMediaItem.findAll({
-    where: { campaignId: campaign.id },
-    attributes: ['url']
-  });
+  // Historical tablet-era media rows: the CampaignMediaItem model is retired
+  // but the table (and its uploaded files) remain — raw SQL keeps the
+  // permanent-delete storage cleanup working for old campaigns.
+  const [mediaItems] = await sequelize.query(
+    'SELECT url FROM campaign_media_items WHERE "campaignId" = :campaignId',
+    { replacements: { campaignId: campaign.id } }
+  );
   if (mediaItems.length === 0) return;
 
   const deletePromises = mediaItems.map(async (item) => {
@@ -1363,10 +1311,6 @@ async function deleteStorageAssets(campaign) {
   await Promise.allSettled(deletePromises);
 }
 
-/**
- * Sync media items from an ad_playlist array to the campaign_media_items table.
- * Replaces all existing rows for the campaign (delete + re-insert in a transaction).
- */
 /**
  * Sync agent assignments to the join table.
  * Accepts an array of agent IDs (UUIDs) or objects with { id }.
@@ -1404,55 +1348,3 @@ function agentsToIdList(assignedAgents) {
   return assignedAgents.map(a => a.id);
 }
 
-async function syncMediaItems(campaignId, playlist) {
-  if (!Array.isArray(playlist)) return;
-
-  await sequelize.transaction(async (t) => {
-    // Remove existing rows
-    await CampaignMediaItem.destroy({ where: { campaignId }, transaction: t });
-
-    // Insert new rows
-    if (playlist.length > 0) {
-      const rows = playlist
-        .filter(item => item && item.url)
-        .map((item, idx) => ({
-          campaignId,
-          mediaType: item.type || 'video',
-          url: item.url,
-          durationSecs: normalizeDuration(item.duration),
-          sortOrder: idx
-        }));
-
-      if (rows.length > 0) {
-        await CampaignMediaItem.bulkCreate(rows, { transaction: t });
-      }
-    }
-  });
-}
-
-/**
- * Convert duration from frontend format (may be milliseconds or seconds) to seconds.
- */
-function normalizeDuration(duration) {
-  if (duration == null) return null;
-  const num = parseInt(duration, 10);
-  if (isNaN(num)) return null;
-  // Frontend sends milliseconds (e.g. 10000 for 10s); normalize to seconds
-  return num > 1000 ? Math.round(num / 1000) : num;
-}
-
-/**
- * Convert normalized mediaItems rows back to the legacy ad_playlist JSON shape
- * so existing frontend code continues to work without changes.
- */
-function mediaItemsToPlaylist(mediaItems) {
-  if (!mediaItems || !Array.isArray(mediaItems)) return [];
-  return mediaItems
-    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-    .map(m => ({
-      id: m.id,
-      type: m.mediaType,
-      url: m.url,
-      duration: m.durationSecs != null ? m.durationSecs * 1000 : 0
-    }));
-}

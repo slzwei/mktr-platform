@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { User, Campaign, Commission, sequelize, Prospect, LeadPackageAssignment, ProspectActivity, WalletLedger } from '../models/index.js';
+import { User, Campaign, sequelize, Prospect, LeadPackageAssignment, ProspectActivity, WalletLedger } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 /**
@@ -131,10 +131,6 @@ export async function listUsers(query) {
     limit: parseInt(limit),
     offset: parseInt(offset),
     order: [[normalizedSortBy, normalizedOrder]],
-    include: [
-      { association: 'fleetOwnerProfile', required: false },
-      { association: 'driverProfile', required: false }
-    ]
   });
 
   // Raw invitation tokens are CREDENTIALS (the accept-invite link) — never
@@ -206,8 +202,6 @@ export async function inviteUser(email, fullName, role, owedLeadsCount, inviterE
 export async function getUserById(id) {
   const user = await User.findByPk(id, {
     include: [
-      { association: 'fleetOwnerProfile', required: false },
-      { association: 'driverProfile', required: false },
       { association: 'createdCampaigns', required: false },
       { association: 'assignedProspects', required: false }
     ]
@@ -425,7 +419,13 @@ export async function permanentlyDeleteUser(userId, actorId) {
     throw new AppError('Cannot delete user who created campaigns. Reassign campaigns first.', 409);
   }
 
-  const commissionCount = await Commission.count({ where: { agentId: userId } });
+  // Historical commission rows: the Commission model is retired but the table
+  // (and its ON DELETE RESTRICT agentId FK) remains — without this pre-check a
+  // delete would surface as a raw FK 500 instead of a friendly 409.
+  const [[{ count: commissionCount }]] = await sequelize.query(
+    'SELECT COUNT(*)::int AS count FROM commissions WHERE "agentId" = :userId',
+    { replacements: { userId } }
+  );
   if (commissionCount > 0) {
     throw new AppError('Cannot delete user with commissions. Archive commissions first.', 409);
   }

@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember, sequelize } from '../models/index.js';
+import { QrTag, Campaign, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember, sequelize } from '../models/index.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
@@ -93,7 +93,6 @@ export async function listQrCodes(user, query) {
     include: [
       { association: 'owner', attributes: ['id', 'firstName', 'lastName', 'email'] },
       { association: 'campaign', attributes: ['id', 'name', 'status'] },
-      { association: 'car', attributes: ['id', 'make', 'model', 'plate_number'] },
       // Routing target for round-robin QRs — powers the "Agent / Group" column in the admin UI
       { association: 'agentGroup', attributes: ['id', 'name'] }
     ]
@@ -155,15 +154,8 @@ export async function createQrCode(body, user) {
     targetHost = normalizeCustomerHostChoice(campaign.design_config?.customerHost);
   }
 
-  // Validate car access
-  if (carId) {
-    const car = await Car.findByPk(carId, {
-      include: [{ association: 'fleetOwner', where: { userId: user.id } }]
-    });
-    if (!car && user.role !== 'admin') {
-      throw new AppError('Car not found or access denied', 404);
-    }
-  }
+  // (Car-ownership validation retired with the fleet domain — carId is now an
+  // inert legacy column; the qr_tags FK still rejects non-existent ids.)
 
   // Idempotent car QR: update existing if present. If a campaign reassignment
   // moves the QR to a different customer host, re-bake the image so the printed
@@ -243,7 +235,6 @@ export async function getQrCode(id, user) {
     include: [
       { association: 'owner', attributes: ['id', 'firstName', 'lastName', 'email'] },
       { association: 'campaign', attributes: ['id', 'name', 'status', 'type'] },
-      { association: 'car', attributes: ['id', 'make', 'model', 'plate_number', 'color'] },
       { association: 'prospects', attributes: ['id', 'firstName', 'lastName', 'email', 'leadStatus', 'createdAt'] }
     ]
   });

@@ -49,15 +49,3 @@ export async function getFunnel(req, res) {
   const data = await dashboardService.getFunnel(period);
   res.json({ success: true, data: { period, ...data } });
 }
-
-// Driver Partner: successful submissions trend
-export async function getDriverScans(req, res) {
-  const data = await dashboardService.getDriverScans(req.user.id, req.query.period);
-  res.json({ success: true, data });
-}
-
-// Driver Partner: computed commissions
-export async function getDriverCommissions(req, res) {
-  const commissions = await dashboardService.getDriverCommissions(req.user.id, req.query.period);
-  res.json({ success: true, data: { commissions } });
-}

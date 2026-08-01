@@ -1,5 +1,5 @@
 import request from 'supertest'
-import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect, createTestCommission } from './helpers.js'
+import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect } from './helpers.js'
 
 let app, adminUser, adminToken
 let agent1, agent1Token, agent2, agent2Token
@@ -17,10 +17,9 @@ beforeAll(async () => {
   const a2 = await createTestUser({ role: 'agent', firstName: 'AgentBeta', lastName: 'Two' })
   agent2 = a2.user; agent2Token = a2.token
 
-  // Seed campaign, prospect, and commission for agent1
+  // Seed campaign and prospect for agent1
   campaign = await createTestCampaign(adminUser.id)
   _prospect = await createTestProspect(campaign.id, { assignedAgentId: agent1.id })
-  await createTestCommission(agent1.id, campaign.id, { amount: 100 })
 })
 
 afterAll(async () => {
@@ -133,9 +132,9 @@ describe('Agent detail', () => {
     expect(res.body.data.agent.id).toBe(agent1.id)
     expect(res.body.data.agent.stats).toBeDefined()
     expect(res.body.data.agent.stats.prospects).toBeDefined()
-    expect(res.body.data.agent.stats.commissions).toBeDefined()
     expect(res.body.data.agent.stats.campaigns).toBeDefined()
     expect(res.body.data.agent.stats.monthlyPerformance).toBeDefined()
+    expect(res.body.data.agent.stats.commissions).toBeUndefined() // retired domain
   })
 
   it('GET /api/agents/:id — agent can view own profile', async () => {
@@ -182,8 +181,6 @@ describe('Agent detail', () => {
     expect(stats.prospects.total).toBeGreaterThanOrEqual(1)
     expect(stats.prospects.byStatus).toBeDefined()
     expect(typeof stats.prospects.conversionRate).toBe('number')
-    expect(stats.commissions.total).toBeGreaterThanOrEqual(0)
-    expect(stats.commissions.byStatus).toBeDefined()
     expect(Array.isArray(stats.monthlyPerformance)).toBe(true)
     expect(stats.monthlyPerformance.length).toBe(12)
   })
@@ -298,45 +295,13 @@ describe('Agent prospects', () => {
   })
 })
 
-describe('Agent commissions', () => {
-  it('GET /api/agents/:id/commissions — admin gets agent commissions', async () => {
+describe('Agent commissions route retired', () => {
+  it('GET /api/agents/:id/commissions — 404 now the commission domain is gone', async () => {
     const res = await request(app)
       .get(`/api/agents/${agent1.id}/commissions`)
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect(res.status).toBe(200)
-    expect(res.body.success).toBe(true)
-    expect(res.body.data.commissions).toBeDefined()
-    expect(res.body.data.summary).toBeDefined()
-    expect(res.body.data.summary.totalAmount).toBeGreaterThanOrEqual(0)
-    expect(res.body.data.pagination).toBeDefined()
-  })
-
-  it('GET /api/agents/:id/commissions — agent can view own commissions', async () => {
-    const res = await request(app)
-      .get(`/api/agents/${agent1.id}/commissions`)
-      .set('Authorization', `Bearer ${agent1Token}`)
-
-    expect(res.status).toBe(200)
-    expect(res.body.data.commissions.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('GET /api/agents/:id/commissions — agent cannot view another agent commissions', async () => {
-    const res = await request(app)
-      .get(`/api/agents/${agent1.id}/commissions`)
-      .set('Authorization', `Bearer ${agent2Token}`)
-
-    expect(res.status).toBe(403)
-  })
-
-  it('GET /api/agents/:id/commissions?period=year — period filter works', async () => {
-    const res = await request(app)
-      .get(`/api/agents/${agent1.id}/commissions?period=year`)
-      .set('Authorization', `Bearer ${adminToken}`)
-
-    expect(res.status).toBe(200)
-    expect(res.body.data.commissions).toBeDefined()
-    expect(res.body.data.summary).toBeDefined()
+    expect(res.status).toBe(404)
   })
 })
 

@@ -24,7 +24,6 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, agentController.updat
 
 // Sub-resources
 router.get('/:id/prospects', authenticateToken, requireAgentOrAdmin, agentController.getAgentProspects);
-router.get('/:id/commissions', authenticateToken, requireAgentOrAdmin, agentController.getAgentCommissions);
 router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, agentController.getAgentCampaigns);
 
 export default router;
