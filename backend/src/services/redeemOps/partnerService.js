@@ -21,6 +21,7 @@ import {
 import { makeOnboardingService } from './onboardingService.js';
 import { makeCategoryService } from './categoryService.js';
 import { fireCadenceHook } from './cadenceHooks.js';
+import { partnerDisplayName } from './partnerDisplayName.js';
 
 /**
  * Partner CRM core (docs/redeem-ops/ERD.md §3.1–3.6, brief §13–§18).
@@ -141,7 +142,7 @@ export function makePartnerService(overrides = {}) {
   // ── Create / update (dedupe-gated) ───────────────────────────────────────
 
   function displayNameOf(body) {
-    return body.tradingName || body.brandName || body.legalName || null;
+    return partnerDisplayName(body);
   }
 
   async function createPartner(body, user, requestId = null) {

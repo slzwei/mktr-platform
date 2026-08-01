@@ -6,6 +6,7 @@ import { maskEmail } from '../../utils/redactTokens.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../../utils/customerHost.js';
 import { renderQrCardPng } from './qrCardRenderer.js';
 import { boostDeadlineLong } from './drawLink.js';
+import { partnerDisplayName } from './partnerDisplayName.js';
 
 /**
  * Consumer voucher delivery on unlock (docs/redeem-ops/MKTR_INTEGRATION.md §2).
@@ -99,7 +100,7 @@ export function makeFulfilmentNotify(overrides = {}) {
     });
     const activation = await d.Activation.findByPk(entitlement.activationId);
     const rewardName = offer?.publicTitle || offer?.title || 'your reward';
-    const partnerName = offer?.partner?.tradingName || offer?.partner?.brandName || offer?.partner?.legalName || 'our partner';
+    const partnerName = partnerDisplayName(offer?.partner, 'our partner');
     return { offer, activation, rewardName, partnerName };
   }
 

@@ -11,6 +11,7 @@ import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeTaskService } from './taskService.js';
 import { makePartnerService } from './partnerService.js';
 import { normalizePhone } from '../prospectHelpers.js';
+import { partnerDisplayName } from './partnerDisplayName.js';
 import {
   CHANNEL_DISPOSITIONS, CADENCE_TERMINAL_DISPOSITIONS, CADENCE_WILDCARD_DISPOSITION,
   CADENCE_CHANNELS, CADENCE_TIME_WINDOWS, TASK_PRIORITIES, LOST_REASONS,
@@ -422,7 +423,7 @@ export function makeCadenceService(overrides = {}) {
       ? await d.User.findByPk(partner.ownerUserId, { attributes: ['firstName', 'fullName'], transaction: t })
       : null;
     const rendered = renderTemplate(step.scriptTemplate, {
-      partner_name: partner.tradingName || partner.brandName || partner.legalName || 'there',
+      partner_name: partnerDisplayName(partner, 'there'),
       contact_name: primaryContact?.name || 'there',
       category: partner.category || '',
       recipient: resolved.recipient || '',

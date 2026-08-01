@@ -1,6 +1,7 @@
 import { Op, QueryTypes } from 'sequelize';
 import { sequelize, RewardOffer, Activation, RewardEntitlement } from '../../models/index.js';
 import { makeCampaignProjection } from './campaignProjection.js';
+import { partnerDisplayName, PARTNER_NAME_ATTRS } from './partnerDisplayName.js';
 
 /**
  * Redeem Ops analytics (brief §29) — plain SQL aggregates over OUR tables.
@@ -80,14 +81,14 @@ export function makeAnalyticsService(overrides = {}) {
   /** Reward supply performance — counters are already ledger-audited truth. */
   async function rewardPerformance() {
     const offers = await d.RewardOffer.findAll({
-      include: [{ association: 'partner', attributes: ['tradingName', 'legalName'] }],
+      include: [{ association: 'partner', attributes: PARTNER_NAME_ATTRS }],
       order: [['createdAt', 'DESC']],
       limit: 100,
     });
     return offers.map((o) => ({
       id: o.id,
       title: o.title,
-      partnerName: o.partner?.tradingName || o.partner?.legalName || null,
+      partnerName: partnerDisplayName(o.partner),
       status: o.status,
       committed: o.committedQuantity,
       allocated: o.allocatedQuantity,
@@ -102,7 +103,7 @@ export function makeAnalyticsService(overrides = {}) {
     const activations = await d.Activation.findAll({
       include: [
         { association: 'rewardOffer', attributes: ['title'] },
-        { association: 'partner', attributes: ['tradingName', 'legalName'] },
+        { association: 'partner', attributes: PARTNER_NAME_ATTRS },
       ],
       order: [['createdAt', 'DESC']],
       limit: 50,
@@ -136,7 +137,7 @@ export function makeAnalyticsService(overrides = {}) {
       funnels.push({
         id: a.id,
         rewardTitle: a.rewardOffer?.title,
-        partnerName: a.partner?.tradingName || a.partner?.legalName || null,
+        partnerName: partnerDisplayName(a.partner),
         campaignName: a.campaignNameSnapshot,
         status: a.status,
         renewalOutcome: a.renewalOutcome,
