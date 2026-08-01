@@ -74,6 +74,9 @@ function buildDeps(overrides = {}) {
     getOrCreateProspectShareLink: jest.fn().mockResolvedValue({ url: '/share/x' }),
     buildProspectWhere: jest.fn().mockResolvedValue({}),
     dispatchEvent: jest.fn().mockResolvedValue(),
+    // P4-5: the held release persists its delivery inside the release txn.
+    persistEventDeliveries: jest.fn().mockResolvedValue([{ delivery: {}, subscriber: {} }]),
+    flushDeliveries: jest.fn(),
     onLeadCaptured: jest.fn().mockResolvedValue(),
     sendLeadEvent: jest.fn().mockResolvedValue({ sent: false }),
     sendCompleteRegistrationEvent: jest.fn().mockResolvedValue({ sent: false }),
@@ -261,7 +264,7 @@ describe('assignProspect — screening release override (deduct-skip, Codex #2)'
     expect(deps.deductLeadCredit).not.toHaveBeenCalled();
     const activity = deps.models.ProspectActivity.create.mock.calls[0][0];
     expect(activity.metadata.screeningOverride).toBe(true);
-    expect(deps.dispatchEvent.mock.calls.map((c) => c[0])).toContain('lead.assigned');
+    expect(deps.persistEventDeliveries.mock.calls.map((c) => c[0])).toContain('lead.assigned');
   });
 
   it('refunded screening_failed override deducts normally (single-charge invariant)', async () => {

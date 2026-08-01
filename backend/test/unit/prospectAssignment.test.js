@@ -93,7 +93,7 @@ function buildMocks() {
   };
 
   const sequelize = {
-    transaction: jest.fn(async (callback) => callback(mockTransaction)),
+    transaction: jest.fn(async (callback) => (typeof callback === 'function' ? callback(mockTransaction) : mockTransaction)),
     query: jest.fn().mockResolvedValue([[{ id: 'prospect-1' }]]),
     fn: jest.fn((fnName, col) => `${fnName}(${col})`),
     col: jest.fn((name) => name),
@@ -106,6 +106,10 @@ function buildMocks() {
   const chargeLeadCredit = jest.fn().mockResolvedValue(true);
   const buildProspectWhere = jest.fn().mockResolvedValue({});
   const dispatchEvent = jest.fn().mockResolvedValue(undefined);
+  // P4-5: held-release + bulk persist deliveries inside their transaction
+  // (transactional outbox) and flush after commit.
+  const persistEventDeliveries = jest.fn().mockResolvedValue([{ delivery: {}, subscriber: {} }]);
+  const flushDeliveries = jest.fn();
   // Bulk assign's webhook pre-flight — deliverable by default so assignment tests
   // exercise the assignment logic, not the misconfig guard.
   const hasDeliverableSubscriber = jest.fn().mockResolvedValue(true);
@@ -138,6 +142,8 @@ function buildMocks() {
     chargeLeadCredit,
     buildProspectWhere,
     dispatchEvent,
+    persistEventDeliveries,
+    flushDeliveries,
     hasDeliverableSubscriber,
     AppError,
     logger,
@@ -154,6 +160,8 @@ function makeService(mocks, overrides = {}) {
     chargeLeadCredit: mocks.chargeLeadCredit,
     buildProspectWhere: mocks.buildProspectWhere,
     dispatchEvent: mocks.dispatchEvent,
+    persistEventDeliveries: mocks.persistEventDeliveries,
+    flushDeliveries: mocks.flushDeliveries,
     hasDeliverableSubscriber: mocks.hasDeliverableSubscriber,
     AppError: mocks.AppError,
     logger: mocks.logger,
@@ -372,11 +380,15 @@ describe('prospectAssignment (unit)', () => {
 
       expect(mocks.sequelize.query).toHaveBeenCalled();
       expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-1' });
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+      // P4-5: the release persists its delivery inside the release transaction
+      // (transactional outbox) — assert the persist seam, flushed post-commit.
+      expect(mocks.persistEventDeliveries).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }), mocks.mockTransaction);
+      expect(mocks.flushDeliveries).toHaveBeenCalled();
       expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function), expect.anything());
+      expect(mocks.persistEventDeliveries).not.toHaveBeenCalledWith('lead.created', expect.any(Function), expect.anything(), expect.anything());
       // Insert-parity payload: the destination app may not know this lead yet, so the
       // assigned payload carries the created payload's qrTag block + routing.mode.
-      const builder = mocks.dispatchEvent.mock.calls.find((c) => c[0] === 'lead.assigned')[1];
+      const builder = mocks.persistEventDeliveries.mock.calls.find((c) => c[0] === 'lead.assigned')[1];
       const payload = builder();
       expect(payload.data.qrTag).toEqual({ externalId: 'qr-9', slug: 'sl' });
       expect(payload.data.routing.mode).toBe('direct');
@@ -451,9 +463,11 @@ describe('prospectAssignment (unit)', () => {
 
       await service.bulkAssignProspects(['p-1', 'p-2'], 'agent-1', admin);
 
-      const assignedCalls = mocks.dispatchEvent.mock.calls.filter((c) => c[0] === 'lead.assigned');
+      // P4-5: bulk persists per-lead deliveries inside the assignment transaction.
+      const assignedCalls = mocks.persistEventDeliveries.mock.calls.filter((c) => c[0] === 'lead.assigned');
       expect(assignedCalls).toHaveLength(2);
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+      expect(mocks.persistEventDeliveries).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }), expect.anything());
+      expect(mocks.flushDeliveries).toHaveBeenCalled();
     });
 
     it('logs a ProspectActivity per bulk-assigned lead (so bulk assignment is on the timeline)', async () => {
