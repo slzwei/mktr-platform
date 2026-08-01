@@ -673,37 +673,10 @@ export const entities = {
 };
 
 /**
- * Functions - Replace Base44 functions
- */
-export const functions = {
- // Assign lead to agent
- async assignLead(prospectId, agentId) {
- return entities.Prospect.assign(prospectId, agentId);
- },
-
- // Generate QR code (handled in QR creation)
- async generateQrCodeImage(data, options = {}) {
- // This is now handled automatically when creating QR codes
- return entities.QrTag.create({ ...data, ...options });
- },
-
- // Increment scan count
- async incrementScanCount(qrTagId, metadata = {}) {
- return entities.QrTag.recordScan(qrTagId, metadata);
- },
-};
-
-/**
  * Integrations - Replace Base44 integrations
  */
 export const integrations = {
  Core: {
- // Send email (placeholder - implement with your email service)
- async SendEmail(to, subject, body) {
- console.warn('SendEmail integration not implemented - use your email service');
- return { success: false, message: 'Email integration not implemented' };
- },
-
  // Upload file
  async UploadFile(file, type = 'general') {
  const formData = new FormData();
@@ -711,24 +684,6 @@ export const integrations = {
 
  const response = await apiClient.upload(`/uploads/single?type=${type}`, formData);
  return response.data;
- },
-
- // Generate image (placeholder - implement with your image service)
- async GenerateImage(prompt, options = {}) {
- console.warn('GenerateImage integration not implemented - use your image service');
- return { success: false, message: 'Image generation not implemented' };
- },
-
- // Extract data from file (placeholder)
- async ExtractDataFromUploadedFile(fileUrl) {
- console.warn('ExtractDataFromUploadedFile integration not implemented');
- return { success: false, message: 'Data extraction not implemented' };
- },
-
- // Invoke LLM (placeholder)
- async InvokeLLM(prompt, options = {}) {
- console.warn('InvokeLLM integration not implemented - use your AI service');
- return { success: false, message: 'LLM integration not implemented' };
  },
  },
 };
@@ -829,19 +784,3 @@ if (typeof window !== 'undefined') {
  });
  }
 }
-
-// Export everything in Base44-compatible format
-export const mktrAPI = {
- auth,
- entities,
- functions,
- integrations,
- dashboard,
- notifications,
- agents,
- fleet,
- client: apiClient,
-};
-
-// Default export for convenience
-export default mktrAPI;
