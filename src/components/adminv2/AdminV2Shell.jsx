@@ -19,6 +19,7 @@ import { NAV } from '@/lib/adminV2/nav';
 import GlobalSearch from './GlobalSearch';
 import NotificationsBell from './NotificationsBell';
 import MktrWordmark from '@/components/brand/MktrWordmark';
+import MktrMark from '@/components/brand/MktrMark';
 import MobileTabBar from './mobile/MobileTabBar';
 import { AdminV2ShellContext } from './mobile/shellContext';
 import { useAdminV2Mobile } from './mobile/useAdminV2Mobile';
@@ -153,11 +154,12 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
             }}
           >
             {info.root ? (
-              // The brand root draws the wordmark as its title — an M tile
-              // beside it would say the same thing twice.
+              // The brand root draws the wordmark as its title — a logo tile
+              // beside it would say the brand twice. Other roots lead with the
+              // app-icon mark as the home button.
               info.brand ? null : (
                 <Link to="/AdminDashboard" aria-label="Dashboard" style={{ display: 'flex', flex: 'none' }}>
-                  <span style={{ width: 32, height: 32, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15 }}>M</span>
+                  <MktrMark size={32} />
                 </Link>
               )
             ) : (
