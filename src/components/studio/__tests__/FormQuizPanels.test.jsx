@@ -7,7 +7,7 @@ vi.mock('@/api/entities', () => ({ Campaign: { update: vi.fn() } }));
 import useStudioDoc from '../useStudioDoc';
 import FormPanel from '../panels/FormPanel';
 import StudioQuizPanel from '../panels/QuizPanel';
-import { STARTER_QUIZ } from '@/components/campaigns/editor/QuizPanel';
+import { STARTER_QUIZ } from '@/lib/quizTemplates';
 import { fieldsToV1 } from '@/lib/designConfigV2';
 
 let latestDoc = null;

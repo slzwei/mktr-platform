@@ -1,4 +1,4 @@
-import { STARTER_QUIZ, BLANK_QUIZ } from '@/components/campaigns/editor/QuizPanel';
+import { STARTER_QUIZ, BLANK_QUIZ } from '@/lib/quizTemplates';
 import {
   flattenQuestions,
   updateQuestion,

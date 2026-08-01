@@ -15,7 +15,7 @@ import {
   renameProfileId,
   profileReferenceCounts,
 } from '../studioQuizView';
-import { STARTER_QUIZ } from '@/components/campaigns/editor/QuizPanel';
+import { STARTER_QUIZ } from '@/lib/quizTemplates';
 import { scoreQuiz } from '@/lib/quizScoring';
 
 /** Multi-question step + unknown keys — the shapes the classic editor destroys. */
