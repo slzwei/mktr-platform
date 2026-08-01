@@ -14,6 +14,7 @@ import { canWhatsAppProspect, waEnabled, waRecipient } from './whatsappService.j
 import { isSendBlocked } from '../consentService.js';
 import { SCREENING_REASONS } from '../screeningConstants.js';
 import { makeDrawLink } from './drawLink.js';
+import { maskPhoneDots } from '../phoneMask.js';
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
@@ -1303,7 +1304,7 @@ export function makeEntitlementService(overrides = {}) {
         whatsapp: receiptView(latestReceipt.get(`${j.id}:whatsapp`)),
       };
       if (j.prospect) {
-        if (j.prospect.phone) j.prospect.phone = `••••${String(j.prospect.phone).slice(-4)}`;
+        if (j.prospect.phone) j.prospect.phone = maskPhoneDots(j.prospect.phone);
         delete j.prospect.email;
       }
       // Surface the redemption id (+ whether it is already reversed) so the

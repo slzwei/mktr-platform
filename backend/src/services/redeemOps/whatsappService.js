@@ -6,6 +6,8 @@ import { isSendBlocked } from '../consentService.js';
 import { boostDeadlineLong } from './drawLink.js';
 import { recordWaSend } from './waMessageOwnership.js';
 import { partnerDisplayName } from './partnerDisplayName.js';
+import { makeWaGraphClient, GRAPH_VERSION } from '../waGraphClient.js';
+import { maskPhoneDots } from '../phoneMask.js';
 
 /**
  * Consumer WhatsApp delivery for reward credentials (trial-reward PR E,
@@ -38,7 +40,6 @@ import { partnerDisplayName } from './partnerDisplayName.js';
  */
 
 // Version aligned with verificationService.js / metaCapiService.js.
-const META_GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v21.0';
 
 export function waEnabled() {
   return String(process.env.REDEEM_OPS_WHATSAPP_ENABLED || '').toLowerCase() === 'true';
@@ -101,11 +102,8 @@ export async function canWhatsAppProspect(prospect, { purpose = 'transactional' 
   return !(await isSendBlocked(prospect, { channel: 'whatsapp', purpose }));
 }
 
-/** `+6591234567` → `••••4567` — same masking idiom as the ops list payload. */
-function maskPhone(phone) {
-  const digits = String(phone || '').replace(/\D/g, '');
-  return digits ? `••••${digits.slice(-4)}` : null;
-}
+// `+6591234567` → `••••4567` — shared display mask (P4-2, phoneMask.js).
+const maskPhone = maskPhoneDots;
 
 /**
  * Meta rejects body params containing newlines/tabs/4+ spaces; URL-ish person
@@ -135,37 +133,9 @@ export function makeWhatsappService(overrides = {}) {
     fetch: (...args) => fetch(...args), sleep, isSendBlocked, recordWaSend, ...overrides,
   };
 
-  /**
-   * Graph API fetch with bounded retry on TRANSIENT failures only — a network
-   * throw ("fetch failed": no response received, so the request very likely
-   * never reached Meta) or a 5xx. 4xx (template/permission/bad-request) is
-   * deterministic and returned as-is for the caller to receipt. This closes
-   * the gap that silently lost a voucher WhatsApp on a single connection blip
-   * while email went through (prod, 2026-07-20): the send was fire-and-forget
-   * with no retry.
-   */
-  async function graphFetch(url, opts, { label, attempts = 3 } = {}) {
-    let lastErr;
-    for (let i = 1; i <= attempts; i += 1) {
-      try {
-        const res = await d.fetch(url, opts);
-        if (res.status >= 500 && i < attempts) {
-          d.logger.warn('redeem_ops.whatsapp.retry_5xx', { label, status: res.status, attempt: i });
-          await d.sleep(300 * i);
-          continue;
-        }
-        return res; // ok or 4xx — caller decides
-      } catch (err) {
-        lastErr = err;
-        if (i < attempts) {
-          d.logger.warn('redeem_ops.whatsapp.retry_network', { label, error: err?.message, attempt: i });
-          await d.sleep(300 * i);
-          continue;
-        }
-      }
-    }
-    throw lastErr;
-  }
+  // Shared retrying Graph transport (P4-2, waGraphClient.js) — built from
+  // this factory's own deps so tests keep injecting d.fetch/d.sleep.
+  const { graphFetch } = makeWaGraphClient({ fetch: d.fetch, sleep: d.sleep, logger: d.logger });
 
   async function offerContextOf(entitlement) {
     try {
@@ -193,7 +163,7 @@ export function makeWhatsappService(overrides = {}) {
     form.append('messaging_product', 'whatsapp');
     form.append('type', 'image/png');
     form.append('file', new Blob([buffer], { type: 'image/png' }), 'reward-qr.png');
-    const res = await graphFetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/media`, {
+    const res = await graphFetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneId}/media`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -297,7 +267,7 @@ export function makeWhatsappService(overrides = {}) {
         },
       };
 
-      const res = await graphFetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`, {
+      const res = await graphFetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneId}/messages`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
