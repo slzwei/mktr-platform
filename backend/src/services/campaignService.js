@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import { Campaign, QrTag, Prospect, CampaignAgentAssignment, sequelize } from '../models/index.js';
-import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
+import { buildCampaignWhere, buildOwnerWhere } from './campaignScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
@@ -157,50 +157,6 @@ export async function computeCampaignMetrics(campaignId) {
     clicks: scans,
     referrals: 0,
   };
-}
-
-/**
- * Build tenant-aware WHERE clause for campaigns, scoped by user role.
- */
-function buildCampaignWhere(req, extra = {}) {
-  const where = { ...extra };
-
-  try {
-    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
-    if (hasTenantId) {
-      where.tenant_id = getTenantId(req);
-    }
-  } catch (_) { /* skip in dev */ }
-
-  if (req.user.role !== 'admin') {
-    // The role scope lives inside Op.and — never as a bare where[Op.or] — so a
-    // later filter that also needs an OR group (e.g. the search filter) cannot
-    // overwrite it. Assigning the same symbol key twice silently drops the
-    // first group, which leaked every campaign to any authenticated user.
-    where[Op.and] = [
-      ...(where[Op.and] || []),
-      { [Op.or]: [{ createdBy: req.user.id }, { isPublic: true }] }
-    ];
-  }
-
-  return where;
-}
-
-function buildOwnerWhere(req, extra = {}) {
-  const where = { ...extra };
-
-  try {
-    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
-    if (hasTenantId) {
-      where.tenant_id = getTenantId(req);
-    }
-  } catch (_) { /* tenant column may not exist */ }
-
-  if (req.user.role !== 'admin') {
-    where.createdBy = req.user.id;
-  }
-
-  return where;
 }
 
 /**
