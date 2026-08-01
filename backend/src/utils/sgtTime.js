@@ -42,14 +42,24 @@ export function shortDate(ymd) {
  * Returns null for anything that isn't a valid YYYY-MM-DD string.
  */
 export function sgtDayEndExclusiveMs(ymd) {
-  if (typeof ymd !== 'string') return null;
-  const s = ymd.trim();
-  if (!YMD_RE.test(s)) return null;
-  // Strict calendar check — Date.parse rolls impossible dates (2026-02-31 →
-  // March 3) instead of rejecting them.
-  const [y, m, day] = s.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, day));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return null;
+  const s = cleanYmd(ymd);
+  if (!s) return null;
   const start = Date.parse(`${s}T00:00:00+08:00`);
   return Number.isNaN(start) ? null : start + DAY_MS;
+}
+
+/**
+ * THE strict calendar YYYY-MM-DD validator (P4-1) — trims, shape-checks, and
+ * rejects impossible dates instead of letting Date.parse roll them over
+ * (2026-02-31 must fail, not become March 3). Returns the trimmed string or
+ * undefined. Former copies: utils/luckyDraw.js, campaignDetailsAiService.js.
+ */
+export function cleanYmd(v) {
+  if (typeof v !== 'string') return undefined;
+  const s = v.trim();
+  if (!YMD_RE.test(s)) return undefined;
+  const [y, m, day] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, day));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return undefined;
+  return s;
 }

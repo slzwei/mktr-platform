@@ -22,6 +22,7 @@
 
 import { AppError } from '../middleware/appError.js';
 import { PASS_THEMES } from './drawTheme.js';
+import { cleanYmd } from './sgtTime.js';
 import { MAX_PRIZE_NAME, MAX_PRIZE_ROWS, MAX_PRIZE_QTY } from './luckyDrawCaps.js';
 
 const MAX_PRIZE = 80; // legacy manual `prize` cap — unchanged so stored rows never drift
@@ -32,7 +33,6 @@ const MAX_BOOKING_URL = 300;
 const MIN_MULTIPLIER = 2;
 const MAX_MULTIPLIER = 100;
 const DEFAULT_MULTIPLIER = 10;
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/i;
 
@@ -45,18 +45,6 @@ function cleanString(v, max) {
   const t = v.trim();
   if (!t) return undefined;
   return t.slice(0, max);
-}
-
-function cleanYmd(v) {
-  if (typeof v !== 'string') return undefined;
-  const s = v.trim();
-  if (!YMD_RE.test(s)) return undefined;
-  // Strict calendar check — Date.parse would silently roll 2026-02-31 into
-  // March; a draw date must be a real day.
-  const [y, m, day] = s.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, day));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return undefined;
-  return s;
 }
 
 /** Valid structured rows only: plain objects with a non-empty name; qty coerced to 1..MAX_PRIZE_QTY. */

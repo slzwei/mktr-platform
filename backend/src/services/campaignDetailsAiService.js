@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { getRuntimeAiSettings } from './aiSettingsService.js';
 import { requestStructuredJson } from './guidedReviewAiService.js';
 import { withOrgStyle } from './redeemOps/aiSuggestShared.js';
+import { cleanYmd } from '../utils/sgtTime.js';
 
 /**
  * "Fill it for me" for the new-campaign Details form (workspace create flow):
@@ -16,17 +17,6 @@ import { withOrgStyle } from './redeemOps/aiSuggestShared.js';
  * canonical shape), the entry close, boost deadline, and multiplier.
  */
 
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Strict calendar YMD (2026-02-31 must not roll over) — luckyDraw.js rule. */
-function cleanYmd(v) {
-  if (typeof v !== 'string') return undefined;
-  const s = v.trim();
-  if (!YMD_RE.test(s)) return undefined;
-  const [y, m, d] = s.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d ? s : undefined;
-}
 
 function cleanInt(v, min, max) {
   const n = Number(v);
