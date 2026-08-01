@@ -97,42 +97,14 @@ afterEach(() => {
 
 describe('onboardingService (unit)', () => {
 
-  // ── updateRole ──
+  // ── updateRole — REMOVED (P0-2) ──
+  // The function let any authenticated customer self-promote to 'agent'
+  // (plus the retired driver/fleet roles). This guard fails if anyone
+  // reintroduces a role-changing export on the onboarding service.
 
-  describe('updateRole', () => {
-    it('updates user role to driver_partner', async () => {
-      const result = await service.updateRole(mocks.mockUser, 'driver_partner');
-
-      expect(mocks.mockUser.update).toHaveBeenCalledWith({ role: 'driver_partner' });
-      expect(result).toBe(mocks.mockUser);
-    });
-
-    it('updates user role to agent', async () => {
-      await service.updateRole(mocks.mockUser, 'agent');
-
-      expect(mocks.mockUser.update).toHaveBeenCalledWith({ role: 'agent' });
-    });
-
-    it('updates user role to fleet_owner', async () => {
-      await service.updateRole(mocks.mockUser, 'fleet_owner');
-
-      expect(mocks.mockUser.update).toHaveBeenCalledWith({ role: 'fleet_owner' });
-    });
-
-    it('throws 400 for invalid role', async () => {
-      await expect(service.updateRole(mocks.mockUser, 'superadmin'))
-        .rejects.toThrow('Invalid role');
-
-      try {
-        await service.updateRole(mocks.mockUser, 'superadmin');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-      }
-    });
-
-    it('throws 400 for admin role (not in allowed list)', async () => {
-      await expect(service.updateRole(mocks.mockUser, 'admin'))
-        .rejects.toThrow('Invalid role');
+  describe('updateRole (removed — P0-2)', () => {
+    it('is no longer exported', () => {
+      expect(service.updateRole).toBeUndefined();
     });
   });
 

@@ -151,15 +151,26 @@ async function processPass(d, cfg) {
   const gateOnFor = async (campaignId) => {
     if (!campaignId) return false;
     if (campaignGateCache.has(campaignId)) return campaignGateCache.get(campaignId);
-    const camp = await d.Campaign.findByPk(campaignId).catch(() => null);
+    let camp;
+    try {
+      camp = await d.Campaign.findByPk(campaignId);
+    } catch (err) {
+      // Unknown gate state must never DRAIN a lead unscreened (or dial it
+      // blind) — skip its rows this pass, uncached so the next pass retries.
+      d.logger.warn('[Screening] sweep campaign lookup failed — rows on this campaign skipped this pass', {
+        campaignId, error: err?.message,
+      });
+      return { on: null, camp: null, lookupFailed: true };
+    }
     const on = readLegacyViewSafe(camp?.design_config, {}).screeningCallAtSubmit === true;
     campaignGateCache.set(campaignId, { on, camp });
     return { on, camp };
   };
 
   for (const p of pending) {
-    const { on } = (await gateOnFor(p.campaignId)) || {};
-    if (!cfg.configured || !on) {
+    const res = (await gateOnFor(p.campaignId)) || {};
+    if (res.lookupFailed) continue;
+    if (!cfg.configured || !res.on) {
       touched.add(p.id);
       await d.gate.releaseScreenedLead({ prospect: p, unscreened: true, via: 'screening_drain' });
       counts.drained++;
@@ -190,6 +201,7 @@ async function processPass(d, cfg) {
     });
     for (const p of due) {
       const cached = await gateOnFor(p.campaignId);
+      if (cached?.lookupFailed) continue;
       const r = await d.dialer.startScreeningAttempt(p, { campaign: cached?.camp || null, cfg });
       if (r.status === 'dialed') counts.dialed++;
       if (r.status === 'deferred' && ['budget_exhausted', 'concurrency_full'].includes(r.reason)) break;

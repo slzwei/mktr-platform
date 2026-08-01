@@ -10,6 +10,7 @@ import { dncEnforcement } from './dncService.js';
 import { hasValidDncConsent } from './dncConsent.js';
 import { canMarketTo } from './consentService.js';
 import { readLegacyViewSafe, getStoredLuckyDraw } from '../utils/designConfigV2Clamp.js';
+import { inCallWindow, nextWindowOpen } from '../utils/screeningEnv.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -67,34 +68,11 @@ const defaultDeps = {
 // Call-window helpers (SGT, "HH:MM-HH:MM")
 // ---------------------------------------------------------------------------
 
-function parseWindow(spec) {
-  const m = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(String(spec || '').trim());
-  if (!m) return { startMin: 10 * 60, endMin: 20 * 60 };
-  const startMin = Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2]));
-  const endMin = Math.min(23, Number(m[3])) * 60 + Math.min(59, Number(m[4]));
-  return endMin > startMin ? { startMin, endMin } : { startMin: 10 * 60, endMin: 20 * 60 };
-}
-
-function sgtMinutesOfDay(date) {
-  const sgt = new Date(date.getTime() + SGT_OFFSET_MS);
-  return sgt.getUTCHours() * 60 + sgt.getUTCMinutes();
-}
-
-export function inCallWindow(cfg, now = new Date()) {
-  const { startMin, endMin } = parseWindow(cfg.callWindow);
-  const mins = sgtMinutesOfDay(now);
-  return mins >= startMin && mins < endMin;
-}
-
-/** Next window-open instant at/after `from` (UTC Date). */
-export function nextWindowOpen(cfg, from = new Date()) {
-  const { startMin } = parseWindow(cfg.callWindow);
-  const sgt = new Date(from.getTime() + SGT_OFFSET_MS);
-  const dayStartUtc = Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate()) - SGT_OFFSET_MS;
-  const todayOpen = new Date(dayStartUtc + startMin * 60 * 1000);
-  if (todayOpen > from && !inCallWindow(cfg, from)) return todayOpen;
-  return new Date(dayStartUtc + 24 * 60 * 60 * 1000 + startMin * 60 * 1000);
-}
+// The window math itself lives in utils/screeningEnv.js — the PUBLIC campaign
+// hydrations need it too (to tell a 2am signup the call comes when the lines
+// open), and they must not import this module's model-heavy graph. Re-exported
+// here because the dialer is where callers have always looked for it.
+export { inCallWindow, nextWindowOpen };
 
 /** Backoff for the NEXT attempt, clamped into the call window. */
 export function nextRetryAt(cfg, attemptCount, now = new Date()) {
@@ -195,7 +173,13 @@ export function makeRetellScreeningService(overrides = {}) {
       `UPDATE prospects SET "screeningNextAttemptAt" = :at, "updatedAt" = NOW()
         WHERE id = :id AND "quarantineReason" = 'screening_pending' AND "screeningActiveCallId" IS NULL`,
       { replacements: { id: prospect.id, at } }
-    ).catch(() => {});
+    ).catch((err) => {
+      // Row keeps its old retry time (sweep re-picks it) — log so a systemic
+      // write failure doesn't silently distort every retry schedule.
+      d.logger.warn('[Screening] deferAttempt write failed — retry timing unchanged', {
+        prospectId: prospect.id, error: err?.message || String(err),
+      });
+    });
   }
 
   /**
@@ -394,6 +378,73 @@ export function makeRetellScreeningService(overrides = {}) {
       }
     } catch (err) {
       d.logger.error('[Screening] startScreeningAttempt error', { prospectId: prospect?.id, error: err?.message || String(err) });
+      return { status: 'error' };
+    }
+  }
+
+  /**
+   * The CAPTURE-path entry point (plan §7.1a): the first dial waits
+   * `cfg.dialDelaySeconds` (default 60) instead of firing the instant the lead
+   * lands. The draw success page tells the consumer an automated call is
+   * coming — ringing before they have finished reading it is what the delay
+   * buys away. Retries are untouched: they own their own backoff.
+   *
+   * Durable-first, exactly like the rest of this service. The delay is STAMPED
+   * on the row (`screeningNextAttemptAt`) through the same fenced write the
+   * sweep's due-retry job reads, so the sweep — not the timer — is the
+   * guarantee. The in-process `setTimeout` is only a punctuality optimisation:
+   * a crash, redeploy, or dyno swap inside the delay window costs lateness (up
+   * to one sweep interval), never the call. `.unref()` so a pending dial can
+   * never hold a shutting-down process open.
+   *
+   * Never throws — same fire-and-forget contract as startScreeningAttempt.
+   */
+  async function scheduleScreeningAttempt(prospect, { campaign = null, cfg = screeningConfig(), delayMs = null } = {}) {
+    try {
+      const wait = Number.isFinite(delayMs)
+        ? Math.max(0, delayMs)
+        : Math.max(0, Number(cfg.dialDelaySeconds) || 0) * 1000;
+      if (wait <= 0) return startScreeningAttempt(prospect, { campaign, cfg });
+      if (!cfg.configured) return { status: 'skipped', reason: 'not_configured' };
+
+      // Cheap pre-check so we don't stamp a schedule the guards will reject a
+      // minute later: an unstamped row the sweep would then re-select every
+      // pass until TTL. startScreeningAttempt re-runs this (and everything
+      // else) for real when the timer fires — the campaign can change in
+      // between, and IT is the authority.
+      const camp = campaign || (prospect.campaignId ? await d.Campaign.findByPk(prospect.campaignId) : null);
+      if (!screeningApplies({ campaign: camp, prospect }, cfg)) {
+        return { status: 'skipped', reason: 'gate_not_applicable' };
+      }
+
+      const at = new Date(Date.now() + wait);
+      await deferAttempt(prospect, at);
+
+      const timer = setTimeout(() => {
+        (async () => {
+          // Re-read before the guards run: a minute is long enough for an admin
+          // release, a consent withdrawal, or a phone edit. A stale instance
+          // would still lose the fenced claim, but re-reading lets the cheap
+          // guards say so first (and keeps the log honest).
+          await prospect.reload?.().catch(() => {});
+          return startScreeningAttempt(prospect, { campaign: camp, cfg });
+        })().catch((err) =>
+          d.logger.error('[Screening] delayed dial failed (sweep will retry)', {
+            prospectId: prospect?.id,
+            error: err?.message || String(err),
+          })
+        );
+      }, wait);
+      timer.unref?.();
+
+      d.logger.info('[Screening] first dial scheduled', {
+        prospectId: prospect.id,
+        at: at.toISOString(),
+        delaySeconds: Math.round(wait / 1000),
+      });
+      return { status: 'scheduled', at: at.toISOString() };
+    } catch (err) {
+      d.logger.error('[Screening] scheduleScreeningAttempt error', { prospectId: prospect?.id, error: err?.message || String(err) });
       return { status: 'error' };
     }
   }
@@ -806,6 +857,7 @@ export function makeRetellScreeningService(overrides = {}) {
 
   return {
     startScreeningAttempt,
+    scheduleScreeningAttempt,
     applyCallOutcome,
     resolveAttemptFailure,
     handleScreeningWebhook,
@@ -819,6 +871,7 @@ export function makeRetellScreeningService(overrides = {}) {
 // --- Backward-compatible default-wired exports (house pattern) ---
 const _default = makeRetellScreeningService();
 export const startScreeningAttempt = _default.startScreeningAttempt;
+export const scheduleScreeningAttempt = _default.scheduleScreeningAttempt;
 export const applyCallOutcome = _default.applyCallOutcome;
 export const handleScreeningWebhook = _default.handleScreeningWebhook;
 export const readWaCallbackContext = _default.readWaCallbackContext;

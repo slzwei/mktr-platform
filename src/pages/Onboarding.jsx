@@ -28,6 +28,13 @@ import StepProfile from '@/components/onboarding/StepProfile';
 import StepPayout from '@/components/onboarding/StepPayout';
 import StepFinal from '@/components/onboarding/StepFinal';
 
+// P0-2 (2026-07-30): self-serve onboarding is CLOSED. The wizard's backend
+// endpoint (/auth/onboarding/role) was removed because it allowed any customer
+// to self-promote to 'agent'. Agents join via emailed invitations; driver and
+// fleet programmes were retired 2026-07-15. The wizard below renders only if
+// this is ever flipped back; teardown task P2-7 deletes the page wholesale.
+const SELF_SERVE_ONBOARDING_CLOSED = true;
+
 const makesToModels = Object.keys(makeModelsRaw || {}).reduce((acc, make) => {
  const list = Array.isArray(makeModelsRaw[make]) ? makeModelsRaw[make].filter(Boolean) : [];
  acc[make] = list;
@@ -163,6 +170,33 @@ export default function Onboarding() {
  return (
  <div className="min-h-screen flex items-center justify-center bg-foreground text-background">
  <Loader2 className="h-6 w-6 animate-spin mr-2"/> Loading...
+ </div>
+ );
+ }
+
+ if (SELF_SERVE_ONBOARDING_CLOSED) {
+ return (
+ <div data-testid="onboarding-closed" className="min-h-screen flex items-center justify-center bg-foreground text-background p-6">
+ <Card className="w-full max-w-md">
+ <CardHeader>
+ <CardTitle>Onboarding is invitation-only</CardTitle>
+ </CardHeader>
+ <CardContent className="space-y-4">
+ <p className="text-sm text-muted-foreground">
+ Self-serve onboarding has closed. MKTR agents join through a personal
+ invitation — if you are expecting one, use the link in your invitation
+ email. Signed up out of interest? We&apos;ll be in touch.
+ </p>
+ <div className="flex gap-2">
+ <Button asChild variant="outline">
+ <Link to="/">Back to home</Link>
+ </Button>
+ <Button variant="ghost" onClick={() => { logout(); navigate('/'); }}>
+ <LogOut className="h-4 w-4 mr-2"/> Sign out
+ </Button>
+ </div>
+ </CardContent>
+ </Card>
  </div>
  );
  }

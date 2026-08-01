@@ -82,8 +82,10 @@ export function makeRedemptionService(overrides = {}) {
     // Draw rails (PR-4/CX22): nothing on them is a partner voucher. An
     // ELIGIBLE pass verifies as the scannable "record session" affordance
     // (the ops scanner's happy path); a recorded one reports ×N-confirmed.
-    // Neither is redeemable — complete() refuses below.
-    const drawCtx = await d.drawContextForActivation(entitlement.activationId).catch(() => null);
+    // Neither is redeemable — complete() refuses below. Uncaught on purpose:
+    // a lookup error must fail the verify, never fall through to the voucher
+    // branch (which would report a draw session as a valid partner voucher).
+    const drawCtx = await d.drawContextForActivation(entitlement.activationId);
     if (drawCtx) {
       await writeEvent(null, {
         entitlementId: entitlement.id, type: 'verify_attempt', actorType,
@@ -147,8 +149,10 @@ export function makeRedemptionService(overrides = {}) {
     if (!entitlement) throw new AppError('Voucher not found', 404);
     // Draw rails (PR-4/CX22): a recorded session is BOOST EVIDENCE, not a
     // voucher — completing a "redemption" on it would consume inventory for a
-    // reward nobody hands over and mark ×N evidence as spent.
-    const completeDrawCtx = await d.drawContextForActivation(entitlement.activationId).catch(() => null);
+    // reward nobody hands over and mark ×N evidence as spent. Uncaught on
+    // purpose: a lookup error must fail the completion, never classify the
+    // pass as a plain voucher and redeem it.
+    const completeDrawCtx = await d.drawContextForActivation(entitlement.activationId);
     if (completeDrawCtx) {
       const err = new AppError('Lucky-draw session passes have no partner redemption — the scan already recorded the ×N boost.', 409);
       err.data = { code: 'DRAW_PASS_NOT_REDEEMABLE' };

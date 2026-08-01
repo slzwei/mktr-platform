@@ -251,6 +251,37 @@ confidence 1.0, config-change ⇒ full recompute, scoreability rule, SGT
 decay, `scoreInputHash`/`scoringAlgorithmVersion`/`scoredConfigVersion`
 stamped even when NULL; §7.2 configs table + language-primary fit).
 
+### 7.1b Two-score presentation — MEET × BUY (owner decision, Shawn 2026-07-26)
+
+"Will they meet the consultant" and "will they buy" are different questions
+with different drivers — one blended number hides exactly what the agent
+needs (call the reachable one today; persist on the high-value one). The
+SAME component math is grouped into two sub-scores; nothing about the §7.1
+rules changes:
+
+| Sub-score | Components (raw max) | Scale |
+|---|---|---|
+| **Meet** (reachability) | engagement 15 + contactability 10 + market fit 15 (= 40) | ×2.5 → 0–100 |
+| **Buy** (potential) | life events 25 + family gap 20 + capacity 15 + coverage headroom −10..0 (= 60) | clamp(0,60)/60 → 0–100 |
+
+- The grouping lives in the scoring CONFIG (`groups` map, versioned like
+  the weights) — regrouping is a config insert, not a deploy.
+- **Scoreability per sub-score:** Buy keeps the ≥1-assessed-FACT-component
+  rule (NULL/"—" otherwise — unknown capacity must not fake a number);
+  Meet computes whenever telemetry exists (it's behavioral — engagement +
+  contactability are always assessable), market fit contributing only when
+  the language/ethnicity facts exist.
+- The blended `consumerScore` (all components, clamp 0–100) is RETAINED as
+  the stored default-sort total; `meetScore` + `buyScore` land as columns
+  in PR 2's migration (093) so both are list-sortable. One scoring pass
+  produces all three; the breakdown JSON groups per-component entries
+  under their sub-score.
+- Outcome logging validates each against its own truth: Meet vs
+  reached/qualified/contacted transitions; Buy vs ClosedWon (the Lyfe
+  down-funnel events already flowing).
+- Per-campaign-TYPE scoring stays out of v1 (all campaigns are insurance
+  today); the versioned-config machinery is the hook when that changes.
+
 ### 7.3 Sweep [R3 #9, #10]
 
 Session-level `pg_try_advisory_lock` on a dedicated connection + `finally`
@@ -267,11 +298,13 @@ the separate mode (§5), never the nightly budget.
 
 ## 8. Phase D — admin surfacing (People only — NOT Prospects)
 
-Unchanged from v3. `/AdminPeople` sortable `consumerScore` (NULL = "—");
-person drill-in (`?view=profile`, origin/main) gets score chip + breakdown +
-completeness, summary card, observations panel + retraction, suggested
-angles under their own header. PR 3 stacks on the People build, fresh
-worktree.
+As v3, updated for §7.1b: `/AdminPeople` shows **two sortable columns —
+Meet and Buy** (each NULL = "—"; the blended `consumerScore` remains the
+default sort key); person drill-in (`?view=profile` — People directory has
+been LIVE since 07-26) gets both score chips with a grouped breakdown
+popover + completeness, summary card, observations panel + retraction,
+suggested angles under their own header. PR 3 stacks on the live People
+page, fresh worktree.
 
 ## 9. Erasure, consent, retention
 
@@ -360,6 +393,21 @@ synth-job `lastError` nulled on erasure.
 **Resolved:** failed-screening extraction; children array + complete flag;
 nightly cadence; evidence = observation lifetime; `preferred_language`
 definition; triggers server-derived.
+
+**PIVOT (owner decision, Shawn 2026-07-26): NO MAC WORKER.** The
+Ollama-on-Mac design in §6 is superseded — extraction + synthesis will run
+IN the backend against a hosted AI API, reusing the existing AiSettings
+provider plumbing (the Studio-AI / Redeem-Ops-drafts pattern). Cost at
+current volume ≈ cents/month; Mandarin-mixed transcript quality better
+than a local 14B. Consequences for PR 2: the claim/renew/complete worker
+endpoints, lease-renew heartbeats, worker-key auth, limiter carve-outs,
+and launchd scheduling are DROPPED; the enrichment_jobs queue, fences,
+input-versioning, output guards (§6.4), and the scoring design stand
+unchanged — they were always provider-agnostic. The sweep processes jobs
+in-process. Trade recorded once: transcripts leave our infra to the AI
+provider's API (no-training-by-default on both configured providers).
+Ollama install requirement: retired. Retention decision (keep forever,
+erasure-only) unchanged.
 **Open for Shawn before PR 1:** retention numbers (24 mo / 12 mo);
 retraction suppression list (v1 ships without); **PR 0 question set** —
 which fact-bearing questions go into which funnels (language toggle is the

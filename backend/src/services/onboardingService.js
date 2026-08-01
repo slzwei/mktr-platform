@@ -1,16 +1,9 @@
 import { FleetOwner, Car, UserPayout } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 
-/**
- * Update a user's role during onboarding.
- */
-export async function updateRole(user, role) {
-  if (!['driver_partner', 'agent', 'fleet_owner'].includes(role)) {
-    throw new AppError('Invalid role', 400);
-  }
-  await user.update({ role });
-  return user;
-}
+// updateRole was REMOVED (P0-2, 2026-07-30): it let any authenticated customer
+// self-promote to 'agent' (and to the retired driver/fleet roles). Roles are
+// granted only by admins (userService) or the invitation flow (acceptInvite).
 
 /**
  * Upsert payout info for a user.

@@ -1,0 +1,620 @@
+import { makeWhatsappService, canWhatsAppProspect, waRecipient } from '../../src/services/redeemOps/whatsappService.js';
+
+// Trial-reward PR E — template payload shape + gates, all DB-free (RewardOffer,
+// QRCode and fetch are DI fakes). The fan-out contract (email ≠ WhatsApp
+// independence) lives in entitlementDeliveryFanout.test.js; this covers the
+// sender: gate order, the QR-header media upload → template send sequence, and
+// the WHATSAPP_QR_HEADER=false body-only shape.
+
+const ENV_KEYS = [
+  'REDEEM_OPS_WHATSAPP_ENABLED', 'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID',
+  'WHATSAPP_TEMPLATE_PASS', 'WHATSAPP_TEMPLATE_VOUCHER', 'WHATSAPP_TEMPLATE_LANG',
+  'WHATSAPP_QR_HEADER', 'WHATSAPP_CLAIM_ORIGIN', 'WHATSAPP_TEMPLATE_DRAW_BOOST',
+];
+let savedEnv;
+beforeEach(() => {
+  savedEnv = {};
+  for (const k of ENV_KEYS) { savedEnv[k] = process.env[k]; delete process.env[k]; }
+});
+afterEach(() => {
+  for (const k of ENV_KEYS) {
+    if (savedEnv[k] === undefined) delete process.env[k];
+    else process.env[k] = savedEnv[k];
+  }
+});
+
+const consented = { firstName: 'Sarah', phone: '+6591234567', sourceMetadata: { consent_contact: true } };
+const entitlement = { id: 'e1', rewardOfferId: 'offer-1', expiresAt: new Date('2026-08-17T12:00:00+08:00') };
+const offerFake = { findByPk: async () => ({ publicTitle: 'S$10 FairPrice voucher', title: 'FP10' }) };
+const silentLogger = { error: () => {}, warn: () => {}, info: () => {} };
+
+const uploadOk = { ok: true, json: async () => ({ id: 'MEDIA-1' }) };
+const sendOk = { ok: true, json: async () => ({}) };
+
+/** Sequenced fetch fake: responses served in order; FormData bodies kept raw. */
+function fetchRecorder(responses = [uploadOk, sendOk]) {
+  const calls = [];
+  const fn = async (url, opts) => {
+    const body = typeof opts?.body === 'string' ? JSON.parse(opts.body) : opts?.body;
+    calls.push({ url, opts, body });
+    return responses[Math.min(calls.length - 1, responses.length - 1)];
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+function qrRecorder() {
+  const contents = [];
+  return {
+    contents,
+    toBuffer: async (content) => { contents.push(content); return Buffer.from('fake-png'); },
+  };
+}
+
+/** DI fake for the Editorial card compositor — records payloads, returns a fake PNG. */
+function cardRecorder() {
+  const calls = [];
+  const fn = async (payload) => { calls.push(payload); return Buffer.from('fake-card-png'); };
+  fn.calls = calls;
+  return fn;
+}
+
+function enableWithCreds() {
+  process.env.REDEEM_OPS_WHATSAPP_ENABLED = 'true';
+  process.env.WHATSAPP_TOKEN = 'tok-123';
+  process.env.WHATSAPP_PHONE_NUMBER_ID = '555000111';
+}
+
+/**
+ * DI fake for the send-time ownership writer (§5 of
+ * per-campaign-lead-scoring.md). Injected by default so this suite stays
+ * DB-free — the real writer opens a connection, and a DB-less jest run burns
+ * two minutes on connection retries rather than failing cleanly.
+ */
+function ownershipRecorder() {
+  const calls = [];
+  const fn = async (args) => { calls.push(args); return true; };
+  fn.calls = calls;
+  return fn;
+}
+
+function makeSvc({
+  fetch, qr = qrRecorder(), card = cardRecorder(), RewardOffer = offerFake,
+  isSendBlocked, recordWaSend = ownershipRecorder(),
+} = {}) {
+  // Inject a no-op sleep so graphFetch's backoff doesn't slow tests.
+  return makeWhatsappService({
+    RewardOffer, fetch, QRCode: qr, renderQrCard: card, logger: silentLogger, sleep: async () => {},
+    recordWaSend,
+    ...(isSendBlocked ? { isSendBlocked } : {}),
+  });
+}
+
+/**
+ * Sequenced fetch fake where each response may be a thrown error (network) or
+ * a { ok/status/json } object. Records call urls so retries are observable.
+ */
+function scriptedFetch(script) {
+  const calls = [];
+  const fn = async (url, opts) => {
+    calls.push({ url, opts });
+    const step = script[Math.min(calls.length - 1, script.length - 1)];
+    if (step instanceof Error) throw step;
+    return step;
+  };
+  fn.calls = calls;
+  return fn;
+}
+const mediaCalls = (f) => f.calls.filter((c) => String(c.url).endsWith('/media')).length;
+const msgCalls = (f) => f.calls.filter((c) => String(c.url).endsWith('/messages')).length;
+
+describe('waRecipient — Graph API recipient normalization', () => {
+  it('prefixes 65 onto bare 8-digit SG mobiles', () => {
+    expect(waRecipient('91234567')).toBe('6591234567');
+    expect(waRecipient('81234567')).toBe('6581234567');
+  });
+  it('strips formatting from stored +65 numbers', () => {
+    expect(waRecipient('+6591234567')).toBe('6591234567');
+    expect(waRecipient('+65 9123 4567')).toBe('6591234567');
+  });
+  it('rejects garbage and too-short values', () => {
+    expect(waRecipient('')).toBeNull();
+    expect(waRecipient(null)).toBeNull();
+    expect(waRecipient('12345')).toBeNull();
+  });
+});
+
+describe('canWhatsAppProspect — ledger-based purpose gate (3sites, D2 resolved)', () => {
+  it('transactional: any WA-able phone passes — the frozen consent boolean no longer gates', async () => {
+    // DB-less runs exercise isSendBlocked's documented fail-OPEN-for-transactional posture.
+    expect(await canWhatsAppProspect(consented)).toBe(true);
+    // D2 resolved: an unticked/absent contact box does NOT block credential delivery…
+    expect(await canWhatsAppProspect({ ...consented, sourceMetadata: {} })).toBe(true);
+    expect(await canWhatsAppProspect({ ...consented, sourceMetadata: { consent_contact: false } })).toBe(true);
+    // …but the phone capability arm still gates.
+    expect(await canWhatsAppProspect({ firstName: 'S', sourceMetadata: { consent_contact: true } })).toBe(false);
+    expect(await canWhatsAppProspect(null)).toBe(false);
+  });
+
+  it('marketing: fails CLOSED without a resolvable verified grant (DB-less → false)', async () => {
+    expect(await canWhatsAppProspect(consented, { purpose: 'marketing' })).toBe(false);
+  });
+});
+
+describe('gates fire before any network call', () => {
+  it('flag off → skipped, no fetch', async () => {
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok' });
+    expect(r).toEqual({ sent: false, skipped: 'disabled' });
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it('flag on but no usable phone → skipped no_whatsapp, no fetch', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch });
+    const r = await svc.sendReservationWhatsApp({
+      entitlement, prospect: { ...consented, phone: null }, presentationToken: 'ptok',
+    });
+    expect(r).toEqual({ sent: false, skipped: 'no_whatsapp' });
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it('flag on but ledger-suppressed (erasure) → skipped suppressed, no fetch', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch, isSendBlocked: async () => true });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok' });
+    expect(r).toEqual({ sent: false, skipped: 'suppressed' });
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it('gate order: disabled beats phone beats suppression (no early ledger reads)', async () => {
+    const fetch = fetchRecorder();
+    let ledgerReads = 0;
+    const svc = makeSvc({ fetch, isSendBlocked: async () => { ledgerReads += 1; return false; } });
+    // Flag off → 'disabled' without ever consulting phone or ledger.
+    let r = await svc.sendReservationWhatsApp({ entitlement, prospect: { ...consented, phone: null }, presentationToken: 'p' });
+    expect(r).toEqual({ sent: false, skipped: 'disabled' });
+    expect(ledgerReads).toBe(0);
+    // Flag on + no phone → 'no_whatsapp' without a ledger read.
+    enableWithCreds();
+    r = await svc.sendReservationWhatsApp({ entitlement, prospect: { ...consented, phone: null }, presentationToken: 'p' });
+    expect(r).toEqual({ sent: false, skipped: 'no_whatsapp' });
+    expect(ledgerReads).toBe(0);
+  });
+
+  it('flag on but creds missing → error result (receipt-worthy), no fetch', async () => {
+    process.env.REDEEM_OPS_WHATSAPP_ENABLED = 'true';
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok' });
+    expect(r.sent).toBe(false);
+    expect(r.skipped).toBeUndefined();
+    expect(r.error).toMatch(/not configured/);
+    expect(fetch.calls.length).toBe(0);
+  });
+});
+
+describe('QR-header send sequence (default: header ON)', () => {
+  it('reservation: renders the pass card, uploads it, then sends header+body; QR encodes the claim link', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const qr = qrRecorder();
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, qr, card });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok-raw' });
+    expect(r).toEqual({ sent: true, to: '••••4567', templateName: 'reward_pass' });
+    expect(card.calls.length).toBe(1);
+    expect(card.calls[0]).toMatchObject({
+      state: 'pass',
+      qrContent: 'https://redeem.sg/r/ptok-raw',
+      rewardName: 'S$10 FairPrice voucher',
+      customerFirstName: 'Sarah',
+      wordmark: 'Redeem.',
+    });
+    expect(qr.contents).toEqual([]); // card render succeeded → no bare-QR fallback
+    expect(fetch.calls.length).toBe(2);
+
+    const upload = fetch.calls[0];
+    expect(upload.url).toContain('/555000111/media');
+    expect(upload.opts.headers.Authorization).toBe('Bearer tok-123');
+    expect(upload.body).toBeInstanceOf(FormData);
+
+    const send = fetch.calls[1];
+    expect(send.url).toContain('/555000111/messages');
+    expect(send.body.to).toBe('6591234567');
+    expect(send.body.template.name).toBe('reward_pass');
+    expect(send.body.template.language.code).toBe('en');
+    expect(send.body.template.components[0]).toEqual({
+      type: 'header',
+      parameters: [{ type: 'image', image: { id: 'MEDIA-1' } }],
+    });
+    expect(send.body.template.components[1]).toEqual({
+      type: 'body',
+      parameters: [
+        { type: 'text', text: 'Sarah' },
+        { type: 'text', text: 'S$10 FairPrice voucher' },
+        { type: 'text', text: 'ptok-raw' },
+      ],
+    });
+  });
+
+  it('voucher: QR encodes the RAW token; 4 body params with en-SG expiry; env template name wins', async () => {
+    enableWithCreds();
+    process.env.WHATSAPP_TEMPLATE_VOUCHER = 'reward_voucher_v2';
+    const fetch = fetchRecorder();
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, card });
+    const r = await svc.sendVoucherWhatsApp({ entitlement, prospect: consented, voucherToken: 'vtok-raw' });
+    expect(r.sent).toBe(true);
+    expect(card.calls[0]).toMatchObject({
+      state: 'voucher',
+      qrContent: 'vtok-raw',
+      shortCode: '-RAW', // no tokenHint on the fake entitlement → last-4 fallback
+    });
+    const send = fetch.calls[1];
+    expect(send.body.template.name).toBe('reward_voucher_v2');
+    const params = send.body.template.components[1].parameters.map((p) => p.text);
+    expect(params.length).toBe(4);
+    expect(params[2]).toBe('vtok-raw');
+    expect(params[3]).toBe('17 Aug 2026');
+  });
+
+  it('boost receipt: body params follow the v2 sentence — name, MULTIPLIER, draw name', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, card });
+    const r = await svc.sendBoostReceiptWhatsApp({
+      prospect: consented,
+      drawCtx: { drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10, prize: 'an iPhone 17 Pro' },
+    });
+    expect(r.sent).toBe(true);
+    const send = fetch.calls[1];
+    expect(send.body.template.name).toBe('draw_boost_receipt_v2');
+    // v2's body is "You now have *{{2}} chances* for the {{3}}" — the multiplier
+    // comes BEFORE the draw name. Reversing these renders "*iPhone 17 Pro Lucky
+    // Draw chances* for the 10", which is what two recipients actually got on
+    // 2026-07-26: the template was reworded to win the UTILITY category and the
+    // caller kept the MARKETING original's order.
+    expect(send.body.template.components[1].parameters.map((p) => p.text)).toEqual([
+      'Sarah', '10', 'iPhone 17 Pro Lucky Draw',
+    ]);
+  });
+
+  // Meta approval and the Render env flip are two manual steps that cannot land
+  // at the same instant, so BOTH orders have to be correct while the rails are
+  // mid-migration — that is the whole reason the order is keyed by name.
+  it.each([
+    ['draw_boost_receipt', ['Sarah', 'iPhone 17 Pro Lucky Draw', '10']],   // legacy: draw name {{2}}
+    ['draw_session_receipt', ['Sarah', 'iPhone 17 Pro Lucky Draw', '10']], // "Campaign: {{2}} / ×{{3}}"
+    ['draw_boost_receipt_v2', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']],
+    ['draw_boost_receipt_v3', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']], // pending v3: "You now have ×{{2}} chances for the {{3}}"
+    ['draw_boost_receipt_v9', ['Sarah', '10', 'iPhone 17 Pro Lucky Draw']], // unknown → newer order
+  ])('boost receipt: %s gets the param order its body asks for', async (name, expected) => {
+    enableWithCreds();
+    process.env.WHATSAPP_TEMPLATE_DRAW_BOOST = name;
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch, card: cardRecorder() });
+    await svc.sendBoostReceiptWhatsApp({
+      prospect: consented,
+      drawCtx: { drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10 },
+    });
+    const send = fetch.calls[1];
+    expect(send.body.template.name).toBe(name);
+    expect(send.body.template.components[1].parameters.map((p) => p.text)).toEqual(expected);
+  });
+
+  it('WHATSAPP_CLAIM_ORIGIN overrides the pass-QR host (and the card wordmark follows)', async () => {
+    enableWithCreds();
+    process.env.WHATSAPP_CLAIM_ORIGIN = 'https://mktr.sg';
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch: fetchRecorder(), card });
+    await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'p' });
+    expect(card.calls[0]).toMatchObject({ qrContent: 'https://mktr.sg/r/p', wordmark: 'MKTR.' });
+  });
+
+  it('card renderer failure falls back to the bare QR PNG and still sends', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const qr = qrRecorder();
+    const card = async () => { throw new Error('resvg exploded'); };
+    const svc = makeSvc({ fetch, qr, card });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok-raw' });
+    expect(r).toEqual({ sent: true, to: '••••4567', templateName: 'reward_pass' });
+    expect(qr.contents).toEqual(['https://redeem.sg/r/ptok-raw']); // bare QR took over
+    expect(fetch.calls.length).toBe(2); // upload + send still happened
+  });
+
+  it('media upload failure → sent:false, message send never attempted (no body-only fallback)', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder([{ ok: false, status: 400, json: async () => ({ error: { code: 100, message: 'bad media' } }) }]);
+    const svc = makeSvc({ fetch });
+    const r = await svc.sendVoucherWhatsApp({ entitlement, prospect: consented, voucherToken: 'v' });
+    expect(r.sent).toBe(false);
+    expect(r.error).toMatch(/media upload failed/);
+    expect(fetch.calls.length).toBe(1);
+  });
+});
+
+describe('WHATSAPP_QR_HEADER=false — body-only template shape', () => {
+  it('sends a single call with no header component', async () => {
+    enableWithCreds();
+    process.env.WHATSAPP_QR_HEADER = 'false';
+    const fetch = fetchRecorder([sendOk]);
+    const qr = qrRecorder();
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, qr, card });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'p' });
+    expect(r.sent).toBe(true);
+    expect(qr.contents.length).toBe(0);
+    expect(card.calls.length).toBe(0);
+    expect(fetch.calls.length).toBe(1);
+    expect(fetch.calls[0].url).toContain('/messages');
+    expect(fetch.calls[0].body.template.components.length).toBe(1);
+    expect(fetch.calls[0].body.template.components[0].type).toBe('body');
+  });
+});
+
+describe('failure normalization — never throws', () => {
+  it('Graph send error → sent:false with the Meta error code', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder([uploadOk, { ok: false, status: 400, json: async () => ({ error: { code: 131026, message: 'undeliverable' } }) }]);
+    const svc = makeSvc({ fetch });
+    const r = await svc.sendVoucherWhatsApp({ entitlement, prospect: consented, voucherToken: 'v' });
+    expect(r.sent).toBe(false);
+    expect(r.error).toContain('131026');
+  });
+
+  it('network failure → sent:false result', async () => {
+    enableWithCreds();
+    const fetch = async () => { throw new Error('ECONNRESET'); };
+    const svc = makeWhatsappService({ RewardOffer: offerFake, fetch, QRCode: qrRecorder(), logger: silentLogger });
+    const r = await svc.sendVoucherWhatsApp({ entitlement, prospect: consented, voucherToken: 'v' });
+    expect(r).toMatchObject({ sent: false, error: 'ECONNRESET' });
+  });
+
+  it('URL-ish first names never ride the template (falls back to "there")', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch });
+    await svc.sendReservationWhatsApp({
+      entitlement,
+      prospect: { ...consented, firstName: 'http://spam.example' },
+      presentationToken: 'p',
+    });
+    expect(fetch.calls[1].body.template.components[1].parameters[0].text).toBe('there');
+  });
+
+  it('reward name lookup failure degrades to "your reward", still sends', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch, RewardOffer: { findByPk: async () => { throw new Error('db down'); } } });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'p' });
+    expect(r.sent).toBe(true);
+    expect(fetch.calls[1].body.template.components[1].parameters[1].text).toBe('your reward');
+  });
+});
+
+describe('graphFetch retry — transient failures self-heal (prod 2026-07-20 voucher miss)', () => {
+  const send = (svc) => svc.sendVoucherWhatsApp({ entitlement, prospect: consented, voucherToken: 'vtok' });
+
+  it('media upload "fetch failed" once → retries and the send completes', async () => {
+    enableWithCreds();
+    // [media throws, media ok, messages ok]
+    const fetch = scriptedFetch([new TypeError('fetch failed'), uploadOk, sendOk]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(mediaCalls(fetch)).toBe(2); // one retry
+    expect(msgCalls(fetch)).toBe(1);
+  });
+
+  it('message send "fetch failed" once → retries and the send completes', async () => {
+    enableWithCreds();
+    // [media ok, messages throws, messages ok]
+    const fetch = scriptedFetch([uploadOk, new TypeError('fetch failed'), sendOk]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(msgCalls(fetch)).toBe(2); // one retry
+  });
+
+  it('persistent network failure → exhausts 3 attempts then notify_failed', async () => {
+    enableWithCreds();
+    const fetch = scriptedFetch([new TypeError('fetch failed')]); // always throws
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(false);
+    expect(r.error).toMatch(/fetch failed/);
+    expect(mediaCalls(fetch)).toBe(3); // attempts cap
+  });
+
+  it('4xx (template rejected) is deterministic → NO retry, single message attempt', async () => {
+    enableWithCreds();
+    const reject4xx = { ok: false, status: 400, json: async () => ({ error: { code: 132001, message: 'template does not exist' } }) };
+    const fetch = scriptedFetch([uploadOk, reject4xx]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(false);
+    expect(r.error).toMatch(/Meta API: 132001/);
+    expect(msgCalls(fetch)).toBe(1); // no retry on 4xx
+  });
+
+  it('5xx is transient → retries the message send', async () => {
+    enableWithCreds();
+    const err500 = { ok: false, status: 503, json: async () => ({}) };
+    const fetch = scriptedFetch([uploadOk, err500, sendOk]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(msgCalls(fetch)).toBe(2);
+  });
+});
+
+describe('sendDrawCallbackOptinWhatsApp — screening callback opt-in (§16.6)', () => {
+  const prospect = { firstName: 'Shawn', phone: '+6596989089', campaignId: 'c1', consumerId: 'u1' };
+  const args = { prospect, drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10, prize: 'iPhone 17 Pro', token: 'wcb_deadbeef' };
+
+  it('sends the 4-param body + dynamic URL button, no header, MARKETING purpose', async () => {
+    enableWithCreds();
+    const gate = [];
+    const fetch = scriptedFetch([sendOk]);
+    const svc = makeSvc({ fetch, isSendBlocked: async (_p, opts) => { gate.push(opts); return false; } });
+    const r = await svc.sendDrawCallbackOptinWhatsApp(args);
+    expect(r.sent).toBe(true);
+    expect(gate).toEqual([{ channel: 'whatsapp', purpose: 'marketing' }]);
+
+    const body = JSON.parse(fetch.calls[0].opts.body);
+    expect(body.template.name).toBe('draw_callback_optin');
+    const byType = Object.fromEntries(body.template.components.map((c) => [c.type, c]));
+    expect(byType.header).toBeUndefined(); // TEXT header lives in the template, not the send
+    expect(byType.body.parameters.map((p) => p.text)).toEqual([
+      'Shawn', 'iPhone 17 Pro Lucky Draw', '10', 'the iPhone 17 Pro',
+    ]);
+    expect(byType.button).toEqual({
+      type: 'button', sub_type: 'url', index: '0',
+      parameters: [{ type: 'text', text: 'callback?t=wcb_deadbeef&utm_source=wa_screening' }],
+    });
+  });
+
+  it('marketing suppression blocks the send (fail-closed lane)', async () => {
+    enableWithCreds();
+    const fetch = scriptedFetch([sendOk]);
+    const svc = makeSvc({ fetch, isSendBlocked: async () => true });
+    const r = await svc.sendDrawCallbackOptinWhatsApp(args);
+    expect(r).toEqual({ sent: false, skipped: 'suppressed' });
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it('prize label keeps an existing article and falls back when empty or URL-ish', async () => {
+    enableWithCreds();
+    const paramAt = async (over) => {
+      const fetch = scriptedFetch([sendOk]);
+      const svc = makeSvc({ fetch, isSendBlocked: async () => false });
+      await svc.sendDrawCallbackOptinWhatsApp({ ...args, ...over });
+      return JSON.parse(fetch.calls[0].opts.body).template.components
+        .find((c) => c.type === 'body').parameters[3].text;
+    };
+    expect(await paramAt({ prize: 'a 4D3N trip for two to Tokyo' })).toBe('a 4D3N trip for two to Tokyo');
+    expect(await paramAt({ prize: 'The Grand Bundle' })).toBe('The Grand Bundle');
+    expect(await paramAt({ prize: null })).toBe('the grand prize');
+    expect(await paramAt({ prize: 'https://evil.example' })).toBe('the grand prize');
+  });
+});
+
+describe('send-time ownership — wa_message_sends stamping (§5)', () => {
+  // A persisted lead: ownership needs an id, and carries the campaign/consumer
+  // it had AT SEND as a snapshot.
+  const lead = {
+    ...consented, id: 'p-1', campaignId: 'c-1', consumerId: 'u-1',
+  };
+  const sentWithWamid = { ok: true, json: async () => ({ messages: [{ id: 'wamid.ABC' }] }) };
+  // Header OFF throughout: it costs an extra /media round-trip that has
+  // nothing to do with ownership, and the header shape is covered above. With
+  // it off every sender makes exactly one call, so one scripted response fits
+  // all five.
+  const enableNoHeader = () => { enableWithCreds(); process.env.WHATSAPP_QR_HEADER = 'false'; };
+  const drawCtx = {
+    drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10, prize: 'iPhone 17 Pro',
+    drawOn: '2026-10-30', passTheme: 'vault', boostClosesAt: '2026-10-29T15:59:59.999Z',
+  };
+
+  /** Every sender, with the kind it must stamp. */
+  const senders = [
+    ['pass', (svc) => svc.sendReservationWhatsApp({ entitlement, prospect: lead, presentationToken: 'ptok' })],
+    ['draw_pass', (svc) => svc.sendReservationWhatsApp({ entitlement, prospect: lead, presentationToken: 'ptok', drawCtx })],
+    ['voucher', (svc) => svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'vtok' })],
+    ['boost_receipt', (svc) => svc.sendBoostReceiptWhatsApp({ prospect: lead, drawCtx })],
+    ['screening_callback', (svc) => svc.sendDrawCallbackOptinWhatsApp({
+      prospect: lead, drawName: 'D', multiplier: 10, prize: 'p', token: 'wcb_x',
+    })],
+  ];
+
+  it.each(senders)('%s stamps the lead, campaign and consumer of the send', async (kind, send) => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    const svc = makeSvc({
+      fetch: scriptedFetch([sentWithWamid]),
+      recordWaSend,
+      isSendBlocked: async () => false,
+    });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(recordWaSend.calls.length).toBe(1);
+    expect(recordWaSend.calls[0]).toMatchObject({ wamid: 'wamid.ABC', kind });
+    // The snapshot is taken off the prospect handed to the sender — never
+    // re-derived from the entitlement or activation (§5's whole point).
+    expect(recordWaSend.calls[0].prospect).toBe(lead);
+  });
+
+  it('a 2xx with no wamid owns nothing — there is no key to own', async () => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    // sendOk resolves {} — "accepted, untrackable".
+    const svc = makeSvc({ fetch: scriptedFetch([sendOk]), recordWaSend, isSendBlocked: async () => false });
+    const r = await svc.sendDrawCallbackOptinWhatsApp({
+      prospect: lead, drawName: 'D', multiplier: 10, prize: 'p', token: 'wcb_x',
+    });
+    expect(r.sent).toBe(true);
+    expect(recordWaSend.calls.length).toBe(0);
+  });
+
+  it('a rejected send owns nothing', async () => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    const svc = makeSvc({
+      fetch: scriptedFetch([{ ok: false, status: 400, json: async () => ({ error: { code: 132001 } }) }]),
+      recordWaSend,
+      isSendBlocked: async () => false,
+    });
+    const r = await svc.sendDrawCallbackOptinWhatsApp({
+      prospect: lead, drawName: 'D', multiplier: 10, prize: 'p', token: 'wcb_x',
+    });
+    expect(r.sent).toBe(false);
+    expect(recordWaSend.calls.length).toBe(0);
+  });
+
+  it('gated sends (flag off, suppressed) own nothing', async () => {
+    const recordWaSend = ownershipRecorder();
+    // Flag off — no creds enabled.
+    let svc = makeSvc({ fetch: scriptedFetch([sentWithWamid]), recordWaSend });
+    expect((await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' })).skipped).toBe('disabled');
+
+    enableNoHeader();
+    svc = makeSvc({ fetch: scriptedFetch([sentWithWamid]), recordWaSend, isSendBlocked: async () => true });
+    expect((await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' })).skipped).toBe('suppressed');
+    expect(recordWaSend.calls.length).toBe(0);
+  });
+
+  it('a resend is a SECOND owned message, not an overwrite — each send has its own wamid', async () => {
+    enableNoHeader();
+    const recordWaSend = ownershipRecorder();
+    const wamids = ['wamid.FIRST', 'wamid.SECOND'];
+    let n = 0;
+    const fetch = async () => ({ ok: true, json: async () => ({ messages: [{ id: wamids[n++] }] }) });
+    fetch.calls = [];
+    const svc = makeSvc({ fetch, recordWaSend, isSendBlocked: async () => false });
+    await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' });
+    await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' });
+    expect(recordWaSend.calls.map((c) => c.wamid)).toEqual(wamids);
+  });
+
+  it('an ownership write failure loses scoreability, never the message', async () => {
+    enableNoHeader();
+    const svc = makeSvc({
+      fetch: scriptedFetch([sentWithWamid]),
+      // The real writer swallows its own errors; this proves the send still
+      // reports the truth if a future one doesn't. Reporting sent:false here
+      // would mislabel the receipt for a message the recipient already has,
+      // and invite a duplicate resend.
+      recordWaSend: async () => { throw new Error('db down'); },
+      isSendBlocked: async () => false,
+    });
+    const r = await svc.sendVoucherWhatsApp({ entitlement, prospect: lead, voucherToken: 'v' });
+    expect(r).toMatchObject({ sent: true, messageId: 'wamid.ABC' });
+    expect(r.error).toBeUndefined();
+  });
+});

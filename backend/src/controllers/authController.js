@@ -123,9 +123,8 @@ export const validateGoogleOAuthConfig = () => {
 export const register = asyncHandler(async (req, res) => {
   const { email, password, firstName, lastName, phone, full_name, fullName } = req.body;
 
-  // Never trust client-supplied role on self-registration
-  const role = 'customer';
-
+  // Never trust client-supplied role on self-registration; authService.register
+  // hardcodes 'customer' and accepts no role parameter at all.
   const result = await authService.register({
     email,
     password,
@@ -133,7 +132,6 @@ export const register = asyncHandler(async (req, res) => {
     lastName,
     fullName: fullName || full_name || undefined,
     phone,
-    role,
   });
 
   setAuthCookie(res, result.token);
@@ -345,14 +343,6 @@ export const logout = asyncHandler(async (req, res) => {
 });
 
 // ─── Onboarding controller methods (delegate to onboardingService) ──────────
-
-export const updateRole = asyncHandler(async (req, res) => {
-  const { role } = req.body;
-
-  const user = await onboardingService.updateRole(req.user, role);
-
-  res.json({ success: true, message: 'Role updated', data: { user: user.toJSON() } });
-});
 
 export const savePayout = asyncHandler(async (req, res) => {
   const { method, paynowId, bankName, bankAccount } = req.body;

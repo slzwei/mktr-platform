@@ -323,6 +323,40 @@ attempt). The existing private recording breaker is untouched.
    pg advisory lock `screening_dial`.
 8. Phone re-validated E.164.
 
+### §7.1a First-dial delay + the success-page promise (2026-07-30)
+The capture path **schedules** rather than dials: `scheduleScreeningAttempt()`
+(the entry point both `prospectService.createProspect` and the `dncGate`
+handoff now use) waits `SCREENING_DIAL_DELAY_SECONDS` — default **60**, clamp
+`0..900`, `0` = the pre-2026-07-30 dial-immediately behaviour. Retries are
+untouched: they keep their own §7.3 backoff, and the sweep still calls
+`startScreeningAttempt` directly.
+
+Durable-first, like everything else here. The delay is **stamped** on the row
+(`screeningNextAttemptAt`, through the same fenced `deferAttempt` write the
+sweep's due-retry job reads), and the in-process `setTimeout` is only a
+punctuality optimisation: a crash, redeploy, or dyno swap inside the window
+costs lateness (≤ one sweep interval), never the call. The timer is `unref`'d,
+re-reads the row before the guards run, and the fenced claim makes a
+timer/sweep race a no-op for the loser. A schedule is never stamped when the
+guards already reject the lead — an unstamped-but-doomed row would otherwise be
+re-selected by the sweep every pass until TTL.
+
+**Why:** the draw success page now tells the consumer the call is coming
+(`DrawSuccessPage` → `data-draw-callback`, copy in `src/lib/screeningCallback.js`),
+and ringing before they have finished reading it is what the delay buys away.
+
+The page's notice is **server-fed and fail-closed** — `campaign.screeningCallback`,
+built by `backend/src/utils/screeningEnv.js#publicScreeningCallback` and attached
+by both public campaign hydrations (`campaignPreviewService.getPublicCampaign` /
+`resolveSlug`, `trackerService.getSession`). It is `null` — and the block does
+not render — unless the campaign's gate is on AND the deployment can really
+dial (enabled + agent id + from-number + `RETELL_API_KEY`, not dry-run). The
+from-number clamp lives in that util and `screeningConfig()` reads it from
+there, so **the number printed is by construction the number dialled from**.
+Outside `SCREENING_CALL_WINDOW` the payload reports `windowOpen:false` and the
+copy promises the window open ("after 10am") instead of a minute it cannot
+deliver at 2am.
+
 ### §7.2 Attempt lifecycle — token-first (Codex #3)
 1. Mint local token `att_<uuid>`; fenced claim:
    `SET screeningActiveCallId='pend_'+token, screeningAttemptCount=screeningAttemptCount+1,

@@ -6,7 +6,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import unusedImports from 'eslint-plugin-unused-imports'
 
 export default [
-  { ignores: ['dist'] },
+  { ignores: ['dist', 'dist-*'] },
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
@@ -70,7 +70,7 @@ export default [
   },
   // Jest globals for backend tests
   {
-    files: ['backend/**/*.test.js', 'backend/test/**/*.js', 'backend/src/tests/**/*.js'],
+    files: ['backend/**/*.test.js', 'backend/test/**/*.js'],
     languageOptions: {
       globals: {
         ...globals.jest,

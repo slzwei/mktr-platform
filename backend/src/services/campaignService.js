@@ -108,6 +108,18 @@ const drawFactsOf = (doc) => {
 
 const SLUG_RE = /^[a-z0-9-]{3,80}$/;
 
+/**
+ * Strip HTML tags from a user-supplied campaign name. The name is interpolated
+ * into HTML-string surfaces that do NOT escape (agent lead-/package-assignment
+ * emails in mailer.js) and into generated draw terms, so a stored
+ * `<img onerror=…>` must die at the door. ONE sanitiser for every write path —
+ * create, update, duplicate — a PUT must not reintroduce what POST strips.
+ * Non-strings pass through untouched for Joi/model validation to reject.
+ */
+export function sanitizeCampaignName(value) {
+  return typeof value === 'string' ? value.replace(/<[^>]*>/g, '').trim() : value;
+}
+
 /** Wallet commit price: null/'' clears; else a positive integer in cents. */
 function normalizeLeadPriceCents(value) {
   if (value === null || value === '') return null;
@@ -313,9 +325,13 @@ function buildCampaignWhere(req, extra = {}) {
   } catch (_) { /* skip in dev */ }
 
   if (req.user.role !== 'admin') {
-    where[Op.or] = [
-      { createdBy: req.user.id },
-      { isPublic: true }
+    // The role scope lives inside Op.and — never as a bare where[Op.or] — so a
+    // later filter that also needs an OR group (e.g. the search filter) cannot
+    // overwrite it. Assigning the same symbol key twice silently drops the
+    // first group, which leaked every campaign to any authenticated user.
+    where[Op.and] = [
+      ...(where[Op.and] || []),
+      { [Op.or]: [{ createdBy: req.user.id }, { isPublic: true }] }
     ];
   }
 
@@ -364,9 +380,16 @@ export async function listCampaigns(user, query, req) {
 
   if (search) {
     const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
-    where[Op.or] = [
-      { name: { [Op.iLike]: `%${sanitizedSearch}%` } },
-      { description: { [Op.iLike]: `%${sanitizedSearch}%` } }
+    // Append inside Op.and — the role scope from buildCampaignWhere is an OR
+    // group too, and both must hold at once.
+    where[Op.and] = [
+      ...(where[Op.and] || []),
+      {
+        [Op.or]: [
+          { name: { [Op.iLike]: `%${sanitizedSearch}%` } },
+          { description: { [Op.iLike]: `%${sanitizedSearch}%` } }
+        ]
+      }
     ];
   }
 
@@ -481,10 +504,7 @@ export function assertDrawActivatable(designConfig) {
 export async function createCampaign(body, user) {
   const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
 
-  // Defense-in-depth: strip HTML tags from the name so a stored payload like
-  // `<img src=x onerror=...>` can't ride along into any surface that renders it
-  // unescaped (e.g. PDF/email templates), independent of frontend escaping.
-  const safeName = typeof name === 'string' ? name.replace(/<[^>]*>/g, '').trim() : name;
+  const safeName = sanitizeCampaignName(name);
 
   const campaignData = {
     name: safeName,
@@ -593,7 +613,14 @@ export async function createCampaign(body, user) {
         const rail = await ensureRail({ campaign, designConfig: withTerms, user });
         withTerms = stampRailActivationId(withTerms, rail.activationId);
       } catch (err) {
-        await campaign.update({ is_active: false, status: 'draft', design_config: withTerms }).catch(() => {});
+        await campaign.update({ is_active: false, status: 'draft', design_config: withTerms }).catch((revertErr) => {
+          // Both the rail AND the compensating demote failed: the campaign may
+          // be live promising a pass that can never issue — the one state the
+          // revert exists to prevent. Needs a human.
+          logger.error('[Campaign] draw rail arming failed AND the demote-to-draft revert failed — campaign may be active without an armed rail', {
+            campaignId: campaign.id, error: revertErr?.message || String(revertErr),
+          });
+        });
         throw err;
       }
     }
@@ -640,7 +667,7 @@ export async function updateCampaign(id, body, req) {
   const { name, type, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
 
   const updateData = {};
-  if (name) updateData.name = name;
+  if (name) updateData.name = sanitizeCampaignName(name);
   if (type !== undefined) updateData.type = type;
   if (min_age !== undefined) updateData.min_age = min_age;
   if (max_age !== undefined) updateData.max_age = max_age;
@@ -1071,7 +1098,10 @@ export async function duplicateCampaign(id, body, req) {
   if (!original) throw new AppError('Campaign not found or access denied', 404);
 
   const { metrics: _discardedMetrics, ...rest } = original.toJSON();
-  const copyName = body.name || `${original.name} (Copy)`;
+  // Sanitise the DERIVED default too: a pre-fix row whose stored name carries
+  // markup must not re-propagate it through duplication (or into the copy's
+  // generated draw terms below).
+  const copyName = sanitizeCampaignName(body.name || `${original.name} (Copy)`);
   // An OPEN draw (SGT close date still in the future) carries onto the copy —
   // ADMIN duplicates only, matching applyLuckyDrawPolicy (luckyDraw is an
   // admin-only key; anyone else keeps the historical strip). What carries is

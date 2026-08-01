@@ -91,6 +91,21 @@ describe('buildDrawTermsHtml — structured multi-prize', () => {
     expect(html).toContain('A &amp; B');
   });
 
+  it('over-cap rows clamp to the server normalizer shape (8 rows, 80-char names, qty > 99 → 1)', () => {
+    const html = buildDrawTermsHtml({
+      campaignName: 'C',
+      prizes: [
+        { qty: 150, name: 'Y'.repeat(120) },
+        ...Array.from({ length: 10 }, (_, i) => ({ qty: 1, name: `Runner-up ${i + 1}` })),
+      ],
+      closesAt: '2026-08-31',
+    });
+    expect(html).toContain(`One (1) &times; ${'Y'.repeat(80)}`);
+    expect(html).not.toContain('150');
+    expect(html).not.toContain('Runner-up 8');
+    expect(html).toContain('Eight (8) winners are drawn at random');
+  });
+
   it('numberWords covers legal-style counts', () => {
     expect(numberWords(1)).toBe('One');
     expect(numberWords(4)).toBe('Four');

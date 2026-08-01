@@ -7,6 +7,11 @@ import { resolveLeadRouting } from './systemAgent.js';
 import { phoneVerificationIsCurrent } from './consumerService.js';
 import { notifyUndeliverableHold } from './screeningAlerts.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
+import {
+  screeningFromNumber,
+  screeningCallWindow,
+  screeningDialDelaySeconds,
+} from '../utils/screeningEnv.js';
 import { SCREENING_REASONS } from './screeningConstants.js';
 import { logger } from '../utils/logger.js';
 
@@ -66,20 +71,24 @@ function intEnv(name, fallback, min) {
 export function screeningConfig() {
   const enabled = String(process.env.RETELL_SCREENING_ENABLED || 'false').toLowerCase() === 'true';
   const agentId = (process.env.RETELL_SCREENING_AGENT_ID || '').trim();
-  const fromNumber = (process.env.RETELL_SCREENING_FROM_NUMBER || '').trim();
   // Clamp campaign-adjacent values before they can reach an API body
-  // (CLAUDE.md security rule — never pass raw config into a request).
+  // (CLAUDE.md security rule — never pass raw config into a request). The
+  // from-number clamp is shared with the PUBLIC success-page notice
+  // (utils/screeningEnv.js) so the number we promise is the number we dial.
   const agentOk = /^agent_[a-z0-9]{10,64}$/i.test(agentId);
-  const fromOk = /^\+[1-9]\d{9,14}$/.test(fromNumber);
+  const fromNumber = screeningFromNumber();
   return {
     enabled,
     agentId: agentOk ? agentId : null,
-    fromNumber: fromOk ? fromNumber : null,
-    configured: enabled && agentOk && fromOk && !!process.env.RETELL_API_KEY,
+    fromNumber,
+    configured: enabled && agentOk && !!fromNumber && !!process.env.RETELL_API_KEY,
     dryRun: String(process.env.SCREENING_DRY_RUN || 'false').toLowerCase() === 'true',
     maxAttempts: intEnv('SCREENING_MAX_ATTEMPTS', 3, 1),
     retryMinutes: intEnv('SCREENING_RETRY_MINUTES', 120, 5),
-    callWindow: (process.env.SCREENING_CALL_WINDOW || '10:00-20:00').trim(),
+    callWindow: screeningCallWindow(),
+    // Delay between signup and the FIRST dial (§7.1a). The success page tells
+    // the consumer to expect the call, so give them a beat to read it.
+    dialDelaySeconds: screeningDialDelaySeconds(),
     maxConcurrent: intEnv('SCREENING_MAX_CONCURRENT', 3, 1),
     maxDialsPerDay: intEnv('SCREENING_MAX_DIALS_PER_DAY', 50, 1),
     staleCallMinutes: intEnv('SCREENING_STALE_CALL_MINUTES', 30, 5),
@@ -136,7 +145,14 @@ function screeningNotesAppend(kind, detail = {}) {
 
 async function loadCampaignFor(prospect, d) {
   if (!prospect.campaignId) return null;
-  return d.Campaign.findByPk(prospect.campaignId).catch(() => null);
+  return d.Campaign.findByPk(prospect.campaignId).catch((err) => {
+    // Callers treat null as "no campaign context" (e.g. quota enforcement
+    // reads as OFF) — a lookup outage taking that branch must be visible.
+    d.logger.warn('[Screening] campaign lookup failed — proceeding without campaign context', {
+      prospectId: prospect.id, campaignId: prospect.campaignId, error: err?.message || String(err),
+    });
+    return null;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +216,12 @@ export function makeScreeningGate(overrides = {}) {
     // stale-but-charged target keeps its id (PR-2's chargedAgentId split owns
     // the recharge story).
     if (agentId && !alreadyCharged) {
-      const current = await d.User.findByPk(agentId, { attributes: ['id', 'role', 'isActive'] }).catch(() => null);
+      const current = await d.User.findByPk(agentId, { attributes: ['id', 'role', 'isActive'] }).catch((err) => {
+        d.logger.warn('[Screening] release: agent revalidation lookup failed — treating as stale', {
+          prospectId: prospect.id, agentId, error: err?.message || String(err),
+        });
+        return null;
+      });
       if (!current || current.role !== 'agent' || current.isActive !== true) {
         d.logger.warn('[Screening] release: stored agent no longer valid — re-resolving', {
           prospectId: prospect.id, staleAgentId: agentId,
@@ -215,7 +236,14 @@ export function makeScreeningGate(overrides = {}) {
       // System-Agent fallback would recreate the known delivery gap.
       const routing = await d.resolveLeadRouting({
         reqUser: null, requestedAgentId: null, campaignId: prospect.campaignId, qrTagId: null,
-      }).catch(() => null);
+      }).catch((err) => {
+        // Still held below, but a routing OUTAGE must not masquerade as the
+        // benign "no deliverable agent" data state.
+        d.logger.warn('[Screening] release: routing re-resolution failed', {
+          prospectId: prospect.id, error: err?.message || String(err),
+        });
+        return null;
+      });
       if (routing?.agentId && routing.via !== 'fallback') agentId = routing.agentId;
     }
     if (!agentId) {

@@ -2,6 +2,7 @@ import Joi from 'joi';
 import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
 import activationService from '../../services/redeemOps/activationService.js';
 import campaignProjection from '../../services/redeemOps/campaignProjection.js';
+import { logger } from '../../utils/logger.js';
 
 function validateBody(schema, body) {
   const { error, value } = schema.validate(body, { abortEarly: false });
@@ -23,11 +24,22 @@ export const getActivation = asyncHandler(async (req, res) => {
   const activation = await activationService.getActivation(req.params.id);
   let campaignRef = null;
   if (activation.campaignId) {
-    campaignRef = await campaignProjection.getCampaignReference(activation.campaignId).catch(() => null);
+    campaignRef = await campaignProjection.getCampaignReference(activation.campaignId).catch((err) => {
+      logger.warn('[RedeemOps] activation campaign reference lookup failed', {
+        activationId: req.params.id, error: err?.message,
+      });
+      return null;
+    });
   }
   // A detached/starved funnel must be visible: last-24h skipped-issuance
-  // reasons (never fails the detail read).
-  const issuanceSkips24h = await activationService.getIssuanceSkips24h(req.params.id).catch(() => []);
+  // reasons (never fails the detail read). An empty list from a FAILED read
+  // would look exactly like a healthy funnel, so the failure is logged.
+  const issuanceSkips24h = await activationService.getIssuanceSkips24h(req.params.id).catch((err) => {
+    logger.warn('[RedeemOps] issuance-skip ledger read failed — rendering empty', {
+      activationId: req.params.id, error: err?.message,
+    });
+    return [];
+  });
   res.json({ success: true, data: { activation, campaign: campaignRef, issuanceSkips24h } });
 });
 

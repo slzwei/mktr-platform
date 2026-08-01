@@ -474,7 +474,13 @@ export function makeEmailBroadcastService(overrides = {}) {
         WHERE r.id = :rowId
           AND EXISTS (SELECT 1 FROM consumers c WHERE c.id = :consumerId AND c."erasedAt" IS NOT NULL)`,
       { replacements: { rowId, consumerId } }
-    ).catch(() => {});
+    ).catch((err) => {
+      // PDPA scrub — a silent failure could leave an erased person's email on
+      // the recipient row.
+      d.logger.warn('email broadcast erased-row repair failed — recipient row may retain PII', {
+        rowId, consumerId, error: err?.message,
+      });
+    });
   }
 
   /** pending → skipped/cancelled; attempting rows keep their ambiguous truth
