@@ -189,13 +189,54 @@ describe('coverage headroom is a penalty, and only a COMPLETE list may penalize'
     expect(r.breakdown.components.coverage_headroom.state).toBe('unknown')
   })
 
-  test('explicitly no coverage takes no penalty and still counts as evidence', () => {
+  test('explicitly no coverage takes no penalty and is still ASSESSED', () => {
     const r = score({ 'finance.existing_coverage': fact({ v: [], complete: true }) })
     const ch = r.breakdown.components.coverage_headroom
     expect(ch.state).toBe('assessed')
     expect(ch.points).toBe(0)
-    // Knowing someone carries nothing is a real finding — it unlocks Buy.
+  })
+
+  /**
+   * P2-5. This block previously asserted that a zero-penalty headroom "unlocks
+   * Buy". It does not, and letting it inverted the score: a person whose ONLY
+   * fact is "I am uninsured" — the largest protection gap, i.e. the BEST buyer
+   * — computed Buy = (0 + unknowns)/70 = 0, identical to a maxed-out non-buyer
+   * and worse than an honest "—". A zero PENALTY is the absence of a
+   * disqualifier, not evidence of capacity to buy.
+   */
+  test('uninsured ALONE does not fabricate a Buy score — it reads unknown, not zero', () => {
+    const r = score({ 'finance.existing_coverage': fact({ v: ['none'], complete: true }) })
+    expect(r.breakdown.components.coverage_headroom.state).toBe('assessed')
+    expect(r.buyScore).toBeNull()
+    expect(r.buyScore).not.toBe(0)
+  })
+
+  test('an empty complete list reads the same as an explicit "none"', () => {
+    const r = score({ 'finance.existing_coverage': fact({ v: [], complete: true }) })
+    expect(r.buyScore).toBeNull()
+  })
+
+  test('a real capacity fact alongside uninsured DOES score — and scores well', () => {
+    const r = score({
+      'finance.existing_coverage': fact({ v: ['none'], complete: true }),
+      'finance.annual_income_band': fact({ v: '120-200k' }),
+    })
     expect(r.buyScore).not.toBeNull()
+    // No headroom penalty + real capacity: the protection-gap buyer must not
+    // land at the bottom, which is the inversion this task exists for.
+    expect(r.buyScore).toBeGreaterThan(0)
+  })
+
+  test('the uninsured buyer now outranks the fully-covered one on Buy', () => {
+    const uninsured = score({
+      'finance.existing_coverage': fact({ v: ['none'], complete: true }),
+      'finance.annual_income_band': fact({ v: '120-200k' }),
+    })
+    const covered = score({
+      'finance.existing_coverage': fact({ v: ['life', 'health', 'ci'], complete: true }),
+      'finance.annual_income_band': fact({ v: '120-200k' }),
+    })
+    expect(uninsured.buyScore).toBeGreaterThan(covered.buyScore)
   })
 
   test('full core coverage applies the full negative', () => {
@@ -203,7 +244,9 @@ describe('coverage headroom is a penalty, and only a COMPLETE list may penalize'
     expect(r.breakdown.components.coverage_headroom.points).toBeCloseTo(-10, 5)
   })
 
-  test('the penalty cannot drive a sub-score below zero', () => {
+  test('the penalty cannot drive a sub-score below zero — and still unlocks Buy alone', () => {
+    // Unchanged by P2-5: a headroom that actually BITES is a real finding
+    // about this person, so it remains sufficient evidence on its own.
     const r = score({ 'finance.existing_coverage': fact({ v: ['life', 'health', 'ci'], complete: true }) })
     expect(r.buyScore).toBe(0)
     expect(r.consumerScore).toBeGreaterThanOrEqual(0)

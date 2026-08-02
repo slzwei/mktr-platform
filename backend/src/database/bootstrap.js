@@ -273,6 +273,16 @@ export async function bootstrapDatabase() {
     if (String(process.env.ENRICHMENT_SCORING_ENABLED || 'false').toLowerCase() === 'true') {
       const runEnrichmentSweep = async () => {
         try {
+          // Reclaim orphaned map-job leases first (P2-6). drainMapJobs reaps on
+          // its own path, but that path only runs when a capture happens — a
+          // quiet period would leave a job stranded by a dead worker sitting
+          // 'leased' forever, and its person scored on incomplete evidence.
+          const { reapExpiredLeases } = await import('../services/factMapperService.js');
+          await reapExpiredLeases();
+        } catch (err) {
+          logger.warn('[EnrichmentScoring] lease reap failed (non-fatal)', { error: err?.message });
+        }
+        try {
           const { runNightlySweep } = await import('../services/enrichmentSweepService.js');
           await runNightlySweep();
         } catch (err) {

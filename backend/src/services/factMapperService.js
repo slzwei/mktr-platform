@@ -380,7 +380,38 @@ async function processMapJob(job) {
  * lease). Returns per-outcome counts plus the claimed job ids so callers
  * (the remap script) can do cohort-scoped accounting.
  */
-export async function drainMapJobs({ limit = 20 } = {}) {
+/**
+ * Return expired leases to the queue (P2-6).
+ *
+ * drainMapJobs claims with a 5-minute internal lease but only ever selects
+ * status='pending', and nothing ever reset an expired 'leased' row. A worker
+ * that died between the claim and finish() therefore stranded its job
+ * PERMANENTLY: that person's facts never activate, and their score is computed
+ * forever on incomplete evidence — silently, because a stuck row looks
+ * identical to one in flight. The partial index idx_ejobs_lease_expiry
+ * (WHERE status='leased') was built for this sweep and had no caller.
+ *
+ * Bounded by the same lease the claim writes, so a job in flight is untouched.
+ * Returns the number of jobs reclaimed.
+ */
+export async function reapExpiredLeases() {
+  const [rows] = await sequelize.query(
+    `UPDATE enrichment_jobs
+        SET status = 'pending', "leaseToken" = NULL, "leaseExpiresAt" = NULL,
+            "workerId" = NULL, "updatedAt" = now()
+      WHERE status = 'leased' AND "leaseExpiresAt" < now()
+      RETURNING id`
+  );
+  if (rows.length) {
+    logger.warn('[FactMapper] reclaimed expired map-job leases', { count: rows.length });
+  }
+  return rows.length;
+}
+
+export async function drainMapJobs({ limit = 20, reap = true } = {}) {
+  // Reclaim first: an orphaned lease is invisible to the claim below, so
+  // without this the queue drains around it forever.
+  if (reap) await reapExpiredLeases();
   const leaseToken = randomUUID();
   const [claimed] = await sequelize.query(
     `WITH picked AS (
