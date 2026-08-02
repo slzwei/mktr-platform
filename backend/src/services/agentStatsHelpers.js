@@ -1,34 +1,24 @@
-import { Op } from 'sequelize';
-import { LeadPackage, LeadPackageAssignment, sequelize } from '../models/index.js';
+import { sequelize } from '../models/index.js';
 
 /**
  * Fetch counts of unique campaigns each agent is assigned to via active lead packages.
  * Returns an object keyed by agent ID string, with integer counts as values.
  */
 export async function getAssignedCampaignCounts() {
-  const allAssignments = await LeadPackageAssignment.findAll({
-    where: { status: 'active', leadsRemaining: { [Op.gt]: 0 } },
-    include: [{
-      model: LeadPackage,
-      as: 'package',
-      attributes: ['campaignId'],
-      required: true
-    }]
-  });
-
+  // One grouped COUNT(DISTINCT) instead of loading every active assignment row
+  // into JS on each listAgents page render (P4-10; getAgentPackageBreakdowns
+  // below set the pattern).
+  const rows = await sequelize.query(
+    `SELECT a."agentId", COUNT(DISTINCT p."campaignId")::int AS "campaignCount"
+       FROM lead_package_assignments a
+       JOIN lead_packages p ON p.id = a."leadPackageId"
+      WHERE a.status = 'active' AND a."leadsRemaining" > 0
+        AND p."campaignId" IS NOT NULL
+      GROUP BY a."agentId"`,
+    { type: sequelize.QueryTypes.SELECT }
+  );
   const assignedCounts = {};
-  for (const assignment of allAssignments) {
-    if (assignment.package && assignment.package.campaignId) {
-      const agentId = String(assignment.agentId);
-      if (!assignedCounts[agentId]) assignedCounts[agentId] = new Set();
-      assignedCounts[agentId].add(assignment.package.campaignId);
-    }
-  }
-  // Convert Sets to counts
-  Object.keys(assignedCounts).forEach(k => {
-    assignedCounts[k] = assignedCounts[k].size;
-  });
-
+  for (const row of rows) assignedCounts[String(row.agentId)] = row.campaignCount;
   return assignedCounts;
 }
 

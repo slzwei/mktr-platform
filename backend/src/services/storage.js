@@ -59,6 +59,25 @@ export const storageService = {
     }));
     return publicUrl(cleanKey);
   },
+  /** Stream a file body to storage (P4-10) — PutObject on S3-compatible
+   * Spaces needs an explicit ContentLength for stream bodies, so callers pass
+   * the byte size (stat the file at send time; a transcoded upload's multer
+   * `file.size` is stale). */
+  async uploadStream(key, stream, contentType = 'application/octet-stream', contentLength, cacheControl = 'public, max-age=31536000') {
+    const s3 = getS3();
+    if (!s3) throw new Error('Spaces not configured');
+    const cleanKey = key.replace(/^\//, '');
+    await s3.send(new PutObjectCommand({
+      Bucket: spacesConfig.bucket,
+      Key: cleanKey,
+      Body: stream,
+      ContentType: contentType,
+      ContentLength: contentLength,
+      ACL: 'public-read',
+      CacheControl: cacheControl
+    }));
+    return publicUrl(cleanKey);
+  },
   async deleteObject(key) {
     const s3 = getS3();
     if (!s3) throw new Error('Spaces not configured');

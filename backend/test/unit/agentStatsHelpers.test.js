@@ -13,7 +13,7 @@ jest.unstable_mockModule('../../src/models/index.js', () => ({
 
 const { getAssignedCampaignCounts, computeAgentStats, computeAgentStatsFromCounts } =
   await import('../../src/services/agentStatsHelpers.js');
-const { LeadPackageAssignment } = await import('../../src/models/index.js');
+const { sequelize } = await import('../../src/models/index.js');
 
 describe('agentStatsHelpers', () => {
   // ──────────────────────────────────────────────
@@ -23,36 +23,33 @@ describe('agentStatsHelpers', () => {
   describe('getAssignedCampaignCounts', () => {
     beforeEach(() => jest.clearAllMocks());
 
-    it('returns empty object when no active assignments exist', async () => {
-      LeadPackageAssignment.findAll.mockResolvedValue([]);
+    // P4-10: one grouped COUNT(DISTINCT) replaced loading every assignment
+    // row into JS — dedupe and the null-campaign skip now live in the SQL,
+    // so the unit asserts the query's guards plus the row→object mapping.
+    it('returns empty object when the grouped query yields no rows', async () => {
+      sequelize.query.mockResolvedValue([]);
       const result = await getAssignedCampaignCounts();
       expect(result).toEqual({});
     });
 
-    it('counts unique campaigns per agent', async () => {
-      LeadPackageAssignment.findAll.mockResolvedValue([
-        { agentId: 'a-1', package: { campaignId: 'c-1' } },
-        { agentId: 'a-1', package: { campaignId: 'c-2' } },
-        { agentId: 'a-1', package: { campaignId: 'c-1' } }, // duplicate campaign
-        { agentId: 'a-2', package: { campaignId: 'c-3' } },
+    it('maps grouped rows to per-agent integer counts', async () => {
+      sequelize.query.mockResolvedValue([
+        { agentId: 'a-1', campaignCount: 2 },
+        { agentId: 'a-2', campaignCount: 1 },
       ]);
 
       const result = await getAssignedCampaignCounts();
-      expect(result['a-1']).toBe(2);
-      expect(result['a-2']).toBe(1);
+      expect(result).toEqual({ 'a-1': 2, 'a-2': 1 });
     });
 
-    it('skips assignments with null package or null campaignId', async () => {
-      LeadPackageAssignment.findAll.mockResolvedValue([
-        { agentId: 'a-1', package: null },
-        { agentId: 'a-2', package: { campaignId: null } },
-        { agentId: 'a-3', package: { campaignId: 'c-1' } },
-      ]);
-
-      const result = await getAssignedCampaignCounts();
-      expect(result['a-1']).toBeUndefined();
-      expect(result['a-2']).toBeUndefined();
-      expect(result['a-3']).toBe(1);
+    it('the SQL dedupes campaigns and excludes null campaignIds + inactive/spent assignments', async () => {
+      sequelize.query.mockResolvedValue([]);
+      await getAssignedCampaignCounts();
+      const sql = sequelize.query.mock.calls[0][0];
+      expect(sql).toContain('COUNT(DISTINCT p."campaignId")');
+      expect(sql).toContain('"campaignId" IS NOT NULL');
+      expect(sql).toContain("a.status = 'active'");
+      expect(sql).toContain('a."leadsRemaining" > 0');
     });
   });
 
