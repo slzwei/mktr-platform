@@ -238,11 +238,13 @@ describe('Sequelize Models (definitions & validations)', () => {
   // ──────────────────────────────────────────────
 
   describe('WebhookDelivery', () => {
-    it('has status field with isIn validation for pending, success, failed', () => {
+    it('has status field with isIn validation for pending, sending, success, failed', () => {
       const statusAttr = attrs(WebhookDelivery).status;
       expect(statusAttr).toBeDefined();
       expect(statusAttr.defaultValue).toBe('pending');
-      expect(statusAttr.validate.isIn).toEqual([['pending', 'success', 'failed']]);
+      // 'sending' = claimed and in flight (P2-2) — the state that makes the
+      // pending→sending claim able to exclude a second dispatcher.
+      expect(statusAttr.validate.isIn).toEqual([['pending', 'sending', 'success', 'failed']]);
     });
 
     it('defaults attempts to 0', () => {
