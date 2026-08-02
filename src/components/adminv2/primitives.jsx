@@ -3,6 +3,7 @@
  * uses. All token-driven via src/styles/adminV2.css; state is never color
  * alone (glyph/label rides along).
  */
+import PropTypes from 'prop-types';
 import { PERIODS } from '@/lib/adminV2/constants';
 
 export function Card({ title, meta, action, children, span, style }) {
@@ -98,3 +99,65 @@ export function PageHeader({ title, meta, children }) {
     </header>
   );
 }
+
+/*
+ * Prop contracts (P3-4). Twenty-one modules import from this file, and until
+ * now the only way to learn what any of these takes was to read a caller. These
+ * are dev-time only — React strips the check in production builds.
+ *
+ * `style` is an object, not a className: every one of these is token-driven and
+ * takes inline overrides (see adminV2.css), so a string here is a mistake worth
+ * catching. `action` and `children` are nodes because callers pass whole
+ * buttons and menus, not just text.
+ */
+Card.propTypes = {
+  title: PropTypes.node,
+  meta: PropTypes.node,
+  action: PropTypes.node,
+  children: PropTypes.node,
+  /** Grid columns to span inside the v2 card grid. */
+  span: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  style: PropTypes.object,
+};
+
+Chip.propTypes = {
+  /** Maps to .av2-chip--{tone}; '' is the neutral chip. */
+  tone: PropTypes.string,
+  children: PropTypes.node,
+  /** Rendered aria-hidden — state is never color alone, but the glyph is decorative. */
+  glyph: PropTypes.node,
+};
+
+PeriodSwitch.propTypes = {
+  value: PropTypes.oneOf(PERIODS),
+  onChange: PropTypes.func.isRequired,
+};
+
+Skeleton.propTypes = {
+  height: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  width: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  style: PropTypes.object,
+};
+
+ErrorState.propTypes = {
+  /** An Error, or anything with .message; the raw value is never shown. */
+  error: PropTypes.shape({ message: PropTypes.string }),
+  /** Omit to hide the Retry button entirely. */
+  onRetry: PropTypes.func,
+};
+
+EmptyState.propTypes = {
+  icon: PropTypes.node,
+  title: PropTypes.node,
+  hint: PropTypes.node,
+  action: PropTypes.node,
+};
+
+StateRow.propTypes = { children: PropTypes.node };
+
+PageHeader.propTypes = {
+  title: PropTypes.node,
+  meta: PropTypes.node,
+  /** Actions, right-aligned — at most one primary. */
+  children: PropTypes.node,
+};
