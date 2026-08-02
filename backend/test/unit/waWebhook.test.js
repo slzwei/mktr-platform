@@ -44,8 +44,16 @@ function statusPayload(overrides = {}) {
   };
 }
 
+/**
+ * The upsert is rank-guarded and now RETURNING wamid, so its result MEANS
+ * something (P2-4): a row back = the status actually advanced; no row = a Meta
+ * redelivery the guard turned into a no-op. The default fake advances.
+ */
+const advanced = (wamid = 'wamid.TEST1') => [[{ wamid }], {}];
+const noOp = () => [[], {}];
+
 function makeSvc(overrides = {}) {
-  const query = jest.fn(async () => [[], {}]);
+  const query = jest.fn(async () => advanced());
   const svc = makeWaWebhookService({
     sequelize: { query },
     Consumer: { findOne: jest.fn(async () => null) },
@@ -55,6 +63,7 @@ function makeSvc(overrides = {}) {
   });
   return { svc, query };
 }
+
 
 const ENV_KEYS = ['WHATSAPP_WABA_ID', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_APP_SECRET', 'WHATSAPP_WEBHOOK_VERIFY_TOKEN', 'NODE_ENV'];
 let savedEnv;
@@ -221,5 +230,81 @@ describe('POST /api/whatsapp/webhook route posture', () => {
       .set('x-hub-signature-256', 'sha256=deadbeef')
       .send(statusPayload());
     expect(res.status).toBe(401);
+  });
+});
+
+/**
+ * P2-4 — Meta redelivers. The rank-guarded upsert makes a repeat a no-op in
+ * SQL, but upsertStatus used to return `true` unconditionally, so every retry
+ * still counted as new: counts.statuses over-counted, and each redelivered
+ * 'read' re-dirtied the lead and fired ANOTHER rescore. Under Meta's retry
+ * schedule that is a rescore storm driven by an external party.
+ */
+describe('processPayload — redelivery idempotency (P2-4)', () => {
+  const readPayload = () => statusPayload({
+    value: {
+      statuses: [{ id: 'wamid.READ1', status: 'read', timestamp: '1785006378', recipient_id: '6580129432' }],
+    },
+  });
+
+  it('counts a read once and rescores once when the row advances', async () => {
+    const onMessageRead = jest.fn(async () => 1);
+    const { svc } = makeSvc({ onMessageRead });
+
+    const counts = await svc.processPayload(readPayload());
+
+    expect(counts.statuses).toBe(1);
+    expect(counts.leadsDirtied).toBe(1);
+    expect(onMessageRead).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT rescore or count when the guard made it a no-op', async () => {
+    const onMessageRead = jest.fn(async () => 1);
+    const { svc } = makeSvc({ sequelize: { query: jest.fn(async () => noOp()) }, onMessageRead });
+
+    const counts = await svc.processPayload(readPayload());
+
+    expect(counts.statuses).toBe(0);
+    expect(counts.leadsDirtied).toBe(0);
+    expect(onMessageRead).not.toHaveBeenCalled();
+  });
+
+  it('rescores once across a first delivery and four redeliveries', async () => {
+    const onMessageRead = jest.fn(async () => 1);
+    // Meta's retry schedule: the same 'read' arrives five times; only the
+    // first advances the row.
+    const query = jest.fn()
+      .mockResolvedValueOnce(advanced('wamid.READ1'))
+      .mockResolvedValue(noOp());
+    const { svc } = makeSvc({ sequelize: { query }, onMessageRead });
+
+    let statuses = 0;
+    let dirtied = 0;
+    for (let i = 0; i < 5; i += 1) {
+      const counts = await svc.processPayload(readPayload());
+      statuses += counts.statuses;
+      dirtied += counts.leadsDirtied;
+    }
+
+    expect(query).toHaveBeenCalledTimes(5); // the upsert still runs every time
+    expect(statuses).toBe(1);
+    expect(dirtied).toBe(1);
+    expect(onMessageRead).toHaveBeenCalledTimes(1);
+  });
+
+  it('still persists — and still reports — a genuine status ADVANCE', async () => {
+    // sent → delivered → read: three real transitions, three counted.
+    const query = jest.fn(async () => advanced('wamid.SEQ1'));
+    const { svc } = makeSvc({ sequelize: { query } });
+
+    let statuses = 0;
+    for (const status of ['sent', 'delivered', 'read']) {
+      const counts = await svc.processPayload(statusPayload({
+        value: { statuses: [{ id: 'wamid.SEQ1', status, timestamp: '1785006378', recipient_id: '6580129432' }] },
+      }));
+      statuses += counts.statuses;
+    }
+
+    expect(statuses).toBe(3);
   });
 });
