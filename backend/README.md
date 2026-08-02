@@ -127,6 +127,31 @@ Base URL: `https://api.mktr.sg/api` (prod) · `http://localhost:3001/api` (dev).
 - Roles: **`admin`**, **`agent`**, **`redeem_ops`**, **`customer`**, plus the retired **`fleet_owner`** / **`driver_partner`** (new users default to `customer` / `approvalStatus: pending`). `redeem_ops` is deliberately invisible to every `requireRole` gate, to agent-sync sweeps, and to lead routing.
 - Redeem Ops adds a second axis: `users.redeemOpsRole` ∈ `super_admin | ops_admin | bdm | outreach_exec | campaign_ops | redemption_ops | analyst`, checked as capabilities in `middleware/redeemOpsAuth.js` (`role='admin'` is an implicit super-admin).
 
+## Request validation (the idiom for new code)
+
+**New/changed body-carrying routes validate at the route layer with a Joi schema
+passed to the shared `validate()` from `middleware/validation.js`** — never a
+locally re-implemented middleware (two such copies were deleted in P4-6):
+
+- **Route-local schema + shared `validate()`** is the default: declare the
+  `Joi.object` next to the router that uses it (the `adminAi.js` / `contact.js`
+  / `waitlist.js` shape). Colocation keeps the contract next to the endpoint.
+- The **central registry** (`schemas.*` in `middleware/validation.js`) is the
+  legacy home used by `auth` / `campaigns` / `prospects` / `qrcodes` /
+  `users` / `agents`. Add to it only when a schema is genuinely shared by
+  multiple routers; don't migrate existing entries just to move them.
+- `validate(schema, { stripUnknown: true })` is for **public** endpoints where
+  contract drift must drop keys rather than 400 a customer (lead capture,
+  contact, waitlist). Internal/admin routes omit it so stale clients fail loudly.
+- The **redeemOps\*** and **external\*** families validate inside their
+  controllers/services (capability gates + service-level checks). That is an
+  accepted second idiom for those slices — keep new endpoints there consistent
+  with their neighbours rather than importing the registry.
+- Migration path for the remainder (route files with no route-layer validation
+  whose controllers also don't validate): add a route-local schema **when a
+  route is next touched**, matching what the real frontend caller sends — no
+  big-bang conversion.
+
 ## Data model
 
 The backend owns its **own** PostgreSQL database (separate from Lyfe's Supabase) — 90 Sequelize models in `src/models/` with associations in `src/models/index.js`, and 92 migrations under `src/database/migrations/`.

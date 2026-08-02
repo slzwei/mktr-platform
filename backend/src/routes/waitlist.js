@@ -1,6 +1,7 @@
 import express from 'express';
 import Joi from 'joi';
 import rateLimit from 'express-rate-limit';
+import { validate } from '../middleware/validation.js';
 import * as waitlistController from '../controllers/waitlistController.js';
 
 // Auto-discovered + mounted by routes/index.js via this meta export.
@@ -26,19 +27,8 @@ const waitlistSchema = Joi.object({
   source: Joi.string().max(100).allow('', null),
 });
 
-const validateWaitlist = (req, res, next) => {
-  const { error, value } = waitlistSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
-  if (error) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid waitlist submission',
-      errors: error.details.map((d) => ({ field: d.path.join('.'), message: d.message })),
-    });
-  }
-  req.body = value;
-  next();
-};
-
-router.post('/', waitlistLimiter, validateWaitlist, waitlistController.submitWaitlist);
+// Shared validate() (P4-6 — this file used to carry its own copy);
+// stripUnknown keeps the old behaviour of persisting only whitelisted keys.
+router.post('/', waitlistLimiter, validate(waitlistSchema, { stripUnknown: true }), waitlistController.submitWaitlist);
 
 export default router;

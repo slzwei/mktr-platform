@@ -1,5 +1,6 @@
 import express from 'express';
 import { requireAdmin, authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
+import { validate, schemas } from '../middleware/validation.js';
 import * as agentController from '../controllers/agentController.js';
 
 export const meta = {
@@ -15,12 +16,12 @@ const router = express.Router();
 router.get('/leaderboard/performance', authenticateToken, requireAdmin, agentController.getLeaderboard);
 
 // Invite
-router.post('/invite', authenticateToken, requireAdmin, agentController.inviteAgent);
+router.post('/invite', authenticateToken, requireAdmin, validate(schemas.agentInvite), agentController.inviteAgent);
 
 // CRUD
 router.get('/', authenticateToken, requireAdmin, agentController.listAgents);
 router.get('/:id', authenticateToken, requireAgentOrAdmin, agentController.getAgent);
-router.put('/:id', authenticateToken, requireAgentOrAdmin, agentController.updateAgent);
+router.put('/:id', authenticateToken, requireAgentOrAdmin, validate(schemas.agentUpdate), agentController.updateAgent);
 
 // Sub-resources
 router.get('/:id/prospects', authenticateToken, requireAgentOrAdmin, agentController.getAgentProspects);
