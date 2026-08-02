@@ -39,6 +39,18 @@ export function makeApifyClient(overrides = {}) {
     if (!d.token) throw new Error('APIFY_TOKEN is not set');
   }
 
+/**
+ * Collapse the id segments of an Apify path so it can be used as a metric
+ * label: `/actor-runs/abc123` → `/actor-runs/:id`. Anything that looks like an
+ * id — long, or containing a digit — becomes `:id`; the fixed route words stay.
+ */
+function templatePath(path) {
+  return String(path)
+    .split('/')
+    .map((seg) => (seg.length > 24 || /\d/.test(seg) ? ':id' : seg))
+    .join('/');
+}
+
   async function call(method, path, { body, query } = {}) {
     assertConfigured();
     const url = new URL(`${d.baseUrl}${path}`);
@@ -56,7 +68,10 @@ export function makeApifyClient(overrides = {}) {
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     }, {
-      label: `apify ${method} ${path}`,
+      // TEMPLATED, not the real path: runId and datasetId are unique per run,
+      // and this label is a metric dimension (P3-5). Interpolating them would
+      // mint a new permanent counter+histogram per Discovery run.
+      label: `apify ${method} ${templatePath(path)}`,
       attempts: d.attempts,
       timeoutMs: d.timeoutMs,
       logger: d.logger,
