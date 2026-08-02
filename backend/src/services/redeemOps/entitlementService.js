@@ -273,7 +273,7 @@ export function makeEntitlementService(overrides = {}) {
    * without it, issueManual could issue/email a different activation than the
    * audit row claims (Codex blocker, 2026-07-16).
    */
-  async function issueForProspect(prospect, { via = 'hook', activationId = null } = {}) {
+  async function issueForProspect(prospect, { via = 'hook', activationId = null, overrideVerification = false } = {}) {
     // Function-scoped so the unique-constraint catch can attribute skips.
     let resolvedActivation = null;
     // Skip recording (migration 076): every funnel-relevant refusal writes one
@@ -290,7 +290,10 @@ export function makeEntitlementService(overrides = {}) {
       // earned by verified signup; the AI gate withholds AGENT delivery only.
       // Quota / DNC / external holds stay excluded.
       if (prospect?.quarantinedAt && !SCREENING_REASONS.includes(prospect.quarantineReason)) return fail('quarantined');
-      if (!verificationStampOf(prospect)) return fail('phone_not_verified');
+      // The stamp is server-written and is the anti-farming gate. The ONLY way
+      // past it is an authorized, reasoned override from issueManual (P2-7) —
+      // never a fabricated stamp on the prospect JSON.
+      if (!verificationStampOf(prospect) && !overrideVerification) return fail('phone_not_verified');
 
       let activation;
       if (activationId) {
@@ -787,8 +790,21 @@ export function makeEntitlementService(overrides = {}) {
     return { entitlement, supersededEventId: lastUnlock?.id || null };
   }
 
-  /** Manual issue by redemption_ops (requires an existing lead). */
-  async function issueManual({ activationId, prospectId }, user, requestId = null) {
+  /**
+   * Manual issue by redemption_ops (requires an existing lead).
+   *
+   * The phone-verification stamp is the core anti-farming gate, and it is
+   * SERVER-stamped for exactly that reason. This path used to synthesize
+   * `phoneVerifiedAt: … || new Date()` onto the prospect JSON before issuing,
+   * which defeated the gate SILENTLY: capability-gated and audited, yes, but
+   * nothing in the request said "issue to an unverified phone" and nothing in
+   * the audit trail recorded that it had happened (P2-7).
+   *
+   * Now the bypass is a deliberate, reasoned act — `overrideVerification: true`
+   * plus a reason — and it lands in the audit `after`. Without it the real
+   * stamp decides, so an unverified phone is refused like any other.
+   */
+  async function issueManual({ activationId, prospectId, overrideVerification = false, overrideReason = null }, user, requestId = null) {
     const activation = await d.Activation.findByPk(activationId, {
       include: [{ model: d.RewardOffer, as: 'rewardOffer' }],
     });
@@ -799,9 +815,23 @@ export function makeEntitlementService(overrides = {}) {
     // activationId is threaded through so the SELECTED activation is the one
     // issued + emailed + audited (issueForProspect would otherwise re-resolve
     // by the prospect's campaign and could pick a different activation).
+    const reason = String(overrideReason || '').trim();
+    if (overrideVerification && !reason) {
+      throw new AppError('A reason is required to override phone verification', 400);
+    }
+    const alreadyVerified = Boolean(verificationStampOf(prospect));
+    if (overrideVerification && !alreadyVerified) {
+      d.logger?.warn?.('[RedeemOps] manual issue overriding phone verification', {
+        prospectId, activationId, actorUserId: user?.id, reason,
+      });
+    }
+
+    // The prospect is passed THROUGH — never with a fabricated stamp. The
+    // override is carried as an explicit flag so issueForProspect's gate can
+    // see an authorized decision rather than a forged fact.
     const result = await issueForProspect(
-      { ...prospect.toJSON(), sourceMetadata: { ...(prospect.sourceMetadata || {}), phoneVerifiedAt: prospect.sourceMetadata?.phoneVerifiedAt || new Date().toISOString() } },
-      { via: 'manual', activationId }
+      prospect.toJSON(),
+      { via: 'manual', activationId, overrideVerification: overrideVerification === true }
     );
     if (!result.entitlement) throw new AppError(`Cannot issue: ${result.reason}`, 409);
     if (result.reason === 'duplicate_phone') {
@@ -811,7 +841,16 @@ export function makeEntitlementService(overrides = {}) {
     }
     await d.audit.recordAuditEvent({
       actorUser: user, action: 'entitlement.issued_manual', entityType: 'reward_entitlement',
-      entityId: result.entitlement.id, after: { activationId, prospectId }, requestId,
+      entityId: result.entitlement.id,
+      after: {
+        activationId, prospectId,
+        // Record the bypass, not just the issue: "who minted a reward for an
+        // unverified phone, and why" must be answerable from the audit alone.
+        overrideVerification: overrideVerification === true,
+        ...(overrideVerification === true ? { overrideReason: reason, phoneWasVerified: alreadyVerified } : {}),
+      },
+      ...(overrideVerification === true ? { reason } : {}),
+      requestId,
     });
     return result;
   }
