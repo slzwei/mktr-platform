@@ -3,7 +3,7 @@ import {
   PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
   PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
   PartnerOnboardingItem, RewardOffer, Activation,
-  RewardEntitlement, Redemption, RewardInventoryEvent, Draw,
+  RewardEntitlement, Redemption, RewardInventoryEvent, RedemptionEvent, Draw,
   RedeemOpsAuditEvent, User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
@@ -40,7 +40,7 @@ export function makePartnerService(overrides = {}) {
     PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
     PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
     PartnerOnboardingItem, RewardOffer, Activation,
-    RewardEntitlement, Redemption, RewardInventoryEvent, Draw,
+    RewardEntitlement, Redemption, RewardInventoryEvent, RedemptionEvent, Draw,
     RedeemOpsAuditEvent, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
@@ -958,6 +958,23 @@ export function makePartnerService(overrides = {}) {
       }
 
       if (force && hasChain) {
+        // The redemption audit trail is RESTRICT-protected (P2-17), so an
+        // explicit purge must clear it FIRST — mirroring how this block
+        // already handles RewardInventoryEvent below. Deliberate and
+        // admin-gated; RESTRICT exists to stop the INCIDENTAL delete, not this
+        // one. Events reference both sides of the chain, so they go before
+        // either.
+        if (entitlements > 0 || redemptions > 0) {
+          const doomed = await d.RewardEntitlement.findAll({
+            where: entitlementWhere, attributes: ['id'], transaction: t,
+          });
+          const entitlementIds = doomed.map((r) => r.id);
+          if (entitlementIds.length > 0) {
+            await d.RedemptionEvent.destroy({
+              where: { entitlementId: { [Op.in]: entitlementIds } }, transaction: t,
+            });
+          }
+        }
         if (redemptions > 0) {
           await d.Redemption.destroy({ where: { partnerOrganisationId: id }, transaction: t });
         }

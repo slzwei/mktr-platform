@@ -271,8 +271,15 @@ function defineAssociations() {
   RewardInventoryEvent.belongsTo(Activation, { foreignKey: 'activationId', as: 'activation', onDelete: 'RESTRICT' });
   RewardInventoryEvent.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'RESTRICT' });
   RewardInventoryEvent.belongsTo(Redemption, { foreignKey: 'redemptionId', as: 'redemption', onDelete: 'RESTRICT' });
-  RedemptionEvent.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'CASCADE' });
-  RedemptionEvent.belongsTo(Redemption, { foreignKey: 'redemptionId', as: 'redemption', onDelete: 'CASCADE' });
+  // RESTRICT, not CASCADE (P2-17, migration 105). This table's own header calls
+  // it "Append-only fulfilment history" — and CASCADE meant deleting an
+  // entitlement silently took its redemption audit trail with it. An
+  // append-only record that disappears when its subject does is not a record.
+  // The one path that legitimately purges (partnerService force-delete) now
+  // clears these rows explicitly, the same way it already does for
+  // RewardInventoryEvent.
+  RedemptionEvent.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'RESTRICT' });
+  RedemptionEvent.belongsTo(Redemption, { foreignKey: 'redemptionId', as: 'redemption', onDelete: 'RESTRICT' });
 
   // Lucky-draw ledger (docs/plans/lucky-draw-10x.md §4.3)
   const { Draw, DrawEntry, DrawAttempt, DrawBoostReview } = models;
