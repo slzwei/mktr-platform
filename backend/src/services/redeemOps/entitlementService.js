@@ -1279,10 +1279,14 @@ export function makeEntitlementService(overrides = {}) {
 
     // Draw-linkage per activation (PR-4) — one lookup per distinct activation,
     // so the console can voice draw rows ("Session ×N") and offer Undo.
-    const drawByActivation = new Map();
-    for (const actId of [...new Set(rows.map((r) => r.activationId))]) {
-      drawByActivation.set(actId, await d.drawLink.drawContextForActivation(actId).catch(() => null));
-    }
+    const drawByActivation = new Map(
+      await Promise.all(
+        [...new Set(rows.map((r) => r.activationId))].map(async (actId) => [
+          actId,
+          await d.drawLink.drawContextForActivation(actId).catch(() => null),
+        ])
+      )
+    );
 
     // Mask phones by default (redemptions.verify unmasks at the console)
     const nowMs = Date.now();

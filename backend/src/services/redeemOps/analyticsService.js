@@ -128,12 +128,19 @@ export function makeAnalyticsService(overrides = {}) {
       entitlementsByActivation.set(r.activationId, m);
     }
 
+    // P4-10: metrics per DISTINCT campaign, in parallel — this used to await
+    // one heavy computeCampaignMetrics per activation SEQUENTIALLY (up to a
+    // page of 50), repeating shared campaigns.
+    const metricCampaignIds = [...new Set(activations.map((a) => a.campaignId).filter(Boolean))];
+    const metricsByCampaign = new Map(
+      await Promise.all(
+        metricCampaignIds.map(async (cid) => [cid, await d.campaigns.getCampaignMetrics(cid).catch(() => null)])
+      )
+    );
+
     const funnels = [];
     for (const a of activations) {
-      let acquisition = null;
-      if (a.campaignId) {
-        acquisition = await d.campaigns.getCampaignMetrics(a.campaignId).catch(() => null);
-      }
+      const acquisition = a.campaignId ? (metricsByCampaign.get(a.campaignId) ?? null) : null;
       funnels.push({
         id: a.id,
         rewardTitle: a.rewardOffer?.title,
