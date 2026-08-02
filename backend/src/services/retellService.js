@@ -12,7 +12,7 @@ import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, buildLeadCreatedPayload } from './prospectHelpers.js';
 import { dncCaptureGate } from './dncGate.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
-import { gateHeldDncLead } from './dncGate.js';
+import { gateHeldDncLead, bakeHoldTargetAgentId } from './dncGate.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 
 const IDEMPOTENCY_SCOPE = 'retell:call';
@@ -307,7 +307,14 @@ export function makeRetellService(overrides = {}) {
       let dncIntendedAgentId = null;
       let dncAlreadyCharged = false;
       if (dncBlockApplies && !quarantined) {
-        dncIntendedAgentId = assignedAgentId;
+        // Same hold-target bake rule the web path uses (P1-3): a fallback route
+        // with no deliverable agent must bake NULL so release re-resolves.
+        // Baking the System-Agent id here made agentId truthy at release,
+        // skipping re-resolution — the voice lead then failed delivery to a
+        // destination-less agent and looped held forever.
+        dncIntendedAgentId = await bakeHoldTargetAgentId(assignedAgentId, {
+          routeVia, User: d.User, transaction: t,
+        });
         dncAlreadyCharged = decision.charged === true;
         dncHeld = true;
         quarantined = true;

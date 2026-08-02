@@ -42,6 +42,30 @@ async function defaultScreeningHandoff(prospect, { intendedAgentId, alreadyCharg
 }
 
 /**
+ * Hold-target bake rule (PR-1, draw-launch-integrity §9.1 CX3+): a
+ * fallback-routed hold may only bake a target that can actually be DELIVERED
+ * to later. The System Agent has no lyfeId/mktrLeadsId, so a release to it
+ * default-denies (null destination) and the lead loops held forever — the
+ * 07-24 prod incident. A provenance-carrying DEFAULT_AGENT_ID also arrives
+ * via='fallback' and MUST keep its bake (it delivers fine), so the rule is
+ * provenance-based, not via-based. Null bake ⇒ release-time re-resolution ⇒
+ * the hold self-heals the moment a funded package appears. Non-fallback routes
+ * are untouched.
+ *
+ * Shared by BOTH capture paths (P1-3): web capture had it inline in
+ * prospectService while the Retell path baked its target un-nulled, so a voice
+ * lead held on a campaign with no funded agent never auto-healed.
+ */
+export async function bakeHoldTargetAgentId(candidateId, { routeVia, User: UserModel = User, transaction = null } = {}) {
+  if (!candidateId || routeVia !== 'fallback') return candidateId ?? null;
+  const user = await UserModel.findByPk(candidateId, {
+    attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+    transaction,
+  }).catch(() => null);
+  return user && (user.lyfeId || user.mktrLeadsId) ? candidateId : null;
+}
+
+/**
  * dncGate — the "born-held-pending, release-on-clear" state machine for the create path.
  * Design: docs/plans/dnc-scrubbing.md §5.3–§5.5. Modeled on releaseSweep.js (atomic
  * reason-scoped claim + in-tx authoritative charge + persistEventDeliveries outbox + flush),

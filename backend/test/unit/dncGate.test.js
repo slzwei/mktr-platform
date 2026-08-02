@@ -218,3 +218,43 @@ describe('releaseDncClearedLead', () => {
     expect(tx.rollback).toHaveBeenCalled();
   });
 });
+
+/**
+ * P1-3: the hold-target bake rule, now shared by BOTH capture paths (web via
+ * prospectService, voice via retellService) instead of living inline in one.
+ */
+describe('bakeHoldTargetAgentId', () => {
+  const userWith = (attrs) => ({ findByPk: jest.fn().mockResolvedValue(attrs) });
+
+  it('nulls a fallback target with no delivery provenance (the System Agent)', async () => {
+    const User = userWith({ id: 'sys', lyfeId: null, mktrLeadsId: null });
+    await expect(gate.bakeHoldTargetAgentId('sys', { routeVia: 'fallback', User })).resolves.toBeNull();
+  });
+
+  it('keeps a fallback target that carries a lyfeId', async () => {
+    const User = userWith({ id: 'a1', lyfeId: 'lyfe-1', mktrLeadsId: null });
+    await expect(gate.bakeHoldTargetAgentId('a1', { routeVia: 'fallback', User })).resolves.toBe('a1');
+  });
+
+  it('keeps a fallback target that carries an mktrLeadsId', async () => {
+    const User = userWith({ id: 'a2', lyfeId: null, mktrLeadsId: 'ml-2' });
+    await expect(gate.bakeHoldTargetAgentId('a2', { routeVia: 'fallback', User })).resolves.toBe('a2');
+  });
+
+  it('leaves non-fallback routes alone without a lookup', async () => {
+    const User = userWith(null);
+    await expect(gate.bakeHoldTargetAgentId('a3', { routeVia: 'package', User })).resolves.toBe('a3');
+    expect(User.findByPk).not.toHaveBeenCalled();
+  });
+
+  it('normalises a missing candidate to null', async () => {
+    const User = userWith(null);
+    await expect(gate.bakeHoldTargetAgentId(undefined, { routeVia: 'fallback', User })).resolves.toBeNull();
+    await expect(gate.bakeHoldTargetAgentId(null, { routeVia: 'package', User })).resolves.toBeNull();
+  });
+
+  it('nulls the bake when the lookup itself fails — never bake an unverified target', async () => {
+    const User = { findByPk: jest.fn().mockRejectedValue(new Error('db down')) };
+    await expect(gate.bakeHoldTargetAgentId('a4', { routeVia: 'fallback', User })).resolves.toBeNull();
+  });
+});
