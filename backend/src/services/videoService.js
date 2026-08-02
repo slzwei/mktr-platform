@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import ffmpegPath from 'ffmpeg-static';
 import { logger } from '../utils/logger.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 
 // Hard cap on a single synchronous transcode (runs inside the upload request).
 const TRANSCODE_TIMEOUT_MS = 120000;

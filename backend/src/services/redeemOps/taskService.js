@@ -1,27 +1,18 @@
 import { Op } from 'sequelize';
+import { sgtDayWindow } from '../../utils/sgtTime.js';
 import {
   OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize,
   OutreachCadenceStep, OutreachCadence,
 } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
 import { TASK_STATUSES, TASK_PRIORITIES } from './constants.js';
 import { isManagerTier } from './permissions.js';
 
 const TASK_TYPES = ['follow_up', 'call', 'meeting', 'proposal', 'admin', 'other'];
-const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
-
-/** Singapore calendar date for counters/snapshots, independent of server TZ. */
-export function sgDateKey(now = new Date()) {
-  return new Date(now.getTime() + SGT_OFFSET_MS).toISOString().slice(0, 10);
-}
-
-/** "Today" in Singapore time regardless of server TZ. */
-export function sgtDayWindow(now = new Date()) {
-  const sgt = new Date(now.getTime() + SGT_OFFSET_MS);
-  const startUtcMs = Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate()) - SGT_OFFSET_MS;
-  return { start: new Date(startUtcMs), end: new Date(startUtcMs + 24 * 60 * 60 * 1000) };
-}
+// SGT calendar maths lives in utils/sgtTime.js (P4-7); re-exported for
+// existing importers of this module's original home.
+export { sgDateKey, sgtDayWindow } from '../../utils/sgtTime.js';
 
 /**
  * Tasks & follow-ups (docs/redeem-ops/ERD.md §3.7, brief §19). Row-level rule:

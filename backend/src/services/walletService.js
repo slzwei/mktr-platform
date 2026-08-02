@@ -22,7 +22,7 @@
 import { Op } from 'sequelize';
 import { User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, IdempotencyKey, sequelize } from '../models/index.js';
 import { getSystemAgentId } from './systemAgent.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 
 const MAX_COMMIT_QUANTITY = 10000; // fat-finger guard; the wallet balance is the real bound

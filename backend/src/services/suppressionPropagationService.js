@@ -6,7 +6,7 @@ import {
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { buildLeadSuppressedPayload, buildLeadUnsuppressedPayload, phoneDigits } from './prospectHelpers.js';
-import { flushDeliveries, historicallyTargetedSubscribers } from './webhookService.js';
+import { flushDeliveries, historicallyTargetedSubscribers, registerPropagationCatchup, PAYLOAD_EVENT_TYPES } from './webhookService.js';
 
 /**
  * Suppression propagation (tracker "propagate" + resubscribe lift, plan v3 —
@@ -437,3 +437,37 @@ export function makeSuppressionPropagationService(overrides = {}) {
 
 const _default = makeSuppressionPropagationService();
 export const reconcileSuppressionPropagation = _default.reconcileSuppressionPropagation;
+
+/**
+ * Post-flush catch-up (moved here from webhookService, P4-7): after a flush
+ * that targeted payload-carrying leads, nudge the reconciler for any lead
+ * whose person is spine-linked — a suppressed person's NEW targeting (later
+ * signup, reassignment, held release) propagates promptly instead of waiting
+ * for the hourly pass. Registered from THIS module (the higher layer) so
+ * webhookService carries no reverse import; erasure/consent routes load this
+ * module at boot, arming the hook before the first flush.
+ */
+async function propagationCatchup(pairs) {
+  try {
+    const ids = [...new Set(
+      (pairs || [])
+        .filter((p) => PAYLOAD_EVENT_TYPES.includes(p?.delivery?.eventType))
+        .map((p) => p?.delivery?.payload?.data?.lead?.externalId)
+        .filter(Boolean)
+    )];
+    if (!ids.length) return;
+    const [rows] = await sequelize.query(
+      'SELECT DISTINCT "consumerId" FROM prospects WHERE id IN (:ids) AND "consumerId" IS NOT NULL',
+      { replacements: { ids } }
+    );
+    if (!rows.length) return;
+    for (const r of rows) {
+      reconcileSuppressionPropagation({ consumerId: r.consumerId }).catch((err) => {
+        logger.warn('[Webhook] propagation catchup reconcile failed', { error: err?.message || String(err) });
+      });
+    }
+  } catch (err) {
+    logger.warn('[Webhook] propagation catchup failed', { error: err?.message || String(err) });
+  }
+}
+registerPropagationCatchup(propagationCatchup);

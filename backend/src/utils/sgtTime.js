@@ -63,3 +63,19 @@ export function cleanYmd(v) {
   if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return undefined;
   return s;
 }
+
+const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** Singapore calendar date for counters/snapshots, independent of server TZ.
+ * (Moved from redeemOps/taskService — P4-7: calendar maths is not a tasks-
+ * domain concern.) */
+export function sgDateKey(now = new Date()) {
+  return new Date(now.getTime() + SGT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** "Today" in Singapore time regardless of server TZ. */
+export function sgtDayWindow(now = new Date()) {
+  const sgt = new Date(now.getTime() + SGT_OFFSET_MS);
+  const startUtcMs = Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate()) - SGT_OFFSET_MS;
+  return { start: new Date(startUtcMs), end: new Date(startUtcMs + 24 * 60 * 60 * 1000) };
+}

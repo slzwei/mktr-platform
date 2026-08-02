@@ -17,7 +17,7 @@
 import { useRef, useEffect } from 'react';
 import { resolveImageUrl } from '@/components/campaigns/LeadCaptureLayout';
 import { youTubeIdFrom, onColor, accentTextOn } from '@/lib/designConfigV2';
-import { BrandFooter, DrawBadge, ReferredBadge, formatDrawDate } from './CampaignPageRenderer';
+import { BrandFooter, DrawBadge, ReferredBadge, formatDrawDate } from './shared';
 
 const SANS = "'Albert Sans', system-ui, sans-serif";
 

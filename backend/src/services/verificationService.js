@@ -4,7 +4,7 @@ import { makeWaGraphClient, otpSender } from './waGraphClient.js';
 import { maskPhonePrefixed } from './phoneMask.js';
 import { Campaign, Verification } from '../models/index.js';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { markPhoneVerified, persistPhoneVerification } from './verifiedPhoneStore.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';

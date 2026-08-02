@@ -3,7 +3,7 @@ import { QueryTypes } from 'sequelize';
 import {
   sequelize, EmailBroadcast, EmailBroadcastRecipient, Cohort, Campaign, Consumer,
 } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail, getTransporter } from './mailer.js';
 import { ensureUnsubToken, findConsumerByUnsubToken } from './consentService.js';

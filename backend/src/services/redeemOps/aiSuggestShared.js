@@ -1,4 +1,4 @@
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 
 /**
  * Shared error translation for redeem-ops AI suggestion features (Discover

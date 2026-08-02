@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import { Campaign, QrTag, Prospect, CampaignAgentAssignment, sequelize } from '../models/index.js';
 import { storageService } from './storage.js';
 import { buildCampaignWhere, buildOwnerWhere } from './campaignScope.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';

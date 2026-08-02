@@ -26,8 +26,8 @@ import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } 
 import { gateHeldDncLead } from './dncGate.js';
 import { hasValidExternalConsent, buildExternalConsentEvidence } from './externalConsent.js';
 import { buildDncConsentEvidence } from './dncConsent.js';
-import { buildProspectWhere } from '../middleware/prospectScope.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { buildProspectWhere } from './prospectScope.js';
+import { AppError } from '../middleware/appError.js';
 import { dispatchEvent, persistEventDeliveries, flushDeliveries, hasDeliverableSubscriber } from './webhookService.js';
 import {
   sendLeadEvent as metaSendLeadEvent,

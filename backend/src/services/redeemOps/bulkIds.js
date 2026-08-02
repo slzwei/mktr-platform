@@ -1,4 +1,4 @@
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 
 /**
  * The shared front door for every Partners multi-select action (claim, release,

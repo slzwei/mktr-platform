@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { QrTag, Campaign, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember, sequelize } from '../models/index.js';
 import { storageService } from './storage.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
 
 const __filename = fileURLToPath(import.meta.url);

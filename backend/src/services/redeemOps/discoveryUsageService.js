@@ -1,5 +1,5 @@
 import { DiscoveryDailyUsage, sequelize } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 
 const KINDS = {
   results: { column: 'resultsUsed', label: 'search results' },

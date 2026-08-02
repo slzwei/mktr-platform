@@ -1,5 +1,5 @@
 import { sequelize } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { getRuntimeAiSettings } from './aiSettingsService.js';
 import { requestStructuredJson } from './guidedReviewAiService.js';

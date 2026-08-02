@@ -3,7 +3,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from './storage.js';
 import { transcodeUploadedVideoToMp4 } from './videoService.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 
 // Base uploads directory
 const uploadsDir = path.join(process.cwd(), 'uploads');

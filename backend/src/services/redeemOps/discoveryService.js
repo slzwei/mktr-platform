@@ -1,7 +1,7 @@
 import { Op, QueryTypes } from 'sequelize';
 import crypto from 'crypto';
 import { DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory, PartnerOrganisation, sequelize } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makePartnerService } from './partnerService.js';
@@ -16,7 +16,7 @@ import {
 } from './discovery/normalizers.js';
 import { normalizeBusinessName, normalizeDomain, normalizeHandle } from './normalizers.js';
 import { normalizePhone } from '../prospectHelpers.js';
-import { sgDateKey, sgtDayWindow } from './taskService.js';
+import { sgDateKey, sgtDayWindow } from '../../utils/sgtTime.js';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 
