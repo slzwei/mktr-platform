@@ -7,6 +7,7 @@ import { QrTag, Campaign, QrScan, Attribution, Prospect, SessionVisit, User, Age
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/appError.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
+import { escapeLike } from '../utils/escapeLike.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,7 +76,7 @@ export async function listQrCodes(user, query) {
   if (campaignId) where.campaignId = campaignId;
   if (carId) where.carId = carId;
   if (search) {
-    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const sanitizedSearch = escapeLike(search);
     where[Op.or] = [
       // `label` is the canonical field on new rows; `name` is the deprecated
       // legacy alias — both must stay searchable.

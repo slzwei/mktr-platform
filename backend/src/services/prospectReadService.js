@@ -11,6 +11,7 @@ import {
   VALID_LEAD_STATUSES, VALID_ASSIGNMENT_FILTERS, VALID_LEAD_SOURCES,
   parseEnumFilter, parseProspectSort,
 } from './prospectShared.js';
+import { escapeLike } from '../utils/escapeLike.js';
 
 export function makeProspectReads({ d, m }) {
   /**
@@ -263,7 +264,7 @@ export function makeProspectReads({ d, m }) {
     if (campaignId) whereConditions.campaignId = campaignId;
 
     if (search) {
-      const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+      const sanitizedSearch = escapeLike(search);
       const likeOp = Op.iLike;
       whereConditions[Op.or] = [
         { firstName: { [likeOp]: `%${sanitizedSearch}%` } },

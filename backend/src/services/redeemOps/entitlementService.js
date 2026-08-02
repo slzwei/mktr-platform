@@ -15,6 +15,7 @@ import { isSendBlocked } from '../consentService.js';
 import { SCREENING_REASONS } from '../screeningConstants.js';
 import { makeDrawLink } from './drawLink.js';
 import { maskPhoneDots } from '../phoneMask.js';
+import { escapeLike } from '../../utils/escapeLike.js';
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
@@ -1241,7 +1242,7 @@ export function makeEntitlementService(overrides = {}) {
     const prospectWhere = {};
     if (query.search) {
       const term = String(query.search).trim();
-      const like = `%${term}%`;
+      const like = `%${escapeLike(term)}%`;
       prospectWhere[Op.or] = [
         { firstName: { [Op.iLike]: like } },
         { lastName: { [Op.iLike]: like } },

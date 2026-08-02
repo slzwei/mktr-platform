@@ -3,6 +3,7 @@ import { Campaign, Activation, sequelize } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
 import { computeCampaignMetrics } from '../campaignService.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../../utils/customerHost.js';
+import { escapeLike } from '../../utils/escapeLike.js';
 
 /**
  * The ONLY Redeem Ops file that reads MKTR campaign internals
@@ -35,7 +36,7 @@ export function makeCampaignProjection(overrides = {}) {
   /** Search campaigns for the Activation link picker. */
   async function searchCampaigns(query = {}) {
     const where = {};
-    if (query.search) where.name = { [Op.iLike]: `%${String(query.search).trim()}%` };
+    if (query.search) where.name = { [Op.iLike]: `%${escapeLike(query.search)}%` };
     if (query.status) where.status = String(query.status);
     else where.status = { [Op.ne]: 'archived' };
 

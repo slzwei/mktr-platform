@@ -12,6 +12,7 @@ export { getAgentMonthlyPerformance, getConversionLeaderboard, getProspectLeader
 // Internal imports used by functions in this file
 import { getAssignedCampaignCounts, getAgentPackageBreakdowns, computeAgentStatsFromCounts } from './agentStatsHelpers.js';
 import { getAgentMonthlyPerformance } from './agentLeaderboardService.js';
+import { escapeLike } from '../utils/escapeLike.js';
 
 // ---------------------------------------------------------------------------
 // NEW service functions (extracted from routes/agents.js)
@@ -83,7 +84,7 @@ export async function listAgents(query) {
   }
 
   if (search) {
-    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const sanitizedSearch = escapeLike(search);
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${sanitizedSearch}%` } },
       { lastName: { [Op.iLike]: `%${sanitizedSearch}%` } },
@@ -284,7 +285,7 @@ export async function getAgentProspects(agentId, query, requestingUser) {
   }
 
   if (search) {
-    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const sanitizedSearch = escapeLike(search);
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${sanitizedSearch}%` } },
       { lastName: { [Op.iLike]: `%${sanitizedSearch}%` } },

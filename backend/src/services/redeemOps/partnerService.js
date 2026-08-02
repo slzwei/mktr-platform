@@ -22,6 +22,7 @@ import { makeOnboardingService } from './onboardingService.js';
 import { makeCategoryService } from './categoryService.js';
 import { fireCadenceHook } from './cadenceHooks.js';
 import { partnerDisplayName } from './partnerDisplayName.js';
+import { escapeLike } from '../../utils/escapeLike.js';
 
 /**
  * Partner CRM core (docs/redeem-ops/ERD.md §3.1–3.6, brief §13–§18).
@@ -98,7 +99,9 @@ export function makePartnerService(overrides = {}) {
 
     if (query.search) {
       const s = String(query.search).trim();
-      const like = `%${s}%`;
+      // escapeLike caps the length and escapes \ % _ (P2-12) — this site had
+      // neither, so a trailing backslash 500'd and % matched everything.
+      const like = `%${escapeLike(s)}%`;
       where[Op.or] = [
         { tradingName: { [Op.iLike]: like } },
         { legalName: { [Op.iLike]: like } },

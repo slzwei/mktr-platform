@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import { User, Campaign, sequelize, Prospect, LeadPackageAssignment, ProspectActivity, WalletLedger } from '../models/index.js';
 import { AppError } from '../middleware/appError.js';
+import { escapeLike } from '../utils/escapeLike.js';
 
 /**
  * Wallet-account closure policy (docs/plans/agent-wallet-commitments.md):
@@ -114,7 +115,7 @@ export async function listUsers(query) {
   }
 
   if (search) {
-    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const sanitizedSearch = escapeLike(search);
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${sanitizedSearch}%` } },
       { lastName: { [Op.iLike]: `%${sanitizedSearch}%` } },
