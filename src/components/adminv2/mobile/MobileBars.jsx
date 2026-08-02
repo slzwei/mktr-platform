@@ -7,6 +7,7 @@
  * - MobileFooterBar: full-width fixed footer for editor screens (live count
  *   left, one primary right) — used where the tab bar is hidden.
  */
+import PropTypes from 'prop-types';
 
 export function MobileActionBar({ children }) {
   return (
@@ -115,3 +116,34 @@ export function MobileFooterBar({ left, button }) {
     </div>
   );
 }
+
+/* Prop contracts (P3-4). */
+MobileActionBar.propTypes = { children: PropTypes.node };
+
+MobilePrimaryBtn.propTypes = {
+  children: PropTypes.node,
+  onClick: PropTypes.func,
+  disabled: PropTypes.bool,
+};
+
+MobileMoreBtn.propTypes = {
+  onClick: PropTypes.func,
+  /** Accessible name — the button renders a glyph only. */
+  label: PropTypes.string,
+};
+
+MobileSelectBar.propTypes = {
+  count: PropTypes.number,
+  onCancel: PropTypes.func,
+  /** [{ label, onClick, danger? }] — rendered in order. */
+  actions: PropTypes.arrayOf(PropTypes.shape({
+    label: PropTypes.node,
+    onClick: PropTypes.func,
+    danger: PropTypes.bool,
+  })),
+};
+
+MobileFooterBar.propTypes = {
+  left: PropTypes.node,
+  button: PropTypes.node,
+};

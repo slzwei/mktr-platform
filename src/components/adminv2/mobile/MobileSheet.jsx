@@ -5,6 +5,7 @@
  * [data-theme] token scope — same reasoning as GlobalSearch's overlay.
  */
 import { useEffect } from 'react';
+import PropTypes from 'prop-types';
 
 export default function MobileSheet({ open, onClose, label, children, maxHeight = '84dvh' }) {
   useEffect(() => {
@@ -122,3 +123,41 @@ export function SheetConfirm({ title, body, label, danger = true, onConfirm, onC
     </>
   );
 }
+
+/*
+ * Prop contracts (P3-4). Six modules mount these; the shapes were only
+ * discoverable by reading callers.
+ */
+MobileSheet.propTypes = {
+  open: PropTypes.bool,
+  onClose: PropTypes.func.isRequired,
+  /** aria-label for the dialog — a sheet with no name is unusable by screen reader. */
+  label: PropTypes.string,
+  children: PropTypes.node,
+  maxHeight: PropTypes.string,
+};
+
+SheetHead.propTypes = {
+  title: PropTypes.node,
+  /** Small uppercase line above the title. */
+  kicker: PropTypes.node,
+  action: PropTypes.node,
+};
+
+SheetMenuItem.propTypes = {
+  label: PropTypes.node,
+  sub: PropTypes.node,
+  /** Destructive styling — reserve it for actions that actually destroy. */
+  danger: PropTypes.bool,
+  onClick: PropTypes.func,
+};
+
+SheetConfirm.propTypes = {
+  title: PropTypes.node,
+  body: PropTypes.node,
+  /** Confirm button copy — name the action, not "OK". */
+  label: PropTypes.node,
+  danger: PropTypes.bool,
+  onConfirm: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
+};

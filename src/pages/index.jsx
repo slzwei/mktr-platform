@@ -3,6 +3,7 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import RedeemOpsRoute from '@/components/auth/RedeemOpsRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import RedeemOpsLayout from '@/components/redeemops/RedeemOpsLayout';
+import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import { brand } from '@/lib/brand';
@@ -167,7 +168,11 @@ function redeemOpsRouteElements() {
       element={
         <RedeemOpsRoute capability={capability || undefined}>
           <RedeemOpsLayout>
-            <Page />
+            {/* Per-route boundary inside the ops chrome (P3-4) — one place
+                covers every ops route. */}
+            <RouteErrorBoundary surface="redeem-ops">
+              <Page />
+            </RouteErrorBoundary>
           </RedeemOpsLayout>
         </RedeemOpsRoute>
       }

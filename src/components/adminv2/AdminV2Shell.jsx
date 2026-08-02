@@ -24,6 +24,7 @@ import MobileTabBar from './mobile/MobileTabBar';
 import { AdminV2ShellContext } from './mobile/shellContext';
 import { useAdminV2Mobile } from './mobile/useAdminV2Mobile';
 import '@/styles/adminV2.css';
+import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 
 const THEME_KEY = 'mktr_admin_v2_theme';
 
@@ -208,7 +209,9 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
               ? { width: '100%', minWidth: 0, minHeight: '60vh' }
               : { width: '100%', boxSizing: 'border-box', minHeight: '60vh', padding: '10px 14px calc(120px + env(safe-area-inset-bottom, 0px))' }}
           >
-            {children}
+            {/* Per-route boundary INSIDE the chrome (P3-4): a render throw in one
+                page must not take the sidebar and nav down with it. */}
+            <RouteErrorBoundary surface="admin-v2">{children}</RouteErrorBoundary>
           </main>
 
           {/* Full-bleed editor surfaces keep their own footers clear of chrome. */}
@@ -347,7 +350,9 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
           <main className={legacyBridge ? 'av2-bridge-tokens' : undefined} style={fullBleed
             ? { flex: 1, width: '100%', minWidth: 0 }
             : { flex: 1, width: '100%', maxWidth: 1520, margin: '0 auto', padding: '20px 24px 48px', boxSizing: 'border-box' }}>
-            {children}
+            {/* Per-route boundary INSIDE the chrome (P3-4): a render throw in one
+                page must not take the sidebar and nav down with it. */}
+            <RouteErrorBoundary surface="admin-v2">{children}</RouteErrorBoundary>
           </main>
         </div>
       </div>
