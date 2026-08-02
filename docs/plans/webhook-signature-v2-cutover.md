@@ -1,6 +1,7 @@
 # Webhook signature v2 cutover (P2-3)
 
-**Status:** sender ready, live subscribers pinned to v1, receivers not yet dual-accepting.
+**Status: CUT OVER 2026-08-03.** Both receivers dual-accept in production and both live
+subscribers are signing v2. Step 4 (retire v1) is the only step left, and it is gated on soak.
 
 ## Why
 
@@ -16,16 +17,20 @@ freshness check passes because the attacker controls the very field it reads.
 
 v2 signs `${timestamp}.${rawBody}`, so a rewritten timestamp invalidates the signature.
 
-## Current state after this PR
+## What actually happened
 
 | Piece | State |
 |---|---|
 | `signatureVersionForSubscriber` | defaults to **v2**; `metadata.signatureVersion: 'v1'` is the explicit legacy opt-out |
-| Any NEW subscriber | v2, timestamp-bound, no action needed |
-| `Lyfe App` + `MKTR Leads App` | **pinned to v1** by `LIVE_SUBSCRIBER_SIGNATURE_VERSION` in `backend/src/database/bootstrap.js`, re-applied on every boot |
+| Any NEW subscriber | v2, timestamp-bound |
+| `receive-mktr-lead` @ `nvtedkyjwulkzjeoqjgx` (Lyfe) | **dual-accept DEPLOYED** 2026-08-03 — `lyfe-app` commit `3f30481`, function v31 |
+| `receive-mktr-lead` @ `rciuejxgziqxrwtifpbo` (MKTR Leads) | **already dual-accepting** — verified by probe, no deploy needed |
+| `Lyfe App` + `MKTR Leads App` subscribers | **v2**, re-pinned by the bootstrap self-heal |
 
-The pin is deliberate. Both receivers verify the body alone today, so flipping them without
-deploying the receiver first would 401 **every** lead delivery — an outage, not a fix.
+A note for whoever reads this next: the mktr-leads receiver already had the dual-accept
+logic deployed, so only the Lyfe one needed a change. Do not assume from the repo —
+`~/lyfe-master/mktr-leads` sits on a redesign branch whose local files are not what is
+running. It was confirmed by probing the live endpoint, not by reading the checkout.
 
 ## The cutover
 
