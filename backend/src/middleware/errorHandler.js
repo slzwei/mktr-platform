@@ -1,15 +1,19 @@
 import { ValidationError, DatabaseError, ConnectionError } from 'sequelize';
 import { logger } from '../utils/logger.js';
 import { maskTokenUrl } from '../utils/redactTokens.js';
+import { scrubText } from '../utils/sentryScrub.js';
 
 export const errorHandler = (err, req, res, _next) => {
   let error = { ...err };
   error.message = err.message;
 
   // Structured error logging via pino (replaces console.error)
+  // The message and stack are FREE TEXT — an identifier interpolated into a
+  // thrown Error lands here verbatim, and the pino stream sits OUTSIDE the
+  // PDPA erasure matrix, so nothing can take it back later (P2-11).
   logger.error(
     {
-      err: { message: err.message, statusCode: err.statusCode, stack: err.stack },
+      err: { message: scrubText(err.message), statusCode: err.statusCode, stack: scrubText(err.stack) },
       req: { method: req.method, url: maskTokenUrl(req.originalUrl), id: req.id },
     },
     'Request error'
