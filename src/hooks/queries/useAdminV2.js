@@ -78,7 +78,9 @@ export function useAgentOptions(enabled) {
 }
 
 export function useAgentsRoster(params) {
-  return useQuery({ queryKey: ['adminV2', 'agentsRoster', params], queryFn: () => fetchAgentsRoster(params), staleTime: STALE_MS, keepPreviousData: true });
+  // placeholderData, not the removed v4 `keepPreviousData: true` (P2-16) —
+  // see useProspects above for the same idiom.
+  return useQuery({ queryKey: ['adminV2', 'agentsRoster', params], queryFn: () => fetchAgentsRoster(params), staleTime: STALE_MS, placeholderData: keepPreviousData });
 }
 
 export function useCampaignSummary(id) {
@@ -94,7 +96,7 @@ export function useWalletLedger(agentId, page = 1) {
     queryKey: ['adminV2', 'walletLedger', agentId, page],
     queryFn: () => fetchWalletLedger(agentId, { page }),
     enabled: !!agentId,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 }
 
