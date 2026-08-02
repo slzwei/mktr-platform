@@ -8,39 +8,23 @@ import { Sentry } from '../utils/sentryInit.js';
 const AUTO_DISABLE_THRESHOLD = 50;
 
 /** Events whose payloads embed the full lead PII — the "historically targeted" markers. */
-const PAYLOAD_EVENT_TYPES = ['lead.created', 'lead.assigned'];
+export const PAYLOAD_EVENT_TYPES = ['lead.created', 'lead.assigned'];
 
 /**
- * After a flush that targeted leads with payload events, nudge the
- * suppression reconciler for any lead whose person is spine-linked — this is
- * how a suppressed person's NEW targeting (later signup, reassignment, held
- * release) propagates promptly instead of waiting for the hourly pass.
- * Dynamic import: suppressionPropagationService statically imports this
- * module, so the reverse edge must stay lazy.
+ * Post-flush suppression catch-up — REGISTERED by
+ * suppressionPropagationService at its module scope (P4-7: the old reverse
+ * dynamic import made webhook ↔ suppression a cycle; registration keeps this
+ * module one layer below the suppression domain). Until registration — or if
+ * the suppression module is never loaded — this is a no-op, and nothing is
+ * lost: the hourly reconcile pass is the backstop either way, the hook only
+ * buys promptness.
  */
-async function defaultPropagationCatchup(pairs) {
-  try {
-    const ids = [...new Set(
-      (pairs || [])
-        .filter((p) => PAYLOAD_EVENT_TYPES.includes(p?.delivery?.eventType))
-        .map((p) => p?.delivery?.payload?.data?.lead?.externalId)
-        .filter(Boolean)
-    )];
-    if (!ids.length) return;
-    const [rows] = await sequelize.query(
-      'SELECT DISTINCT "consumerId" FROM prospects WHERE id IN (:ids) AND "consumerId" IS NOT NULL',
-      { replacements: { ids } }
-    );
-    if (!rows.length) return;
-    const { reconcileSuppressionPropagation } = await import('./suppressionPropagationService.js');
-    for (const r of rows) {
-      reconcileSuppressionPropagation({ consumerId: r.consumerId }).catch((err) => {
-        logger.warn('[Webhook] propagation catchup reconcile failed', { error: err?.message || String(err) });
-      });
-    }
-  } catch (err) {
-    logger.warn('[Webhook] propagation catchup failed', { error: err?.message || String(err) });
-  }
+let _registeredPropagationCatchup = null;
+export function registerPropagationCatchup(fn) {
+  _registeredPropagationCatchup = typeof fn === 'function' ? fn : null;
+}
+function defaultPropagationCatchup(pairs) {
+  return _registeredPropagationCatchup ? _registeredPropagationCatchup(pairs) : undefined;
 }
 
 // --- Default dependencies ---
