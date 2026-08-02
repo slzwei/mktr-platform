@@ -465,7 +465,12 @@ export default function CampaignSignupForm({
     if (fieldId === 'phone') {
       return (
         <Fragment key="phone">
-          <FieldRenderer fieldId="phone" {...fieldRendererProps} />
+          <FieldRenderer
+            fieldId="phone"
+            {...fieldRendererProps}
+            formErrorId="signup-form-error"
+            phoneInvalid={Boolean(error) && otpState !== 'pending'}
+          />
           {dncGateOpen && (
             <DncConsentGate
               advertiser={advertiserName || campaign?.name}
@@ -916,9 +921,15 @@ export default function CampaignSignupForm({
           })}
         </div>
 
-        {/* Inline error (form-level) */}
+        {/* Inline error (form-level). role=alert + assertive so a screen-reader
+            user hears WHY submit was blocked — without it the form simply did
+            not advance and said nothing (WCAG 3.3.1 / 4.1.3, P2-15). Visual
+            design unchanged. */}
         {error && otpState !== 'pending' && (
           <div
+            id="signup-form-error"
+            role="alert"
+            aria-live="assertive"
             style={{
               marginTop: 4,
               marginBottom: 16,
