@@ -86,18 +86,24 @@ describe('concurrent changeAllocation', () => {
     // own, but only the first can pass against the row the other one leaves.
     const activation = await makeActivation(offer, { allocatedQuantity: 10, issuedCount: 8 });
 
-    const results = await Promise.allSettled([
+    const [minusTwo, minusOne] = await Promise.allSettled([
       slowActivations.changeAllocation(activation.id, -2, admin.user, 'trim a'),
       activations.changeAllocation(activation.id, -1, admin.user, 'trim b'),
     ]);
 
+    // Which reduce reaches the row first is up to the scheduler, so assert the
+    // INVARIANT rather than a winner: exactly one lands, the other is refused
+    // against the value the winner left, and the row never dips under its own
+    // issued count. Pre-fix BOTH landed, which is what this catches.
+    const results = [minusTwo, minusOne];
     const rejected = results.filter((r) => r.status === 'rejected');
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason.statusCode).toBe(409);
     expect(rejected[0].reason.message).toMatch(/below what has been issued/i);
 
+    const acceptedReduce = minusTwo.status === 'fulfilled' ? 2 : 1;
     const row = await Activation.findByPk(activation.id);
-    expect(row.allocatedQuantity).toBe(8);
+    expect(row.allocatedQuantity).toBe(10 - acceptedReduce);
     expect(row.allocatedQuantity).toBeGreaterThanOrEqual(row.issuedCount);
   });
 
