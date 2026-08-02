@@ -1,4 +1,4 @@
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
 import {
   CHANNEL_DISPOSITIONS, CADENCE_TERMINAL_DISPOSITIONS, CADENCE_WILDCARD_DISPOSITION,

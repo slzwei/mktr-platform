@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import { User, Prospect, Campaign, LeadPackage, LeadPackageAssignment, sequelize } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { getSystemAgentId } from './systemAgent.js';
 import { sendRoleInvitation } from './invitationService.js';
 import { getAgentInviteEmail, getAgentInviteSubject, getAgentInviteText } from './emailTemplates.js';

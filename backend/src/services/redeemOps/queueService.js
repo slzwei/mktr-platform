@@ -3,7 +3,7 @@ import {
   OutreachTask, OutreachActivity, PartnerOrganisation, PartnerContact, User, sequelize,
   OutreachCadenceStep, OutreachCadence,
 } from '../../models/index.js';
-import { sgtDayWindow } from './taskService.js';
+import { sgtDayWindow } from '../../utils/sgtTime.js';
 
 const PARTNER_LITE = ['id', 'tradingName', 'legalName', 'brandName', 'pipelineStage', 'category', 'lastActivityAt', 'claimedAt'];
 const BUCKET_LIMIT = 10;

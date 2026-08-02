@@ -6,7 +6,7 @@ import { chargeLeadCredit } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
 import { dispatchEvent } from './webhookService.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, dncPayloadBlock } from './prospectHelpers.js';

@@ -19,7 +19,7 @@
 import * as defaultClient from '../integrations/adapters/mktr-leads/mktrLeadsClient.js';
 import { syncAgentsFromMktrLeads as defaultSync } from './agentSyncService.js';
 import DefaultUser from '../models/User.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger as defaultLogger } from '../utils/logger.js';
 
 const MKTR_USER_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;

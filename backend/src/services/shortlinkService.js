@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
 import { ShortLink, ShortLinkClick, Prospect, sequelize } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 
 const generateSlug = (len = 8) => {

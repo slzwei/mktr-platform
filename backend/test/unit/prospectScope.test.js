@@ -10,7 +10,7 @@ jest.unstable_mockModule('../../src/models/index.js', () => ({
   },
 }));
 
-const { buildProspectWhere } = await import('../../src/middleware/prospectScope.js');
+const { buildProspectWhere } = await import('../../src/services/prospectScope.js');
 
 describe('buildProspectWhere (prospect scoping)', () => {
   beforeEach(() => jest.clearAllMocks());

@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import { RedeemOpsCategory, sequelize } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { resolvePlaceCategoryWords, unknownCategoriesMessage } from './discovery/placeCategories.js';
 

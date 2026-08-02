@@ -1,5 +1,5 @@
 import { sequelize, Activation, RewardOffer, PartnerOrganisation } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
 import { makeInventoryService } from './inventoryService.js';
 import { makeRedeemOpsAuditService } from './auditService.js';

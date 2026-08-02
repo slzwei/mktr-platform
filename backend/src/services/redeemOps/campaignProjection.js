@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import { Campaign, Activation, sequelize } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { computeCampaignMetrics } from '../campaignService.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../../utils/customerHost.js';
 

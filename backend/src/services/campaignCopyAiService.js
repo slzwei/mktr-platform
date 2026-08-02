@@ -1,5 +1,5 @@
 import { Campaign } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 import { logger } from '../utils/logger.js';
 import { getRuntimeAiSettings } from './aiSettingsService.js';

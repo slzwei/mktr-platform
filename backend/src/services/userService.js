@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import { User, Campaign, sequelize, Prospect, LeadPackageAssignment, ProspectActivity, WalletLedger } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 
 /**
  * Wallet-account closure policy (docs/plans/agent-wallet-commitments.md):

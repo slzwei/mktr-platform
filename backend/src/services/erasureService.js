@@ -4,7 +4,7 @@ import {
   sequelize, Consumer, Prospect, RewardEntitlement, RedemptionEvent,
   ConsentEvent, ConsumerSuppression, WebhookSubscriber, WebhookDelivery,
 } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { emailNormKey } from './repeatSignup.js';
 import { makeInventoryService } from './redeemOps/inventoryService.js';

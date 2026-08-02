@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '../models/index.js';
 import { sendEmail } from './mailer.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 
 /**

@@ -6,7 +6,7 @@ import {
   DrawTermsVersion,
   sequelize,
 } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { normalizeLuckyDraw, assertSingleWinnerDraw } from '../utils/luckyDraw.js';

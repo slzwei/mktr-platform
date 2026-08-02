@@ -1,5 +1,5 @@
 import { DiscoveryTerritory, sequelize } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 
 const ALL_SINGAPORE = /^all\s+singapore$/i;

@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import {
   Activation, ActivationIssuanceSkip, RewardOffer, PartnerOrganisation, Campaign, sequelize,
 } from '../../models/index.js';
-import { AppError } from '../../middleware/errorHandler.js';
+import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeInventoryService } from './inventoryService.js';

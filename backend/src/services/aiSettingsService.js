@@ -1,5 +1,5 @@
 import { AiSettings } from '../models/index.js';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 import { decryptApiKey, encryptApiKey, isAiCredentialEncryptionReady } from '../utils/aiCredentialEncryption.js';
 
 const SETTINGS_ID = 'global';

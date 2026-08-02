@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 
 function encryptionKey() {
   const secret = process.env.AI_SETTINGS_ENCRYPTION_KEY || '';
