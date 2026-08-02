@@ -187,9 +187,12 @@ describe('webhookService (unit)', () => {
       expect(opts.headers['X-Webhook-Delivery-Id']).toBe('uuid-1');
       expect(opts.headers['X-Webhook-Timestamp']).toBeDefined();
 
-      // Verify HMAC signature
+      // Verify HMAC signature. The default scheme is v2 (P2-3): the timestamp
+      // is BOUND into the digest, so a replay with a rewritten timestamp no
+      // longer validates. v1 signed the body alone.
+      expect(opts.headers['X-Webhook-Signature-Version']).toBe('v2');
       const expectedHmac = crypto.createHmac('sha256', 'secret123')
-        .update(opts.body)
+        .update(`${opts.headers['X-Webhook-Timestamp']}.${opts.body}`)
         .digest('hex');
       expect(opts.headers['X-Webhook-Signature']).toBe(`sha256=${expectedHmac}`);
     });

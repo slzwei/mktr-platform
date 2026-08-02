@@ -245,13 +245,20 @@ describe('Pipeline E2E: Retell webhook → Prospect → Webhook dispatch', () =>
     const payloads = await waitForPayloads(1);
     const received = payloads[0];
 
-    // Verify HMAC using subscriber secret
+    // Verify HMAC using subscriber secret. The default scheme is v2 (P2-3):
+    // the timestamp is BOUND into the digest, so a replay carrying a
+    // rewritten timestamp no longer validates. v1 signed the body alone.
+    expect(received.headers['x-webhook-signature-version']).toBe('v2');
     const expectedHmac = crypto
       .createHmac('sha256', SUBSCRIBER_SECRET)
-      .update(received.rawBody)
+      .update(`${received.headers['x-webhook-timestamp']}.${received.rawBody}`)
       .digest('hex');
 
     expect(received.headers['x-webhook-signature']).toBe(`sha256=${expectedHmac}`);
+
+    // ...and the body-only digest — what v1 produced — must NOT match.
+    const v1Hmac = crypto.createHmac('sha256', SUBSCRIBER_SECRET).update(received.rawBody).digest('hex');
+    expect(received.headers['x-webhook-signature']).not.toBe(`sha256=${v1Hmac}`);
   });
 
   it('creates Prospect + ProspectActivity + IdempotencyKey in one transaction', async () => {

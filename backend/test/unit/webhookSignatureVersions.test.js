@@ -28,7 +28,9 @@ describe('per-subscriber webhook signature versions', () => {
     name: 'Lyfe App',
     url: 'https://lyfe.example/webhook',
     secret: vector.secret,
-    metadata: { destination: 'lyfe' },
+    // Bootstrap pins the live subscribers to the legacy scheme until the
+            // receivers dual-accept (P2-3, docs/plans/webhook-signature-v2-cutover.md).
+    metadata: { destination: 'lyfe', signatureVersion: 'v1' },
   };
   const mktrLeads = {
     id: 'mktr-leads',
@@ -63,9 +65,11 @@ describe('per-subscriber webhook signature versions', () => {
     })).toBe(vector.v2Signature);
   });
 
-  it('defaults absent and unknown metadata to byte-identical v1 behavior', () => {
+  it('defaults to timestamp-bound v2 and honours only the explicit v1 pin', () => {
+    // P2-3 inverted this: v2 is the default, v1 is the deliberate legacy opt-out.
     expect(signatureVersionForSubscriber(lyfe)).toBe('v1');
-    expect(signatureVersionForSubscriber({ metadata: { signatureVersion: 'typo' } })).toBe('v1');
+    expect(signatureVersionForSubscriber({ metadata: { signatureVersion: 'typo' } })).toBe('v2');
+    expect(signatureVersionForSubscriber({ metadata: {} })).toBe('v2');
     expect(signatureVersionForSubscriber(mktrLeads)).toBe('v2');
   });
 

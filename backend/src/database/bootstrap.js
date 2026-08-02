@@ -479,6 +479,18 @@ async function safeRun(label, fn) {
  * are forwarded to the Lyfe Edge Function automatically.
  * Reads URL and secret from env vars; skips silently if not configured.
  */
+/**
+ * Which signature scheme the two BOOTSTRAP-MANAGED live subscribers are signed
+ * with (P2-3). The sender defaults to v2 (timestamp-bound); these two are held
+ * on v1 because their receivers verify the body ALONE and would 401 every
+ * delivery the moment we flipped.
+ *
+ * THE CUTOVER IS THIS CONSTANT. Deploy the dual-accept receivers first, then
+ * change 'v1' → 'v2' here: the self-heal below re-pins both rows on the next
+ * boot. Full runbook: docs/plans/webhook-signature-v2-cutover.md.
+ */
+const LIVE_SUBSCRIBER_SIGNATURE_VERSION = 'v1';
+
 export async function ensureLyfeWebhookSubscriber() {
   const adapter = adapterRegistry.get('lyfe');
   const url = adapter.outboundWebhookUrl?.();
@@ -507,14 +519,19 @@ export async function ensureLyfeWebhookSubscriber() {
   if (existing) {
     const needsUpdate = existing.url !== url || existing.secret !== secret || !existing.enabled
       || JSON.stringify(existing.events?.sort()) !== JSON.stringify(requiredEvents.sort())
-      || existing.metadata?.destination !== 'lyfe';
+      || existing.metadata?.destination !== 'lyfe'
+      || existing.metadata?.signatureVersion !== LIVE_SUBSCRIBER_SIGNATURE_VERSION;
     if (needsUpdate) {
       await existing.update({
         url,
         secret,
         enabled: true,
         events: requiredEvents,
-        metadata: { ...(existing.metadata || {}), destination: 'lyfe' },
+        metadata: {
+          ...(existing.metadata || {}),
+          destination: 'lyfe',
+          signatureVersion: LIVE_SUBSCRIBER_SIGNATURE_VERSION,
+        },
       });
       logger.info('Lyfe webhook subscriber updated', { url, events: requiredEvents });
     } else {
@@ -530,7 +547,7 @@ export async function ensureLyfeWebhookSubscriber() {
     events: requiredEvents,
     enabled: true,
     description: 'Forward leads to Lyfe mobile app via Supabase Edge Function',
-    metadata: { destination: 'lyfe' },
+    metadata: { destination: 'lyfe', signatureVersion: LIVE_SUBSCRIBER_SIGNATURE_VERSION },
   });
 
   logger.info('Lyfe webhook subscriber registered', { url });
@@ -570,14 +587,19 @@ export async function ensureMktrLeadsWebhookSubscriber() {
   if (existing) {
     const needsUpdate = existing.url !== url || existing.secret !== secret || !existing.enabled
       || JSON.stringify(existing.events?.sort()) !== JSON.stringify(requiredEvents.sort())
-      || existing.metadata?.destination !== 'mktr_leads';
+      || existing.metadata?.destination !== 'mktr_leads'
+      || existing.metadata?.signatureVersion !== LIVE_SUBSCRIBER_SIGNATURE_VERSION;
     if (needsUpdate) {
       await existing.update({
         url,
         secret,
         enabled: true,
         events: requiredEvents,
-        metadata: { ...(existing.metadata || {}), destination: 'mktr_leads' },
+        metadata: {
+          ...(existing.metadata || {}),
+          destination: 'mktr_leads',
+          signatureVersion: LIVE_SUBSCRIBER_SIGNATURE_VERSION,
+        },
       });
       logger.info('mktr-leads webhook subscriber updated', { url, events: requiredEvents });
     } else {
@@ -593,7 +615,7 @@ export async function ensureMktrLeadsWebhookSubscriber() {
     events: requiredEvents,
     enabled: true,
     description: 'Forward leads to the mktr-leads app via Supabase Edge Function',
-    metadata: { destination: 'mktr_leads' },
+    metadata: { destination: 'mktr_leads', signatureVersion: LIVE_SUBSCRIBER_SIGNATURE_VERSION },
   });
 
   logger.info('mktr-leads webhook subscriber registered', { url });
