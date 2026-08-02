@@ -4,7 +4,7 @@
  * Mirrors featuredDrop.util.test.js — these values gate PUBLIC signup
  * enforcement, so the clamp is the security boundary.
  */
-import { normalizeLuckyDraw, applyLuckyDrawPolicy, derivePrizeSummary, totalPrizeQuantity } from '../src/utils/luckyDraw.js';
+import { normalizeLuckyDraw, applyLuckyDrawPolicy, derivePrizeSummary, totalPrizeQuantity, promisedWinnerCount } from '../src/utils/luckyDraw.js';
 import { sgtDayEndExclusiveMs } from '../src/utils/sgtTime.js';
 
 const UUID = '123e4567-e89b-42d3-a456-426614174000';
@@ -147,6 +147,23 @@ describe('normalizeLuckyDraw — structured prizes', () => {
     expect(derivePrizeSummary(ROWS)).toBe('iPhone 17 Pro + 3× $100 FairPrice Voucher');
     expect(totalPrizeQuantity(normalizeLuckyDraw({ enabled: true, prizes: ROWS }))).toBe(4);
     expect(totalPrizeQuantity(normalizeLuckyDraw({ enabled: true, prize: 'Manual', winners: 9 }))).toBe(0);
+  });
+
+  /**
+   * P2-9: totalPrizeQuantity answers "how many structured units", which is 0
+   * for a legacy config — and that zero is what let `winners: 5` activate and
+   * publish a promise the one-winner engine cannot honour.
+   */
+  it('promisedWinnerCount counts the PROMISE, structured or legacy', () => {
+    // Structured: winners is derived from Σqty, so the two agree.
+    expect(promisedWinnerCount(normalizeLuckyDraw({ enabled: true, prizes: ROWS }))).toBe(4);
+    // Legacy: the manual winners count IS the promise.
+    expect(promisedWinnerCount(normalizeLuckyDraw({ enabled: true, prize: 'Manual', winners: 9 }))).toBe(9);
+    // ...and one winner is still one.
+    expect(promisedWinnerCount(normalizeLuckyDraw({ enabled: true, prize: 'Manual', winners: 1 }))).toBe(1);
+    // No promise at all.
+    expect(promisedWinnerCount(normalizeLuckyDraw({ enabled: true, prize: 'Manual' }))).toBe(0);
+    expect(promisedWinnerCount(undefined)).toBe(0);
     expect(totalPrizeQuantity(undefined)).toBe(0);
   });
 });

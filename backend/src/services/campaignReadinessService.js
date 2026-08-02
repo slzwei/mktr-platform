@@ -349,7 +349,7 @@ export function computeReadiness(facts) {
 // Model-free static imports — the pure export above must stay import-light
 // (utils only, no model graph).
 import { readLegacyViewSafe, getStoredLuckyDraw, getStoredTermsHtml } from '../utils/designConfigV2Clamp.js';
-import { normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
+import { normalizeLuckyDraw, promisedWinnerCount } from '../utils/luckyDraw.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { checkDrawConsistency, checkDrawRecordDrift } from '../utils/drawConsistency.js';
 
@@ -548,7 +548,9 @@ export async function loadCampaignReadiness(campaignId) {
     drawCloseMismatch,
     docDrawClosesAt,
     drawRecordClosesAt,
-    drawTotalPrizes: totalPrizeQuantity(ld),
+    // The PROMISE, not just the structured rows (P2-9) — a legacy winners:N
+    // config must raise the same critical a prizes[] one does.
+    drawTotalPrizes: promisedWinnerCount(ld),
     screeningConfigured,
     screeningGateOn,
     railActive,

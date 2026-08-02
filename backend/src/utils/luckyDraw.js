@@ -67,15 +67,31 @@ export function totalPrizeQuantity(ld) {
 }
 
 /**
+ * What the campaign PUBLICLY PROMISES, structured or not (P2-9).
+ *
+ * totalPrizeQuantity keys only on prizes[], so a LEGACY config carrying
+ * `winners: 5` with no prizes[] scored 0 — it passed the activation gate, went
+ * live, and published "5 winners" through publicLuckyDraw while the engine
+ * resolved exactly ONE. The promise the public reads is max(Σqty, winners), so
+ * that is what the guard has to weigh. For structured draws the two agree by
+ * construction (normalizeLuckyDraw derives winners from Σqty), so this changes
+ * nothing there.
+ */
+export function promisedWinnerCount(ld) {
+  const winners = Number.isInteger(ld?.winners) && ld.winners > 0 ? ld.winners : 0;
+  return Math.max(totalPrizeQuantity(ld), winners);
+}
+
+/**
  * THE multi-prize fail-closed guard (P4-1): the draw engine resolves exactly
- * ONE claimed winner today, so a NORMALIZED draw whose prizes total more than
- * one unit 422s with DRAW_MULTI_PRIZE_UNSUPPORTED. One code, one message
- * core; call sites append their own context via `suffix` (readiness keeps a
- * prose copy for tone — its lowercase issue code is a separate namespace).
+ * ONE claimed winner today, so a NORMALIZED draw that promises more than one
+ * 422s with DRAW_MULTI_PRIZE_UNSUPPORTED. One code, one message core; call
+ * sites append their own context via `suffix` (readiness keeps a prose copy
+ * for tone — its lowercase issue code is a separate namespace).
  * Phase 3 (multi-winner engine) removes this.
  */
 export function assertSingleWinnerDraw(ld, { suffix = '.' } = {}) {
-  const total = totalPrizeQuantity(ld);
+  const total = promisedWinnerCount(ld);
   if (total > 1) {
     const err = new AppError(
       `This draw promises ${total} prizes, but multi-winner draw execution isn't live yet${suffix}`,
