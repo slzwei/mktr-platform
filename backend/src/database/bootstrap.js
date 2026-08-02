@@ -489,7 +489,7 @@ async function safeRun(label, fn) {
  * change 'v1' → 'v2' here: the self-heal below re-pins both rows on the next
  * boot. Full runbook: docs/plans/webhook-signature-v2-cutover.md.
  */
-const LIVE_SUBSCRIBER_SIGNATURE_VERSION = 'v1';
+const LIVE_SUBSCRIBER_SIGNATURE_VERSION = 'v2';
 
 export async function ensureLyfeWebhookSubscriber() {
   const adapter = adapterRegistry.get('lyfe');
