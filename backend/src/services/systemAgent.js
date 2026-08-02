@@ -69,93 +69,16 @@ export async function getSystemAgentId() {
  *
  * Returns { agentId, via } with via ∈ 'self' | 'admin' | 'qr' | 'package' | 'fallback'.
  * 'fallback' means nothing matched and agentId is the System Agent (or DEFAULT_AGENT_ID).
+ *
+ * P4-9: a thin wrapper over resolveLeadAssignment with allowExternal=false —
+ * the tiers were a near-verbatim copy that had started to drift. With the
+ * external pool off, the resolver never queries external tables, the ring is
+ * internal-only (pickFromRing's index === the old `(cursor-1) % len`), and
+ * the 'hold' branch is unreachable — selection is identical by construction.
  */
 export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId, qrTagId }) {
-  // 1) If requester is an agent, they self-assign
-  if (reqUser && reqUser.role === 'agent') {
-    return { agentId: reqUser.id, via: 'self' };
-  }
-
-  // 2) If requester is admin and provided a valid active agent, accept it
-  if (reqUser && reqUser.role === 'admin' && requestedAgentId) {
-    const valid = await User.findOne({ where: { id: requestedAgentId, role: 'agent', isActive: true } });
-    if (valid) return { agentId: valid.id, via: 'admin' };
-  }
-
-  // 3) Try the agent the QR is directly assigned to (admin sets this via
-  //    the QR edit/create form: agentAssignmentMode='direct' + assignedAgent*).
-  //    Prefer `assignedAgentId` (the field the admin UI actually writes).
-  //    Fall back to `ownerUserId` for legacy QRs created before
-  //    assignedAgentId was dual-written from the resolved phone match.
-  if (qrTagId) {
-    const qr = await QrTag.findByPk(qrTagId);
-    const candidateId = qr?.assignedAgentId || qr?.ownerUserId;
-    if (candidateId) {
-      const agent = await User.findOne({ where: { id: candidateId, role: 'agent', isActive: true } });
-      if (agent) return { agentId: agent.id, via: 'qr' };
-    }
-  }
-
-  // 4) Try active Lead Package Assignments with round-robin rotation
-  // This REPLACES the old manual 'assigned_agents' list.
-  // Agents are only in the pool if they have a purchased package for this campaign with leads remaining.
-  if (campaignId) {
-    // Find all active assignments for this campaign with credits > 0
-    const assignments = await LeadPackageAssignment.findAll({
-      where: {
-        status: 'active',
-        leadsRemaining: { [Op.gt]: 0 }
-      },
-      include: [{
-        model: LeadPackage,
-        as: 'package',
-        where: { campaignId },
-        required: true,
-        attributes: [] // Only need filtering
-      }],
-      attributes: ['agentId']
-    });
-
-    const candidateIds = [...new Set(assignments.map(a => a.agentId))];
-
-    if (candidateIds.length > 0) {
-      // Filter to active agents only
-      const activeAgents = (await User.findAll({
-        where: { id: candidateIds, role: 'agent', isActive: true },
-        attributes: ['id'],
-        order: [['createdAt', 'ASC']]
-      })).map(u => u.id);
-
-      if (activeAgents.length > 0) {
-        // Round-robin via a per-campaign MONOTONIC counter. The increment is a
-        // single atomic `UPDATE ... RETURNING` — correct under concurrent
-        // webhooks AND multiple backend instances. Modulo is applied only at
-        // READ time, so rotation stays fair when the agent roster grows/shrinks
-        // (storing the modulo'd value would pin the cursor to the smallest
-        // roster ever seen and starve later-added agents). enqueueCampaign still
-        // serializes in-process to reduce contention, but correctness no longer
-        // depends on it.
-        const result = await enqueueCampaign(campaignId, async () => {
-          // campaignId is UNIQUE on round_robin_cursor, so findOrCreate is race-safe.
-          await RoundRobinCursor.findOrCreate({
-            where: { campaignId },
-            defaults: { campaignId, cursor: 0 },
-          });
-          const [, [updated]] = await RoundRobinCursor.update(
-            { cursor: sequelize.literal('"cursor" + 1') },
-            { where: { campaignId }, returning: true }
-          );
-          const nextCursor = updated?.cursor ?? 1;
-          return activeAgents[(nextCursor - 1) % activeAgents.length];
-        });
-        if (result) return { agentId: result, via: 'package' };
-      }
-    }
-  }
-
-  // 5) Fallback to System Agent
-  const systemId = await getSystemAgentId();
-  return { agentId: systemId, via: 'fallback' };
+  const r = await resolveLeadAssignment({ reqUser, requestedAgentId, campaignId, qrTagId, allowExternal: false });
+  return { agentId: r.internalAgentId, via: r.via };
 }
 
 /**
@@ -165,31 +88,33 @@ export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId
  * tagged result so the caller knows which table the assignee lives in — which
  * also drives webhook destination (internal -> Lyfe app, external -> MKTR Leads).
  *
- * ADDITIVE: not yet wired into the live capture path. createProspect / retell /
- * meta are cut over in the Phase 0.7 + 0.5 change, where the external branch also
- * atomically deducts balance (deductExternalLeadBalance) and runs the consent
- * gate, and where an external campaign with no eligible paid buyer quarantines
- * the lead instead of dropping it onto the System Agent.
+ * THE single tier implementation (P4-9): resolveLeadRouting wraps this with
+ * allowExternal=false, so the tiers exist exactly once.
  *
  * `allowExternal` MUST be computed by the caller as
  *   (campaign.externalEligible === true) && hasValidExternalConsent(prospect)
  * and defaults to false. When false the external pool is not even queried, so
- * the resolver is byte-for-byte internal-only — identical to resolveAssignedAgentId
- * behavior. This is the fail-safe that keeps the live pipeline unchanged until a
- * caller opts a consented, external-eligible lead in.
+ * the resolver is byte-for-byte internal-only. This is the fail-safe that keeps
+ * the live pipeline unchanged unless a caller opts a consented,
+ * external-eligible lead in (createProspect does; retell/meta/sweeps do not).
  *
  * Every return also carries `via` (self | admin | qr | package | external | fallback)
  * so the caller threads a consistent route label into the lead-quota gate.
  *
  *   returns { kind: 'internal', internalAgentId, via } | { kind: 'external', externalAgentId, via }
  *
- * NOTE (external-activation parity, tracked in docs/plans/MKTR_LEADS_ACTIVATION_PLAN.md): the QR tier
- * here only covers direct assignedAgentId/ownerUserId — NOT QR round-robin groups or the
- * legacy assignedAgentPhone fallback that createProspect's QR-override block handles. Since
- * createProspect skips that block for external-eligible leads, QR round-robin/phone routing
- * must be folded into this resolver (or the block re-enabled per-tier) before external goes
- * live. Likewise, tier-5 still falls back to the System Agent; an external-eligible campaign
- * with no funded buyer must HOLD (W1b), not deliver internally.
+ * DELIBERATE tier-3 scope (P4-9 drift decision): the QR tier here covers only
+ * direct assignedAgentId/ownerUserId. QR round-robin GROUPS and the legacy
+ * assignedAgentPhone fallback live in createProspect's PRE-resolver QR-override
+ * block, and that is the CORRECT home: only form/QR captures carry a qrTagId
+ * (retell/meta/sweep callers pass qrTagId:null, so the richer QR handling is
+ * vacuous for them), and the override must run before quota/consent gating.
+ * NOTE (external-activation parity, docs/plans/MKTR_LEADS_ACTIVATION_PLAN.md):
+ * since createProspect skips that block for external-eligible leads, QR
+ * round-robin/phone routing must be folded into this resolver (or the block
+ * re-enabled per-tier) before external-QR goes live. Likewise an
+ * external-eligible campaign with no funded buyer HOLDs (W1b), never delivers
+ * internally.
  */
 export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaignId, qrTagId, allowExternal = false }) {
   // 1) Requester is an agent → self-assign (internal)
