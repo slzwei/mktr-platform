@@ -94,7 +94,7 @@ export function makeWaWebhookService(overrides = {}) {
    */
   async function upsertStatus({ wamid, status, errorCode = null, errorTitle = null, recipientHash = null, occurredAt = null }) {
     if (!wamid || !KNOWN_STATUSES.has(status)) return false;
-    await d.sequelize.query(
+    const [rows] = await d.sequelize.query(
       `INSERT INTO wa_message_statuses
          (wamid, status, "errorCode", "errorTitle", "recipientHash", "occurredAt", "createdAt", "updatedAt")
        VALUES (:wamid, :status, :errorCode, :errorTitle, :recipientHash, :occurredAt, NOW(), NOW())
@@ -106,7 +106,8 @@ export function makeWaWebhookService(overrides = {}) {
          "occurredAt" = COALESCE(EXCLUDED."occurredAt", wa_message_statuses."occurredAt"),
          "updatedAt" = NOW()
        WHERE ${STATUS_RANK_SQL.replace('%s', 'EXCLUDED.status')}
-           > ${STATUS_RANK_SQL.replace('%s', 'wa_message_statuses.status')}`,
+           > ${STATUS_RANK_SQL.replace('%s', 'wa_message_statuses.status')}
+       RETURNING wamid`,
       {
         replacements: {
           wamid: String(wamid).slice(0, 128),
@@ -118,7 +119,11 @@ export function makeWaWebhookService(overrides = {}) {
         },
       }
     );
-    return true;
+    // Did the row ACTUALLY advance? The rank guard makes a redelivery a no-op,
+    // and returning true regardless meant every one of Meta's retries counted
+    // as new: counts.statuses over-counted and — worse — each redelivered
+    // 'read' re-dirtied the lead and fired another rescore (P2-4).
+    return Array.isArray(rows) && rows.length > 0;
   }
 
   /** The STOP text of an inbound message, or null. Quick-reply buttons carry
