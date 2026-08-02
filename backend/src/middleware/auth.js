@@ -92,6 +92,24 @@ export const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Access token required' });
     }
 
+    // P4-10: optionalAuth (mounted app-wide so the rate limiter can see the
+    // role) already verified this EXACT token and loaded the user — reuse
+    // instead of paying jwt.verify + User.findByPk twice per request. Only a
+    // successful optionalAuth populates the cache, and only an identical
+    // token string reuses it; every other case (absent, different, invalid,
+    // inactive) takes the full verify below and is rejected there.
+    if (req._verifiedAuth?.token === token && req._verifiedAuth.user?.isActive) {
+      const cachedUser = req._verifiedAuth.user;
+      // Debounce lastLogin writes — only update if stale by 5+ minutes
+      const fiveMinutes = 5 * 60 * 1000;
+      if (!cachedUser.lastLogin || Date.now() - new Date(cachedUser.lastLogin).getTime() > fiveMinutes) {
+        cachedUser.lastLogin = new Date();
+        cachedUser.save().catch(() => {}); // fire-and-forget, don't block the request
+      }
+      req.user = cachedUser;
+      return next();
+    }
+
     if (getRemoteJwks()) {
       try {
         const { payload } = await jwtVerify(token, getRemoteJwks(), {
@@ -193,7 +211,15 @@ export const optionalAuth = async (req, res, next) => {
           /* expected: token verification may fail */
         }
       }
-      if (user && user.isActive) req.user = user;
+      if (user && user.isActive) {
+        req.user = user;
+        // P4-10: cache the VERIFIED (token → user) pair so authenticateToken
+        // (which runs next on protected routes) can skip the second
+        // jwt.verify + User.findByPk. Cached ONLY on success — an invalid
+        // token never populates this, so authenticateToken's own verify still
+        // rejects it properly.
+        req._verifiedAuth = { token, user };
+      }
     }
 
     next();
