@@ -44,6 +44,41 @@ const durations = new Map();
  *  without bound on a long-lived process. */
 const MAX_SAMPLES = 512;
 
+/**
+ * Hard cap on DISTINCT metric keys.
+ *
+ * A metric name plus its labels is a map key that lives for the life of the
+ * process, and a duration key carries up to MAX_SAMPLES numbers with it. One
+ * caller interpolating an id into a label is therefore a memory leak — and the
+ * documented "keep cardinality low" rule did not prevent exactly that: the
+ * Apify client passed `apify GET /actor-runs/${runId}`, minting a permanent key
+ * per Discovery run, and it shipped.
+ *
+ * So the rule is enforced here rather than merely written down. Past the cap we
+ * stop MINTING keys; every key already being tracked keeps updating, so the
+ * signals that matter (which are few and stable) never go blind. The overflow
+ * is counted under a fixed key and logged once, because silently dropping
+ * telemetry is its own outage.
+ */
+const MAX_KEYS = 500;
+const OVERFLOW_KEY = 'observability.keys_dropped';
+let overflowWarned = false;
+
+/** True when `key` may be created. Existing keys always pass. */
+function admitKey(map, key) {
+  if (map.has(key)) return true;
+  if (counters.size + durations.size < MAX_KEYS) return true;
+  counters.set(OVERFLOW_KEY, (counters.get(OVERFLOW_KEY) || 0) + 1);
+  if (!overflowWarned) {
+    overflowWarned = true;
+    logger.warn('[observability] metric key cap reached — new keys dropped', {
+      cap: MAX_KEYS,
+      hint: 'a label is probably carrying an id; see docs/reference/hot-path-metrics.md',
+    });
+  }
+  return false;
+}
+
 const startedAt = Date.now();
 
 function getSampleRate() {
@@ -69,6 +104,7 @@ export function metricKey(name, labels) {
 
 export function incCounter(name, value = 1, labels = null) {
   const key = metricKey(name, labels);
+  if (!admitKey(counters, key)) return;
   counters.set(key, (counters.get(key) || 0) + value);
 }
 
@@ -83,6 +119,7 @@ export function timeMs(start) {
 export function observeDuration(name, ms, labels = null) {
   if (!Number.isFinite(ms) || ms < 0) return;
   const key = metricKey(name, labels);
+  if (!admitKey(durations, key)) return;
   let d = durations.get(key);
   if (!d) {
     d = { count: 0, total: 0, min: ms, max: ms, samples: [] };
@@ -165,4 +202,5 @@ export function getMetricsSnapshot() {
 export function resetMetrics() {
   counters.clear();
   durations.clear();
+  overflowWarned = false;
 }

@@ -228,3 +228,56 @@ describe('GET /health/metrics', () => {
     }
   });
 });
+
+/**
+ * Round-3 regression: a label carrying an id is a memory leak.
+ *
+ * P3-5 shipped with the Apify client passing `apify GET /actor-runs/${runId}`,
+ * so every Discovery run minted a permanent counter AND a permanent histogram
+ * holding up to 512 samples. The "keep cardinality low" rule was documented and
+ * still broken within hours, so it is enforced in the sink now, not just
+ * written down.
+ */
+describe('metric key cardinality is bounded', () => {
+  beforeEach(() => resetMetrics());
+
+  it('templates ids out of the Apify label instead of interpolating them', async () => {
+    const { makeApifyClient } = await import('../src/services/redeemOps/discovery/apifyClient.js');
+    const client = makeApifyClient({
+      token: 't', baseUrl: 'https://api.test',
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ data: { id: 'r1' } }) }),
+      logger: silent, sleep: async () => {},
+    });
+
+    await client.getRun('run-abcdef123456');
+    await client.getRun('run-zzzzzz999999');
+
+    // Two different runs, ONE metric key.
+    const keys = Object.keys(getDurationsSnapshot()).filter((k) => k.includes('apify'));
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toContain('/actor-runs/:id');
+    expect(keys[0]).not.toContain('abcdef');
+  });
+
+  it('stops minting new keys past the cap but keeps updating existing ones', () => {
+    for (let i = 0; i < 600; i += 1) incCounter('leaky', 1, { id: `id-${i}` });
+
+    const snap = getCountersSnapshot();
+    // Bounded, not unbounded.
+    expect(Object.keys(snap).length).toBeLessThanOrEqual(501);
+    // The drop is COUNTED, not silent — telemetry going blind unnoticed is its
+    // own outage.
+    expect(snap['observability.keys_dropped']).toBeGreaterThan(0);
+
+    // An already-tracked key must keep working, or the signals that matter go
+    // dead the moment some unrelated caller floods the map.
+    const before = snap['leaky{id=id-0}'];
+    incCounter('leaky', 5, { id: 'id-0' });
+    expect(getCountersSnapshot()['leaky{id=id-0}']).toBe(before + 5);
+  });
+
+  it('caps durations the same way', () => {
+    for (let i = 0; i < 600; i += 1) observeDuration('leaky.duration', 10, { id: `id-${i}` });
+    expect(Object.keys(getDurationsSnapshot()).length).toBeLessThanOrEqual(500);
+  });
+});

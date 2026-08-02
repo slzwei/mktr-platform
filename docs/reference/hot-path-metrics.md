@@ -93,6 +93,19 @@ await timed('thing.duration', () => doIt(), { kind: 'x' });  // records + counts
 ```
 
 Two rules. Keep the label cardinality **low** — never a lead id, a phone or a
-UUID; each distinct combination is a permanent row in memory. And never let an
-observability call fail a request: `observeDuration` ignores nonsense input on
-purpose, and `timed` always re-throws rather than swallowing.
+UUID; each distinct combination is a permanent row in memory, and a duration key
+drags up to 512 samples with it. And never let an observability call fail a
+request: `observeDuration` ignores nonsense input on purpose, and `timed` always
+re-throws rather than swallowing.
+
+The cardinality rule is **enforced**, not just written here: the sink caps
+distinct keys at 500. Past the cap it stops minting new keys while every
+already-tracked key keeps updating, so a flood from one careless caller can't
+blind the signals that matter. Drops are counted under
+`observability.keys_dropped` and logged once.
+
+That backstop exists because the rule alone did not work. This file shipped
+saying "never a UUID", and the Apify client was passing
+`apify GET /actor-runs/${runId}` at the same time — a permanent counter and
+histogram per Discovery run. If you are adding a label, template the ids out
+(`/actor-runs/:id`) rather than trusting yourself to remember.
