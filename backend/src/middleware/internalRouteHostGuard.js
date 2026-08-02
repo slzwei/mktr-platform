@@ -32,6 +32,9 @@ const BLOCKED_PATH_PREFIXES = [
   '/api/webhooks',
   '/api/integrations',
   '/api/redeem-ops',
+  // File administration + staff uploads (P1-5): nothing on a consumer host
+  // uploads to or enumerates uploads/ — the only caller is the admin Studio.
+  '/api/uploads',
 ];
 
 const OPS_ALLOWED_PREFIXES = [

@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { sniffFileType, canonicalExtensionForMime } from '../utils/fileSignature.js';
@@ -168,10 +168,13 @@ router.post('/multiple',        authenticateToken, upload.array('files', 5),    
 router.post('/avatar',          authenticateToken, upload.single('avatar'),      verifyUploadedContent, uploadController.uploadAvatar);
 router.post('/campaign-assets', authenticateToken, upload.array('assets', 10),   verifyUploadedContent, uploadController.uploadCampaignAssets);
 router.post('/documents',       authenticateToken, upload.array('documents', 5), verifyUploadedContent, uploadController.uploadDocuments);
-router.delete('/:type/:filename',      authenticateToken, uploadController.deleteFile);
-router.get('/info/:type/:filename',    authenticateToken, uploadController.getFileInfo);
-router.get('/list/:type',              authenticateToken, uploadController.listFiles);
-router.get('/stats/usage',             authenticateToken, uploadController.getStorageUsage);
+// File ADMINISTRATION — enumerate, inspect and unlink anything under uploads/.
+// The service has no ownership concept, so a session alone is not enough: these
+// are admin-only (P1-5). Upload itself stays open to any authenticated staff.
+router.delete('/:type/:filename',      authenticateToken, requireAdmin, uploadController.deleteFile);
+router.get('/info/:type/:filename',    authenticateToken, requireAdmin, uploadController.getFileInfo);
+router.get('/list/:type',              authenticateToken, requireAdmin, uploadController.listFiles);
+router.get('/stats/usage',             authenticateToken, requireAdmin, uploadController.getStorageUsage);
 
 // --- Multer error handling middleware ---
 
