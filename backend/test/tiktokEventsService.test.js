@@ -122,6 +122,15 @@ describe('_buildPayload', () => {
     expect(_buildPayload(webProspect(), { eventId: 'evt-xyz' }, {}).data[0].event_id).toBe('evt-xyz');
   });
 
+  it('honours ctx.eventTime for back-dated down-funnel events and defaults to now without it (P4-9 Meta parity)', () => {
+    const backdated = 1_722_500_000; // fixed unix seconds
+    expect(_buildPayload(webProspect(), { ...ctx, eventTime: backdated }, {}).data[0].event_time).toBe(backdated);
+    const before = Math.floor(Date.now() / 1000);
+    const stamped = _buildPayload(webProspect(), ctx, {}).data[0].event_time;
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 1);
+  });
+
   it('hashes email and phone when ctx.marketingConsent is true (ledger-derived by the caller)', () => {
     const user = _buildPayload(webProspect(), { ...ctx, marketingConsent: true }, {}).data[0].user;
     expect(user.email).toMatch(/^[a-f0-9]{64}$/);

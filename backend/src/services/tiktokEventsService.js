@@ -73,8 +73,12 @@ export function _buildPayload(prospect, ctx, options) {
   const url = ctx.eventSourceUrl || meta.eventSourceUrl || undefined;
 
   const eventData = {
+    // Down-funnel senders (which fire when an agent advances the lead days
+    // later) back-date event_time to when the status changed — the same
+    // ctx.eventTime passthrough metaCapiService honours (P4-9; this used to
+    // always stamp now). Submit-time events omit ctx.eventTime → now.
     event: eventName,
-    event_time: Math.floor(Date.now() / 1000),
+    event_time: ctx.eventTime || Math.floor(Date.now() / 1000),
     event_id: ctx.eventId,
     user: cleanUser,
     properties: {
