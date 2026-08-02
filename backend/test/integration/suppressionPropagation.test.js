@@ -85,6 +85,33 @@ const pairsOf = (subscriberId) => SuppressionPropagation.findAll({
   where: { subscriberId }, order: [['createdAt', 'ASC']],
 });
 
+/**
+ * Wait for the app's OWN post-commit reconcile to land.
+ *
+ * captureAgreeAll posts a REAL lead capture, and consentService fires
+ * reconcileSuppressionPropagation post-commit, fire-and-forget (consentService
+ * ~:196). That pass is NOT the spy'd service these tests drive: it creates its
+ * own delivery and REPOINTS pair.deliveryId. A test that snapshots the pair
+ * before it lands then forces the WRONG delivery to 'failed', and the pass
+ * under test correctly declines to requeue — which is exactly how this suite
+ * failed in CI (requeued 0) while passing on a faster local machine.
+ *
+ * So wait for the lift to be projected, then for the pointer to hold still.
+ */
+async function settleLifted(subscriberId, { quietMs = 60, timeoutMs = 8000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  for (;;) {
+    const [pair] = await pairsOf(subscriberId);
+    const key = pair ? `${pair.deliveryId}:${pair.deliveredState}` : null;
+    if (pair?.deliveredState === 'lifted' && key === last) return pair;
+    last = key;
+    if (Date.now() > deadline) return pair; // best effort — the assertions still speak
+    await new Promise((r) => setTimeout(r, quietMs));
+  }
+}
+
+
 beforeAll(async () => {
   app = await getApp();
   admin = await createTestUser({ role: 'admin' });
@@ -859,7 +886,9 @@ describe('resubscribe lift (plan v3)', () => {
     await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
     await captureAgreeAll(phone, campaign2);
     await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
-    const pair = (await pairsOf(s1.id))[0];
+    // The app's own post-commit pass may still be in flight and would repoint
+    // pair.deliveryId under us — settle before snapshotting it.
+    const pair = await settleLifted(s1.id);
     expect(pair.deliveredState).toBe('lifted');
 
     await WebhookDelivery.update({ status: 'failed' }, { where: { deliveryId: pair.deliveryId } });
