@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { User } from '../models/index.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { DEFAULT_TENANT_ID } from './tenant.js';
 import { logger } from '../utils/logger.js';
 import { COOKIE_NAME } from '../utils/authCookie.js';
 
@@ -75,7 +74,6 @@ async function mapJwtToUser(payload) {
     });
   }
   if (user) {
-    user.tid = payload?.tid || DEFAULT_TENANT_ID;
     return user;
   }
   return null;
