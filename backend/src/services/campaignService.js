@@ -38,6 +38,7 @@ import { invalidateMarketplaceCache } from './marketplaceCache.js';
 import { invalidateFeaturedDropsCache } from './featuredDropsService.js';
 import { bustScoringConfigCache } from './scoringConfigCache.js';
 import { refundCampaignCommitments } from './walletService.js';
+import { escapeLike } from '../utils/escapeLike.js';
 
 // Draw guards moved to campaignDrawGuards.js (P4-4); re-exported so existing
 // importers (tests, the controller's namespace import) keep their path.
@@ -183,7 +184,7 @@ export async function listCampaigns(user, query, req) {
   if (createdBy && user.role === 'admin') where.createdBy = createdBy;
 
   if (search) {
-    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const sanitizedSearch = escapeLike(search);
     // Append inside Op.and — the role scope from buildCampaignWhere is an OR
     // group too, and both must hold at once.
     where[Op.and] = [

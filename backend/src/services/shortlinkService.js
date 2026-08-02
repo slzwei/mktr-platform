@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import { ShortLink, ShortLinkClick, Prospect, sequelize } from '../models/index.js';
 import { AppError } from '../middleware/appError.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import { escapeLike } from '../utils/escapeLike.js';
 
 const generateSlug = (len = 8) => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -242,7 +243,7 @@ export async function listLinks({ page = 1, limit = 20, search = '', campaignId,
   if (campaignId) where.campaignId = campaignId;
   if (purpose) where.purpose = purpose;
   if (search) {
-    const sanitizedSearch = String(search).trim().slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const sanitizedSearch = escapeLike(search);
     where.slug = { [Op.like]: `%${sanitizedSearch}%` };
   }
 
