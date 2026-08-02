@@ -88,7 +88,11 @@ describe('POST /api/external/lead-outcomes', () => {
     expect(activity).not.toBeNull();
     expect(activity.metadata).toMatchObject({ source: 'mktr-leads', mktrLeadsStatus: 'won' });
 
-    const key = await IdempotencyKey.findByPk(`external:outcome:${prospect.id}:won`);
+    // Composite (scope, key) PK since P2-13 — findByPk cannot resolve from one
+    // value, so the lookup names both parts.
+    const key = await IdempotencyKey.findOne({
+      where: { key: `external:outcome:${prospect.id}:won`, scope: 'external:outcome' },
+    });
     expect(key).not.toBeNull();
     expect(key.scope).toBe('external:outcome');
 

@@ -91,7 +91,9 @@ function build({
   };
   const getSystemAgentId = jest.fn(async () => 'sys-agent');
   const IdempotencyKey = {
-    findByPk: jest.fn(async () => null),
+    // The service looks up by KEY (findOne), not findByPk — the PK is composite
+    // (scope, key) since P2-13 and cannot resolve from one value.
+    findOne: jest.fn(async () => null),
     create: jest.fn(async (attrs) => attrs),
     update: jest.fn(async () => [1]),
   };
@@ -227,7 +229,7 @@ describe('walletService.commit', () => {
 
   test('idempotent commit replay: stored response returned, no money moves', async () => {
     const { svc, IdempotencyKey, WalletLedger, sequelize } = build({ campaign: activeCampaign() });
-    IdempotencyKey.findByPk.mockResolvedValueOnce({ responseBody: { assignmentId: 'asg-prior', totalCents: 1600 } });
+    IdempotencyKey.findOne.mockResolvedValueOnce({ responseBody: { assignmentId: 'asg-prior', totalCents: 1600 } });
     const r = await svc.commit('agent-1', 'c-1', 2, { requestId: 'req-abc-12345' });
     expect(r).toEqual({ assignmentId: 'asg-prior', totalCents: 1600, replayed: true });
     expect(sequelize.transaction).not.toHaveBeenCalled();
@@ -237,7 +239,7 @@ describe('walletService.commit', () => {
   test('concurrent duplicate: PK collision aborts the duplicate tx and returns the winner', async () => {
     const { svc, IdempotencyKey } = build({ campaign: activeCampaign() });
     IdempotencyKey.create.mockRejectedValueOnce(uniqueViolation());
-    IdempotencyKey.findByPk
+    IdempotencyKey.findOne
       .mockResolvedValueOnce(null) // pre-check: not yet written
       .mockResolvedValueOnce({ responseBody: { assignmentId: 'asg-winner' } }); // after collision
     const r = await svc.commit('agent-1', 'c-1', 2, { requestId: 'req-abc-12345' });

@@ -434,7 +434,11 @@ describe('PDPA erasure — full matrix', () => {
   });
 
   test('provider idempotency rows referencing the person are deleted', async () => {
-    expect(await IdempotencyKey.findByPk(`retell:call:call-in-${RUN}`)).toBeNull();
+    // Composite (scope, key) PK since P2-13: findByPk with one value returns
+    // null unconditionally, so this must name the scope or it proves nothing.
+    expect(await IdempotencyKey.findOne({
+      where: { key: `retell:call:call-in-${RUN}`, scope: 'retell:call' },
+    })).toBeNull();
   });
 
   test('in-memory phone caches evicted post-commit', () => {

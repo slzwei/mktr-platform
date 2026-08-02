@@ -33,8 +33,12 @@ export function makeWalletService(overrides = {}) {
   const d = { User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, IdempotencyKey, sequelize, getSystemAgentId, logger, ...overrides };
 
   /**
-   * Money-op replay shield over the house IdempotencyKey table (key = PK, so
-   * keys are namespaced). The key row is created as the FIRST statement of the
+   * Money-op replay shield over the house IdempotencyKey table. The `key`
+   * string already namespaces itself (`${scope}:${agentId}:${requestId}`), so
+   * the lookup is by KEY — not findByPk, which since the composite (scope,key)
+   * primary key (P2-13) cannot resolve from one value and would silently
+   * return null, turning every legitimate replay into a 500. The key row is
+   * created as the FIRST statement of the
    * money transaction and its response stored in the SAME transaction — so a
    * stored row implies the op committed, and a concurrent duplicate aborts the
    * whole duplicate transaction on the PK collision (caught OUT here, never
@@ -46,13 +50,13 @@ export function makeWalletService(overrides = {}) {
       throw new AppError('requestId must be 8-64 chars of [A-Za-z0-9_-]', 400);
     }
     const key = `${scope}:${requestId}`;
-    const prior = await d.IdempotencyKey.findByPk(key);
+    const prior = await d.IdempotencyKey.findOne({ where: { key } });
     if (prior) return { ...(prior.responseBody || {}), replayed: true };
     try {
       return await run(key);
     } catch (err) {
       if (err?.name === 'SequelizeUniqueConstraintError') {
-        const winner = await d.IdempotencyKey.findByPk(key);
+        const winner = await d.IdempotencyKey.findOne({ where: { key } });
         if (winner) return { ...(winner.responseBody || {}), replayed: true };
       }
       throw err;
