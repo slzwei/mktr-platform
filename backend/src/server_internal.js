@@ -21,6 +21,7 @@ import { optionalAuth } from './middleware/auth.js';
 import { blockRedeemForInternalRoutes } from './middleware/internalRouteHostGuard.js';
 import { logger } from './utils/logger.js';
 import { maskTokenUrl } from './utils/redactTokens.js';
+import { isInlineSafePath } from './utils/fileSignature.js';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger.js';
 
@@ -186,10 +187,13 @@ export const init = async (app) => {
     express.static(path.join(__dirname, '../uploads'), {
       setHeaders: (res, filePath) => {
         res.set('X-Content-Type-Options', 'nosniff');
-        // Force download for SVG files (prevents script execution)
-        if (filePath.endsWith('.svg')) {
+        // Only passive media is served inline. Everything else — .svg, .pdf and
+        // anything an older upload path let through — downloads as an opaque
+        // blob so a stored file can never execute script on this origin, where
+        // the session cookie lives (P0-1).
+        if (!isInlineSafePath(filePath)) {
           res.set('Content-Disposition', 'attachment');
-          res.set('Content-Type', 'image/svg+xml');
+          res.set('Content-Type', 'application/octet-stream');
         }
       },
     })
