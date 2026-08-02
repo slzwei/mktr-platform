@@ -60,7 +60,6 @@ const sequelize = {
   literal: jest.fn((expr) => expr),
 };
 
-const getTenantId = jest.fn().mockReturnValue('tenant-1');
 
 const storageService = {
   isEnabled: jest.fn().mockReturnValue(false),
@@ -89,10 +88,6 @@ jest.unstable_mockModule('../../src/models/index.js', () => ({
     create: async (fields) => ({ id: 'dtv-mock', ...fields }),
   },
   Op,
-}));
-
-jest.unstable_mockModule('../../src/middleware/tenant.js', () => ({
-  getTenantId,
 }));
 
 jest.unstable_mockModule('../../src/services/storage.js', () => ({

@@ -32,9 +32,6 @@ jest.unstable_mockModule('../src/models/index.js', () => ({
   },
   Op,
 }));
-jest.unstable_mockModule('../src/middleware/tenant.js', () => ({
-  getTenantId: jest.fn(),
-}));
 jest.unstable_mockModule('../src/services/storage.js', () => ({
   storageService: {},
 }));

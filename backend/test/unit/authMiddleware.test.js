@@ -26,10 +26,6 @@ jest.unstable_mockModule('jose', () => ({
   jwtVerify: jest.fn(),
 }));
 
-jest.unstable_mockModule('../../src/middleware/tenant.js', () => ({
-  DEFAULT_TENANT_ID: 'default-tenant',
-}));
-
 jest.unstable_mockModule('../../src/utils/logger.js', () => ({
   logger: {
     info: jest.fn(),

@@ -1,10 +1,11 @@
 import { Op } from 'sequelize';
-import { Campaign } from '../models/index.js';
-import { getTenantId } from '../middleware/tenant.js';
 
 /**
  * Campaign query scoping (P4-4, split out of campaignService): the two
- * tenant/role WHERE-builders every campaign read/write path starts from.
+ * role WHERE-builders every campaign read/write path starts from. (The
+ * half-built tenant filter was removed in P4-8 — it never applied: the
+ * Campaign model never declared tenant_id, and the value would always have
+ * been the default tenant anyway.)
  *
  * buildCampaignWhere — VISIBILITY scope: non-admins see their own campaigns
  *   plus public ones (list/get/analytics/duplicate).
@@ -14,13 +15,6 @@ import { getTenantId } from '../middleware/tenant.js';
 
 export function buildCampaignWhere(req, extra = {}) {
   const where = { ...extra };
-
-  try {
-    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
-    if (hasTenantId) {
-      where.tenant_id = getTenantId(req);
-    }
-  } catch (_) { /* skip in dev */ }
 
   if (req.user.role !== 'admin') {
     // The role scope lives inside Op.and — never as a bare where[Op.or] — so a
@@ -38,13 +32,6 @@ export function buildCampaignWhere(req, extra = {}) {
 
 export function buildOwnerWhere(req, extra = {}) {
   const where = { ...extra };
-
-  try {
-    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
-    if (hasTenantId) {
-      where.tenant_id = getTenantId(req);
-    }
-  } catch (_) { /* tenant column may not exist */ }
 
   if (req.user.role !== 'admin') {
     where.createdBy = req.user.id;
