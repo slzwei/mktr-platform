@@ -658,3 +658,122 @@ describe('verifyDraw', () => {
     expect(report.checks.some((c) => c.check.includes('eligibleSet') && !c.ok)).toBe(true);
   });
 });
+
+// ── P2-8: commit-reveal on the seed ────────────────────────────────────────
+
+/**
+ * pickWinner is a pure function of (seed, entries), and the seed used to be
+ * minted at DRAW time and used immediately. The pool was committed at seal, but
+ * nothing committed the seed — so an operator could re-mint and re-run the pick
+ * until it landed on a chosen entry and persist only that attempt. Nothing in
+ * the record would show the discarded rolls.
+ *
+ * The seed is now minted inside the one-way frozen→sealed transition; only its
+ * hash is published. The pool is committed by the same statement, so the winner
+ * is fixed at the seal instant.
+ */
+describe('seed commit-reveal', () => {
+  const entries = [
+    entryRow('e1', 'p1', '+6591111111', 1),
+    entryRow('e2', 'p2', '+6592222222', 10, 'agent_scan'),
+    entryRow('e3', 'p3', '+6593333333', 1),
+  ];
+
+  it('commits hash(seed) at SEAL, before any pick exists', async () => {
+    const { deps, state } = boostScenario();
+    const sealed = await makeLuckyDrawService(deps).sealDraw(DRAW_ID, ADMIN);
+
+    expect(sealed.seedCommitment).toMatch(/^[0-9a-f]{64}$/);
+    expect(state.draw.sealedSeed).toMatch(/^[0-9a-f]{64}$/);
+    expect(state.draw.seedCommitment).toBe(sha(state.draw.sealedSeed));
+    // No attempt has been made yet — the commitment precedes the pick.
+    expect(state.attempts).toHaveLength(0);
+  });
+
+  it('draws with the REVEALED sealed seed rather than a fresh one', async () => {
+    const sealedSeed = 'a'.repeat(64);
+    const { deps, state } = buildDeps({
+      draw: {
+        ...openDraw, status: 'sealed', poolHash: computePoolHash(entries),
+        sealedSeed, seedCommitment: sha(sealedSeed),
+      },
+      entries,
+    });
+    // A mint that would betray itself if it were used.
+    deps.mintSeed = () => 'f'.repeat(64);
+
+    const { attempt } = await makeLuckyDrawService(deps).runDrawAttempt(DRAW_ID, {}, ADMIN);
+
+    expect(attempt.seed).toBe(sealedSeed);
+    expect(state.attempts[0].seed).toBe(sealedSeed);
+  });
+
+  it('REFUSES to draw when the sealed seed does not match its commitment', async () => {
+    const { deps } = buildDeps({
+      draw: {
+        ...openDraw, status: 'sealed', poolHash: computePoolHash(entries),
+        sealedSeed: 'b'.repeat(64), seedCommitment: sha('a'.repeat(64)), // substituted
+      },
+      entries,
+    });
+
+    await expect(makeLuckyDrawService(deps).runDrawAttempt(DRAW_ID, {}, ADMIN))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/does not match its commitment/i) });
+  });
+
+  it('verifyDraw passes a normal sealed→drawn round trip', async () => {
+    const sealedSeed = 'c'.repeat(64);
+    const { deps } = buildDeps({
+      draw: {
+        ...openDraw, status: 'sealed', poolHash: computePoolHash(entries),
+        sealedSeed, seedCommitment: sha(sealedSeed),
+      },
+      entries,
+    });
+    const svc = makeLuckyDrawService(deps);
+    await svc.runDrawAttempt(DRAW_ID, {}, ADMIN);
+
+    const report = await svc.verifyDraw(DRAW_ID);
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.find((c) => c.check === 'seedCommitment')).toMatchObject({ ok: true });
+  });
+
+  it('verifyDraw REJECTS a revealed seed that does not hash to the commitment', async () => {
+    const sealedSeed = 'd'.repeat(64);
+    const { deps, state } = buildDeps({
+      draw: {
+        ...openDraw, status: 'sealed', poolHash: computePoolHash(entries),
+        sealedSeed, seedCommitment: sha(sealedSeed),
+      },
+      entries,
+    });
+    const svc = makeLuckyDrawService(deps);
+    await svc.runDrawAttempt(DRAW_ID, {}, ADMIN);
+
+    // The operator swaps in the seed that produced the winner they wanted.
+    state.draw.sealedSeed = 'e'.repeat(64);
+    state.attempts[0].seed = 'e'.repeat(64);
+
+    const report = await svc.verifyDraw(DRAW_ID);
+
+    expect(report.ok).toBe(false);
+    expect(report.checks.find((c) => c.check === 'seedCommitment')).toMatchObject({ ok: false });
+    expect(report.checks.some((c) => c.check === 'attempt#1.seedRevealed' && c.ok === false)).toBe(true);
+  });
+
+  it('a draw sealed BEFORE commit-reveal still draws, and verifyDraw says the commitment is absent', async () => {
+    const { deps } = buildDeps({
+      draw: { ...openDraw, status: 'sealed', poolHash: computePoolHash(entries) }, // no commitment
+      entries,
+    });
+    const svc = makeLuckyDrawService(deps);
+    await svc.runDrawAttempt(DRAW_ID, {}, ADMIN);
+
+    const report = await svc.verifyDraw(DRAW_ID);
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.find((c) => c.check === 'seedCommitment').note)
+      .toMatch(/sealed before commit-reveal/i);
+  });
+});
