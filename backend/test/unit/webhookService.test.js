@@ -275,9 +275,12 @@ describe('webhookService (unit)', () => {
 
       await service.attemptDelivery(delivery, mocks.mockSubscriber);
 
-      // Status should NOT be 'failed' since we haven't exhausted maxAttempts
+      // Status should NOT be 'failed' since we haven't exhausted maxAttempts.
+      // It is now set to 'pending' EXPLICITLY (P2-2): the claim moved the row
+      // to 'sending', and a row left there would be invisible to both the
+      // retry timer and the recovery poll.
       const updateCall = delivery.update.mock.calls[0][0];
-      expect(updateCall.status).toBeUndefined(); // status not set to 'failed' when retries remain
+      expect(updateCall.status).toBe('pending');
       expect(updateCall.attempts).toBe(1);
       expect(updateCall.nextRetryAt).toBeDefined();
     });

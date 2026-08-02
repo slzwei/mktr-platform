@@ -33,7 +33,9 @@ const WebhookDelivery = sequelize.define('WebhookDelivery', {
     allowNull: false,
     defaultValue: 'pending',
     validate: {
-      isIn: [['pending', 'success', 'failed']]
+      // 'sending' = claimed by a worker and in flight (P2-2). Plain STRING
+      // column, no DB-level enum, so no migration is needed to widen it.
+      isIn: [['pending', 'sending', 'success', 'failed']]
     }
   },
   attempts: {

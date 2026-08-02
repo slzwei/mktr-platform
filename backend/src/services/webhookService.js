@@ -48,6 +48,9 @@ export function makeWebhookService(overrides = {}) {
   // Concurrency limiter for webhook deliveries to avoid exhausting the connection pool
   const MAX_CONCURRENT_DELIVERIES = 3;
   const MAX_QUEUE_DEPTH = 100;
+  // A send is bounded at 10s; anything claimed for longer than this lost its
+  // process mid-flight and must be released back to the queue (P2-2).
+  const STALE_SENDING_MS = 120_000;
   let activeDeliveries = 0;
   let droppedDeliveries = 0;
   const deliveryQueue = [];
@@ -229,6 +232,30 @@ export function makeWebhookService(overrides = {}) {
         });
         return;
       }
+
+      // CLAIM the row before sending (P2-2). A failed delivery schedules its
+      // retry on a setTimeout while the row stays 'pending', and the 60s
+      // recovery poll selects exactly those rows — so once nextRetryAt passed,
+      // the timer and the poll could both enqueue the same delivery and the
+      // receiver got it twice. Only the caller whose UPDATE actually moves
+      // pending→sending may send; the loser skips.
+      //
+      // `attempts` increments HERE, column-relative, so the counter can never
+      // be built from a stale read: an attempt made is an attempt counted, even
+      // if the process dies mid-fetch.
+      const [claimed, rows] = await d.WebhookDelivery.update(
+        { status: 'sending', attempts: d.sequelize.literal('attempts + 1'), lastAttemptAt: new Date() },
+        { where: { id: delivery.id, status: 'pending' }, returning: true }
+      );
+      if (!claimed) {
+        d.logger.info('[Webhook] delivery skipped (claimed by another worker)', {
+          deliveryId: delivery.deliveryId,
+        });
+        return;
+      }
+      // Carry the authoritative attempt count onto the in-memory copy.
+      delivery.attempts = rows?.[0]?.attempts ?? delivery.attempts + 1;
+      delivery.status = 'sending';
     }
     const rawBody = JSON.stringify(delivery.payload);
     const timestamp = new Date().toISOString();
@@ -267,7 +294,9 @@ export function makeWebhookService(overrides = {}) {
           status: 'success',
           responseCode: response.status,
           lastAttemptAt: new Date(),
-          attempts: delivery.attempts + 1
+          // The claim already incremented `attempts` for a real row; an
+          // injected fake (no reload()) never went through it (P2-2).
+          ...(delivery.status === 'sending' ? {} : { attempts: delivery.attempts + 1 })
         });
       } else {
         let responseBody = '';
@@ -293,10 +322,13 @@ export function makeWebhookService(overrides = {}) {
   }
 
   async function handleFailure(delivery, subscriber, { responseCode, responseBody, errorMessage }) {
-    const newAttempts = delivery.attempts + 1;
+    // The claim already incremented `attempts` for a real row; an injected fake
+    // (no reload()) never went through it, so it still counts its own.
+    const claimed = delivery.status === 'sending';
+    const newAttempts = claimed ? delivery.attempts : delivery.attempts + 1;
 
     const updateData = {
-      attempts: newAttempts,
+      ...(claimed ? {} : { attempts: newAttempts }),
       lastAttemptAt: new Date(),
       responseCode,
       responseBody,
@@ -307,6 +339,9 @@ export function makeWebhookService(overrides = {}) {
       // Exponential backoff: 1s, 4s, 16s
       const delayMs = Math.pow(4, newAttempts - 1) * 1000;
       updateData.nextRetryAt = new Date(Date.now() + delayMs);
+      // Back to 'pending' explicitly — the claim moved it to 'sending', and a
+      // row left there would be invisible to both the timer and the poll.
+      updateData.status = 'pending';
       await delivery.update(updateData);
 
       // Schedule the retry through the concurrency limiter so retries respect
@@ -522,6 +557,26 @@ export function makeWebhookService(overrides = {}) {
    */
   async function recoverPendingRetries() {
     const now = new Date();
+
+    // Reclaim rows stranded in 'sending' (P2-2): the claim is what stops the
+    // timer and this poll from double-sending, but a process that dies
+    // mid-fetch leaves the row claimed and therefore invisible to both. The
+    // send itself is bounded at 10s, so anything still 'sending' well past
+    // that is a corpse, not a flight in progress.
+    const [, reclaimed] = await d.WebhookDelivery.update(
+      { status: 'pending' },
+      {
+        where: {
+          status: 'sending',
+          lastAttemptAt: { [Op.lt]: new Date(now.getTime() - STALE_SENDING_MS) },
+        },
+        returning: true,
+      }
+    );
+    if (reclaimed?.length) {
+      d.logger.warn('[Webhook] reclaimed stranded in-flight deliveries', { count: reclaimed.length });
+    }
+
     const staleDeliveries = await d.WebhookDelivery.findAll({
       where: {
         status: 'pending',
