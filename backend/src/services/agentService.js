@@ -159,22 +159,17 @@ export async function getAgentDetail(agentId, requestingUser) {
     throw new AppError('Access denied', 403);
   }
 
+  // P4-10: the stats come from grouped COUNTs instead of eager-loading EVERY
+  // assigned prospect (with campaign join) and every created campaign with all
+  // its prospects — unbounded memory per request, growing with the agent's
+  // history. The raw arrays are dropped from the response: no consumer read
+  // them (AdminAgentDetail fetches prospects via the paginated
+  // /agents/:id/prospects endpoint), only `stats` counts. assignedPackages
+  // stays — bounded and part of the packages panel contract.
   const agent = await User.findOne({
     where: { id: agentId, role: 'agent' },
     attributes: { exclude: ['password'] },
     include: [
-      {
-        association: 'assignedProspects',
-        include: [
-          { association: 'campaign', attributes: ['id', 'name'] }
-        ]
-      },
-      {
-        association: 'createdCampaigns',
-        include: [
-          { association: 'prospects', attributes: ['id', 'leadStatus'] }
-        ]
-      },
       {
         association: 'assignedPackages',
         include: [
@@ -188,15 +183,29 @@ export async function getAgentDetail(agentId, requestingUser) {
     throw new AppError('Agent not found', 404);
   }
 
-  // Calculate detailed statistics
-  const totalProspects = agent.assignedProspects.length;
-  const prospectsByStatus = agent.assignedProspects.reduce((acc, prospect) => {
-    acc[prospect.leadStatus] = (acc[prospect.leadStatus] || 0) + 1;
-    return acc;
-  }, {});
+  const [statusRows, campaignRows, monthlyPerformance] = await Promise.all([
+    sequelize.query(
+      `SELECT "leadStatus", COUNT(*)::int AS count
+         FROM prospects WHERE "assignedAgentId" = :agentId GROUP BY "leadStatus"`,
+      { replacements: { agentId }, type: sequelize.QueryTypes.SELECT }
+    ),
+    sequelize.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE c.status = 'active')::int AS active,
+              COALESCE(SUM((SELECT COUNT(*) FROM prospects p WHERE p."campaignId" = c.id)), 0)::int AS "totalLeads"
+         FROM campaigns c WHERE c."createdBy" = :agentId`,
+      { replacements: { agentId }, type: sequelize.QueryTypes.SELECT }
+    ),
+    getAgentMonthlyPerformance(agentId),
+  ]);
 
-  // Monthly performance (last 12 months)
-  const monthlyPerformance = await getAgentMonthlyPerformance(agentId);
+  const prospectsByStatus = {};
+  let totalProspects = 0;
+  for (const row of statusRows) {
+    prospectsByStatus[row.leadStatus] = row.count;
+    totalProspects += row.count;
+  }
+  const campaignStats = campaignRows[0] || { total: 0, active: 0, totalLeads: 0 };
 
   return {
     ...agent.toJSON(),
@@ -207,9 +216,9 @@ export async function getAgentDetail(agentId, requestingUser) {
         conversionRate: totalProspects > 0 ? (prospectsByStatus.won || 0) / totalProspects * 100 : 0
       },
       campaigns: {
-        total: agent.createdCampaigns.length,
-        active: agent.createdCampaigns.filter(c => c.status === 'active').length,
-        totalLeads: agent.createdCampaigns.reduce((sum, c) => sum + c.prospects.length, 0)
+        total: campaignStats.total,
+        active: campaignStats.active,
+        totalLeads: campaignStats.totalLeads
       },
       monthlyPerformance
     }
