@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import * as prospectController from '../controllers/prospectController.js';
@@ -11,11 +11,10 @@ export const meta = {
 const router = express.Router();
 
 // Rate limiter for public lead capture endpoint (disabled in test)
-const leadCaptureLimit = rateLimit({
+const leadCaptureLimit = makeLimiter({
+  prefix: 'rl:lead-capture',
   windowMs: 60 * 1000,
   max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
   message: 'Too many submissions from this IP, please try again later.',
 });

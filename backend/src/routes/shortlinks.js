@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import * as shortlinkController from '../controllers/shortlinkController.js';
 
@@ -12,11 +12,10 @@ export const meta = {
 
 const router = express.Router();
 
-const shareLimiter = rateLimit({
+const shareLimiter = makeLimiter({
+  prefix: 'rl:shortlink-share',
   windowMs: 60 * 1000,
   max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many requests, try again later' }
 });
 

@@ -1,7 +1,6 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
 import * as ctrl from '../controllers/verifyController.js';
-import { PostgresRateLimitStore, clientKey } from '../middleware/pgRateLimitStore.js';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 
 export const meta = { path: '/api/verify' };
 
@@ -20,21 +19,18 @@ const router = express.Router();
  * sender ID is the per-number daily cap in services/smsQuota.js, which is keyed
  * on the thing an attacker cannot rotate: the victim's phone number.
  */
-const makeLimiter = (prefix, max) => rateLimit({
+const verifyLimiter = (prefix, max) => makeLimiter({
+  prefix,
   windowMs: 15 * 60 * 1000, // 15 minutes
   max,
-  keyGenerator: clientKey,
-  store: new PostgresRateLimitStore({ prefix }),
   message: { error: 'Too many verification attempts. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // Separate buckets: fumbling a code shouldn't consume the budget that lets you
 // request a fresh one. The previous single shared limiter charged both routes to
 // one counter, so five wrong guesses ate half the resend allowance.
-const sendLimiter = makeLimiter('rl:verify-send', 10);
-const checkLimiter = makeLimiter('rl:verify-check', 20);
+const sendLimiter = verifyLimiter('rl:verify-send', 10);
+const checkLimiter = verifyLimiter('rl:verify-check', 20);
 
 // POST /api/verify/send - Send verification code
 router.post('/send', sendLimiter, ctrl.sendCode);

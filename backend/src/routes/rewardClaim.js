@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import { Op } from 'sequelize';
 import QRCode from 'qrcode';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -28,11 +28,10 @@ export const meta = {
   flagDefault: 'false',
 };
 
-const claimLimiter = rateLimit({
+const claimLimiter = makeLimiter({
+  prefix: 'rl:reward-claim',
   windowMs: 15 * 60 * 1000,
   max: 60, // generous for a human, hostile to token scanning
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many requests — try again later.' },
 });
 
