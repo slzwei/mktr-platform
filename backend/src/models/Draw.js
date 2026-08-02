@@ -44,7 +44,24 @@ const Draw = sequelize.define('Draw', {
   poolHash: {
     type: DataTypes.STRING(64),
     allowNull: true,
-    comment: 'sha256 over the canonical ordered entry tuples (id|prospectId|phoneHash|chances|boostVia) — committed at seal, BEFORE any seed exists'
+    comment: 'sha256 over the canonical ordered entry tuples (id|prospectId|phoneHash|chances|boostVia) — committed at seal'
+  },
+  // Commit-reveal on the SEED (P2-8, migration 103). The pool was already
+  // committed at seal, but the seed was minted at DRAW time and used
+  // immediately — and pickWinner is a pure function of (seed, entries), so an
+  // operator could re-mint and re-run until the pick landed on a chosen entry,
+  // then persist that attempt. Committing hash(seed) in the same one-way
+  // frozen→sealed transition fixes the winner at the seal instant; any later
+  // substitution fails verifyDraw.
+  seedCommitment: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    comment: 'sha256(sealedSeed) — committed at seal, before any pick is computed'
+  },
+  sealedSeed: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    comment: 'The seed committed at seal and REVEALED at draw; every attempt must hash to seedCommitment'
   },
   witnessedByUserId: { type: DataTypes.UUID, allowNull: true, references: { model: 'users', key: 'id' }, onDelete: 'SET NULL' },
   notes: { type: DataTypes.TEXT, allowNull: true },

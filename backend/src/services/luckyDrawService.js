@@ -527,6 +527,13 @@ export function makeLuckyDrawService(overrides = {}) {
       }
     }
     const poolHash = computePoolHash(entries);
+    // Commit-reveal (P2-8): the seed is minted HERE, inside the one-way
+    // frozen→sealed transition, and only its hash is the commitment. Because
+    // the pool is committed in the same statement, the winner is determined at
+    // the seal instant — there is no later moment at which an operator can
+    // re-roll and keep a favourable pick.
+    const sealedSeed = d.mintSeed();
+    const seedCommitment = sha256Hex(sealedSeed);
 
     await d.sequelize.transaction(async (t) => {
       for (const entry of boosted) {
@@ -535,14 +542,14 @@ export function makeLuckyDrawService(overrides = {}) {
           { where: { id: entry.id }, transaction: t }
         );
       }
-      await transition(draw.id, 'frozen', 'sealed', { poolHash }, t);
+      await transition(draw.id, 'frozen', 'sealed', { poolHash, seedCommitment, sealedSeed }, t);
     });
 
     const totalChances = entries.reduce((n, e) => n + e.chances, 0);
     d.logger.info('lucky_draw.sealed', {
-      drawId: draw.id, entries: entries.length, boosted: boosted.length, totalChances, poolHash,
+      drawId: draw.id, entries: entries.length, boosted: boosted.length, totalChances, poolHash, seedCommitment,
     });
-    return { drawId: draw.id, entries: entries.length, boosted: boosted.length, totalChances, poolHash };
+    return { drawId: draw.id, entries: entries.length, boosted: boosted.length, totalChances, poolHash, seedCommitment };
   }
 
   /**
@@ -596,7 +603,15 @@ export function makeLuckyDrawService(overrides = {}) {
 
     const totalChances = eligible.reduce((n, e) => n + e.chances, 0);
     const eligibleHash = computeEligibleHash(eligible);
-    const seed = d.mintSeed();
+    // REVEAL, don't re-mint (P2-8). A draw sealed before commit-reveal existed
+    // has no commitment; it keeps the legacy mint so historical draws stay
+    // drawable, and verifyDraw reports the gap rather than pretending.
+    const seed = draw.sealedSeed || d.mintSeed();
+    if (draw.seedCommitment && sha256Hex(seed) !== draw.seedCommitment) {
+      // Fail CLOSED: a seed that doesn't match its commitment is the exact
+      // substitution this mechanism exists to catch.
+      throw new AppError('Sealed seed does not match its commitment — refusing to draw', 409);
+    }
     const picked = pickWinner(seed, eligible);
     const drawnAt = d.now();
 
@@ -748,8 +763,30 @@ export function makeLuckyDrawService(overrides = {}) {
       if (!ok) report.ok = false;
     }
 
+    // Commit-reveal on the seed (P2-8). poolHash proves WHAT was drawn from;
+    // this proves the pick was not re-rolled until it landed somewhere chosen.
+    if (draw.seedCommitment) {
+      const recomputed = draw.sealedSeed ? sha256Hex(draw.sealedSeed) : null;
+      const ok = recomputed === draw.seedCommitment;
+      report.checks.push({ check: 'seedCommitment', ok, expected: draw.seedCommitment, recomputed });
+      if (!ok) report.ok = false;
+    } else if (attempts.length) {
+      // Sealed before commit-reveal existed: say so rather than reporting a
+      // clean bill of health the evidence does not support.
+      report.checks.push({
+        check: 'seedCommitment', ok: true, note: 'sealed before commit-reveal — seed was minted at draw time, not committed',
+      });
+    }
+
     const pickedBefore = new Set();
     for (const attempt of attempts) {
+      if (draw.seedCommitment && sha256Hex(attempt.seed) !== draw.seedCommitment) {
+        report.checks.push({
+          check: `attempt#${attempt.attemptNo}.seedRevealed`, ok: false,
+          note: 'the seed this attempt was drawn with does not hash to the sealed commitment',
+        });
+        report.ok = false;
+      }
       const eligible = orderedEntries(entries).filter(
         (e) => e.prospectId != null && !pickedBefore.has(String(e.id))
       );
