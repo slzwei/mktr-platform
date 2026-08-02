@@ -6,7 +6,7 @@
  * link can't work).
  */
 import { useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { useCampaignLeaderboard } from '@/hooks/queries/useAdminV2';
@@ -104,7 +104,9 @@ export default function AdminV2QRCodes() {
     queryKey: ['adminV2', 'qrTags', { search, campaignFilter }],
     queryFn: () => fetchQrTags({ search, campaignId: campaignFilter }),
     staleTime: 30_000,
-    keepPreviousData: true,
+    // v4's `keepPreviousData: true` is removed in v5 and silently ignored, so
+    // this list flashed empty on every search/filter change (P2-16).
+    placeholderData: keepPreviousData,
   });
   const campaigns = useCampaignLeaderboard('30d');
   const campaignOptions = useMemo(
