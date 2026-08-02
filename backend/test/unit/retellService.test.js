@@ -35,6 +35,9 @@ function buildMocks() {
   const Prospect = {
     create: jest.fn().mockResolvedValue(mockProspect),
     findByPk: jest.fn().mockResolvedValue(mockProspect),
+    // getRecordingUrl is owner-scoped (P1-4): it resolves through
+    // buildProspectWhere with findOne, never a bare findByPk.
+    findOne: jest.fn().mockResolvedValue(mockProspect),
   };
 
   const IdempotencyKey = {
@@ -537,31 +540,54 @@ describe('retellService (unit)', () => {
       });
     });
 
-    it('throws 404 when prospect not found', async () => {
-      mocks.Prospect.findByPk.mockResolvedValue(null);
+    // Owner scope (P1-4): every call carries the authenticated caller, and the
+    // lookup is a scoped findOne — an out-of-scope prospect is simply not found.
+    const admin = { id: 'admin-1', role: 'admin' };
 
-      await expect(service.getRecordingUrl('nonexistent'))
+    it('throws 404 when prospect not found (or is out of scope)', async () => {
+      mocks.Prospect.findOne.mockResolvedValue(null);
+
+      await expect(service.getRecordingUrl('nonexistent', admin))
         .rejects.toThrow('Prospect not found');
     });
 
+    it('throws 401 when no caller is supplied — never an unscoped read', async () => {
+      await expect(service.getRecordingUrl('prospect-1'))
+        .rejects.toThrow('Not authorized');
+      expect(mocks.Prospect.findOne).not.toHaveBeenCalled();
+    });
+
+    it('scopes the lookup with buildProspectWhere', async () => {
+      mocks.Prospect.findOne.mockResolvedValue({
+        sourceMetadata: { retellCallId: 'call123', recordingUrl: 'https://cached.url/recording.mp3' },
+      });
+      const agent = { id: 'agent-9', role: 'agent' };
+
+      await service.getRecordingUrl('prospect-1', agent);
+
+      expect(mocks.Prospect.findOne).toHaveBeenCalledWith({
+        where: { id: 'prospect-1', assignedAgentId: 'agent-9' },
+      });
+    });
+
     it('throws 404 when prospect has no retellCallId', async () => {
-      mocks.Prospect.findByPk.mockResolvedValue({
+      mocks.Prospect.findOne.mockResolvedValue({
         sourceMetadata: {},
       });
 
-      await expect(service.getRecordingUrl('prospect-1'))
+      await expect(service.getRecordingUrl('prospect-1', admin))
         .rejects.toThrow('Not a Retell prospect');
     });
 
     it('returns cached recordingUrl from sourceMetadata', async () => {
-      mocks.Prospect.findByPk.mockResolvedValue({
+      mocks.Prospect.findOne.mockResolvedValue({
         sourceMetadata: {
           retellCallId: 'call123',
           recordingUrl: 'https://cached.url/recording.mp3',
         },
       });
 
-      const result = await service.getRecordingUrl('prospect-1');
+      const result = await service.getRecordingUrl('prospect-1', admin);
       expect(result).toEqual({ recordingUrl: 'https://cached.url/recording.mp3' });
     });
   });

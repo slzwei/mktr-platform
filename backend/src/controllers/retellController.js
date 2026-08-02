@@ -71,6 +71,6 @@ export const handleWebhook = asyncHandler(async (req, res) => {
  * First checks sourceMetadata, then fetches from Retell API if missing.
  */
 export const fetchRecordingUrl = asyncHandler(async (req, res) => {
-  const result = await getRecordingUrl(req.params.prospectId);
+  const result = await getRecordingUrl(req.params.prospectId, req.user);
   return res.json(result);
 });
