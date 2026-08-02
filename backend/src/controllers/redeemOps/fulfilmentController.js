@@ -122,6 +122,14 @@ export const issueManual = asyncHandler(async (req, res) => {
     Joi.object({
       activationId: Joi.string().uuid().required(),
       prospectId: Joi.string().uuid().required(),
+      // Issuing to an UNVERIFIED phone is a deliberate act, not a side effect
+      // (P2-7): it must be asked for, and it must carry a reason for the audit.
+      overrideVerification: Joi.boolean().default(false),
+      overrideReason: Joi.when('overrideVerification', {
+        is: true,
+        then: Joi.string().trim().min(3).max(255).required(),
+        otherwise: Joi.string().allow('', null).optional(),
+      }),
     }),
     req.body
   );
