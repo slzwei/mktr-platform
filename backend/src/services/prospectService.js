@@ -19,6 +19,8 @@ import { makeHeldQueueOps } from './prospectHeldQueueService.js';
 import { makeAssignmentOps } from './prospectAssignmentService.js';
 import { makeCreateTxRunner } from './prospectCreateTx.js';
 import { makeDispatchRunner } from './prospectDispatch.js';
+import { makeScoringStage } from './prospectScoring.js';
+import { makeQrRoutingStage } from './prospectQrRouting.js';
 import {
   UUID_RE, PROSPECT_UPDATE_FIELDS,
 } from './prospectShared.js';
@@ -54,9 +56,6 @@ import { recordCaptureConsentEventsTx, canMarketTo } from './consentService.js';
 // imports only (models + fence + taxonomy) — no cycle back into this module.
 import { buildFactSnapshot, enqueueMapJobsTx, drainMapJobs } from './factMapperService.js';
 import { bumpEnrichmentInputTx } from './enrichmentFence.js';
-import { getProfileQuestion, resolveAnswer as resolveProfileAnswer } from '../utils/profileQuestionLibrary.js';
-import { validateFact } from '../utils/factTaxonomy.js';
-import { isV2 as isV2DesignConfig } from '../utils/designConfigV2.js';
 // Lead Profile page composer (admin-only, ?include=profile — plan §4). Leaf
 // imports only (models + sibling services); no cycle back into this module.
 import {
@@ -81,7 +80,6 @@ import {
   buildLeadDeletedPayload,
   destinationForAgent,
 } from './prospectHelpers.js';
-import { scoreQuiz } from './quizScoringService.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 import { incCounter } from './observability.js';
 
@@ -159,6 +157,9 @@ export function makeProspectService(overrides = {}) {
   const runCreateTx = makeCreateTxRunner({ d, m });
   // The post-commit stage of createProspect (P3-1) — see prospectDispatch.js.
   const runDispatch = makeDispatchRunner({ d, m });
+  // The score + QR-route stages of createProspect (P3-1).
+  const scoreSubmission = makeScoringStage({ d });
+  const resolveQrRouting = makeQrRoutingStage({ d, m });
 
   /**
    * Create a new prospect (lead capture).
@@ -681,162 +682,32 @@ export function makeProspectService(overrides = {}) {
       if (safeBody.monthly_income) incoming.demographics.income = safeBody.monthly_income;
     }
 
-    // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
-    // The client sends raw answers (+ an advisory result we ignore). We recompute
-    // the authoritative profile/readiness/leadScore from the campaign's own quiz
-    // definition so a tampered client cannot fake a result. Stored under
-    // sourceMetadata.quiz; forwarded verbatim to Lyfe in the lead.created webhook.
-    if (quizSubmission && Array.isArray(quizSubmission.answers) && quizSubmission.answers.length > 0) {
-      const quizDef = sourceCampaign?.design_config?.quiz;
-      let quizMeta;
-      if (quizDef && quizDef.enabled) {
-        let scored = null;
-        try {
-          scored = scoreQuiz(quizDef, quizSubmission.answers);
-        } catch (err) {
-          d.logger.error('[Quiz] scoring failed', { error: err?.message || String(err) });
-        }
-        quizMeta = {
-          quizId: quizDef.quizId || quizSubmission.quizId || null,
-          version: quizDef.version ?? quizSubmission.version ?? null,
-          answers: quizSubmission.answers,
-          result: scored
-            ? { profileId: scored.profileId, title: scored.title, readiness: scored.readiness, agentAngle: scored.agentAngle }
-            : (quizSubmission.result || null),
-          leadScore: scored?.leadScore || null,
-          scoredBy: scored ? 'server' : 'client-unverified',
-        };
-      } else {
-        // No quiz definition on the campaign (or disabled): keep the raw answers
-        // and the advisory client result, clearly marked unverified.
-        quizMeta = {
-          quizId: quizSubmission.quizId || null,
-          version: quizSubmission.version ?? null,
-          answers: quizSubmission.answers,
-          result: quizSubmission.result || null,
-          scoredBy: 'client-unverified',
-        };
-      }
-      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), quiz: quizMeta };
+    // --- SCORE: what the submission says about this person ---
+    // Body in prospectScoring.js (P3-1). Returns a patch rather than reaching in
+    // and mutating incoming.sourceMetadata, so its writes are visible here.
+    const { sourceMetadataPatch, acceptedProfileFacts } = scoreSubmission({
+      quizSubmission,
+      safeBody,
+      sourceCampaign,
+      campaignId: incoming.campaignId,
+    });
+    if (Object.keys(sourceMetadataPatch).length) {
+      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), ...sourceMetadataPatch };
     }
 
-    // --- Enrichment profile questions (studio-profile-questions §5.4) ---
-    // Three-leg eligibility gate, ALL legs or the whole object is ignored
-    // (Codex PR0 R2 #3 — backend eligibility must equal rendering
-    // eligibility): raw config is v2 AND profileQuestions.enabled AND not
-    // guided_review. Then iterate the CAMPAIGN'S configured question ids
-    // (never attacker keys), resolve server-side, re-validate, and stash
-    // only canonical accepted answer ids (erasure's sourceMetadata rebuild
-    // removes them). A bad answer never costs a lead.
-    let acceptedProfileFacts = [];
-    {
-      const rawAnswers = safeBody.profileAnswers;
-      const dcRaw = sourceCampaign?.design_config;
-      const pq = dcRaw?.profileQuestions;
-      const eligible = rawAnswers && typeof rawAnswers === 'object' && !Array.isArray(rawAnswers)
-        && isV2DesignConfig(dcRaw)
-        && pq?.enabled === true
-        && dcRaw?.template?.id !== 'guided_review'
-        && Array.isArray(pq?.questionIds);
-      if (eligible) {
-        const acceptedIds = {};
-        const dropped = [];
-        for (const qid of pq.questionIds) {
-          const q = getProfileQuestion(qid);
-          if (!q) continue;
-          const provided = rawAnswers[qid];
-          if (provided === undefined || provided === null || provided === '') continue;
-          const value = resolveProfileAnswer(qid, provided);
-          if (!value || !validateFact(q.factKey, value).ok) {
-            dropped.push(qid);
-            continue;
-          }
-          acceptedProfileFacts.push({ key: q.factKey, value });
-          acceptedIds[qid] = provided;
-        }
-        if (dropped.length) {
-          d.logger.warn('[enrichment] profile answers dropped (invalid)', {
-            campaignId: incoming.campaignId, dropped,
-          });
-        }
-        if (Object.keys(acceptedIds).length) {
-          incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), profileAnswers: acceptedIds };
-        }
-      } else if (rawAnswers && typeof rawAnswers === 'object' && Object.keys(rawAnswers).length) {
-        d.logger.warn('[enrichment] profile answers ignored (campaign not eligible)', {
-          campaignId: incoming.campaignId,
-        });
-      }
-    }
-
-    // --- Routing resolution: reads from QrTag, not Campaign ---
-    let routingMode = 'direct';
-    let resolvedAgent = null;
-    let agentGroup = null;
-
-    // QR-level routing refines the INTERNAL path only; external-eligible leads were
-    // already routed by resolveLeadAssignment above (it includes the QR tier), so
-    // re-running QR routing here would double-route them.
-    if (!allowExternal && sourceQrTag?.agentAssignmentMode === 'round_robin') {
-      routingMode = 'round_robin';
-
-      // Query members from join table, ordered by sortOrder
-      const members = sourceQrTag.agentGroupId
-        ? await m.AgentGroupMember.findAll({
-            where: { agentGroupId: sourceQrTag.agentGroupId },
-            order: [['sortOrder', 'ASC']],
-          })
-        : [];
-
-      if (members.length > 0) {
-        // Load the group record for webhook metadata
-        agentGroup = await m.AgentGroup.findByPk(sourceQrTag.agentGroupId);
-
-        // Atomic round-robin index increment on QrTag. A failed increment must
-        // not lose the lead, but the stale-index fallback pins every lead on
-        // this tag to the same member while it persists — so it has to be loud.
-        const [, [updated]] = await m.QrTag.update(
-          { roundRobinIndex: d.sequelize.literal('"roundRobinIndex" + 1') },
-          { where: { id: sourceQrTag.id }, returning: true }
-        ).catch((err) => {
-          d.logger.warn('[Routing] QR round-robin increment failed — reusing stale index', {
-            qrTagId: sourceQrTag.id, error: err?.message || String(err),
-          });
-          return [0, [sourceQrTag]];
-        });
-
-        const idx = (updated?.roundRobinIndex ?? sourceQrTag.roundRobinIndex) % members.length;
-        const selectedMember = members[idx];
-
-        resolvedAgent = {
-          phone: selectedMember.phone,
-          email: selectedMember.email,
-          name: selectedMember.name,
-        };
-      }
-    } else if (!allowExternal && sourceQrTag?.assignedAgentId) {
-      // Direct FK lookup — faster than phone-based search
-      assignedAgentId = sourceQrTag.assignedAgentId;
-      routeVia = 'qr';
-    } else if (!allowExternal && sourceQrTag?.assignedAgentPhone) {
-      // Fallback for QR tags not yet backfilled
-      resolvedAgent = {
-        phone: sourceQrTag.assignedAgentPhone,
-        email: sourceQrTag.assignedAgentEmail,
-        name: sourceQrTag.assignedAgentName,
-      };
-    }
-
-    // Override assignedAgentId with QR-level routing result (by phone lookup)
-    if (resolvedAgent?.phone) {
-      const agentByPhone = await m.User.findOne({
-        where: { phone: resolvedAgent.phone, role: 'agent', isActive: true },
-      });
-      if (agentByPhone) {
-        assignedAgentId = agentByPhone.id;
-        routeVia = 'qr';
-      }
-    }
+    // --- ROUTE: QR-level refinement of the internal path ---
+    // Body in prospectQrRouting.js (P3-1). It can change the agent and the via,
+    // which is why both are passed in and returned rather than closed over.
+    const { routingMode, resolvedAgent, agentGroup } = await resolveQrRouting({
+      allowExternal,
+      sourceQrTag,
+      assignedAgentId,
+      routeVia,
+    }).then((r) => {
+      assignedAgentId = r.assignedAgentId;
+      routeVia = r.routeVia;
+      return r;
+    });
 
     // Wrap all DB writes in a transaction for data integrity.
     // Two orthogonal gates compose here:
