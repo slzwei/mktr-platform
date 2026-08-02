@@ -19,6 +19,7 @@
  * only the WHATSAPP_* pair and delete META_WA_*.
  */
 import { logger as defaultLogger } from '../utils/logger.js';
+import { retryingFetch, DEFAULT_TIMEOUT_MS } from '../utils/externalFetch.js';
 
 export const GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v21.0';
 
@@ -50,6 +51,7 @@ export function makeWaGraphClient(overrides = {}) {
     fetch: (...args) => fetch(...args),
     sleep: defaultSleep,
     logger: defaultLogger,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
     ...overrides,
   };
 
@@ -58,28 +60,15 @@ export function makeWaGraphClient(overrides = {}) {
    * throw (no response received, so the request very likely never reached
    * Meta) or a 5xx. 4xx (template/permission/bad-request) is deterministic
    * and returned as-is for the caller to receipt/handle.
+   *
+   * The policy now lives in utils/externalFetch so Apify runs the same one
+   * (P2-1); this call also gains the bounded timeout it never had.
    */
   async function graphFetch(url, opts, { label, attempts = 3 } = {}) {
-    let lastErr;
-    for (let i = 1; i <= attempts; i += 1) {
-      try {
-        const res = await d.fetch(url, opts);
-        if (res.status >= 500 && i < attempts) {
-          d.logger.warn('wa_graph.retry_5xx', { label, status: res.status, attempt: i });
-          await d.sleep(300 * i);
-          continue;
-        }
-        return res; // ok or 4xx — caller decides
-      } catch (err) {
-        lastErr = err;
-        if (i < attempts) {
-          d.logger.warn('wa_graph.retry_network', { label, error: err?.message, attempt: i });
-          await d.sleep(300 * i);
-          continue;
-        }
-      }
-    }
-    throw lastErr;
+    return retryingFetch(d.fetch, url, opts, {
+      label, attempts, timeoutMs: d.timeoutMs,
+      sleep: d.sleep, logger: d.logger, logPrefix: 'wa_graph',
+    });
   }
 
   /** Build the standard template message body (components passed verbatim). */

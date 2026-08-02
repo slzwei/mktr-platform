@@ -1,4 +1,5 @@
 import { logger } from '../../../utils/logger.js';
+import { retryingFetch, DEFAULT_TIMEOUT_MS } from '../../../utils/externalFetch.js';
 
 /**
  * Thin Apify API v2 wrapper for the Discover tool. Start an actor run, re-fetch
@@ -29,6 +30,8 @@ export function makeApifyClient(overrides = {}) {
     baseUrl: APIFY_BASE,
     fetchImpl: (...args) => globalThis.fetch(...args),
     logger,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    attempts: 3,
     ...overrides,
   };
 
@@ -43,10 +46,21 @@ export function makeApifyClient(overrides = {}) {
     for (const [k, v] of Object.entries(query || {})) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     }
-    const res = await d.fetchImpl(url.toString(), {
+    // Bounded + retried on transient failures, same policy as waGraphClient
+    // (P2-1). startRun is awaited INLINE on the operator's request, so an
+    // unbounded fetch here hung the request until the platform killed it — and
+    // this dependency, the one that costs money per run, had zero retries
+    // while WhatsApp had three.
+    const res = await retryingFetch(d.fetchImpl, url.toString(), {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
+    }, {
+      label: `apify ${method} ${path}`,
+      attempts: d.attempts,
+      timeoutMs: d.timeoutMs,
+      logger: d.logger,
+      logPrefix: 'apify',
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
