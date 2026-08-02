@@ -61,12 +61,21 @@ describe('isValidSgMobile', () => {
  expect(isValidSgMobile('91234567')).toBe(true);
  });
 
- it('accepts number starting with 6', () => {
- expect(isValidSgMobile('61234567')).toBe(true);
+ /**
+  * P2-14: this asserted 3/6 were valid MOBILES. They are not — 6 is
+  * fixed-line, 3 is VoIP, and neither receives the OTP both public funnels
+  * send before a lead can proceed. Accepting them offered a dead end.
+  */
+ it('rejects a fixed-line number starting with 6 — it cannot receive an OTP', () => {
+ expect(isValidSgMobile('61234567')).toBe(false);
  });
 
- it('accepts number starting with 3', () => {
- expect(isValidSgMobile('31234567')).toBe(true);
+ it('rejects a VoIP number starting with 3', () => {
+ expect(isValidSgMobile('31234567')).toBe(false);
+ });
+
+ it('formatSgPhone still accepts the wider set — storing a landline is fine', () => {
+ expect(formatSgPhone('61234567')).toBe('+6561234567');
  });
 
  it('rejects number starting with 1', () => {

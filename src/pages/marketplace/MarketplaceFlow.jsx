@@ -23,6 +23,7 @@ import {
   initTikTokPixel, trackTikTokViewContent, trackTikTokLead,
 } from '@/lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
+import { isValidSgMobile } from '@/utils/validation';
 
 /**
  * Marketplace redemption flow (/flow/:slug) — the step machine from the
@@ -237,7 +238,7 @@ export default function MarketplaceFlow() {
         continue;
       }
       if (key === 'name' && v.length < 2) errs.name = 'Please enter your full name.';
-      if (key === 'phone' && !/^[89]\d{7}$/.test(v.replace(/\s/g, ''))) errs.phone = 'Enter an 8-digit Singapore mobile starting with 8 or 9.';
+      if (key === 'phone' && !isValidSgMobile(v.replace(/\s/g, ''))) errs.phone = 'Enter an 8-digit Singapore mobile starting with 8 or 9.';
       if (key === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) errs.email = 'Enter a valid email address.';
       if (key === 'postal_code' && !/^\d{6}$/.test(v)) errs.postal_code = 'Enter a 6-digit Singapore postal code.';
       if (key === 'dob') {
