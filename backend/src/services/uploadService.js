@@ -157,10 +157,19 @@ export async function processDocumentUpload(files, entityType, entityId, userId)
   return documents;
 }
 
-/** Resolve + traversal-check a path under uploads/. */
+/**
+ * Resolve + traversal-check a path under uploads/.
+ *
+ * The check is relative-path based, not prefix based (P1-5): a bare
+ * startsWith() accepts any SIBLING directory that merely shares the prefix —
+ * path.resolve('/app/uploads-x').startsWith('/app/uploads') is true — so
+ * type='../uploads-x' escaped the sandbox while passing the guard.
+ */
 function safeUploadsPath(...segments) {
-  const filePath = path.join(uploadsDir, ...segments);
-  if (!path.resolve(filePath).startsWith(path.resolve(uploadsDir))) {
+  const root = path.resolve(uploadsDir);
+  const filePath = path.resolve(path.join(uploadsDir, ...segments));
+  const relative = path.relative(root, filePath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new AppError('Invalid file path', 400);
   }
   return filePath;
