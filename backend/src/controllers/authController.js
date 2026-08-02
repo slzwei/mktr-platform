@@ -4,6 +4,7 @@ import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import * as authService from '../services/authService.js';
 import { setAuthCookie, clearAuthCookie } from '../utils/authCookie.js';
+import { clientKey } from '../middleware/pgRateLimitStore.js';
 
 const OAUTH_STATE_COOKIE = 'oauth_state';
 const OAUTH_STATE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
@@ -146,7 +147,9 @@ export const register = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  const result = await authService.login(email, password);
+  // The lockout is client-scoped (P2-10) — same resolved visitor key the
+  // rate limiters use, so a Cloudflare edge address never stands in for a user.
+  const result = await authService.login(email, password, { clientKey: clientKey(req) });
 
   setAuthCookie(res, result.token);
   res.json({
