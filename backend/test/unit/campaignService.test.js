@@ -53,6 +53,13 @@ const CampaignAgentAssignment = {
   bulkCreate: jest.fn(),
 };
 
+// syncAgentAssignments resolves assigned_agents ids to real users (H5); the
+// default mock echoes every requested id back as an active user so tests can
+// assign arbitrary ids.
+const User = {
+  findAll: jest.fn(),
+};
+
 const sequelize = {
   transaction: jest.fn(async (cb) => cb(mockTransaction)),
   fn: jest.fn((fnName, col) => `${fnName}(${col})`),
@@ -78,7 +85,7 @@ class AppError extends Error {
 
 jest.unstable_mockModule('../../src/models/index.js', () => ({
   Campaign, QrTag, Prospect, Commission, Device,
-  CampaignMediaItem, CampaignAgentAssignment, sequelize,
+  CampaignMediaItem, CampaignAgentAssignment, User, sequelize,
   // Draw-terms versioning dep (lucky draw) — inert stub; drawTermsVersioning.test.js
   // covers the real logic through the DI seam.
   Draw: { findOne: async () => null }, // PR 5: closesAt-lock seam
@@ -165,6 +172,11 @@ function resetAllMocks() {
   CampaignAgentAssignment.findAll.mockReset().mockResolvedValue([]);
   CampaignAgentAssignment.destroy.mockReset().mockResolvedValue(0);
   CampaignAgentAssignment.bulkCreate.mockReset().mockResolvedValue([]);
+
+  User.findAll.mockReset().mockImplementation(async ({ where } = {}) => {
+    const ids = Array.isArray(where?.id) ? where.id : where?.id ? [where.id] : [];
+    return ids.map((id) => ({ id, isActive: true }));
+  });
 
   sequelize.transaction.mockReset().mockImplementation(async (cb) => cb(mockTransaction));
 
@@ -566,7 +578,8 @@ describe('campaignService (unit)', () => {
       const result = await campaignService.updateCampaign('camp-1', body, makeReq());
 
       expect(inst.update).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Updated Name', min_age: 25 })
+        expect.objectContaining({ name: 'Updated Name', min_age: 25 }),
+        expect.objectContaining({ transaction: expect.anything() })
       );
       expect(result).toBeDefined();
     });
@@ -1068,7 +1081,10 @@ describe('campaignService (unit)', () => {
 
       await campaignService.updateCampaign('camp-1', { name: DIRTY }, makeReq());
 
-      expect(instance.update).toHaveBeenCalledWith(expect.objectContaining({ name: CLEAN }));
+      expect(instance.update).toHaveBeenCalledWith(
+        expect.objectContaining({ name: CLEAN }),
+        expect.objectContaining({ transaction: expect.anything() })
+      );
     });
 
     it('duplicateCampaign strips an explicit body.name identically', async () => {
