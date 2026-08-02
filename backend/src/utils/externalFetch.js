@@ -16,6 +16,7 @@
  * as-is for the caller to handle; retrying it just spends quota to be told the
  * same thing.
  */
+import { incCounter, observeDuration } from '../services/observability.js';
 
 /** Long enough for a slow-but-alive provider, short enough that a hang is not a hostage. */
 export const DEFAULT_TIMEOUT_MS = 12_000;
@@ -65,15 +66,33 @@ export async function retryingFetch(fetchImpl, url, opts = {}, {
   logger = noopLogger,
   logPrefix = 'external_fetch',
 } = {}) {
+  // Every external call — WhatsApp Graph and Apify both — comes through here
+  // (P2-1 unified the transport), so this is the one place that can measure
+  // them, and `logPrefix` already names the dependency (P3-5).
+  //
+  // The clock covers the WHOLE call including retries and backoff sleeps: that
+  // is the latency the caller actually waited, and a dependency that only
+  // succeeds on its third attempt is degraded even though each attempt looks
+  // fine on its own.
+  const startedAt = Date.now();
+  const dep = { dep: logPrefix, label: label || 'unlabelled' };
+
   let lastErr;
   for (let i = 1; i <= attempts; i += 1) {
     try {
       const res = await fetchWithTimeout(fetchImpl, url, opts, { timeoutMs, label });
       if (res.status >= 500 && i < attempts) {
         logger.warn(`${logPrefix}.retry_5xx`, { label, status: res.status, attempt: i });
+        incCounter('external.call.retried', 1, { ...dep, cause: '5xx' });
         await sleep(300 * i);
         continue;
       }
+      // 4xx is a deterministic answer, not a fault of the dependency — it is
+      // recorded as a completed call so a bad template cannot masquerade as an
+      // outage. Only exhausted retries below count as failed.
+      observeDuration('external.call.duration', Date.now() - startedAt, {
+        ...dep, outcome: res.ok ? 'ok' : 'http_error',
+      });
       return res; // ok or 4xx — caller decides
     } catch (err) {
       lastErr = err;
@@ -81,10 +100,13 @@ export async function retryingFetch(fetchImpl, url, opts = {}, {
         logger.warn(`${logPrefix}.retry_network`, {
           label, error: err?.message, timeout: Boolean(err?.timeout), attempt: i,
         });
+        incCounter('external.call.retried', 1, { ...dep, cause: err?.timeout ? 'timeout' : 'network' });
         await sleep(300 * i);
         continue;
       }
     }
   }
+  observeDuration('external.call.duration', Date.now() - startedAt, { ...dep, outcome: 'failed' });
+  incCounter('external.call.failed', 1, { ...dep, cause: lastErr?.timeout ? 'timeout' : 'network' });
   throw lastErr;
 }

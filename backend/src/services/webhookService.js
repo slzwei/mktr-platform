@@ -4,6 +4,7 @@ import { WebhookSubscriber, WebhookDelivery, sequelize } from '../models/index.j
 import { logger } from '../utils/logger.js';
 import { signWebhookAttempt, signatureVersionForSubscriber } from './webhookSigning.js';
 import { Sentry } from '../utils/sentryInit.js';
+import { incCounter, observeDuration, timeMs } from './observability.js';
 
 const AUTO_DISABLE_THRESHOLD = 50;
 
@@ -270,6 +271,12 @@ export function makeWebhookService(overrides = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
+    // Delivery latency + outcome (P3-5). The clock starts at the SEND, not at
+    // the claim — a slow claim is a database problem, not a receiver problem,
+    // and conflating them makes p95 unreadable.
+    const sentAt = Date.now();
+    incCounter('webhook.delivery.attempted', 1, { event: delivery.eventType });
+
     try {
       const headers = {
         'Content-Type': 'application/json',
@@ -288,6 +295,9 @@ export function makeWebhookService(overrides = {}) {
       });
 
       clearTimeout(timeout);
+      observeDuration('webhook.delivery.duration', timeMs(sentAt), {
+        event: delivery.eventType, outcome: response.ok ? 'ok' : 'http_error',
+      });
 
       if (response.ok) {
         await delivery.update({
@@ -312,6 +322,11 @@ export function makeWebhookService(overrides = {}) {
       }
     } catch (err) {
       clearTimeout(timeout);
+      // A timeout is its own outcome: it is the shape a dying receiver takes,
+      // and it looks nothing like an HTTP error in the latency distribution.
+      observeDuration('webhook.delivery.duration', timeMs(sentAt), {
+        event: delivery.eventType, outcome: err.name === 'AbortError' ? 'timeout' : 'network_error',
+      });
 
       await handleFailure(delivery, subscriber, {
         responseCode: null,
@@ -322,6 +337,10 @@ export function makeWebhookService(overrides = {}) {
   }
 
   async function handleFailure(delivery, subscriber, { responseCode, responseBody, errorMessage }) {
+    // Every failed attempt funnels through here — HTTP error, timeout and
+    // network error alike — so this is the one honest failure count. Read it
+    // against webhook.delivery.attempted, not on its own.
+    incCounter('webhook.delivery.failed', 1, { event: delivery.eventType });
     // The claim already incremented `attempts` for a real row; an injected fake
     // (no reload()) never went through it, so it still counts its own.
     const claimed = delivery.status === 'sending';

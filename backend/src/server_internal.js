@@ -214,6 +214,15 @@ export const init = async (app) => {
     });
   });
 
+  // Hot-path metrics (P3-5). Counters + latency percentiles for lead capture,
+  // webhook delivery and every external call, since this instance came up. No
+  // secrets, no PII — names and numbers only — so it sits with /health rather
+  // than behind admin auth, matching how the other diagnostics here work.
+  app.get('/health/metrics', async (req, res) => {
+    const { getMetricsSnapshot } = await import('./services/observability.js');
+    res.status(200).json(getMetricsSnapshot());
+  });
+
   // Diagnostic: which public host does the backend see this request as?
   // Used during the redeem.sg cutover to verify the Render proxy preserves
   // the original Host / X-Forwarded-Host / Origin headers as expected before
