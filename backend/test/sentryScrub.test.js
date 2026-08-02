@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { scrubObject, scrubEvent, scrubBreadcrumb } from '../src/utils/sentryScrub.js';
+import { scrubObject, scrubEvent, scrubBreadcrumb, scrubText } from '../src/utils/sentryScrub.js';
 
 describe('sentryScrub', () => {
   describe('scrubObject', () => {
@@ -90,6 +90,74 @@ describe('sentryScrub', () => {
     it('returns crumb unchanged when no data', () => {
       const crumb = { category: 'http' };
       expect(scrubBreadcrumb(crumb)).toBe(crumb);
+    });
+  });
+
+  /**
+   * P2-11. scrubObject matches KEY NAMES, and scrubEvent never touched
+   * event.message or event.exception at all — so an identifier interpolated
+   * into a thrown Error ("User a@b.com not found") reached Sentry verbatim, and
+   * the same string reached pino, which sits OUTSIDE the PDPA erasure matrix.
+   * A key-based scrubber cannot help when the identifier is inside a sentence.
+   */
+  describe('scrubText — value-level PII in free text', () => {
+    it.each([
+      ['User shawn@example.com not found', 'User [email] not found'],
+      ['Lead +65 9123 4567 blocked', 'Lead [phone] blocked'],
+      ['dial +6591234567 failed', 'dial [phone] failed'],
+      ['holder 6591234567 duplicate', 'holder [phone] duplicate'],
+      ['sms to 91234567 bounced', 'sms to [phone] bounced'],
+      ['display 9123 4567 rejected', 'display [phone] rejected'],
+      ['NRIC S1234567A rejected', 'NRIC [nric] rejected'],
+    ])('redacts %s', (input, expected) => {
+      expect(scrubText(input)).toBe(expected);
+    });
+
+    it('still masks URL-borne credentials', () => {
+      expect(scrubText('GET /api/reward-claim/live-secret failed'))
+        .toBe('GET /api/reward-claim/[token] failed');
+    });
+
+    it('leaves non-identifier numbers alone', () => {
+      expect(scrubText('deleted 12345678 rows')).toBe('deleted 12345678 rows');
+      expect(scrubText('order 4567 of 8')).toBe('order 4567 of 8');
+      expect(scrubText('no pii here, id 42')).toBe('no pii here, id 42');
+    });
+
+    it('passes non-strings through untouched', () => {
+      expect(scrubText(undefined)).toBeUndefined();
+      expect(scrubText(null)).toBeNull();
+      expect(scrubText(42)).toBe(42);
+    });
+  });
+
+  describe('scrubEvent — exception values and message (P2-11)', () => {
+    it('scrubs an identifier thrown inside an Error message', () => {
+      const event = scrubEvent({
+        exception: {
+          values: [{ type: 'AppError', value: 'Lead shawn@example.com (+65 9123 4567) not found' }],
+        },
+      });
+      expect(event.exception.values[0].value).toBe('Lead [email] ([phone]) not found');
+      // The class name is not PII and stays readable.
+      expect(event.exception.values[0].type).toBe('AppError');
+    });
+
+    it('scrubs event.message', () => {
+      const event = scrubEvent({ message: 'failed for a@b.com' });
+      expect(event.message).toBe('failed for [email]');
+    });
+
+    it('handles events with no exception/message', () => {
+      expect(() => scrubEvent({ extra: { keep: 1 } })).not.toThrow();
+      expect(scrubEvent({ exception: { values: [] } }).exception.values).toEqual([]);
+    });
+  });
+
+  describe('scrubBreadcrumb — message PII (P2-11)', () => {
+    it('redacts an identifier in the breadcrumb text, not just the URL', () => {
+      const out = scrubBreadcrumb({ message: 'sent otp to +6591234567 via /r/tok3n' });
+      expect(out.message).toBe('sent otp to [phone] via /r/[token]');
     });
   });
 });
