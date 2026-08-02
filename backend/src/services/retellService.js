@@ -9,7 +9,8 @@ import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
-import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, dncPayloadBlock } from './prospectHelpers.js';
+import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, buildLeadCreatedPayload } from './prospectHelpers.js';
+import { dncCaptureGate } from './dncGate.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
 import { gateHeldDncLead } from './dncGate.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
@@ -277,11 +278,9 @@ export function makeRetellService(overrides = {}) {
     // Per-campaign gate — only campaigns opted into design_config.dncCheckAtSubmit hit the API.
     // Version-aware (v2: form.gates.dncCheck); fail-safe view treats the check as ENABLED.
     const campaignDesign = readLegacyViewSafe(campaign?.design_config, { dncCheckAtSubmit: true });
-    const dncMode = campaignDesign.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
-    const dncNumber = dncMode !== 'off' && to_number ? d.formatDncNumber(to_number) : null;
-    const dncBlockApplies = dncMode === 'block' && !!dncNumber;
-    const dncFlagApplies = dncMode === 'flag' && !!dncNumber;
-    const dncWillCheck = dncBlockApplies || dncFlagApplies;
+    const { dncBlockApplies, dncFlagApplies, dncWillCheck } = dncCaptureGate(
+      campaignDesign, to_number, { dncEnforcement: d.dncEnforcement, formatDncNumber: d.formatDncNumber }
+    );
 
     // ── Create prospect in a transaction (with idempotency key) ──
     // Lead-quota gate: decideAssignment charges authoritatively for a funded gated
@@ -410,36 +409,14 @@ export function makeRetellService(overrides = {}) {
       }
 
       // Suppress the Lyfe delivery webhook for quarantined (held) leads.
-      if (!quarantined) d.dispatchEvent('lead.created', () => ({
-        event: 'lead.created',
-        timestamp: new Date().toISOString(),
-        data: {
-          lead: {
-            externalId: prospect.id,
-            firstName: prospect.firstName,
-            lastName: prospect.lastName,
-            phone: prospect.phone,
-            email: prospect.email,
-            leadSource: 'call_bot',
-            tags: ['retell', 'phone-call'],
-            notes: prospect.notes,
-            sourceMetadata: prospect.sourceMetadata,
-            recordingUrl: recording_url || null,
-            transcript: prospect.notes,
-            dnc: dncPayloadBlock(prospect),
-            createdAt: prospect.createdAt
-          },
-          routing: {
-            mode: 'retell_round_robin',
-            agentPhone: agentForWebhook?.phone || null,
-            agentEmail: agentForWebhook?.email || null,
-            agentName: agentForWebhook?.name || null,
-            agentExternalId: agentForWebhook?.id || assignedAgentId || null,
-          },
-          source: 'retell_webhook',
-          campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
-        }
-      }), { destination: retellDestination });
+      // P4-9: the SHARED builder replaces a hand-rolled inline copy that had
+      // drifted — no screening/qrTag blocks, a nullable campaign object, and a
+      // data.source key no receiver reads. A Retell lead now reaches Lyfe with
+      // exactly the form-lead shape (routing.mode stays 'retell_round_robin';
+      // recordingUrl/transcript derive from sourceMetadata.retellCallId).
+      if (!quarantined) d.dispatchEvent('lead.created', () =>
+        buildLeadCreatedPayload(prospect, 'retell_round_robin', agentForWebhook, assignedAgentId, campaign, null, null),
+      { destination: retellDestination });
 
       // Held → ping the mktr-leads admin held queue so a pending lead is never silent.
       // Explicitly require no_funded_agent (the only reason that lands in that queue) so

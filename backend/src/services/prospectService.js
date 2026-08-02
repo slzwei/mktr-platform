@@ -23,7 +23,7 @@ import {
 import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
-import { gateHeldDncLead } from './dncGate.js';
+import { gateHeldDncLead, dncCaptureGate } from './dncGate.js';
 import { hasValidExternalConsent, buildExternalConsentEvidence } from './externalConsent.js';
 import { buildDncConsentEvidence } from './dncConsent.js';
 import { buildProspectWhere } from './prospectScope.js';
@@ -554,11 +554,9 @@ export function makeProspectService(overrides = {}) {
     // Per-campaign gate: only campaigns that opted in (design_config.dncCheckAtSubmit) ever
     // hit the paid DNC API — scopes credit spend (and the public create endpoint's exposure)
     // to opted-in campaigns. The global enforcement mode (block/flag) still applies on top.
-    const dncMode = sourceDesign.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
-    const dncNumber = dncMode !== 'off' && incoming.phone ? d.formatDncNumber(incoming.phone) : null;
-    const dncBlockApplies = dncMode === 'block' && !!dncNumber;
-    const dncFlagApplies = dncMode === 'flag' && !!dncNumber;
-    const dncWillCheck = dncBlockApplies || dncFlagApplies;
+    const { dncBlockApplies, dncFlagApplies, dncWillCheck } = dncCaptureGate(
+      sourceDesign, incoming.phone, { dncEnforcement: d.dncEnforcement, formatDncNumber: d.formatDncNumber }
+    );
 
     // AI screening gate (docs/plans/retell-screening-calls.md §5): evaluated on
     // the INCOMING payload (the verified stamp was just written above iff the
