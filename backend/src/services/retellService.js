@@ -10,6 +10,7 @@ import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, buildLeadCreatedPayload } from './prospectHelpers.js';
+import { buildProspectWhere } from './prospectScope.js';
 import { dncCaptureGate } from './dncGate.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
 import { gateHeldDncLead } from './dncGate.js';
@@ -46,6 +47,7 @@ const defaultDeps = {
   formatDncNumber,
   dncCheckAndRecord,
   gateHeldDncLead,
+  buildProspectWhere,
   // Lazy (dynamic import) so existing unit suites that mock this module's
   // graph don't have to know the screening services. DI-overridable.
   handleScreeningWebhook: async (payload, event) =>
@@ -473,11 +475,21 @@ export function makeRetellService(overrides = {}) {
    * Get the Retell call recording URL for a prospect.
    * Checks sourceMetadata first, then fetches from Retell API and caches the result.
    *
+   * Owner-scoped (P1-4): this used to be the one prospect fetch in the domain
+   * that skipped buildProspectWhere, so any authenticated principal could walk
+   * UUIDs and pull PDPA-regulated call recordings. Out-of-scope prospects are
+   * indistinguishable from missing ones — same 404 as prospectReadService.
+   *
    * @param {string} prospectId
+   * @param {object} user — the authenticated caller
    * @returns {{ recordingUrl: string|null }}
    */
-  async function getRecordingUrl(prospectId) {
-    const prospect = await d.Prospect.findByPk(prospectId);
+  async function getRecordingUrl(prospectId, user) {
+    if (!user) {
+      throw new d.AppError('Not authorized', 401);
+    }
+    const scopeFilter = await d.buildProspectWhere(user);
+    const prospect = await d.Prospect.findOne({ where: { id: prospectId, ...scopeFilter } });
     if (!prospect) {
       throw new d.AppError('Prospect not found', 404);
     }
