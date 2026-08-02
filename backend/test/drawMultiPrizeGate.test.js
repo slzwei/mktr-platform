@@ -25,6 +25,35 @@ describe('assertDrawActivatable', () => {
     expect(thrown?.data?.code).toBe('DRAW_MULTI_PRIZE_UNSUPPORTED');
   });
 
+  /**
+   * P2-9. The guard keyed ONLY on prizes[], so a legacy config carrying
+   * `winners: 5` with no prizes[] scored 0, activated, and published "5
+   * winners" through publicLuckyDraw — while the engine resolves exactly one.
+   * The platform promised something it cannot honour.
+   */
+  it('422s for a LEGACY winners:N config with no prizes[]', () => {
+    let thrown;
+    try {
+      assertDrawActivatable({
+        luckyDraw: {
+          enabled: true, closesAt: '2026-10-30',
+          prize: '4D3N Tokyo getaway for two', winners: 5,
+        },
+      });
+    } catch (e) { thrown = e; }
+    expect(thrown?.statusCode).toBe(422);
+    expect(thrown?.data?.code).toBe('DRAW_MULTI_PRIZE_UNSUPPORTED');
+  });
+
+  it('still passes a legacy config that promises exactly one winner', () => {
+    expect(() => assertDrawActivatable({
+      luckyDraw: {
+        enabled: true, closesAt: '2026-10-30',
+        prize: '4D3N Tokyo getaway for two', winners: 1,
+      },
+    })).not.toThrow();
+  });
+
   it('passes for single-structured, legacy, disabled, and absent draws', () => {
     expect(() => assertDrawActivatable({
       luckyDraw: { enabled: true, closesAt: '2026-10-30', prizes: [{ qty: 1, name: 'iPhone 17 Pro' }] },
@@ -46,6 +75,13 @@ describe('computeReadiness — draw_multi_prize_unsupported', () => {
     const issue = out.issues.find((i) => i.code === 'draw_multi_prize_unsupported');
     expect(issue?.level).toBe('critical');
     expect(issue?.message).toContain('4 prizes');
+    expect(out.ready).toBe(false);
+  });
+
+  it('emits the same CRITICAL for a legacy winners:N campaign (P2-9)', () => {
+    const out = computeReadiness({ ...base, drawEnabled: true, drawTotalPrizes: 5 });
+    const issue = out.issues.find((i) => i.code === 'draw_multi_prize_unsupported');
+    expect(issue?.level).toBe('critical');
     expect(out.ready).toBe(false);
   });
 
