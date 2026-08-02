@@ -25,7 +25,7 @@ import {
   ReferredBadge,
   deriveCampaignPageContent,
   formatDrawDate,
-} from './CampaignPageRenderer';
+} from './shared';
 import { MediaBlock } from './templates';
 import { accentTextOn, resolveTheme } from '@/lib/designConfigV2';
 import {
@@ -1004,7 +1004,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null, screeningCall
     <div style={{ ...chrome.box, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <NextSteps
         s={s}
-        accent={templateId === 'gazette' ? accent : accent}
+        accent={accent}
         accentText={accentOnBox}
         onAccent={theme.onAccent}
         stepBg={chrome.stepBg}
