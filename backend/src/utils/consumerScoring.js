@@ -197,7 +197,7 @@ function blend(parts) {
 }
 
 const unknown = (note) => ({ state: 'unknown', fraction: null, basis: [], note });
-const assessed = (fraction, basis, note) => ({ state: 'assessed', fraction, basis, note });
+const assessed = (fraction, basis, note, extras) => ({ state: 'assessed', fraction, basis, note, ...extras });
 
 /**
  * A fact counts only if it clears the confidence floor (§7.1). LLM-extracted
@@ -472,7 +472,18 @@ function scoreCoverageHeadroom(facts, cfg) {
 
   const held = new Set(cov.value.v);
   if (held.has('none') || cov.value.v.length === 0) {
-    return assessed(0, (cov.basis || [cov.observationId]).filter(Boolean), 'no existing coverage — full headroom');
+    // Assessed — we genuinely know the answer, and the breakdown should say
+    // so. But a zero PENALTY is the absence of a disqualifier, not evidence of
+    // capacity to buy, so it cannot be the sole thing that unlocks a Buy score
+    // (P2-5). Without this flag, a person whose only fact is "I'm uninsured" —
+    // the largest protection gap, i.e. the BEST buyer — scored Buy = 0/70 = 0,
+    // identical to a maxed-out non-buyer and worse than an honest "—".
+    return assessed(
+      0,
+      (cov.basis || [cov.observationId]).filter(Boolean),
+      'no existing coverage — full headroom',
+      { capacityEvidence: false }
+    );
   }
   const coreHeld = CORE_COVERAGE.filter((c) => held.has(c)).length;
   // Positive fraction: 1 = all three core lines held. The minus lives in
@@ -673,6 +684,9 @@ function computeScore({ cfg, facts, telemetry, now, algorithmVersion }) {
       maxPoints,
       basisObservationIds: res.basis || [],
       note: res.note,
+      // Assessed, but carrying no evidence of capacity to buy (P2-5) — only
+      // set when a rule says so, so every other component keeps its shape.
+      ...(res.capacityEvidence === false ? { capacityEvidence: false } : {}),
     };
   }
 
@@ -694,11 +708,16 @@ function computeScore({ cfg, facts, telemetry, now, algorithmVersion }) {
     ? Math.round(clamp(sumGroup(meetNames) / meetRawMax, 0, 1) * 100)
     : null;
 
-  // BUY: needs ≥1 assessed FACT component — unknown capacity must not fake a
-  // number (§7.1b). The headroom penalty alone counts as evidence: knowing
-  // someone is already fully covered is a real, scoreable finding.
+  // BUY: needs ≥1 assessed FACT component that actually carries evidence —
+  // unknown capacity must not fake a number (§7.1b). A headroom PENALTY still
+  // counts on its own: knowing someone is already fully covered is a real,
+  // scoreable finding. A headroom of ZERO does not (P2-5) — "they have no
+  // coverage" says nothing about their capacity to buy, and letting it stand
+  // alone scored the best protection-gap buyer at the bottom.
   const buyFactAssessed = buyNames.some(
-    (n) => FACT_COMPONENTS.has(n) && components[n]?.state === 'assessed'
+    (n) => FACT_COMPONENTS.has(n)
+      && components[n]?.state === 'assessed'
+      && components[n]?.capacityEvidence !== false
   );
   const buyRawMax = rawMaxOf(buyNames);
   const buyScore = buyFactAssessed && buyRawMax > 0
