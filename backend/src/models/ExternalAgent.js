@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Sequelize } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 /**
@@ -45,7 +45,20 @@ const ExternalAgent = sequelize.define('ExternalAgent', {
     defaultValue: 0,
     validate: { min: 0 },
     comment: 'Global prepaid lead balance; decremented atomically by 1 per external assignment.'
-  }
+  },
+  // Explicit timestamp defaults so the MODEL-built schema (test boot's
+  // sync({force:true})) matches what migration 027 created in prod. Without a DB
+  // default here Sequelize emits these NOT NULL with NO default: a raw INSERT
+  // that omits them succeeds in prod and dies in every test (CLAUDE.md's
+  // "test schema != prod schema"). The ORM still fills them on create/update —
+  // this only makes the database agree.
+  //
+  // fn('NOW'), NOT DataTypes.NOW: the latter is an ORM-side default only and
+  // emits no DEFAULT clause at all (verified against this Sequelize version),
+  // so it would have looked like a fix and changed nothing. This is the same
+  // expression the migration uses.
+  createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW') },
+  updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW') }
 }, {
   tableName: 'external_agents',
   timestamps: true
