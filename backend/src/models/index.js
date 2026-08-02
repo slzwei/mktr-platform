@@ -266,6 +266,11 @@ function defineAssociations() {
   Redemption.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'RESTRICT' });
   Redemption.belongsTo(PartnerLocation, { foreignKey: 'locationId', as: 'location', onDelete: 'SET NULL' });
   Redemption.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+  // RESTRICT on all three (P1-8): an append-only audit row must never be
+  // silently orphaned — or erased — by deleting what it points at.
+  RewardInventoryEvent.belongsTo(Activation, { foreignKey: 'activationId', as: 'activation', onDelete: 'RESTRICT' });
+  RewardInventoryEvent.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'RESTRICT' });
+  RewardInventoryEvent.belongsTo(Redemption, { foreignKey: 'redemptionId', as: 'redemption', onDelete: 'RESTRICT' });
   RedemptionEvent.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'CASCADE' });
   RedemptionEvent.belongsTo(Redemption, { foreignKey: 'redemptionId', as: 'redemption', onDelete: 'CASCADE' });
 

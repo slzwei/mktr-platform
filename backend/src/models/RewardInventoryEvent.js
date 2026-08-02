@@ -14,9 +14,25 @@ const RewardInventoryEvent = sequelize.define('RewardInventoryEvent', {
     allowNull: false,
     references: { model: 'reward_offers', key: 'id' }
   },
-  activationId: { type: DataTypes.UUID, allowNull: true },
-  entitlementId: { type: DataTypes.UUID, allowNull: true },
-  redemptionId: { type: DataTypes.UUID, allowNull: true },
+  // Real references, not bare UUIDs (P1-8, migration 102): this ledger is the
+  // reconciliation source of truth, so a dangling pointer is an audit trail
+  // that cannot be re-walked. Mirrored here because test boot builds the schema
+  // from the MODELS via sync({force:true}) before migrations run.
+  activationId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'activations', key: 'id' }
+  },
+  entitlementId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'reward_entitlements', key: 'id' }
+  },
+  redemptionId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'redemptions', key: 'id' }
+  },
   type: {
     type: DataTypes.STRING(24),
     allowNull: false,
