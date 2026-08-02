@@ -9,6 +9,7 @@ import { makeInventoryService } from './inventoryService.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeRedemptionOutcomeService } from '../redemptionOutcomeService.js';
 import { hashToken } from './tokens.js';
+import { makeRedemptionEventWriter } from './redemptionEvents.js';
 
 /**
  * Redemption (docs/redeem-ops/ERD.md §3.17–3.18, brief §27). Server-validated,
@@ -32,19 +33,9 @@ export function makeRedemptionService(overrides = {}) {
     ...overrides,
   };
 
-  async function writeEvent(t, evt) {
-    return d.RedemptionEvent.create(
-      {
-        entitlementId: evt.entitlementId,
-        redemptionId: evt.redemptionId || null,
-        type: evt.type,
-        metadata: evt.metadata || null,
-        actorType: evt.actorType || 'staff',
-        actorUserId: evt.actorUserId || null,
-      },
-      { transaction: t }
-    );
-  }
+  // Shared with entitlementService via redemptionEvents.js (P3-2). 'staff' is
+  // this surface's default actor: a human is always present at the counter.
+  const writeEvent = makeRedemptionEventWriter(d, 'staff');
 
   /**
    * Resolve a counter-presented token. Accepts the voucher token always, and the
