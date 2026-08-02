@@ -10,12 +10,16 @@ import { makeInventoryService } from './inventoryService.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { mintToken, hashToken, tokenHintOf } from './tokens.js';
 import { canEmailProspect, makeFulfilmentNotify } from './fulfilmentNotify.js';
-import { canWhatsAppProspect, waEnabled, waRecipient } from './whatsappService.js';
+import { canWhatsAppProspect, waEnabled } from './whatsappService.js';
 import { isSendBlocked } from '../consentService.js';
 import { SCREENING_REASONS } from '../screeningConstants.js';
 import { makeDrawLink } from './drawLink.js';
-import { maskPhoneDots } from '../phoneMask.js';
-import { escapeLike } from '../../utils/escapeLike.js';
+import { makeEntitlementDelivery, flushDeliveries } from './entitlementDelivery.js';
+import { makeEntitlementQuery } from './entitlementQuery.js';
+import { makeEntitlementReconciliation } from './entitlementReconciliation.js';
+import { makeRedemptionEventWriter } from './redemptionEvents.js';
+
+export { flushDeliveries };
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
@@ -25,21 +29,6 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 // Profile diagnostic, which mirrors issueForProspect's duplicate-phone check.
 export const LIVE_PHONE_STATUSES = ['eligible', 'issued', 'redeemed'];
 
-/**
- * kind → the notify deps that send it. EXHAUSTIVE on purpose: the old
- * inline ternaries ended in `: d.notifyReservation`, so any kind the engine
- * did not recognise was silently delivered as a reservation pass. An unknown
- * kind now sends NOTHING and logs — a wrong email to a real customer is worse
- * than a missing one, and the reconciler/Resend exist to recover a gap.
- */
-const KIND_SENDERS = {
-  pass: { email: 'notifyReservation', wa: 'notifyReservationWa' },
-  voucher: { email: 'notifyUnlock', wa: 'notifyUnlockWa' },
-  boost_receipt: { email: 'notifyBoostReceipt', wa: 'notifyBoostReceiptWa' },
-  handover_receipt: { email: 'notifyHandover', wa: 'notifyHandoverWa' },
-};
-
-/** A reward the consultant buys and hands over themselves — no token, no partner leg. */
 export const PHYSICAL_FULFILMENT = 'physical_voucher';
 
 /**
@@ -51,35 +40,9 @@ export function phoneKeyOf(phone) {
   return digits.length >= 8 ? digits : null;
 }
 
-// In-flight fire-and-forget deliveries (all service instances share this).
-// flushDeliveries() lets tests — and anything else that needs a barrier —
-// await every queued email + receipt write deterministically.
-const pendingDeliveries = new Set();
-export async function flushDeliveries() {
-  while (pendingDeliveries.size > 0) {
-    await Promise.allSettled([...pendingDeliveries]);
-  }
-}
+// The delivery fan-out and its in-flight barrier live in entitlementDelivery.js
+// (P3-2); flushDeliveries is re-exported above so the public API is unchanged.
 
-/**
- * Reward entitlements (docs/redeem-ops/MKTR_INTEGRATION.md §2, ERD.md §3.16).
- *
- * Issuance is at-least-once (capture hook + reconciliation sweep) made
- * exactly-once by the partial unique (activationId, prospectId) anchor.
- * Preconditions (anti-farming): server-stamped phone verification on the
- * prospect, not quarantined, activation ACTIVE with allocation remaining.
- *
- * unlockPolicy='agent_unlock' (default): capture creates a locked RESERVATION
- * (presentation-pass token only); the lead's assigned consultant unlocks at the
- * physical meeting (scan or button) which mints the voucher token.
- *
- * DELIVERY lives in this service (single choke point — hook-, sweep-, and
- * manual-issued entitlements all deliver): fresh issuance and unlock queue the
- * reservation/voucher email post-commit via the null-safe notify deps, and
- * every attempt writes a `notified`/`notify_failed` receipt event. Wire the
- * deps with makeWiredEntitlementService (entitlementWiring.js) — a bare
- * instance sends nothing by design (tests, flag-off).
- */
 export function makeEntitlementService(overrides = {}) {
   const d = {
     RewardEntitlement, RedemptionEvent, Redemption, Activation, ActivationIssuanceSkip, RewardOffer,
@@ -115,19 +78,14 @@ export function makeEntitlementService(overrides = {}) {
     return d.builders;
   };
 
-  async function writeEvent(t, evt) {
-    return d.RedemptionEvent.create(
-      {
-        entitlementId: evt.entitlementId,
-        redemptionId: evt.redemptionId || null,
-        type: evt.type,
-        metadata: evt.metadata || null,
-        actorType: evt.actorType || 'system',
-        actorUserId: evt.actorUserId || null,
-      },
-      { transaction: t }
-    );
-  }
+  // Shared with redemptionService via redemptionEvents.js (P3-2). 'system' is
+  // this engine's default actor: sweeps, hooks and cascades have no human.
+  const writeEvent = makeRedemptionEventWriter(d, 'system');
+
+  // The delivery fan-out (P3-2). Every issuance/unlock/resend path calls it.
+  const { queueDelivery, writeDeliveryReceipt } = makeEntitlementDelivery({ d });
+  // The masked list projection (P3-2) — a pure read, nothing else calls it.
+  const { listEntitlements } = makeEntitlementQuery({ d });
 
   function verificationStampOf(prospect) {
     // Bound stamp (plan §2.3, Codex R1 #6): phoneVerifiedFor ties the OTP
@@ -155,117 +113,8 @@ export function makeEntitlementService(overrides = {}) {
     }
   }
 
-  /** Retention for the skip log — called from the fulfilment sweep. */
-  async function purgeIssuanceSkips({ days = 30 } = {}) {
-    const removed = await d.ActivationIssuanceSkip.destroy({
-      where: { createdAt: { [Op.lt]: new Date(Date.now() - days * 24 * 3600 * 1000) } },
-    });
-    if (removed > 0) d.logger.info('redeem_ops.issuance.skips_purged', { removed });
-    return removed;
-  }
 
-  /**
-   * Post-commit, fire-and-forget delivery + truthful per-channel receipts.
-   * Email and WhatsApp (PR E) are INDEPENDENT legs — one failing/skipping can
-   * never block or fail the other, and each writes its own receipt tagged with
-   * its channel. The boolean return keeps PR A's contract: "a fresh EMAIL
-   * attempt was scheduled" (the `emailQueued` the routes surface) — WhatsApp
-   * never affects it. The WhatsApp sender self-guards flag/consent/phone via
-   * `skipped` results (no receipt on a skip: nothing was attempted), so a
-   * no-email Retell lead still gets its WhatsApp leg — the email guard below
-   * deliberately gates only the email leg.
-   *
-   * `channels` selects which legs to fire; it defaults to BOTH so capture,
-   * unlock and the sweep are unchanged. The ops Resend passes a specific set
-   * (email / whatsapp / both) so staff can re-send on exactly the channel(s)
-   * they chose — one token rotation, the same fresh credential on each leg.
-   */
-  function queueDelivery({
-    entitlement, prospect, kind, presentationToken = null, voucherToken = null,
-    drawCtx = null,
-    channels = ['whatsapp', 'email'],
-  }) {
-    if (!KIND_SENDERS[kind]) {
-      d.logger.error('redeem_ops.delivery.unknown_kind', { entitlementId: entitlement?.id, kind });
-      return false;
-    }
-    const args = kind === 'voucher'
-      ? { entitlement, voucherToken }
-      : kind === 'boost_receipt'
-        ? { entitlement, drawCtx }
-        : kind === 'handover_receipt'
-          ? { entitlement }
-          : { entitlement, presentationToken, drawCtx };
-    const fire = (fn, channel) => {
-      const delivery = Promise.resolve()
-        .then(async () => {
-          // PR C erasure stop: these sends are queued with a point-in-time
-          // prospect object, and an erasure can land between the queue and the
-          // fire. Reload the row and re-check right before sending — an erased
-          // person's voucher/pass must never leave the building. Post-erasure
-          // the reloaded row also has null email/phone, so the sender's own
-          // guards skip too (defence in depth). isSendBlocked fails OPEN for
-          // transactional purpose: a consent-infra hiccup never strands a
-          // legitimate voucher. Only persisted prospects are re-checked — an
-          // id-less object has no row to reload (and no erasure to observe).
-          let target = prospect;
-          if (prospect?.id) {
-            const fresh = await d.Prospect.findByPk(prospect.id);
-            if (fresh) target = fresh;
-            if (await d.isSendBlocked(target, { channel, purpose: 'transactional' })) {
-              d.logger.info('redeem_ops.delivery.blocked', {
-                entitlementId: entitlement.id, channel, reason: 'suppressed_or_erased',
-              });
-              return { skipped: 'suppressed' };
-            }
-          }
-          return fn({ ...args, prospect: target });
-        })
-        .then((r) => {
-          if (r?.skipped) return null;
-          return writeDeliveryReceipt(entitlement.id, kind, r || { sent: false, error: 'no sender result' }, channel);
-        })
-        .catch((err) => writeDeliveryReceipt(entitlement.id, kind, { sent: false, error: err?.message }, channel));
-      pendingDeliveries.add(delivery);
-      delivery.finally(() => pendingDeliveries.delete(delivery));
-    };
 
-    if (channels.includes('whatsapp')) {
-      const waFn = d[KIND_SENDERS[kind].wa];
-      if (typeof waFn === 'function') fire(waFn, 'whatsapp');
-    }
-
-    if (!channels.includes('email')) return false;
-    const fn = d[KIND_SENDERS[kind].email];
-    if (typeof fn !== 'function' || !canEmailProspect(prospect)) return false;
-    fire(fn, 'email');
-    return true;
-  }
-
-  async function writeDeliveryReceipt(entitlementId, kind, r, channel = 'email') {
-    try {
-      await d.RedemptionEvent.create({
-        entitlementId,
-        type: r.sent ? 'notified' : 'notify_failed',
-        actorType: 'system',
-        metadata: {
-          kind,
-          channel,
-          to: r.to || null, // already masked by the sender
-          // Provider correlation ids (docs/plans/wa-delivery-truth.md):
-          // messageId (wamid) keys the wa_message_statuses read-time join;
-          // providerMessageId is the SMTP/SES id for the future SES-events
-          // leg. Both are scrubbed by PDPA erasure.
-          ...(r.messageId ? { messageId: r.messageId } : {}),
-          ...(r.templateName ? { templateName: r.templateName } : {}),
-          ...(r.providerMessageId ? { providerMessageId: r.providerMessageId, provider: r.provider || null } : {}),
-          ...(r.error ? { error: String(r.error).slice(0, 200) } : {}),
-        },
-      });
-    } catch (err) {
-      d.logger.error('redeem_ops.delivery.receipt_failed', { entitlementId, channel, error: err?.message });
-    }
-  }
 
   /**
    * Issue (reserve) for a captured lead. Returns the entitlement or null with a
@@ -1048,318 +897,7 @@ export function makeEntitlementService(overrides = {}) {
     return entitlement;
   }
 
-  /** Reservation-expiry sweep — expired reservations return inventory to the pool. */
-  async function expireReservations() {
-    const stale = await d.RewardEntitlement.findAll({
-      where: { status: 'eligible', expiresAt: { [Op.lt]: new Date() } },
-      limit: 200,
-    });
-    let expired = 0;
-    for (const ent of stale) {
-      try {
-        await d.sequelize.transaction(async (t) => {
-          const [count] = await d.RewardEntitlement.update(
-            { status: 'expired' },
-            { where: { id: ent.id, status: 'eligible' }, transaction: t }
-          );
-          if (count === 0) return;
-          await d.inventory.reverseIssued({
-            offerId: ent.rewardOfferId, activationId: ent.activationId,
-            entitlementId: ent.id, type: 'expired', transaction: t,
-          });
-          await d.sequelize.query(
-            `UPDATE activations SET "issuedCount" = "issuedCount" - 1, "updatedAt" = NOW()
-              WHERE id = :id AND "issuedCount" > 0`,
-            { replacements: { id: ent.activationId }, transaction: t }
-          );
-          await writeEvent(t, { entitlementId: ent.id, type: 'expired' });
-          expired += 1;
-        });
-      } catch (err) {
-        d.logger.warn('redeem_ops.entitlement.expire_failed', { id: ent.id, error: err?.message });
-      }
-    }
-    if (expired > 0) d.logger.info('redeem_ops.entitlements.expired', { expired });
-    return expired;
-  }
 
-  /**
-   * Reconciliation sweep (at-least-once backstop for the capture hook): recent
-   * verified, unquarantined leads on ACTIVE activation campaigns lacking an
-   * entitlement get one. The unique anchor dedupes against hook races.
-   * On a WIRED instance, issueForProspect delivers the pass itself — sweep-
-   * issued entitlements are no longer silently undeliverable (defect 2).
-   */
-  async function reconcileMissedLeads({ sinceHours = 48 } = {}) {
-    const activations = await d.Activation.findAll({
-      where: { status: 'active', campaignId: { [Op.ne]: null } },
-      attributes: ['id', 'campaignId'],
-    });
-    let issued = 0;
-    for (const activation of activations) {
-      const prospects = await d.Prospect.findAll({
-        where: {
-          campaignId: activation.campaignId,
-          // Screening holds included (D8) — same eligibility as the hook.
-          [Op.or]: [{ quarantinedAt: null }, { quarantineReason: { [Op.in]: SCREENING_REASONS } }],
-          createdAt: { [Op.gt]: new Date(Date.now() - sinceHours * 3600 * 1000) },
-          id: {
-            [Op.notIn]: d.sequelize.literal(
-              `(SELECT "prospectId" FROM reward_entitlements WHERE "activationId" = '${activation.id}' AND "prospectId" IS NOT NULL)`
-            ),
-          },
-        },
-        limit: 100,
-      });
-      for (const prospect of prospects) {
-        // One bad row must not abort the sweep — but the skip ledger only
-        // records typed refusals, so an unlogged throw here would make a
-        // systemic failure invisible.
-        const r = await issueForProspect(prospect, { via: 'sweep' }).catch((err) => {
-          d.logger.warn('redeem_ops.entitlement.reconcile_failed', { prospectId: prospect.id, error: err?.message });
-          return null;
-        });
-        if (r?.entitlement && r.reason === null) issued += 1;
-      }
-    }
-    if (issued > 0) d.logger.info('redeem_ops.entitlements.reconciled', { issued });
-    return issued;
-  }
-
-  /**
-   * Delivery-recovery sweep (Codex blocker, 2026-07-16): an entitlement whose
-   * email never got a `notified` receipt (crash between commit and send, SMTP
-   * failure) is otherwise stranded FOREVER — the raw token is gone and
-   * reconcileMissedLeads skips existing rows. Re-mint atomically and retry, up
-   * to `maxAttempts` per kind; rows younger than `minAgeMinutes` are skipped so
-   * an in-flight fire-and-forget send isn't pointlessly rotated. Requires the
-   * notify deps to be wired — a bare instance returns 0 (never rotate a
-   * credential we cannot deliver). Issued DRAW sessions are token-free by
-   * design: their recovery is the "×N confirmed" boost receipt, never a
-   * voucher mint, and draw classification fails closed (skip, retry next
-   * sweep) so a lookup error can never reclassify a draw rail.
-   */
-  async function reconcileMissedDeliveries({ maxAttempts = 3, minAgeMinutes = 10 } = {}) {
-    const cutoff = new Date(Date.now() - minAgeMinutes * 60 * 1000);
-    const candidates = await d.RewardEntitlement.findAll({
-      where: {
-        status: { [Op.in]: ['eligible', 'issued'] },
-        [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }],
-      },
-      include: [{ model: d.Prospect, as: 'prospect' }],
-      order: [['createdAt', 'ASC']],
-      limit: 200,
-    });
-    let recovered = 0;
-    for (const ent of candidates) {
-      try {
-        // Draw classification comes BEFORE the kind decision, and it fails
-        // CLOSED: an issued draw session's missed delivery is the ×N boost
-        // receipt — recovering it as a voucher would mint the redeemable
-        // credential draw rails must never carry (the 2026-07-25 clobber
-        // outage nearly did exactly that). A lookup error skips the row
-        // (retried next sweep) rather than risking that misclassification.
-        let drawCtx;
-        try {
-          drawCtx = await d.drawLink.drawContextForEntitlement(ent);
-        } catch (err) {
-          d.logger.warn('redeem_ops.delivery.recover_draw_lookup_failed', { id: ent.id, error: err?.message });
-          continue;
-        }
-        const kind = ent.status === 'eligible' ? 'pass' : drawCtx ? 'boost_receipt' : 'voucher';
-        const fn = kind === 'voucher' ? d.notifyUnlock : kind === 'boost_receipt' ? d.notifyBoostReceipt : d.notifyReservation;
-        if (typeof fn !== 'function') continue; // unwired — never rotate undeliverably
-        if (!canEmailProspect(ent.prospect)) continue; // link-channel-only customer
-        const stateSince = kind === 'pass' ? ent.createdAt : (ent.unlockedAt || ent.createdAt);
-        if (new Date(stateSince) > cutoff) continue; // give the in-flight send its window
-
-        const receipts = await d.RedemptionEvent.findAll({
-          where: { entitlementId: ent.id, type: { [Op.in]: ['notified', 'notify_failed'] } },
-          order: [['createdAt', 'DESC']],
-          limit: 20,
-        });
-        const forKind = receipts.filter((e) => e.metadata?.kind === kind && (e.metadata?.channel || 'email') === 'email');
-        if (forKind.some((e) => e.type === 'notified')) continue; // delivered
-        if (forKind.length >= maxAttempts) continue; // gave up — visible on the console
-
-        // boost_receipt carries NO credential — nothing to rotate. Its resend
-        // is the informational "×N confirmed" email plus the same audit row;
-        // pass/voucher keep the rotate-inside-a-guarded-transaction shape.
-        const fresh = kind === 'boost_receipt' ? null : mintToken();
-        if (fresh) {
-          const fields = kind === 'pass'
-            ? { presentationTokenHash: fresh.hash }
-            : { tokenHash: fresh.hash, tokenHint: tokenHintOf(fresh.raw) };
-          let rotated = false;
-          await d.sequelize.transaction(async (t) => {
-            const [count] = await d.RewardEntitlement.update(fields, {
-              where: {
-                id: ent.id,
-                status: ent.status,
-                [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: d.sequelize.literal('NOW()') } }],
-              },
-              transaction: t,
-            });
-            if (count === 0) return;
-            rotated = true;
-            await writeEvent(t, {
-              entitlementId: ent.id, type: 'manual_override', actorType: 'system',
-              metadata: { action: 'auto_resend', kind, channel: 'email' },
-            });
-          });
-          if (!rotated) continue;
-          await ent.reload();
-        } else {
-          await writeEvent(null, {
-            entitlementId: ent.id, type: 'manual_override', actorType: 'system',
-            metadata: { action: 'auto_resend', kind, channel: 'email' },
-          });
-        }
-        queueDelivery({
-          entitlement: ent, prospect: ent.prospect, kind,
-          presentationToken: kind === 'pass' && fresh ? fresh.raw : null,
-          voucherToken: kind === 'voucher' && fresh ? fresh.raw : null,
-          drawCtx,
-        });
-        recovered += 1;
-      } catch (err) {
-        d.logger.warn('redeem_ops.delivery.recover_failed', { id: ent.id, error: err?.message });
-      }
-    }
-    if (recovered > 0) d.logger.info('redeem_ops.deliveries.recovered', { recovered });
-    return recovered;
-  }
-
-  /** Ops listing (staff view — lead PII via JOIN at read time, never copied). */
-  async function listEntitlements(query = {}) {
-    const where = {};
-    if (query.activationId) where.activationId = String(query.activationId);
-    if (query.status) where.status = String(query.status);
-    const page = Math.max(1, parseInt(query.page, 10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 25));
-    // Console search: holder name or phone (the verify console legitimately
-    // handles identity, so the search itself may use the raw phone).
-    const prospectWhere = {};
-    if (query.search) {
-      const term = String(query.search).trim();
-      const like = `%${escapeLike(term)}%`;
-      prospectWhere[Op.or] = [
-        { firstName: { [Op.iLike]: like } },
-        { lastName: { [Op.iLike]: like } },
-        { phone: { [Op.like]: like.replace(/\s+/g, '') } },
-      ];
-    }
-    const { rows, count } = await d.RewardEntitlement.findAndCountAll({
-      where,
-      include: [
-        {
-          model: d.Prospect,
-          as: 'prospect',
-          // email is selected ONLY to compute emailDeliverable — it is
-          // stripped below and never serialized to the console.
-          attributes: ['id', 'firstName', 'lastName', 'phone', 'email'],
-          ...(query.search ? { where: prospectWhere, required: true } : {}),
-        },
-        { model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'title'] },
-        // The redemption backing a redeemed row — its id is what the Void
-        // action reverses (POST /redemptions/:id/reverse), which flips the
-        // entitlement to cancelled and frees the one-live-reward-per-phone slot.
-        { model: d.Redemption, as: 'redemption', attributes: ['id', 'status', 'redeemedAt'], required: false },
-        {
-          model: d.Activation,
-          as: 'activation',
-          attributes: ['id', 'campaignNameSnapshot'],
-          // Partner name captions each campaign stack on the console.
-          include: [{ model: d.PartnerOrganisation, as: 'partner', attributes: ['id', 'tradingName', 'legalName'] }],
-        },
-      ],
-      order: [['createdAt', 'DESC']],
-      limit, offset: (page - 1) * limit,
-    });
-
-    // Latest delivery receipt per (entitlement, channel) — one batched query.
-    const ids = rows.map((r) => r.id);
-    const receiptRows = ids.length
-      ? await d.RedemptionEvent.findAll({
-          where: {
-            entitlementId: { [Op.in]: ids },
-            type: { [Op.in]: ['notified', 'notify_failed'] },
-          },
-          order: [['createdAt', 'DESC']],
-        })
-      : [];
-    const latestReceipt = new Map();
-    for (const e of receiptRows) {
-      const key = `${e.entitlementId}:${e.metadata?.channel || 'email'}`;
-      if (!latestReceipt.has(key)) latestReceipt.set(key, e); // DESC → first is latest
-    }
-    // Post-acceptance truth (wa-delivery-truth): join the Meta status inbox by
-    // wamid so the console can distinguish accepted from delivered/failed.
-    const wamids = [...new Set(
-      [...latestReceipt.values()].map((e) => e.metadata?.messageId).filter(Boolean)
-    )];
-    const statusByWamid = new Map();
-    if (wamids.length) {
-      for (const s of await d.WaMessageStatus.findAll({ where: { wamid: { [Op.in]: wamids } } })) {
-        statusByWamid.set(s.wamid, s);
-      }
-    }
-    const receiptView = (e) => {
-      if (!e) return null;
-      const s = e.metadata?.messageId ? statusByWamid.get(e.metadata.messageId) : null;
-      return {
-        kind: e.metadata?.kind || null,
-        at: e.createdAt,
-        ok: e.type === 'notified',
-        delivery: s
-          ? { status: s.status, at: s.occurredAt, errorCode: s.errorCode, errorTitle: s.errorTitle }
-          : null,
-      };
-    };
-
-    // Draw-linkage per activation (PR-4) — one lookup per distinct activation,
-    // so the console can voice draw rows ("Session ×N") and offer Undo.
-    const drawByActivation = new Map(
-      await Promise.all(
-        [...new Set(rows.map((r) => r.activationId))].map(async (actId) => [
-          actId,
-          await d.drawLink.drawContextForActivation(actId).catch(() => null),
-        ])
-      )
-    );
-
-    // Mask phones by default (redemptions.verify unmasks at the console)
-    const nowMs = Date.now();
-    const masked = rows.map((r) => {
-      const j = r.toJSON();
-      j.emailDeliverable = canEmailProspect(j.prospect);
-      const dctx = drawByActivation.get(j.activationId) || null;
-      j.drawLinked = !!dctx;
-      j.drawMultiplier = dctx?.multiplier || null;
-      j.canUndoSession = !!dctx && j.status === 'issued'
-        && (!dctx.boostCutoffMs || nowMs < dctx.boostCutoffMs);
-      // Capability only (waEnabled + a WA-able phone; no ledger read in the
-      // bulk list projection) — the ledger-based send-time gate (erasure-only
-      // for transactional, 3sites) stays authoritative. Flag off ⇒ false
-      // everywhere, so the console never offers a channel that can't fire.
-      j.whatsappDeliverable = waEnabled() && Boolean(waRecipient(j.prospect?.phone));
-      j.delivery = {
-        email: receiptView(latestReceipt.get(`${j.id}:email`)),
-        whatsapp: receiptView(latestReceipt.get(`${j.id}:whatsapp`)),
-      };
-      if (j.prospect) {
-        if (j.prospect.phone) j.prospect.phone = maskPhoneDots(j.prospect.phone);
-        delete j.prospect.email;
-      }
-      // Surface the redemption id (+ whether it is already reversed) so the
-      // console can offer Void on redeemed rows without a second fetch.
-      j.redemptionId = j.redemption?.id || null;
-      j.redemptionReversed = j.redemption?.status === 'reversed';
-      delete j.redemption;
-      return j;
-    });
-    return { entitlements: masked, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
-  }
 
   /**
    * Cancel every LIVE entitlement of a prospect INSIDE the caller's
@@ -1401,6 +939,11 @@ export function makeEntitlementService(overrides = {}) {
     }
     return { cancelled };
   }
+
+  // The catch-up sweeps (P3-2). They drive the live paths above, so those are
+  // injected — the sweeps never re-implement issuance or delivery.
+  const { purgeIssuanceSkips, expireReservations, reconcileMissedLeads, reconcileMissedDeliveries } =
+    makeEntitlementReconciliation({ d, issueForProspect, queueDelivery, writeEvent });
 
   return {
     issueForProspect, unlockEntitlement, undoSessionUnlock, issueManual, cancelEntitlement, resendDelivery,
