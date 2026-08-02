@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter, userOrClientKey } from '../middleware/rateLimiters.js';
 import { requireRedeemOps } from '../middleware/redeemOpsAuth.js';
 import * as ctrl from '../controllers/redeemOps/cadenceController.js';
 
@@ -28,12 +28,11 @@ router.get('/cadences', requireRedeemOps(), ctrl.listCadences);
 
 // LLM drafts are cheap but not free — per-user (not per-IP: staff share office
 // NAT) minute window; in-memory store is fine on the single-instance backend.
-const cadenceAiLimiter = rateLimit({
+const cadenceAiLimiter = makeLimiter({
+  prefix: 'rl:cadence-ai',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'test' ? 10000 : 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: userOrClientKey,
   message: { success: false, message: 'Too many AI requests. Try again in a minute.' },
 });
 

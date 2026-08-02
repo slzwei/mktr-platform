@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import * as marketplaceService from '../services/marketplaceService.js';
 
@@ -16,11 +16,10 @@ export const meta = {
   flagDefault: 'false',
 };
 
-const listLimiter = rateLimit({
+const listLimiter = makeLimiter({
+  prefix: 'rl:marketplace',
   windowMs: 60 * 1000,
   max: 120, // browse-heavy surface; generous for humans, hostile to scrapers
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many requests — try again later.' },
 });
 

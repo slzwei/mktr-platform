@@ -1,16 +1,15 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import { showUnsubscribe, confirmUnsubscribe } from '../controllers/unsubscribeController.js';
 
 export const meta = { path: '/api/unsubscribe' };
 
 const router = express.Router();
 
-const unsubLimit = rateLimit({
+const unsubLimit = makeLimiter({
+  prefix: 'rl:unsubscribe',
   windowMs: 60 * 1000,
   max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
 });
 

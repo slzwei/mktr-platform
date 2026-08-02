@@ -3,7 +3,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import pinoHttp from 'pino-http';
-import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,6 +13,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 import { bootstrapDatabase } from './database/bootstrap.js';
 import { requestId } from './middleware/requestId.js';
+import { makeLimiter } from './middleware/rateLimiters.js';
 
 // Non-autodiscoverable middleware
 import leadCaptureBind from './routes/leadCaptureBind.js';
@@ -101,7 +101,12 @@ export const init = async (app) => {
 
   // Rate limiting (relaxed for development, bypass for authenticated admins)
   const isProd = process.env.NODE_ENV === 'production';
-  const limiter = rateLimit({
+  // Client-keyed + durable like every other limiter (P1-6): the default
+  // MemoryStore + req.ip keyed this on the Cloudflare EDGE address, so every
+  // visitor behind one edge shared a bucket while an attacker rotating edges
+  // was never counted.
+  const limiter = makeLimiter({
+    prefix: 'rl:api',
     windowMs: isProd ? parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000 : 60 * 1000, // 1 minute window in dev
     max: (req) => {
       if (isProd && req.user && req.user.role === 'admin') return 2000;

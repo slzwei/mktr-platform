@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { readWaCallbackContext, applyWaCallbackRequest } from '../services/retellScreeningService.js';
 
@@ -23,11 +23,10 @@ export const meta = {
   path: '/api/screening-callback',
 };
 
-const callbackLimiter = rateLimit({
+const callbackLimiter = makeLimiter({
+  prefix: 'rl:screening-callback',
   windowMs: 15 * 60 * 1000,
   max: 60, // generous for a human, hostile to token scanning (reward-claim parity)
-  standardHeaders: true,
-  legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
   message: { success: false, message: 'Too many requests — try again later.' },
 });

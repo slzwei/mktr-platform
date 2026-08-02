@@ -1,6 +1,6 @@
 import express from 'express';
 import Joi from 'joi';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import { validate } from '../middleware/validation.js';
 import * as waitlistController from '../controllers/waitlistController.js';
 
@@ -12,11 +12,10 @@ export const meta = {
 const router = express.Router();
 
 // Rate limit waitlist submissions (mirror the contact form: 5/min/IP)
-const waitlistLimiter = rateLimit({
+const waitlistLimiter = makeLimiter({
+  prefix: 'rl:waitlist',
   windowMs: 60 * 1000,
   max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please try again later' },
 });
 

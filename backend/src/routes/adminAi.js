@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter, userOrClientKey } from '../middleware/rateLimiters.js';
 import Joi from 'joi';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
@@ -12,11 +12,11 @@ export const meta = { path: '/api/admin/ai' };
 const router = express.Router();
 router.use(authenticateToken, requireAdmin);
 
-const aiGenerationLimiter = rateLimit({
+const aiGenerationLimiter = makeLimiter({
+  prefix: 'rl:admin-ai',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'test' ? 10000 : 10,
-  standardHeaders: true,
-  legacyHeaders: false,
+  keyGenerator: userOrClientKey,
   // Studio PR 4: the 429 body carries retryAfterSec (under data — the api
   // client exposes only body.data on errors) so the Studio panel can count
   // down. Shared budget across every AI generation route, per CO-1.

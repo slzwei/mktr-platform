@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import * as ctrl from '../controllers/analyticsController.js';
 
 export const meta = {
@@ -12,7 +12,8 @@ export const meta = {
 const router = express.Router();
 
 // Rate limit analytics endpoints (public, no auth) to prevent abuse
-const analyticsLimit = rateLimit({
+const analyticsLimit = makeLimiter({
+  prefix: 'rl:analytics',
   windowMs: 60 * 1000,
   max: 30,
   message: 'Too many requests.',

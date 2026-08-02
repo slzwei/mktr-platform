@@ -1,5 +1,5 @@
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import { makeLimiter } from '../middleware/rateLimiters.js';
 import * as trackerController from '../controllers/trackerController.js';
 
 export const meta = {
@@ -12,7 +12,8 @@ export const meta = {
 
 const router = express.Router();
 
-const limiter = rateLimit({
+const limiter = makeLimiter({
+  prefix: 'rl:tracker',
   windowMs: 60 * 1000,
   limit: 120
 });
