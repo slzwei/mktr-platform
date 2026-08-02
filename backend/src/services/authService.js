@@ -138,8 +138,15 @@ export async function getProfile(userId) {
  * Update user profile fields.
  */
 export async function updateProfile(user, { firstName, lastName, phone, avatar, dateOfBirth, companyName, email }) {
-  // If email is changing, ensure uniqueness
-  if (email && email !== user.email) {
+  // An email CHANGE is an ownership claim, not a profile field (P1-7). It used
+  // to need nothing but uniqueness, and left emailVerified alone — so anyone
+  // could park a stranger's address on their own row in a "verified" state and
+  // wait for the real owner to arrive via Google. The new address is therefore
+  // unverified until its own token comes back.
+  const emailChanging = Boolean(email) && email !== user.email;
+  let emailVerificationToken = null;
+
+  if (emailChanging) {
     if (user.googleSub && user.role !== 'admin') {
       throw new AppError('Email for Google-linked account cannot be changed. Contact support.', 400);
     }
@@ -147,6 +154,7 @@ export async function updateProfile(user, { firstName, lastName, phone, avatar, 
     if (existing) {
       throw new AppError('Email is already in use', 400);
     }
+    emailVerificationToken = uuidv4();
   }
 
   await user.update({
@@ -157,9 +165,32 @@ export async function updateProfile(user, { firstName, lastName, phone, avatar, 
     avatar: avatar || user.avatar,
     dateOfBirth: dateOfBirth || user.dateOfBirth,
     companyName: companyName || user.companyName,
+    ...(emailChanging ? { emailVerified: false, emailVerificationToken } : {}),
   });
 
-  return user;
+  return { user, emailVerificationToken };
+}
+
+/**
+ * Guard the EMAIL branch of Google identity resolution (P1-7).
+ *
+ * Matching a local row by email alone is a soft link: it trusts that whoever
+ * owns the row owns the address. Registration is open and — until this change —
+ * a self-service email change needed no proof, so an attacker could park a
+ * victim's address on their own row and wait. When the victim then signed in
+ * with Google, the soft link bound their Google identity into the attacker's
+ * row and minted a token for it, leaving the attacker's password on the account.
+ *
+ * A row that never verified its address has not proved the claim, so it is not
+ * linkable. The failure is deliberately indistinguishable from any other auth
+ * failure — no account-existence oracle. (P0-3 hardened the googleSub MISMATCH
+ * case; this is the surviving googleSub IS NULL half.)
+ */
+function assertSoftLinkable(user) {
+  if (user && !user.googleSub && !user.emailVerified) {
+    logger.warn('Refusing Google soft-link into an unverified-email account', { userId: user.id });
+    throw new AppError('Authentication failed', 401);
+  }
 }
 
 /**
@@ -168,7 +199,16 @@ export async function updateProfile(user, { firstName, lastName, phone, avatar, 
  * @returns {{ user: object, token: string }}
  */
 export async function googleIdTokenLogin({ email, googleSub, name, picture }) {
-  let user = await User.findOne({ where: { email } });
+  // Same two-step as googleOAuthCallback: the sub is the hard link; matching on
+  // email alone is a soft link and only binds into a row that proved it owns
+  // the address (P1-7).
+  // `where: { googleSub: undefined }` would drop the clause and match an
+  // arbitrary row, so the hard-link lookup only runs with a real sub.
+  let user = googleSub ? await User.findOne({ where: { googleSub } }) : null;
+  if (!user) {
+    user = await User.findOne({ where: { email } });
+    assertSoftLinkable(user);
+  }
 
   if (!user) {
     const fullName = name || '';
@@ -285,12 +325,13 @@ export async function googleOAuthCallback(code, origin) {
   const googleUser = await userResponse.json();
   logger.debug('Google user info retrieved successfully');
 
-  // Find or create user — check googleSub (hard link) OR email (soft link)
-  let user = await User.findOne({
-    where: {
-      [Op.or]: [{ googleSub: googleUser.id }, { email: googleUser.email }],
-    },
-  });
+  // Hard link first: the stored sub is the only identity claim we minted
+  // ourselves. Email is a SOFT link and is tried second, gated below (P1-7).
+  let user = googleUser.id ? await User.findOne({ where: { googleSub: googleUser.id } }) : null;
+  if (!user) {
+    user = await User.findOne({ where: { email: googleUser.email } });
+    assertSoftLinkable(user);
+  }
 
   if (!user) {
     const nameParts = (googleUser.name || '').split(' ');
