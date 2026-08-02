@@ -1004,6 +1004,140 @@ describe('authService (unit)', () => {
         authService.updateProfile(user, { email: 'taken@example.com' })
       ).rejects.toThrow('Email is already in use');
     });
+
+    // P1-7: an email change is an ownership CLAIM. It used to need nothing but
+    // uniqueness and left emailVerified alone, which is what let an attacker
+    // park a victim's address on their own row in a "verified" state.
+    it('un-verifies the account and mints a token when the email changes', async () => {
+      const user = {
+        ...mocks.mockUser,
+        email: 'old@example.com',
+        emailVerified: true,
+        googleSub: null,
+        role: 'customer',
+        update: jest.fn().mockResolvedValue(true),
+      };
+      mocks.User.findOne.mockResolvedValue(null); // address is free
+
+      const { emailVerificationToken } = await authService.updateProfile(user, { email: 'new@example.com' });
+
+      expect(emailVerificationToken).toEqual(expect.any(String));
+      expect(user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@example.com',
+          emailVerified: false,
+          emailVerificationToken,
+        })
+      );
+    });
+
+    it('leaves verification alone when the email is unchanged', async () => {
+      const user = {
+        ...mocks.mockUser,
+        email: 'same@example.com',
+        emailVerified: true,
+        googleSub: null,
+        role: 'customer',
+        update: jest.fn().mockResolvedValue(true),
+      };
+
+      const { emailVerificationToken } = await authService.updateProfile(user, {
+        email: 'same@example.com',
+        firstName: 'Renamed',
+      });
+
+      expect(emailVerificationToken).toBeNull();
+      const payload = user.update.mock.calls[0][0];
+      expect(payload).not.toHaveProperty('emailVerified');
+      expect(payload).not.toHaveProperty('emailVerificationToken');
+    });
+  });
+
+  // ────────────────────────────────────────────────
+  // P1-7 — Google soft-link pre-hijack
+  // ────────────────────────────────────────────────
+
+  describe('Google soft-link is gated on a verified email', () => {
+    // These queue per-call resolutions; drain them so a partially-consumed
+    // queue can never leak into a later suite.
+    afterEach(() => {
+      mocks.User.findOne.mockReset();
+      mocks.User.findOne.mockResolvedValue(null);
+      mocks.User.create.mockReset();
+      mocks.User.create.mockResolvedValue(mocks.mockUser);
+    });
+
+    const unverifiedSquatter = () => ({
+      ...mocks.mockUser,
+      id: 'attacker-row',
+      email: 'victim@example.com',
+      googleSub: null,          // never linked
+      emailVerified: false,     // never proved it owns the address
+      isActive: true,
+      save: jest.fn().mockResolvedValue(true),
+      update: jest.fn().mockResolvedValue(true),
+    });
+
+    it('refuses to bind a Google identity into an unverified-email row (id-token door)', async () => {
+      const squatter = unverifiedSquatter();
+      mocks.User.findOne
+        .mockResolvedValueOnce(null)      // no row holds this googleSub
+        .mockResolvedValueOnce(squatter); // ...but one holds the address
+
+      await expect(
+        authService.googleIdTokenLogin({ email: 'victim@example.com', googleSub: 'victim-google-sub' })
+      ).rejects.toMatchObject({ statusCode: 401, message: 'Authentication failed' });
+
+      expect(squatter.googleSub).toBeNull();
+      expect(squatter.save).not.toHaveBeenCalled();
+      expect(mocks.generateToken).not.toHaveBeenCalled();
+    });
+
+    it('still binds when the matched row DID verify its address', async () => {
+      const legitimate = {
+        ...unverifiedSquatter(),
+        id: 'legit-row',
+        emailVerified: true,
+      };
+      mocks.User.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(legitimate);
+
+      const result = await authService.googleIdTokenLogin({
+        email: 'victim@example.com',
+        googleSub: 'victim-google-sub',
+      });
+
+      expect(legitimate.googleSub).toBe('victim-google-sub');
+      expect(result.token).toBe('jwt-token-123');
+    });
+
+    it('a hard googleSub match is unaffected by the email flag', async () => {
+      const linked = {
+        ...unverifiedSquatter(),
+        id: 'linked-row',
+        googleSub: 'victim-google-sub',
+      };
+      mocks.User.findOne.mockResolvedValueOnce(linked); // hard link hits first
+
+      const result = await authService.googleIdTokenLogin({
+        email: 'victim@example.com',
+        googleSub: 'victim-google-sub',
+      });
+
+      expect(result.token).toBe('jwt-token-123');
+      expect(linked.save).toHaveBeenCalled();
+    });
+
+    it('looks the sub up FIRST, so email is only ever a fallback', async () => {
+      mocks.User.findOne.mockResolvedValue(null);
+      mocks.User.create.mockResolvedValue({ ...mocks.mockUser, isActive: true });
+
+      await authService.googleIdTokenLogin({ email: 'fresh@example.com', googleSub: 'fresh-sub' });
+
+      expect(mocks.User.findOne).toHaveBeenNthCalledWith(1, { where: { googleSub: 'fresh-sub' } });
+      expect(mocks.User.findOne).toHaveBeenNthCalledWith(2, { where: { email: 'fresh@example.com' } });
+    });
   });
 
   // ────────────────────────────────────────────────

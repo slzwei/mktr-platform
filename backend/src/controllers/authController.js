@@ -170,7 +170,7 @@ export const getProfile = asyncHandler(async (req, res) => {
 export const updateProfile = asyncHandler(async (req, res) => {
   const { firstName, lastName, phone, avatar, dateOfBirth, companyName, email } = req.body;
 
-  const user = await authService.updateProfile(req.user, {
+  const { user, emailVerificationToken } = await authService.updateProfile(req.user, {
     firstName,
     lastName,
     phone,
@@ -182,8 +182,12 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: 'Profile updated successfully',
-    data: { user: user.toJSON() },
+    // A changed address is unverified until its token comes back (P1-7), so say
+    // so rather than reporting a clean success the user would misread.
+    message: emailVerificationToken
+      ? 'Profile updated. Check your new email address to verify it.'
+      : 'Profile updated successfully',
+    data: { user: user.toJSON(), emailVerificationPending: Boolean(emailVerificationToken) },
   });
 });
 
