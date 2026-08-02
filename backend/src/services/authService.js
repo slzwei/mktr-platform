@@ -5,11 +5,58 @@ import { generateToken } from '../middleware/auth.js';
 import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { isAllowedPublicHost } from '../utils/publicHost.js';
+import { bump, peek, reset, blindIdentifier } from './rateCounter.js';
 
-// Simple in-memory login attempt tracker (resets on server restart)
-const loginAttempts = new Map();
+/**
+ * Login lockout (P2-10).
+ *
+ * This was `new Map()`: per-process, so every Render deploy reset it and the
+ * 5-attempt limit was trivially cleared; keyed on the attacker-suppliable
+ * email ALONE, so five bad passwords locked a known victim out of their own
+ * account; and never evicted, so a few million distinct probe emails grew it
+ * without bound.
+ *
+ * It now rides the same durable Postgres counter the rate limiters use, keyed
+ * on (email × client) so one attacker cannot lock a victim, with the window's
+ * TTL doing the eviction. The email is HMAC-blinded — rate_counters is
+ * deliberately PII-free.
+ */
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+const lockoutKey = (email, clientKey) =>
+  `auth:login:${blindIdentifier(String(email).toLowerCase())}:${blindIdentifier(clientKey || 'unknown')}`;
+
+/**
+ * Read the current strike count. FAILS OPEN on a database error: the limiter
+ * store takes the same posture, and a Postgres blip must not lock every user
+ * out of the platform.
+ */
+async function lockoutStrikes(key) {
+  try {
+    const { count } = await peek(key);
+    return count;
+  } catch (err) {
+    logger.warn('auth.lockout_store_unavailable_failing_open', { error: err?.message });
+    return 0;
+  }
+}
+
+async function recordFailedAttempt(key) {
+  try {
+    await bump(key, new Date(Date.now() + LOCKOUT_MS));
+  } catch (err) {
+    logger.warn('auth.lockout_bump_failed', { error: err?.message });
+  }
+}
+
+async function clearAttempts(key) {
+  try {
+    await reset(key);
+  } catch (err) {
+    logger.warn('auth.lockout_reset_failed', { error: err?.message });
+  }
+}
 
 /**
  * Register a new user.
@@ -43,17 +90,13 @@ export async function register({ email, password, firstName, lastName, fullName,
  * Authenticate a user with email + password.
  * @returns {{ user: object, token: string }}
  */
-export async function login(email, password) {
-  // Check login lockout
-  const normalizedEmail = email.toLowerCase();
-  const attempts = loginAttempts.get(normalizedEmail);
-  if (attempts && attempts.count >= MAX_ATTEMPTS) {
-    const elapsed = Date.now() - attempts.lastAttempt;
-    if (elapsed < LOCKOUT_MS) {
-      throw new AppError('Too many login attempts. Please try again in 15 minutes.', 429);
-    }
-    // Lockout expired, reset
-    loginAttempts.delete(normalizedEmail);
+export async function login(email, password, { clientKey = null } = {}) {
+  // Lockout is scoped to (email × client): five bad guesses from ONE client
+  // stop that client, and cannot lock the account's real owner out from
+  // theirs. The window's TTL expires the strikes — no eviction pass needed.
+  const key = lockoutKey(email, clientKey);
+  if (await lockoutStrikes(key) >= MAX_ATTEMPTS) {
+    throw new AppError('Too many login attempts. Please try again in 15 minutes.', 429);
   }
 
   const user = await User.scope('withPassword').findOne({
@@ -61,22 +104,18 @@ export async function login(email, password) {
   });
 
   if (!user) {
-    // Increment failed attempts
-    const current = loginAttempts.get(normalizedEmail) || { count: 0, lastAttempt: 0 };
-    loginAttempts.set(normalizedEmail, { count: current.count + 1, lastAttempt: Date.now() });
+    await recordFailedAttempt(key);
     throw new AppError('Invalid email or password', 401);
   }
 
   const isValidPassword = await user.comparePassword(password);
   if (!isValidPassword) {
-    // Increment failed attempts
-    const current = loginAttempts.get(normalizedEmail) || { count: 0, lastAttempt: 0 };
-    loginAttempts.set(normalizedEmail, { count: current.count + 1, lastAttempt: Date.now() });
+    await recordFailedAttempt(key);
     throw new AppError('Invalid email or password', 401);
   }
 
-  // Successful login — clear attempts
-  loginAttempts.delete(normalizedEmail);
+  // Successful login — clear this client's strikes
+  await clearAttempts(key);
 
   if (!user.isActive) {
     throw new AppError('Account is deactivated', 401);

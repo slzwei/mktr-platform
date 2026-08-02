@@ -36,9 +36,14 @@ export function nextSgtMidnight(now = new Date()) {
  * reversible — this is keyed. Keeping the table PII-free means person-level
  * erasure (PR C) has nothing to rebuild here.
  */
-export function blindPhone(phone) {
+export function blindIdentifier(value) {
   const secret = process.env.SMS_QUOTA_SALT || process.env.JWT_SECRET || 'mktr-dev-salt';
-  return crypto.createHmac('sha256', secret).update(String(phone)).digest('hex').slice(0, 32);
+  return crypto.createHmac('sha256', secret).update(String(value)).digest('hex').slice(0, 32);
+}
+
+/** Phone-shaped alias of {@link blindIdentifier} — same bytes, named for its original caller. */
+export function blindPhone(phone) {
+  return blindIdentifier(phone);
 }
 
 const BUMP_SQL = `

@@ -71,6 +71,7 @@ let authService;
 // Since authService uses top-level imports, we use jest.unstable_mockModule.
 
 let _User, _generateToken, _AppError, _logger;
+const _counters = new Map();
 
 beforeAll(async () => {
   mocks = buildMocks();
@@ -93,6 +94,26 @@ beforeAll(async () => {
 
   jest.unstable_mockModule('../../src/utils/logger.js', () => ({
     logger: _logger,
+  }));
+
+  // P2-10: the lockout now lives in the durable Postgres counter. Model it as
+  // an in-memory map here so the unit tier stays DB-free while still exercising
+  // the real key derivation and the real strike/expiry logic.
+  jest.unstable_mockModule('../../src/services/rateCounter.js', () => ({
+    blindIdentifier: (v) => `b(${String(v)})`,
+    peek: async (key) => {
+      const row = _counters.get(key);
+      if (!row || row.expiresAt <= Date.now()) return { count: 0, expiresAt: null };
+      return { count: row.count, expiresAt: new Date(row.expiresAt) };
+    },
+    bump: async (key, expiresAt) => {
+      const row = _counters.get(key);
+      const fresh = !row || row.expiresAt <= Date.now();
+      const next = { count: fresh ? 1 : row.count + 1, expiresAt: new Date(expiresAt).getTime() };
+      _counters.set(key, next);
+      return { count: next.count, expiresAt: new Date(next.expiresAt) };
+    },
+    reset: async (key) => { _counters.delete(key); },
   }));
 
   authService = await import('../../src/services/authService.js');
