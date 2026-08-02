@@ -22,6 +22,20 @@
 
 export const IDEMP_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long an UNFINISHED claim may sit before another caller may take it over
+ * (P2-13).
+ *
+ * claimOrReplay inserts a null-body row, runs the operation, then fills the
+ * result. A crash in between left that null row for the full 24h replay TTL,
+ * and every retry got `in_progress` forever — the key was poisoned by a
+ * process that no longer exists. No held-queue operation legitimately runs for
+ * minutes, so a claim older than this is an abandoned one, not a live one. A
+ * COMPLETED record still keeps the full 24h: that one is a real answer worth
+ * replaying.
+ */
+export const CLAIM_STALE_MS = 5 * 60 * 1000;
+
 export function makeIdempotencyOps(IdempotencyKey) {
   /** Non-claiming replay: the stored result iff present, unexpired and complete. */
   async function replayIfDone(scope, key) {
@@ -42,7 +56,30 @@ export function makeIdempotencyOps(IdempotencyKey) {
   async function claimOrReplay(scope, key) {
     if (!key) return { claimed: true };
     const existing = await IdempotencyKey.findOne({ where: { key, scope } });
-    if (existing) return { claimed: false, replay: existing.responseBody ?? { status: 'error', error: 'in_progress' } };
+    if (existing) {
+      const now = Date.now();
+      const unexpired = existing.expiresAt > new Date(now);
+      if (existing.responseBody && unexpired) {
+        return { claimed: false, replay: existing.responseBody };
+      }
+      // An unfinished claim is only authoritative while it could still be
+      // running. The claim instant is derivable from the TTL the claim wrote,
+      // so this needs no extra column.
+      const claimedAt = new Date(existing.expiresAt).getTime() - IDEMP_TTL_MS;
+      const abandoned = !existing.responseBody && now - claimedAt > CLAIM_STALE_MS;
+      if (!existing.responseBody && !abandoned) {
+        return { claimed: false, replay: { status: 'error', error: 'in_progress' } };
+      }
+      // Expired result, or a claim whose owner never came back: take it over.
+      // Guarded on the row we READ, so two reclaimers cannot both win.
+      const [reclaimed] = await IdempotencyKey.update(
+        { responseBody: null, responseCode: null, expiresAt: new Date(now + IDEMP_TTL_MS) },
+        { where: { key, scope, expiresAt: existing.expiresAt } },
+      );
+      if (reclaimed === 1) return { claimed: true };
+      const winner = await IdempotencyKey.findOne({ where: { key, scope } });
+      return { claimed: false, replay: winner?.responseBody ?? { status: 'error', error: 'in_progress' } };
+    }
     try {
       await IdempotencyKey.create({
         key, scope, responseBody: null, responseCode: null,
