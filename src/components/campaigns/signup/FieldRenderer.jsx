@@ -121,6 +121,12 @@ function HintText({ children }) {
 export default function FieldRenderer({
   fieldId,
   formData,
+  // A11y (P2-15): when the form-level error is showing, the phone input — the
+  // field that error is almost always about — points at it so a screen reader
+  // reads the reason on focus. Undefined by default, so nothing renders
+  // differently until the caller opts in.
+  formErrorId,
+  phoneInvalid,
   themeColor,
   visibleFields,
   requiredFields,
@@ -239,6 +245,8 @@ export default function FieldRenderer({
               <input
                 id="phone"
                 type="tel"
+                aria-invalid={phoneInvalid ? 'true' : undefined}
+                aria-describedby={phoneInvalid && formErrorId ? formErrorId : undefined}
                 inputMode="numeric"
                 placeholder="9123 4567"
                 value={displayPhone(formData.phone)}

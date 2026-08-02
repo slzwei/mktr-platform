@@ -572,7 +572,14 @@ export default function MarketplaceFlow() {
                       {def.label} {optional && <span className="rm-opt">(optional)</span>}
                     </span>
                     {def.options ? (
-                      <select className="rm-select" name={key} value={form[key]} onChange={(e) => setField(key, e.target.value)}>
+                      <select
+                        className="rm-select"
+                        name={key}
+                        value={form[key]}
+                        aria-invalid={errors[key] ? 'true' : undefined}
+                        aria-describedby={errors[key] ? `rm-err-${key}` : undefined}
+                        onChange={(e) => setField(key, e.target.value)}
+                      >
                         <option value="">Select…</option>
                         {def.options.map((op) => <option key={op} value={op}>{op}</option>)}
                       </select>
@@ -580,6 +587,8 @@ export default function MarketplaceFlow() {
                       <input
                         className="rm-input"
                         name={key}
+                        aria-invalid={errors[key] ? 'true' : undefined}
+                        aria-describedby={errors[key] ? `rm-err-${key}` : undefined}
                         type={def.type || 'text'}
                         inputMode={def.inputMode}
                         autoComplete={def.autoComplete}
@@ -604,7 +613,10 @@ export default function MarketplaceFlow() {
                         }}
                       />
                     )}
-                    <span className="rm-err">{errors[key] || ''}</span>
+                    {/* role=alert so a screen reader announces WHY submit was
+                        blocked; aria-describedby above ties it to its field
+                        (WCAG 3.3.1 / 4.1.3, P2-15). Visual design unchanged. */}
+                    <span className="rm-err" id={`rm-err-${key}`} role="alert">{errors[key] || ''}</span>
                   </label>
                 );
               })}
