@@ -190,13 +190,27 @@ export function makeActivationService(overrides = {}) {
           actorUser: user, reason, transaction: t,
         });
       }
-      await activation.update(
-        { allocatedQuantity: activation.allocatedQuantity + delta },
-        { transaction: t }
+      // Column-relative and guarded against the CURRENT row, never the stale
+      // read above: two concurrent ± calls used to compute from the same base
+      // and last-writer-wins, and because issuance gates on
+      // issuedCount < allocatedQuantity an upward drift over-issued (P1-2).
+      const [rows] = await d.sequelize.query(
+        `UPDATE activations
+            SET "allocatedQuantity" = "allocatedQuantity" + :delta, "updatedAt" = NOW()
+          WHERE id = :id
+            AND "allocatedQuantity" + :delta >= "issuedCount"
+        RETURNING "allocatedQuantity"`,
+        { replacements: { id, delta }, transaction: t }
       );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw new AppError('Cannot reduce allocation below what has been issued', 409);
+      }
+      const allocatedQuantity = Number(rows[0].allocatedQuantity);
+      activation.setDataValue('allocatedQuantity', allocatedQuantity);
+
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'activation.allocation_changed', entityType: 'activation',
-        entityId: id, after: { delta, allocatedQuantity: activation.allocatedQuantity },
+        entityId: id, after: { delta, allocatedQuantity },
         reason, requestId, transaction: t,
       });
       return activation;
