@@ -44,5 +44,3 @@ coverage/
 # All Vite build-output variants (dist-parity, dist-studio-smoke, dist-mktr, future ones)
 dist-*/
 
-# Review remediation dashboard (scaffolding — see .review/README.md, task P5-1)
-.review/
