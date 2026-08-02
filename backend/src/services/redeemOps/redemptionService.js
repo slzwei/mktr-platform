@@ -262,55 +262,75 @@ export function makeRedemptionService(overrides = {}) {
     if (!redemption) throw new AppError('Redemption not found', 404);
     if (redemption.status === 'reversed') return redemption;
 
-    await d.sequelize.transaction(async (t) => {
-      await redemption.update({ status: 'reversed', notes: [redemption.notes, `REVERSED: ${reason}`].filter(Boolean).join('\n') }, { transaction: t });
-      // Terminal for the entitlement (ERD.md §3.17): cancel it; re-fulfilment = manual re-issue.
-      await d.RewardEntitlement.update(
-        { status: 'cancelled' },
-        { where: { id: redemption.entitlementId }, transaction: t }
-      );
-      // A physical handover is the ONE redemption that can be reversed because
-      // it never happened: the consultant tapped "handed over" with the voucher
-      // still in their pocket, or tapped on the wrong lead. Unlike a partner
-      // redemption — a real-world event whose counters must stand — this one
-      // has to give the units back, or the "how many leads actually got their
-      // reward" number stays permanently inflated, and that number is the
-      // entire reason handover is recorded at all.
-      //
-      // Both counters move: `redeemedQuantity` (the handover) and
-      // `issuedQuantity` (the reservation, consumed back at issueForProspect),
-      // because the entitlement is now cancelled. Order is load-bearing —
-      // reverseIssued guards on `issuedQuantity - 1 >= redeemedQuantity`, so
-      // the redeemed side must come first.
-      if (redemption.method === 'agent_handover') {
-        await d.inventory.reverseRedeemed({
-          offerId: redemption.rewardOfferId, activationId: redemption.activationId,
-          entitlementId: redemption.entitlementId, redemptionId,
-          actorType: 'staff', actorUser: user, reason, transaction: t,
-        });
-        await d.inventory.reverseIssued({
-          offerId: redemption.rewardOfferId, activationId: redemption.activationId,
-          entitlementId: redemption.entitlementId, type: 'cancelled',
-          actorType: 'staff', reason, transaction: t,
-        });
-        await d.sequelize.query(
-          `UPDATE activations
-              SET "redeemedCount" = GREATEST("redeemedCount" - 1, 0),
-                  "issuedCount" = GREATEST("issuedCount" - 1, 0),
-                  "updatedAt" = NOW()
-            WHERE id = :id`,
-          { replacements: { id: redemption.activationId }, transaction: t }
+    try {
+      await d.sequelize.transaction(async (t) => {
+        // Conditional state transition — the concurrency gate, same shape as
+        // complete() above. The status check before this transaction reads
+        // outside it, so two concurrent voids of one redemption both reach
+        // here; only the call that actually flips completed→reversed may go on
+        // to move inventory counters, which guard on the aggregate offer totals
+        // and would otherwise happily move twice (P1-1).
+        const [count] = await d.Redemption.update(
+          { status: 'reversed', notes: [redemption.notes, `REVERSED: ${reason}`].filter(Boolean).join('\n') },
+          { where: { id: redemptionId, status: 'completed' }, transaction: t }
         );
-      }
-      await writeEvent(t, {
-        entitlementId: redemption.entitlementId, redemptionId, type: 'reversed',
-        actorType: 'staff', actorUserId: user.id, metadata: { reason },
+        if (count === 0) {
+          throw Object.assign(new Error('already'), { _already: true });
+        }
+        // Terminal for the entitlement (ERD.md §3.17): cancel it; re-fulfilment = manual re-issue.
+        await d.RewardEntitlement.update(
+          { status: 'cancelled' },
+          { where: { id: redemption.entitlementId }, transaction: t }
+        );
+        // A physical handover is the ONE redemption that can be reversed because
+        // it never happened: the consultant tapped "handed over" with the voucher
+        // still in their pocket, or tapped on the wrong lead. Unlike a partner
+        // redemption — a real-world event whose counters must stand — this one
+        // has to give the units back, or the "how many leads actually got their
+        // reward" number stays permanently inflated, and that number is the
+        // entire reason handover is recorded at all.
+        //
+        // Both counters move: `redeemedQuantity` (the handover) and
+        // `issuedQuantity` (the reservation, consumed back at issueForProspect),
+        // because the entitlement is now cancelled. Order is load-bearing —
+        // reverseIssued guards on `issuedQuantity - 1 >= redeemedQuantity`, so
+        // the redeemed side must come first.
+        if (redemption.method === 'agent_handover') {
+          await d.inventory.reverseRedeemed({
+            offerId: redemption.rewardOfferId, activationId: redemption.activationId,
+            entitlementId: redemption.entitlementId, redemptionId,
+            actorType: 'staff', actorUser: user, reason, transaction: t,
+          });
+          await d.inventory.reverseIssued({
+            offerId: redemption.rewardOfferId, activationId: redemption.activationId,
+            entitlementId: redemption.entitlementId, type: 'cancelled',
+            actorType: 'staff', reason, transaction: t,
+          });
+          await d.sequelize.query(
+            `UPDATE activations
+                SET "redeemedCount" = GREATEST("redeemedCount" - 1, 0),
+                    "issuedCount" = GREATEST("issuedCount" - 1, 0),
+                    "updatedAt" = NOW()
+              WHERE id = :id`,
+            { replacements: { id: redemption.activationId }, transaction: t }
+          );
+        }
+        await writeEvent(t, {
+          entitlementId: redemption.entitlementId, redemptionId, type: 'reversed',
+          actorType: 'staff', actorUserId: user.id, metadata: { reason },
+        });
+        await d.audit.recordAuditEvent({
+          actorUser: user, action: 'redemption.overridden', entityType: 'redemption',
+          entityId: redemptionId, reason, requestId, transaction: t,
+        });
       });
-      await d.audit.recordAuditEvent({
-        actorUser: user, action: 'redemption.overridden', entityType: 'redemption',
-        entityId: redemptionId, reason, requestId, transaction: t,
-      });
-    });
+    } catch (err) {
+      // Lost the race: the other caller already reversed it. Reply with the row
+      // it wrote — idempotent, and no counters moved a second time.
+      if (err?._already) return d.Redemption.findByPk(redemptionId);
+      throw err;
+    }
+    await redemption.reload();
     return redemption;
   }
 
