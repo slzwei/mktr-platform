@@ -83,6 +83,7 @@ import {
 } from './prospectHelpers.js';
 import { scoreQuiz } from './quizScoringService.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
+import { incCounter } from './observability.js';
 
 
 const defaultDeps = {
@@ -895,6 +896,14 @@ export function makeProspectService(overrides = {}) {
     }
 
     const { prospect, quarantined, heldReason, finalAgentId, dncHeld, screeningHeld } = txOutcome;
+
+    // Hot-path signals (P3-5). Every capture lands here exactly once, after the
+    // row commits, so these three answer "are leads arriving, and are they
+    // getting to anyone?" — held climbing while delivered stays flat IS the
+    // starving rotation the sweeps describe as a persistent zero.
+    incCounter('lead.captured', 1, { source: incoming.leadSource || 'unknown' });
+    if (quarantined) incCounter('lead.held', 1, { reason: heldReason || 'unknown' });
+    else incCounter('lead.delivered', 1, { external: externalAgentId ? 'yes' : 'no' });
 
     // Reflect the committed outcome (null when quarantined) for the rest of the
     // function — webhook dispatch, agent load, and the returned payload.
