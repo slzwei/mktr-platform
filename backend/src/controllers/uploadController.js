@@ -91,7 +91,7 @@ export const uploadDocuments = asyncHandler(async (req, res) => {
 // --- Delete file ---
 export const deleteFile = asyncHandler(async (req, res) => {
   const { type, filename } = req.params;
-  uploadService.deleteFile(type, filename);
+  await uploadService.deleteFile(type, filename);
 
   res.json({
     success: true,
@@ -102,7 +102,7 @@ export const deleteFile = asyncHandler(async (req, res) => {
 // --- Get file info ---
 export const getFileInfo = asyncHandler(async (req, res) => {
   const { type, filename } = req.params;
-  const fileInfo = uploadService.getFileInfo(type, filename);
+  const fileInfo = await uploadService.getFileInfo(type, filename);
 
   res.json({
     success: true,
@@ -114,7 +114,7 @@ export const getFileInfo = asyncHandler(async (req, res) => {
 export const listFiles = asyncHandler(async (req, res) => {
   const { type } = req.params;
   const { page = 1, limit = 20 } = req.query;
-  const result = uploadService.listFiles(type, page, limit);
+  const result = await uploadService.listFiles(type, page, limit);
 
   res.json({
     success: true,
@@ -124,7 +124,7 @@ export const listFiles = asyncHandler(async (req, res) => {
 
 // --- Storage usage stats ---
 export const getStorageUsage = asyncHandler(async (req, res) => {
-  const result = uploadService.getStorageUsage();
+  const result = await uploadService.getStorageUsage();
 
   res.json({
     success: true,

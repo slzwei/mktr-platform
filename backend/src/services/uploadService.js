@@ -5,8 +5,25 @@ import { storageService } from './storage.js';
 import { transcodeUploadedVideoToMp4 } from './videoService.js';
 import { AppError } from '../middleware/appError.js';
 
+// fs.promises off the same module so the unit suite mocks ONE target.
+const fsp = fs.promises;
+
 // Base uploads directory
 const uploadsDir = path.join(process.cwd(), 'uploads');
+
+/**
+ * Stream an on-disk upload to cloud storage, then remove the temp file.
+ * P4-10: the old path fs.readFileSync'd the ENTIRE upload (including
+ * transcoded video) into memory on the request path, blocking the event
+ * loop. The size is stat'ed at send time — multer's `file.size` goes stale
+ * once the transcode step rewrites the file on disk.
+ */
+async function uploadFileToStorage(key, file) {
+  const { size } = await fsp.stat(file.path);
+  const url = await storageService.uploadStream(key, fs.createReadStream(file.path), file.mimetype, size);
+  await fsp.unlink(file.path).catch(() => {});
+  return url;
+}
 
 /**
  * Upload a single file to cloud storage (if enabled) or keep local.
@@ -20,10 +37,7 @@ export async function processSingleUpload(file, type = 'general', userId) {
   let fileUrl = `/uploads/${type}/${file.filename}`;
 
   if (storageService.isEnabled()) {
-    const key = `${type}/${file.filename}`;
-    const buffer = fs.readFileSync(file.path);
-    fileUrl = await storageService.uploadBuffer(key, buffer, file.mimetype);
-    try { fs.unlinkSync(file.path); } catch (err) { void err; }
+    fileUrl = await uploadFileToStorage(`${type}/${file.filename}`, file);
   }
 
   return {
@@ -63,10 +77,7 @@ export async function processAvatarUpload(file, user) {
 
   let avatarUrl = `/uploads/avatars/${file.filename}`;
   if (storageService.isEnabled()) {
-    const key = `avatars/${file.filename}`;
-    const buffer = fs.readFileSync(file.path);
-    avatarUrl = await storageService.uploadBuffer(key, buffer, file.mimetype);
-    try { fs.unlinkSync(file.path); } catch (err) { void err; }
+    avatarUrl = await uploadFileToStorage(`avatars/${file.filename}`, file);
   }
 
   await user.update({ avatar: avatarUrl });
@@ -88,15 +99,11 @@ export async function processCampaignAssets(files, campaignId, userId) {
   for (const file of files) {
     let url = `/uploads/campaigns/${campaignId}/${file.filename}`;
     if (storageService.isEnabled()) {
-      const key = `campaigns/${campaignId}/${file.filename}`;
-      const buffer = fs.readFileSync(file.path);
-      url = await storageService.uploadBuffer(key, buffer, file.mimetype);
-      try { fs.unlinkSync(file.path); } catch (err) { void err; }
+      url = await uploadFileToStorage(`campaigns/${campaignId}/${file.filename}`, file);
     } else {
       const campaignDir = path.join(uploadsDir, 'campaigns', campaignId);
-      if (!fs.existsSync(campaignDir)) fs.mkdirSync(campaignDir, { recursive: true });
-      const newPath = path.join(campaignDir, file.filename);
-      fs.renameSync(file.path, newPath);
+      await fsp.mkdir(campaignDir, { recursive: true });
+      await fsp.rename(file.path, path.join(campaignDir, file.filename));
     }
     assets.push({
       id: uuidv4(),
@@ -127,14 +134,11 @@ export async function processDocumentUpload(files, entityType, entityId, userId)
   }
 
   const entityDir = path.join(uploadsDir, 'documents', entityType, entityId);
-  if (!fs.existsSync(entityDir)) {
-    fs.mkdirSync(entityDir, { recursive: true });
-  }
+  await fsp.mkdir(entityDir, { recursive: true });
 
   const documents = [];
   for (const file of files) {
-    const newPath = path.join(entityDir, file.filename);
-    fs.renameSync(file.path, newPath);
+    await fsp.rename(file.path, path.join(entityDir, file.filename));
 
     documents.push({
       id: uuidv4(),
@@ -153,28 +157,25 @@ export async function processDocumentUpload(files, entityType, entityId, userId)
   return documents;
 }
 
+/** Resolve + traversal-check a path under uploads/. */
+function safeUploadsPath(...segments) {
+  const filePath = path.join(uploadsDir, ...segments);
+  if (!path.resolve(filePath).startsWith(path.resolve(uploadsDir))) {
+    throw new AppError('Invalid file path', 400);
+  }
+  return filePath;
+}
+
 /**
  * Delete a file by type and filename.
  * Validates the path stays within the uploads directory.
  */
-export function deleteFile(type, filename) {
-  const filePath = path.join(uploadsDir, type, filename);
-
-  // Security check - ensure file is within uploads directory
-  const resolvedPath = path.resolve(filePath);
-  const uploadsPath = path.resolve(uploadsDir);
-
-  if (!resolvedPath.startsWith(uploadsPath)) {
-    throw new AppError('Invalid file path', 400);
-  }
-
-  if (!fs.existsSync(filePath)) {
-    throw new AppError('File not found', 404);
-  }
-
+export async function deleteFile(type, filename) {
+  const filePath = safeUploadsPath(type, filename);
   try {
-    fs.unlinkSync(filePath);
+    await fsp.unlink(filePath);
   } catch (error) {
+    if (error?.code === 'ENOENT') throw new AppError('File not found', 404);
     throw new AppError('Failed to delete file', 500);
   }
 }
@@ -183,22 +184,14 @@ export function deleteFile(type, filename) {
  * Get file info (stats) by type and filename.
  * Validates the path stays within the uploads directory.
  */
-export function getFileInfo(type, filename) {
-  const filePath = path.join(uploadsDir, type, filename);
-
-  // Security check
-  const resolvedPath = path.resolve(filePath);
-  const uploadsPath = path.resolve(uploadsDir);
-
-  if (!resolvedPath.startsWith(uploadsPath)) {
-    throw new AppError('Invalid file path', 400);
-  }
-
-  if (!fs.existsSync(filePath)) {
+export async function getFileInfo(type, filename) {
+  const filePath = safeUploadsPath(type, filename);
+  let stats;
+  try {
+    stats = await fsp.stat(filePath);
+  } catch {
     throw new AppError('File not found', 404);
   }
-
-  const stats = fs.statSync(filePath);
   return {
     filename,
     type,
@@ -213,36 +206,39 @@ export function getFileInfo(type, filename) {
  * List files in a type directory with pagination.
  * Returns { files, pagination }.
  */
-export function listFiles(type, page = 1, limit = 20) {
-  const dirPath = path.join(uploadsDir, type);
+export async function listFiles(type, page = 1, limit = 20) {
+  const dirPath = safeUploadsPath(type);
 
-  // Path traversal check — ensure resolved path stays within uploads directory
-  const resolvedPath = path.resolve(dirPath);
-  if (!resolvedPath.startsWith(path.resolve(uploadsDir))) {
-    throw new AppError('Invalid path', 400);
-  }
-
-  if (!fs.existsSync(dirPath)) {
+  let names;
+  try {
+    names = await fsp.readdir(dirPath);
+  } catch {
     return {
       files: [],
       pagination: { currentPage: 1, totalPages: 0, totalItems: 0 }
     };
   }
 
-  const files = fs.readdirSync(dirPath)
-    .filter(file => !file.startsWith('.'))
-    .map(filename => {
-      const filePath = path.join(dirPath, filename);
-      const stats = fs.statSync(filePath);
-      return {
-        filename,
-        type,
-        size: stats.size,
-        url: `/uploads/${type}/${filename}`,
-        createdAt: stats.birthtime,
-        modifiedAt: stats.mtime
-      };
-    })
+  const files = (await Promise.all(
+    names
+      .filter((file) => !file.startsWith('.'))
+      .map(async (filename) => {
+        try {
+          const stats = await fsp.stat(path.join(dirPath, filename));
+          return {
+            filename,
+            type,
+            size: stats.size,
+            url: `/uploads/${type}/${filename}`,
+            createdAt: stats.birthtime,
+            modifiedAt: stats.mtime
+          };
+        } catch {
+          return null; // deleted between readdir and stat
+        }
+      })
+  ))
+    .filter(Boolean)
     .sort((a, b) => b.createdAt - a.createdAt);
 
   const pageNum = parseInt(page);
@@ -265,24 +261,29 @@ export function listFiles(type, page = 1, limit = 20) {
  * Calculate storage usage statistics across all upload types.
  * Returns { totalUsage, byType }.
  */
-export function getStorageUsage() {
-  const getDirectorySize = (dirPath) => {
-    if (!fs.existsSync(dirPath)) return 0;
-
+export async function getStorageUsage() {
+  const getDirectorySize = async (dirPath) => {
+    let names;
+    try {
+      names = await fsp.readdir(dirPath);
+    } catch {
+      return 0;
+    }
     let totalSize = 0;
-    const files = fs.readdirSync(dirPath);
-
-    for (const file of files) {
+    for (const file of names) {
       const filePath = path.join(dirPath, file);
-      const stats = fs.statSync(filePath);
-
+      let stats;
+      try {
+        stats = await fsp.stat(filePath);
+      } catch {
+        continue;
+      }
       if (stats.isDirectory()) {
-        totalSize += getDirectorySize(filePath);
+        totalSize += await getDirectorySize(filePath);
       } else {
         totalSize += stats.size;
       }
     }
-
     return totalSize;
   };
 
@@ -291,7 +292,7 @@ export function getStorageUsage() {
   let totalUsage = 0;
 
   for (const type of types) {
-    const size = getDirectorySize(path.join(uploadsDir, type));
+    const size = await getDirectorySize(path.join(uploadsDir, type));
     usage[type] = {
       size,
       sizeFormatted: (size / (1024 * 1024)).toFixed(2) + ' MB'

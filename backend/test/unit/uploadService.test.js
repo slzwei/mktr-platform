@@ -2,20 +2,26 @@ import { jest } from '@jest/globals';
 import '../setup.js';
 
 // ── Mock dependencies ──
+// P4-10: uploadService streams from disk via fs.createReadStream +
+// fs.promises (single 'fs' mock target) and calls storageService.uploadStream
+// with a stat'ed length — the old readFileSync/uploadBuffer surface is gone.
 
 const storageService = {
   isEnabled: jest.fn(),
-  uploadBuffer: jest.fn(),
+  uploadStream: jest.fn(),
+};
+
+const mockFsp = {
+  stat: jest.fn(),
+  unlink: jest.fn(),
+  readdir: jest.fn(),
+  mkdir: jest.fn(),
+  rename: jest.fn(),
 };
 
 const mockFs = {
-  readFileSync: jest.fn(),
-  unlinkSync: jest.fn(),
-  existsSync: jest.fn(),
-  statSync: jest.fn(),
-  readdirSync: jest.fn(),
-  mkdirSync: jest.fn(),
-  renameSync: jest.fn(),
+  createReadStream: jest.fn().mockReturnValue('mock-stream'),
+  promises: mockFsp,
 };
 
 const AppError = class extends Error {
@@ -26,7 +32,7 @@ const AppError = class extends Error {
 };
 
 jest.unstable_mockModule('../../src/services/storage.js', () => ({ storageService }));
-jest.unstable_mockModule('../../src/middleware/errorHandler.js', () => ({ AppError }));
+jest.unstable_mockModule('../../src/middleware/appError.js', () => ({ AppError }));
 jest.unstable_mockModule('fs', () => ({ default: mockFs, ...mockFs }));
 jest.unstable_mockModule('uuid', () => ({ v4: jest.fn().mockReturnValue('mock-uuid') }));
 
@@ -54,16 +60,18 @@ describe('uploadService (unit)', () => {
     mockUser = { id: 'user-1', update: jest.fn().mockResolvedValue(true) };
 
     storageService.isEnabled.mockReturnValue(false);
-    storageService.uploadBuffer.mockResolvedValue('https://cdn.example.com/photo-123.jpg');
-    mockFs.readFileSync.mockReturnValue(Buffer.from('file-content'));
-    mockFs.existsSync.mockReturnValue(true);
-    mockFs.statSync.mockReturnValue({
-      size: 1024,
+    storageService.uploadStream.mockResolvedValue('https://cdn.example.com/photo-123.jpg');
+    mockFs.createReadStream.mockReturnValue('mock-stream');
+    mockFsp.stat.mockResolvedValue({
+      size: 2048, // ≠ multer's file.size — proves the send-time stat is used
       birthtime: new Date('2025-01-01'),
       mtime: new Date('2025-01-02'),
       isDirectory: () => false,
     });
-    mockFs.readdirSync.mockReturnValue(['file1.jpg', 'file2.png']);
+    mockFsp.unlink.mockResolvedValue(undefined);
+    mockFsp.readdir.mockResolvedValue(['file1.jpg', 'file2.png']);
+    mockFsp.mkdir.mockResolvedValue(undefined);
+    mockFsp.rename.mockResolvedValue(undefined);
   });
 
   // ── processSingleUpload ──
@@ -78,16 +86,17 @@ describe('uploadService (unit)', () => {
       expect(result.uploadedBy).toBe('user-1');
     });
 
-    it('uploads to cloud storage when enabled', async () => {
+    it('STREAMS to cloud storage with the stat-time length (never buffers, never trusts stale file.size)', async () => {
       storageService.isEnabled.mockReturnValue(true);
 
       const result = await processSingleUpload(mockFile, 'general', 'user-1');
 
-      expect(storageService.uploadBuffer).toHaveBeenCalledWith(
-        'general/photo-123.jpg', expect.any(Buffer), 'image/jpeg'
+      expect(mockFs.createReadStream).toHaveBeenCalledWith('/tmp/uploads/photo-123.jpg');
+      expect(storageService.uploadStream).toHaveBeenCalledWith(
+        'general/photo-123.jpg', 'mock-stream', 'image/jpeg', 2048
       );
       expect(result.url).toBe('https://cdn.example.com/photo-123.jpg');
-      expect(mockFs.unlinkSync).toHaveBeenCalledWith('/tmp/uploads/photo-123.jpg');
+      expect(mockFsp.unlink).toHaveBeenCalledWith('/tmp/uploads/photo-123.jpg');
     });
   });
 
@@ -130,55 +139,61 @@ describe('uploadService (unit)', () => {
   // ── deleteFile ──
 
   describe('deleteFile', () => {
-    it('deletes file within uploads directory', () => {
-      deleteFile('general', 'photo-123.jpg');
+    it('deletes file within uploads directory', async () => {
+      await deleteFile('general', 'photo-123.jpg');
 
-      expect(mockFs.unlinkSync).toHaveBeenCalled();
+      expect(mockFsp.unlink).toHaveBeenCalled();
     });
 
-    it('throws 404 when file does not exist', () => {
-      mockFs.existsSync.mockReturnValue(false);
+    it('throws 404 when file does not exist', async () => {
+      mockFsp.unlink.mockRejectedValue(Object.assign(new Error('nope'), { code: 'ENOENT' }));
 
-      expect(() => deleteFile('general', 'nonexistent.jpg')).toThrow('File not found');
+      await expect(deleteFile('general', 'nonexistent.jpg')).rejects.toThrow('File not found');
+    });
+
+    it('throws 500 on any other unlink failure', async () => {
+      mockFsp.unlink.mockRejectedValue(Object.assign(new Error('disk'), { code: 'EIO' }));
+
+      await expect(deleteFile('general', 'photo-123.jpg')).rejects.toThrow('Failed to delete file');
     });
   });
 
   // ── getFileInfo ──
 
   describe('getFileInfo', () => {
-    it('returns file stats for existing file', () => {
-      const result = getFileInfo('general', 'photo-123.jpg');
+    it('returns file stats for existing file', async () => {
+      const result = await getFileInfo('general', 'photo-123.jpg');
 
       expect(result.filename).toBe('photo-123.jpg');
       expect(result.type).toBe('general');
-      expect(result.size).toBe(1024);
+      expect(result.size).toBe(2048);
       expect(result.url).toBe('/uploads/general/photo-123.jpg');
     });
 
-    it('throws 404 when file does not exist', () => {
-      mockFs.existsSync.mockReturnValue(false);
+    it('throws 404 when file does not exist', async () => {
+      mockFsp.stat.mockRejectedValue(Object.assign(new Error('nope'), { code: 'ENOENT' }));
 
-      expect(() => getFileInfo('general', 'nonexistent.jpg')).toThrow('File not found');
+      await expect(getFileInfo('general', 'nonexistent.jpg')).rejects.toThrow('File not found');
     });
   });
 
   // ── listFiles ──
 
   describe('listFiles', () => {
-    it('returns paginated file list', () => {
-      mockFs.readdirSync.mockReturnValue(['a.jpg', 'b.jpg', 'c.jpg']);
+    it('returns paginated file list', async () => {
+      mockFsp.readdir.mockResolvedValue(['a.jpg', 'b.jpg', 'c.jpg']);
 
-      const result = listFiles('general', 1, 2);
+      const result = await listFiles('general', 1, 2);
 
       expect(result.files).toHaveLength(2);
       expect(result.pagination.totalItems).toBe(3);
       expect(result.pagination.totalPages).toBe(2);
     });
 
-    it('returns empty list when directory does not exist', () => {
-      mockFs.existsSync.mockReturnValue(false);
+    it('returns empty list when directory does not exist', async () => {
+      mockFsp.readdir.mockRejectedValue(Object.assign(new Error('nope'), { code: 'ENOENT' }));
 
-      const result = listFiles('nonexistent');
+      const result = await listFiles('nonexistent');
 
       expect(result.files).toEqual([]);
       expect(result.pagination.totalItems).toBe(0);
@@ -188,11 +203,11 @@ describe('uploadService (unit)', () => {
   // ── getStorageUsage ──
 
   describe('getStorageUsage', () => {
-    it('returns storage usage by type', () => {
-      mockFs.readdirSync.mockReturnValue(['file1.jpg']);
-      mockFs.statSync.mockReturnValue({ size: 1048576, isDirectory: () => false });
+    it('returns storage usage by type', async () => {
+      mockFsp.readdir.mockResolvedValue(['file1.jpg']);
+      mockFsp.stat.mockResolvedValue({ size: 1048576, isDirectory: () => false });
 
-      const result = getStorageUsage();
+      const result = await getStorageUsage();
 
       expect(result.totalUsage.bytes).toBeGreaterThan(0);
       expect(result.byType.general).toBeDefined();
