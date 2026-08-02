@@ -15,6 +15,7 @@ import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayP
 import { LIMITS } from '@/lib/designConfigV2';
 import { getProfileQuestion } from '@/lib/profileQuestionLibrary';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
+import { isValidSgMobile } from '@/utils/validation';
 
 /**
  * Public lead-capture form. Visual style is locked to the warm-cream/Fraunces
@@ -156,12 +157,11 @@ export default function CampaignSignupForm({
   };
 
   const handleSendOtp = async () => {
-    if (formData.phone.length !== 8) {
-      setError('Please enter a valid 8-digit Singapore phone number.');
-      return;
-    }
-    if (!['3', '6', '8', '9'].includes(formData.phone[0])) {
-      setError('Invalid number. Must start with 3, 6, 8, or 9.');
+    // ONE validator across both public funnels (P2-14). This used to accept
+    // 3/6 too — but an OTP is sent to this number, and VoIP/landline numbers
+    // never receive it, so the form was taking leads it could not verify.
+    if (!isValidSgMobile(formData.phone)) {
+      setError('Enter an 8-digit Singapore mobile starting with 8 or 9.');
       return;
     }
 
