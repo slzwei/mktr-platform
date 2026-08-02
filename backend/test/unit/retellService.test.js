@@ -19,7 +19,9 @@ function buildMocks() {
     tags: ['retell', 'phone-call'],
     campaignId: 'camp-1',
     assignedAgentId: 'agent-1',
-    sourceMetadata: { retellCallId: 'call123' },
+    // Mirrors what processRetellCall actually persists — the shared
+    // buildLeadCreatedPayload (P4-9) reads recordingUrl from the stored row.
+    sourceMetadata: { retellCallId: 'call123', recordingUrl: 'https://recordings.retell.ai/call123.mp3' },
     createdAt: new Date().toISOString(),
     toJSON: jest.fn(function () { return { ...this }; }),
   };

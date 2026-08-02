@@ -259,4 +259,20 @@ export async function gateHeldDncLead(prospect, overrides = {}) {
   return { outcome: 'held', status: result.status };
 }
 
+/**
+ * Capture-time DNC gate facts (P4-9): the five-line mode/number/applies
+ * computation createProspect and retellService each hand-rolled. 'off' unless
+ * scrubbing is configured AND the campaign opted in
+ * (design_config.dncCheckAtSubmit) AND the number is in DNC scope — scopes
+ * paid DNC API spend to opted-in campaigns; the global enforcement mode
+ * (block/flag) applies on top. `deps` = the caller's DI pair.
+ */
+export function dncCaptureGate(designView, phone, { dncEnforcement, formatDncNumber }) {
+  const dncMode = designView?.dncCheckAtSubmit === true ? dncEnforcement() : 'off';
+  const dncNumber = dncMode !== 'off' && phone ? formatDncNumber(phone) : null;
+  const dncBlockApplies = dncMode === 'block' && !!dncNumber;
+  const dncFlagApplies = dncMode === 'flag' && !!dncNumber;
+  return { dncMode, dncNumber, dncBlockApplies, dncFlagApplies, dncWillCheck: dncBlockApplies || dncFlagApplies };
+}
+
 export default { releaseDncClearedLead, gateHeldDncLead };
