@@ -8,6 +8,7 @@ const mockQrTag = {
   id: 'qr-1',
   slug: 'abc123test',
   campaignId: 'camp-1',
+  status: 'active', // M1: canonical lifecycle column
   active: true,
   scanCount: 5,
   uniqueScanCount: 3,
@@ -98,7 +99,7 @@ describe('qrScanFlow (unit)', () => {
     it('resolves active QR tag by slug', async () => {
       const result = await resolveQrTag('abc123test');
 
-      expect(QrTag.findOne).toHaveBeenCalledWith({ where: { slug: 'abc123test', active: true } });
+      expect(QrTag.findOne).toHaveBeenCalledWith({ where: { slug: 'abc123test', status: 'active' } });
       expect(result).toEqual(mockQrTag);
     });
 
@@ -287,7 +288,8 @@ describe('qrScanFlow (unit)', () => {
 
     it('returns null when QR tag is inactive', async () => {
       Attribution.findOne.mockResolvedValue(mockAttribution);
-      QrTag.findByPk.mockResolvedValue({ ...mockQrTag, active: false });
+      // M1: status is the canonical lifecycle column (active mirrors it).
+      QrTag.findByPk.mockResolvedValue({ ...mockQrTag, status: 'inactive', active: false });
 
       const result = await resolveSession('sess-123', null);
 

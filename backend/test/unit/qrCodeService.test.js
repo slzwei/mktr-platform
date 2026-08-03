@@ -345,7 +345,7 @@ describe('qrCodeService (unit)', () => {
       const result = await service.bulkOperateQrCodes('activate', ['qr-1'], {}, adminUser);
 
       expect(mocks.QrTag.update).toHaveBeenCalledWith(
-        { status: 'active' },
+        { status: 'active', active: true },
         expect.any(Object)
       );
       expect(result.message).toContain('activated');
@@ -355,7 +355,7 @@ describe('qrCodeService (unit)', () => {
       const result = await service.bulkOperateQrCodes('deactivate', ['qr-1'], {}, adminUser);
 
       expect(mocks.QrTag.update).toHaveBeenCalledWith(
-        { status: 'inactive' },
+        { status: 'inactive', active: false },
         expect.any(Object)
       );
       expect(result.message).toContain('deactivated');
