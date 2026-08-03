@@ -79,3 +79,21 @@ export function sgtDayWindow(now = new Date()) {
   const startUtcMs = Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate()) - SGT_OFFSET_MS;
   return { start: new Date(startUtcMs), end: new Date(startUtcMs + 24 * 60 * 60 * 1000) };
 }
+
+/**
+ * Completed years between a YYYY-MM-DD birth date and "today" on the
+ * SINGAPORE calendar (M8). The old age gate compared server-LOCAL
+ * getFullYear/getMonth/getDate — on the UTC prod host an applicant whose
+ * birthday began at 00:00 SGT stayed "yesterday" until 08:00 SGT and was
+ * rejected as underage by the Singapore-facing form. Returns null for
+ * anything cleanYmd rejects.
+ */
+export function sgtAgeFromDob(ymd, now = new Date()) {
+  const s = cleanYmd(ymd);
+  if (!s) return null;
+  const [by, bm, bd] = s.split('-').map(Number);
+  const [ty, tm, td] = sgDateKey(now).split('-').map(Number);
+  let age = ty - by;
+  if (tm < bm || (tm === bm && td < bd)) age--;
+  return age;
+}
