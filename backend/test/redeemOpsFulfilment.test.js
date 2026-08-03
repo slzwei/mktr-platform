@@ -93,7 +93,10 @@ describe('issuance preconditions (anti-farming)', () => {
       entitlements.issueForProspect(prospect, { via: 'sweep' }),
     ]);
     const issued = [a, b].filter((r) => r.entitlement && r.reason === null);
-    const dupes = [a, b].filter((r) => r.reason === 'duplicate' || r.reason === 'allocation_exhausted');
+    // With uq_re_activation_phone real (prod schema — the degraded sync-era
+    // schema had no unique indexes), the concurrent loser can land on the
+    // phone-collapse path as 'duplicate_phone' rather than the row pre-check.
+    const dupes = [a, b].filter((r) => ['duplicate', 'duplicate_phone', 'allocation_exhausted'].includes(r.reason));
     expect(issued.length + dupes.length).toBe(2);
     expect(issued.length).toBeGreaterThanOrEqual(1);
 

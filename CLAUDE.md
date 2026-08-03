@@ -83,10 +83,21 @@ currently `src/utils/**` at zero errors. Expand coverage by adding directories
 to that include list and driving them to zero; never delete the CI step. Its
 first run caught a real production bug (the pino argument-order metadata loss).
 
-**THE GOTCHA THIS EXISTS FOR — test schema ≠ prod schema.** Test boot runs `sync({force:true})` from the MODELS *first*, then migrations. So a `CREATE TABLE IF NOT EXISTS` in a migration is a **no-op** against a table sync already built, and the two shapes differ: Sequelize emits `createdAt`/`updatedAt` as NOT NULL with **no database default** (it fills them in the ORM), while migrations declare `DEFAULT now()`. Consequences:
+**Schema source of truth: MIGRATIONS ONLY (since 2026-08-03).** Test boot
+restores a frozen baseline (`backend/src/database/baseline/schema.sql` — the
+full schema as of migration 110) and replays only migrations written after it,
+so the schema tests run against is prod's BY CONSTRUCTION. Consequences:
 
-- **Any raw INSERT into a model-backed table must name `"createdAt"`/`"updatedAt"` explicitly** — omitting them passes in prod and dies in every test.
-- A migration adding columns must also declare them on the model, or they vanish from the test schema (same lesson as `Consumer.js`'s mirrored indexes).
+- A NEW TABLE needs a `createTable` migration — models no longer sync tables
+  into existence anywhere.
+- Model `indexes:`/column mirrors are NOT needed for the test schema anymore
+  (models describe runtime attribute access; migrations describe the database).
+  Existing mirrors are harmless leftovers.
+- **Any raw INSERT into a table must still name `"createdAt"`/`"updatedAt"`
+  explicitly** — the baseline (born from the old model sync) declares them
+  NOT NULL with no database default; the ORM fills them on model writes.
+- Never edit `baseline/schema.sql` by hand — see `baseline/README.md`.
+
 - Worktrees need `ln -s <main-checkout>/backend/node_modules backend/node_modules` (and the same at the repo root) before jest or eslint will resolve.
 
 ## Ads & tracking (summary — full detail in `docs/reference/ads-and-tracking.md`)
