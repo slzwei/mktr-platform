@@ -14,7 +14,11 @@ import { listHeldLeads, assignHeldLead } from '../controllers/externalHeldLeadsC
 
 const router = express.Router();
 
-export const meta = { path: '/api/external/held-leads', flag: 'HELD_LEADS_EXTERNAL_ENABLED', flagDefault: 'false' };
+export const meta = {
+  path: '/api/external/held-leads', flag: 'HELD_LEADS_EXTERNAL_ENABLED', flagDefault: 'false',
+  // Public routes (default-deny routing): mktr-leads HMAC verified inside each handler
+  public: ['POST /', 'POST /assign'],
+};
 
 // POST (not GET) so the body carries the signed `timestamp` the HMAC freshness
 // check reads — consistent with /api/external/lead-outcomes.

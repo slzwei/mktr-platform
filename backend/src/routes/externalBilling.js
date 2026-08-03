@@ -24,6 +24,8 @@ import {
 const router = express.Router();
 
 export const meta = {
+  // Public routes (default-deny routing): HitPay webhook — signature verified in the handler
+  public: ['POST /hitpay-webhook'],
   path: '/api/external/billing',
   flag: 'BILLING_ENABLED',
   flagDefault: 'false',

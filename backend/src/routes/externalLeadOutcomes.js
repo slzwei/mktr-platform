@@ -17,7 +17,11 @@
 import express from 'express';
 import { handleExternalLeadOutcome } from '../controllers/externalLeadOutcomeController.js';
 
-export const meta = { path: '/api/external' };
+export const meta = {
+  path: '/api/external',
+  // Public routes (default-deny routing): mktr-leads HMAC verified inside the handler
+  public: ['POST /lead-outcomes'],
+};
 
 const router = express.Router();
 

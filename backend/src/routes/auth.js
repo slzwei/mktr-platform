@@ -4,7 +4,11 @@ import { authenticateToken } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import * as auth from '../controllers/authController.js';
 
-export const meta = { path: '/api/auth' };
+export const meta = {
+  path: '/api/auth',
+  // Public routes (default-deny routing): login/registration/password/invite flows — public by nature
+  public: ['POST /register', 'POST /login', 'POST /google', 'GET /google/config', 'GET /google/state', 'POST /google/callback', 'GET /verify-email/:token', 'POST /forgot-password', 'POST /reset-password/:token', 'GET /invite-info/:token', 'POST /accept-invite'],
+};
 
 const router = express.Router();
 

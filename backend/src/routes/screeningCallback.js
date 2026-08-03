@@ -20,6 +20,8 @@ import { readWaCallbackContext, applyWaCallbackRequest } from '../services/retel
  * from the redeem.sg static site (internalRouteHostGuard blocklist).
  */
 export const meta = {
+  // Public routes (default-deny routing): screening callback — the token IS the credential
+  public: ['GET /:token', 'POST /:token'],
   path: '/api/screening-callback',
 };
 

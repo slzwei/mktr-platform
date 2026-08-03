@@ -15,7 +15,11 @@
 import express from 'express';
 import { handleLyfeLeadOutcome } from '../controllers/lyfeLeadOutcomeController.js';
 
-export const meta = { path: '/api/integrations/lyfe' };
+export const meta = {
+  path: '/api/integrations/lyfe',
+  // Public routes (default-deny routing): Lyfe HMAC verified inside the handler
+  public: ['POST /lead-outcome'],
+};
 
 const router = express.Router();
 

@@ -5,6 +5,8 @@ import { validate, schemas } from '../middleware/validation.js';
 import * as prospectController from '../controllers/prospectController.js';
 
 export const meta = {
+  // Public routes (default-deny routing): the public lead-capture door itself
+  public: ['POST /'],
   mounts: [{ path: '/api/prospects' }, { path: '/api/leadgen/prospects', flag: 'ENABLE_DOMAIN_PREFIXES' }],
 };
 

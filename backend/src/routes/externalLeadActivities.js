@@ -14,7 +14,11 @@ import { listLeadActivities } from '../controllers/externalLeadActivitiesControl
 
 const router = express.Router();
 
-export const meta = { path: '/api/external/lead-activities', flag: 'LEAD_TIMELINE_EXTERNAL_ENABLED', flagDefault: 'false' };
+export const meta = {
+  path: '/api/external/lead-activities', flag: 'LEAD_TIMELINE_EXTERNAL_ENABLED', flagDefault: 'false',
+  // Public routes (default-deny routing): mktr-leads HMAC verified inside each handler
+  public: ['POST /'],
+};
 
 // POST so the body carries the signed `timestamp` the HMAC freshness check reads.
 router.post('/', listLeadActivities);

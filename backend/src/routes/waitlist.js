@@ -6,6 +6,8 @@ import * as waitlistController from '../controllers/waitlistController.js';
 
 // Auto-discovered + mounted by routes/index.js via this meta export.
 export const meta = {
+  // Public routes (default-deny routing): public waitlist form
+  public: ['POST /'],
   path: '/api/waitlist',
 };
 

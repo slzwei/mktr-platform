@@ -3,6 +3,8 @@ import { makeLimiter } from '../middleware/rateLimiters.js';
 import * as trackerController from '../controllers/trackerController.js';
 
 export const meta = {
+  // Public routes (default-deny routing): public QR scan funnel
+  public: ['GET /track/:slug', 'GET /session'],
   priority: -1,
   mounts: [
     { path: '/api/qrcodes' },

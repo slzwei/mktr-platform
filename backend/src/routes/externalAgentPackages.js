@@ -15,6 +15,8 @@ import { listAgentPackages } from '../controllers/externalAgentPackagesControlle
 const router = express.Router();
 
 export const meta = {
+  // Public routes (default-deny routing): mktr-leads HMAC verified inside each handler
+  public: ['POST /'],
   path: '/api/external/agent-packages',
   flag: 'AGENT_PACKAGES_EXTERNAL_ENABLED',
   flagDefault: 'false'

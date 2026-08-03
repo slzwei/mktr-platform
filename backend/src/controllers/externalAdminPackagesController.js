@@ -94,6 +94,7 @@ function verifyExternalHmac(req) {
 }
 
 /** Express middleware form — apply once on the router so every handler is gated. */
+requireExternalHmac.mktrAuthGate = true; // default-deny routing (routeGates.js); fn is hoisted
 export function requireExternalHmac(req, res, next) {
   const authErr = verifyExternalHmac(req);
   if (authErr) return res.status(authErr.code).json({ success: false, error: authErr.error });

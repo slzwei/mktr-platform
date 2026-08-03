@@ -5,6 +5,8 @@ import { validate } from '../middleware/validation.js';
 import * as contactController from '../controllers/contactController.js';
 
 export const meta = {
+  // Public routes (default-deny routing): public contact form
+  public: ['POST /'],
   mounts: [
     { path: '/api/contact' },
     { path: '/api/admin/contact', flag: 'ENABLE_DOMAIN_PREFIXES' },

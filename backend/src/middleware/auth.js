@@ -155,8 +155,10 @@ export const authenticateToken = async (req, res, next) => {
 };
 
 // Check user roles
+authenticateToken.mktrAuthGate = true; // default-deny routing (routeGates.js)
+
 export const requireRole = (...roles) => {
-  return (req, res, next) => {
+  const gate = (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -173,6 +175,8 @@ export const requireRole = (...roles) => {
 
     next();
   };
+  gate.mktrAuthGate = true; // default-deny routing (routeGates.js)
+  return gate;
 };
 
 // Admin only middleware
