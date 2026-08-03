@@ -5,6 +5,7 @@ import { validateEnv } from '../config/envValidation.js';
 import { DEFAULT_CAMPAIGN_TYPE } from '../utils/campaignTypes.js';
 import { validateGoogleOAuthConfig } from '../controllers/authController.js';
 import { runMigrations } from './runMigrations.js';
+import { acquireTestRunLock } from './testRunLock.js';
 import { logger } from '../utils/logger.js';
 import { WebhookSubscriber, Campaign, IdempotencyKey } from '../models/index.js';
 import { adapterRegistry } from '../integrations/AdapterRegistry.js';
@@ -26,6 +27,9 @@ export async function bootstrapDatabase() {
   // 2b. In test mode, sync all model definitions to create base tables first.
   //     Migrations then layer on indexes, column tweaks, and data migrations.
   if (process.env.NODE_ENV === 'test') {
+    // Refuse to run beside another jest process on this database — its
+    // sync({force:true}) would drop our tables mid-run (see testRunLock.js).
+    await acquireTestRunLock();
     await sequelize.sync({ force: true });
     logger.info('Test DB: tables synced (force: true).');
   }

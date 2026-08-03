@@ -61,6 +61,13 @@ psql -h 127.0.0.1 -p 55432 -U postgres -c "CREATE ROLE ci LOGIN SUPERUSER"
 psql -h 127.0.0.1 -p 55432 -U postgres -c "CREATE DATABASE ci OWNER ci"
 ```
 
+**One jest process per database, enforced.** Test boot takes a `mktr_test_run`
+advisory lock (`backend/src/database/testRunLock.js`) before `sync({force:true})`;
+a second overlapping run fails fast with an explanation instead of dropping the
+first run's tables mid-flight (the old "suite hangs forever / Parse Error" local
+flake). If a run says the lock is held, wait, kill the other jest, or use a
+different `DB_NAME`.
+
 Then CI's own four steps (`cd backend`, prefix each with `NODE_ENV=test JWT_SECRET=x DB_HOST=127.0.0.1 DB_PORT=55432 DB_NAME=ci DB_USER=ci DB_PASSWORD=""`):
 
 ```
