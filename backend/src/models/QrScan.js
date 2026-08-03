@@ -51,7 +51,10 @@ const QrScan = sequelize.define('QrScan', {
   tableName: 'qr_scans',
   indexes: [
     { fields: ['qrTagId', 'ts'] },
-    { fields: ['botFlag'] }
+    { fields: ['botFlag'] },
+    // M2: supports the per-scanner dedup window in trackerService.recordScan
+    // (qrTagId + ipHash + ts range). Mirrored in migration 107 for prod.
+    { fields: ['qrTagId', 'ipHash', 'ts'], name: 'idx_qr_scans_dedup_window' }
   ]
 });
 

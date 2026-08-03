@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { QrTag, QrScan, Attribution, Campaign } from '../models/index.js';
+import { Op } from 'sequelize';
+import { QrTag, QrScan, Attribution, Campaign, sequelize } from '../models/index.js';
 import { buildPublicDesignConfig } from '../utils/publicDesignConfig.js';
 import { publicScreeningCallback } from '../utils/screeningEnv.js';
 
@@ -32,36 +33,51 @@ export async function recordScan(qrTag, { userAgent, referer, ip }) {
   const device = /Mobile|Android|iPhone|iPad/.test(ua) ? 'mobile' : 'desktop';
   const botFlag = /(bot|spider|crawler)/i.test(ua);
 
-  // De-dup within 2 minutes for same (slug, ipHash, ua)
-  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-  const recentScan = await QrScan.findOne({ where: { qrTagId: qrTag.id }, order: [['ts', 'DESC']] });
-  let isDuplicate = false;
-  if (recentScan && recentScan.ts > twoMinutesAgo && recentScan.ipHash === ipHash && recentScan.ua === ua) {
-    isDuplicate = true;
-  }
+  // M2: the duplicate decision is scoped to THIS scanner and made atomic.
+  // Pre-fix it compared only the tag's single most recent scan (client A was
+  // "unique" again whenever client B scanned in between) and raced: two
+  // simultaneous same-client requests both read no-prior-dup, both counted
+  // unique. A per-(tag, scanner) advisory xact lock serializes the claim;
+  // the windowed EXISTS query then decides, and the scan row + counters
+  // commit together — uniqueScanCount only increments for the request that
+  // wins the claim.
+  return sequelize.transaction(async (t) => {
+    await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:k))', {
+      replacements: { k: `qr-scan-dedup:${qrTag.id}:${ipHash}:${ua ?? ''}` },
+      transaction: t,
+    });
 
-  const scan = await QrScan.create({
-    qrTagId: qrTag.id,
-    ipHash,
-    ua,
-    referer,
-    device,
-    geoCity: null,
-    botFlag,
-    isDuplicate
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    const prior = await QrScan.findOne({
+      where: { qrTagId: qrTag.id, ipHash, ua, ts: { [Op.gt]: twoMinutesAgo } },
+      attributes: ['id'],
+      transaction: t,
+    });
+    const isDuplicate = !!prior;
+
+    const scan = await QrScan.create({
+      qrTagId: qrTag.id,
+      ipHash,
+      ua,
+      referer,
+      device,
+      geoCity: null,
+      botFlag,
+      isDuplicate
+    }, { transaction: t });
+
+    // Bump the denormalized counters on the QR tag so the admin UI's
+    // "Scans" / "Unique" columns reflect activity. The analytics row above
+    // is the source of truth for reporting; these counters exist to avoid
+    // an N+1 count(*) in the QR list. Unique only counts non-duplicate,
+    // non-bot hits.
+    const counters = { scanCount: 1 };
+    if (!isDuplicate && !botFlag) counters.uniqueScanCount = 1;
+    await QrTag.increment(counters, { where: { id: qrTag.id }, transaction: t });
+    await QrTag.update({ lastScanned: new Date() }, { where: { id: qrTag.id }, transaction: t });
+
+    return scan;
   });
-
-  // Bump the denormalized counters on the QR tag so the admin UI's
-  // "Scans" / "Unique" columns reflect activity. The analytics row above
-  // is the source of truth for reporting; these counters exist to avoid
-  // an N+1 count(*) in the QR list. Unique only counts non-duplicate,
-  // non-bot hits.
-  const counters = { scanCount: 1 };
-  if (!isDuplicate && !botFlag) counters.uniqueScanCount = 1;
-  await QrTag.increment(counters, { where: { id: qrTag.id } });
-  await QrTag.update({ lastScanned: new Date() }, { where: { id: qrTag.id } });
-
-  return scan;
 }
 
 /**

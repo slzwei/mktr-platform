@@ -62,11 +62,19 @@ const Campaign = {
   findByPk: jest.fn().mockResolvedValue(mockCampaign),
 };
 
+// M2: recordScan runs in a managed transaction under a per-scanner advisory
+// lock — the mock executes the callback and absorbs the lock query.
+const sequelize = {
+  transaction: jest.fn(async (cb) => cb({ id: 'tx' })),
+  query: jest.fn(async () => [[]]),
+};
+
 jest.unstable_mockModule('../../src/models/index.js', () => ({
   QrTag,
   QrScan,
   Attribution,
   Campaign,
+  sequelize,
 }));
 
 const {
@@ -129,7 +137,8 @@ describe('qrScanFlow (unit)', () => {
           qrTagId: 'qr-1',
           device: 'mobile',
           botFlag: false,
-        })
+        }),
+        expect.objectContaining({ transaction: expect.anything() })
       );
     });
 
@@ -166,13 +175,8 @@ describe('qrScanFlow (unit)', () => {
       expect(createArg.botFlag).toBe(true);
     });
 
-    it('marks duplicate scan within 2 minutes', async () => {
-      const recentScan = {
-        ts: new Date(), // just now
-        ipHash: crypto.createHash('sha256').update('1.2.3.4:dev-salt').digest('hex'),
-        ua: 'Mozilla/5.0',
-      };
-      QrScan.findOne.mockResolvedValue(recentScan);
+    it('marks duplicate when a windowed same-scanner row exists (M2)', async () => {
+      QrScan.findOne.mockResolvedValue({ id: 'prior-scan' });
 
       await recordScan(mockQrTag, {
         userAgent: 'Mozilla/5.0',
@@ -184,19 +188,22 @@ describe('qrScanFlow (unit)', () => {
       expect(createArg.isDuplicate).toBe(true);
     });
 
-    it('does not mark as duplicate when IP differs', async () => {
-      const recentScan = {
-        ts: new Date(),
-        ipHash: 'different-hash',
-        ua: 'Mozilla/5.0',
-      };
-      QrScan.findOne.mockResolvedValue(recentScan);
+    it('scopes the dedup query to this scanner — other IPs cannot shadow it (M2)', async () => {
+      QrScan.findOne.mockResolvedValue(null); // no row for THIS (tag, ip, ua) window
 
       await recordScan(mockQrTag, {
         userAgent: 'Mozilla/5.0',
         referer: '',
         ip: '1.2.3.4',
       });
+
+      // Pre-M2 the query fetched the tag's single latest scan (any scanner)
+      // and compared in JS — an interleaved other-client scan made the same
+      // client "unique" again. The WHERE now carries the scanner identity.
+      const findArg = QrScan.findOne.mock.calls[0][0];
+      const expectedHash = crypto.createHash('sha256').update('1.2.3.4:dev-salt').digest('hex');
+      expect(findArg.where.ipHash).toBe(expectedHash);
+      expect(findArg.where.ua).toBe('Mozilla/5.0');
 
       const createArg = QrScan.create.mock.calls[0][0];
       expect(createArg.isDuplicate).toBe(false);
@@ -349,19 +356,19 @@ describe('qrScanFlow (unit)', () => {
   // ────────────────────────────────────────────────
 
   describe('recordScan (edge cases)', () => {
-    it('does not mark as duplicate when scan is older than 2 minutes', async () => {
-      const oldScan = {
-        ts: new Date(Date.now() - 3 * 60 * 1000), // 3 minutes ago
-        ipHash: crypto.createHash('sha256').update('1.2.3.4:dev-salt').digest('hex'),
-        ua: 'Mozilla/5.0',
-      };
-      QrScan.findOne.mockResolvedValue(oldScan);
+    it('bounds the dedup window in the query itself — stale rows never match (M2)', async () => {
+      // The 2-minute cutoff moved INTO the WHERE (ts > now-2min): a 3-minute-old
+      // row is excluded by the database, so the scoped lookup returns null.
+      QrScan.findOne.mockResolvedValue(null);
 
       await recordScan(mockQrTag, {
         userAgent: 'Mozilla/5.0',
         referer: '',
         ip: '1.2.3.4',
       });
+
+      const findArg = QrScan.findOne.mock.calls[0][0];
+      expect(findArg.where.ts).toBeDefined();
 
       const createArg = QrScan.create.mock.calls[0][0];
       expect(createArg.isDuplicate).toBe(false);
