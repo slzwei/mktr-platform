@@ -620,3 +620,48 @@ describe('test sends', () => {
     expect(args.headers).toBeUndefined();
   });
 });
+
+describe('M10 — the frozen audience is complete under page-shift', () => {
+  it('freezes EVERY member even when mutable-sort offset pages shift mid-enumeration', async () => {
+    const cohort = await makeCohort(campA, 'Shifty');
+    const b = await makeDraft({ cohort, subject: 'Complete freeze' });
+
+    // 201 REAL consumers (recipient rows FK them); the cohort RESOLUTION is
+    // faked below, so no prospects/consents are needed.
+    const consumers = [];
+    for (let i = 0; i < 201; i++) {
+      const phone = nextPhone();
+      consumers.push(await Consumer.create({
+        phone, phoneHash: hashPhone(phone), firstName: `Shift${i}`, lastName: 'Fixture',
+        email: nextEmail(), firstSeenAt: new Date(), lastSeenAt: new Date(), signupCount: 1,
+      }));
+    }
+    const asMember = (c) => ({ consumerId: c.id, email: c.email });
+
+    // The OLD freeze paged listCohortMembers (ORDER BY mutable lastSeenAt,
+    // OFFSET 200): script the review's exact shift — between page fetches the
+    // 201st consumer "re-signs" and jumps to the sort top, so the offset-200
+    // page sees only a REPEAT of an already-frozen row and the mover is never
+    // returned. The dedup Map hid the repeat; the mover was silently omitted.
+    const listCohortMembers = jest.fn()
+      .mockResolvedValueOnce({ members: consumers.slice(0, 200).map(asMember) })
+      .mockResolvedValue({ members: [asMember(consumers[199])] });
+    // The NEW freeze walks the immutable-id keyset inside one REPEATABLE READ
+    // snapshot and sees everyone.
+    const enumerateCohortMembers = jest.fn(async (definition, opts) => {
+      expect(opts.transaction).toBeTruthy(); // the snapshot transaction is real
+      return { members: consumers.map(asMember), capExceeded: false };
+    });
+
+    const { svc } = makeSvc({ listCohortMembers, enumerateCohortMembers });
+    const { workerPromise } = await svc.startBroadcastSend(b.id);
+    await workerPromise;
+
+    const rows = await rowsOf(b);
+    // Pre-fix: 200 rows — the shifted consumer was missing from the frozen
+    // audience forever.
+    expect(rows).toHaveLength(201);
+    const frozenIds = new Set(rows.map((r) => r.consumerId));
+    expect(frozenIds.has(consumers[200].id)).toBe(true);
+  });
+});

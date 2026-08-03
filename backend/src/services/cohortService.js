@@ -677,10 +677,63 @@ export function makeCohortService(overrides = {}) {
     return preview;
   }
 
+  /**
+   * M10: full-audience enumeration for FREEZING a broadcast — keyset over the
+   * IMMUTABLE consumer id, never mutable-sort OFFSET pages. The freeze used to
+   * page listCohortMembers (ORDER BY lastSeenAt DESC) with offset += 200: a
+   * recipient whose lastSeenAt bumped mid-enumeration shifted ahead of the
+   * offset, a page-1 row repeated (hidden by the dedup Map) and the shifted
+   * consumer was silently omitted from the frozen audience forever. Accepts
+   * the caller's transaction so the whole walk can share one REPEATABLE READ
+   * snapshot.
+   */
+  async function enumerateCohortMembers(definition, {
+    channel, status = 'reachable', pageSize = 200, cap = Infinity, transaction = null,
+  } = {}) {
+    const def = normalizeDefinition(definition);
+    const ch = normalizeChannel(channel);
+    if (!['all', 'reachable', 'excluded'].includes(status)) {
+      throw new AppError('status must be all, reachable or excluded', 422);
+    }
+    await assertGateCampaignExists(d, def);
+    const statusCond = status === 'reachable' ? `WHERE ${REACHABLE_SQL}`
+      : status === 'excluded' ? `WHERE NOT ${REACHABLE_SQL}` : '';
+    const { withSql, replacements } = await buildResolution(d, def, ch);
+
+    const members = [];
+    let afterId = null;
+    for (;;) {
+      const cond = afterId
+        ? (statusCond ? `${statusCond} AND id > :afterId` : 'WHERE id > :afterId')
+        : statusCond;
+      const [rows] = await d.sequelize.query(`${withSql}
+        SELECT *, ${REACHABLE_SQL} AS reachable FROM gated ${cond}
+         ORDER BY id
+         LIMIT :limit`,
+        { replacements: { ...replacements, afterId, limit: pageSize }, transaction });
+      for (const r of rows) {
+        members.push({
+          consumerId: r.id,
+          firstName: r.firstName,
+          lastName: r.lastName,
+          phone: r.phone,
+          email: r.email,
+          lastSeenAt: r.lastSeenAt,
+          reachable: r.reachable === true,
+        });
+      }
+      if (members.length > cap) return { members, capExceeded: true };
+      if (rows.length < pageSize) break;
+      afterId = rows[rows.length - 1].id;
+    }
+    return { members, capExceeded: false };
+  }
+
   return {
     normalizeDefinition,
     previewCohort,
     listCohortMembers,
+    enumerateCohortMembers,
     canMarketToBatch,
     getCohortFacets,
     snapshotCohort,
@@ -701,6 +754,7 @@ export function snapshotFields(preview) {
 const _default = makeCohortService();
 export const previewCohort = _default.previewCohort;
 export const listCohortMembers = _default.listCohortMembers;
+export const enumerateCohortMembers = _default.enumerateCohortMembers;
 export const canMarketToBatch = _default.canMarketToBatch;
 export const getCohortFacets = _default.getCohortFacets;
 export const snapshotCohort = _default.snapshotCohort;
