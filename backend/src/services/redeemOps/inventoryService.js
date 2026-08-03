@@ -191,7 +191,11 @@ export function makeInventoryService(overrides = {}) {
       committedQuantity: sum(['committed', 'increased']) - sum(['decreased']),
       allocatedQuantity: sum(['allocated']) - sum(['deallocated']),
       issuedQuantity: sum(['issued']) - sum(['expired', 'cancelled', 'issue_reversed']),
-      redeemedQuantity: sum(['redeemed']),
+      // M4: redeem_reversed is redeemed's legitimate undo (agent_handover
+      // reversal — reverseRedeemed above). Deriving from `redeemed` alone made
+      // every reversal permanent reported drift, so each 15-minute sweep
+      // raised a false inconsistency and buried real counter corruption.
+      redeemedQuantity: sum(['redeemed']) - sum(['redeem_reversed']),
     };
     const actual = {
       committedQuantity: offer.committedQuantity,
