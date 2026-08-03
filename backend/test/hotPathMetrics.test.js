@@ -207,12 +207,28 @@ describe('external calls are measured at the shared transport', () => {
 });
 
 describe('GET /health/metrics', () => {
-  it('serves the snapshot with uptime, counters and durations', async () => {
+  it('M12: an unauthenticated request gets 401 — the counters ARE the business', async () => {
+    const res = await request(app).get('/health/metrics');
+    expect(res.status).toBe(401);
+  });
+
+  it('M12: a non-admin authenticated request is refused', async () => {
+    const agent = await createTestUser({ role: 'agent' });
+    const res = await request(app)
+      .get('/health/metrics')
+      .set('Authorization', `Bearer ${agent.token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('serves the snapshot to an ADMIN with uptime, counters and durations', async () => {
     resetMetrics();
     incCounter('lead.captured', 3, { source: 'website' });
     observeDuration('webhook.delivery.duration', 42, { event: 'lead.created' });
 
-    const res = await request(app).get('/health/metrics');
+    const adminUser = await createTestUser({ role: 'admin' });
+    const res = await request(app)
+      .get('/health/metrics')
+      .set('Authorization', `Bearer ${adminUser.token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.uptimeSeconds).toBeGreaterThanOrEqual(0);

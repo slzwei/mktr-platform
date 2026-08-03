@@ -17,7 +17,7 @@ import { makeLimiter } from './middleware/rateLimiters.js';
 
 // Non-autodiscoverable middleware
 import leadCaptureBind from './routes/leadCaptureBind.js';
-import { optionalAuth } from './middleware/auth.js';
+import { optionalAuth, authenticateToken, requireAdmin } from './middleware/auth.js';
 import { blockRedeemForInternalRoutes } from './middleware/internalRouteHostGuard.js';
 import { logger } from './utils/logger.js';
 import { maskTokenUrl } from './utils/redactTokens.js';
@@ -215,10 +215,13 @@ export const init = async (app) => {
   });
 
   // Hot-path metrics (P3-5). Counters + latency percentiles for lead capture,
-  // webhook delivery and every external call, since this instance came up. No
-  // secrets, no PII — names and numbers only — so it sits with /health rather
-  // than behind admin auth, matching how the other diagnostics here work.
-  app.get('/health/metrics', async (req, res) => {
+  // webhook delivery and every external call, since this instance came up.
+  // M12: ADMIN-GATED. "No PII" was never "no business data" — the counters
+  // are lead volume by channel, how many leads MKTR currently cannot service
+  // (lead.held{reason=no_funded_agent}), and delivery reliability; anyone
+  // polling the bare URL could trend MKTR's lead flow. Plain /health stays
+  // open for Render health checks — only the metrics need the gate.
+  app.get('/health/metrics', authenticateToken, requireAdmin, async (req, res) => {
     const { getMetricsSnapshot } = await import('./services/observability.js');
     res.status(200).json(getMetricsSnapshot());
   });
