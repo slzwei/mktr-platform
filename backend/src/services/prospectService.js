@@ -878,11 +878,45 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
+    // H3: a demographics edit writes the fields, the revision bump, the fact
+    // snapshot, and the outbox row in ONE transaction. The bump is
+    // column-relative with RETURNING — never computed from the possibly-stale
+    // loaded instance — and the snapshot is built from the RETURNED persisted
+    // row. Two concurrent edits serialize on the row lock and mint DISTINCT
+    // revisions, so the map-job unique index can no longer collapse two
+    // different payloads into one revision and publish stale facts. A failed
+    // outbox write now rolls the edit back (all-or-nothing) instead of
+    // committing fields the enrichment pipeline never hears about.
+    const editingDemographics = safeUpdates.demographics !== undefined;
+    const updatePayload = becomingWon ? { ...safeUpdates, conversionDate: new Date() } : safeUpdates;
     try {
-      if (becomingWon) {
-        await prospect.update({ ...safeUpdates, conversionDate: new Date() });
+      if (editingDemographics) {
+        await d.sequelize.transaction(async (t) => {
+          await prospect.update(updatePayload, { transaction: t });
+          const [rows] = await d.sequelize.query(
+            `UPDATE prospects
+                SET "enrichmentRevision" = COALESCE("enrichmentRevision", 1) + 1
+              WHERE id = :id
+              RETURNING "enrichmentRevision", "demographics"`,
+            { replacements: { id: prospect.id }, transaction: t }
+          );
+          const row = rows?.[0];
+          if (!row) throw new d.AppError('Prospect not found or access denied', 404);
+          prospect.enrichmentRevision = row.enrichmentRevision;
+          // FORM section only: quiz/profile artifacts are capture-immutable —
+          // absent sections mean "leave those artifacts alone" (§5.1). Cleared
+          // demographics still supersede (zero-fact snapshots at revision > 1).
+          const snapshot = d.buildFactSnapshot({
+            demographics: row.demographics || {},
+          });
+          await d.enqueueMapJobsTx(t, {
+            prospectId: prospect.id,
+            formRevision: row.enrichmentRevision,
+            snapshot,
+          });
+        });
       } else {
-        await prospect.update(safeUpdates);
+        await prospect.update(updatePayload);
       }
     } catch (err) {
       if (err?.name === 'SequelizeUniqueConstraintError') {
@@ -892,6 +926,7 @@ export function makeProspectService(overrides = {}) {
       }
       throw err;
     }
+    if (editingDemographics) d.drainMapJobs({ limit: 2 }).catch(() => {});
 
     // Consumer-spine projection upkeep: recompute BOTH phones' consumers from
     // rows (assign, never adjust) — this also relinks this row's consumerId.
@@ -902,34 +937,7 @@ export function makeProspectService(overrides = {}) {
     }
 
     // Enrichment choke points (docs/plans/consumer-profile-enrichment.md §5,
-    // §6.3 — Codex R4-era #2). Best-effort: the sweep's repair scan heals.
-    // (a) demographics is a mapped field — a staff edit mints the next form-
-    //     artifact revision + a new map job whose activation supersedes the
-    //     old revision's observations (including a CLEARED DOB — zero-fact
-    //     snapshots at revision > 1 still supersede).
-    if (safeUpdates.demographics !== undefined) {
-      try {
-        await d.sequelize.transaction(async (t) => {
-          const rev = (prospect.enrichmentRevision || 1) + 1;
-          await prospect.update({ enrichmentRevision: rev }, { transaction: t });
-          // FORM section only: quiz/profile artifacts are capture-immutable —
-          // absent sections mean "leave those artifacts alone" (§5.1).
-          const snapshot = d.buildFactSnapshot({
-            demographics: prospect.demographics || {},
-          });
-          await d.enqueueMapJobsTx(t, {
-            prospectId: prospect.id,
-            formRevision: rev,
-            snapshot,
-          });
-        });
-        d.drainMapJobs({ limit: 2 }).catch(() => {});
-      } catch (enrichErr) {
-        d.logger.warn('[enrichment] edit revision/outbox failed (sweep heals)', {
-          error: enrichErr?.message || String(enrichErr),
-        });
-      }
-    }
+    // §6.3). (a) demographics — handled ABOVE inside the edit transaction (H3).
     // (b) prospect lifecycle fields feed the score/DTO — bump the owner's
     //     input version so the profile goes dirty (no observation write here).
     if (safeUpdates.leadStatus !== undefined && safeUpdates.leadStatus !== oldStatus && prospect.consumerId) {
