@@ -310,7 +310,8 @@ function defineAssociations() {
 
   // Discover tool (migration 053)
   const { DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory } = models;
-  DiscoveryRun.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'CASCADE' });
+  // M11: history survives operator deletion (SET NULL; snapshot on the row).
+  DiscoveryRun.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'SET NULL' });
   DiscoveryRun.hasMany(DiscoveryCandidate, { foreignKey: 'discoveryRunId', as: 'candidates', onDelete: 'CASCADE' });
   DiscoveryCandidate.belongsTo(DiscoveryRun, { foreignKey: 'discoveryRunId', as: 'run' });
   DiscoveryCandidate.belongsTo(PartnerOrganisation, { foreignKey: 'matchedPartnerId', as: 'matchedPartner', onDelete: 'SET NULL' });

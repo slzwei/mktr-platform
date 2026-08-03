@@ -267,7 +267,10 @@ export function makeDiscoveryService(overrides = {}) {
       : Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length));
 
     const runValues = {
-      createdBy: user.id, provider: isInstagram ? 'apify_instagram_hashtag' : 'apify_google_maps',
+      // createdByEmail: immutable identity snapshot — survives the operator's
+      // deletion (M11: createdBy goes SET NULL, the history row stays).
+      createdBy: user.id, createdByEmail: user.email || null,
+      provider: isInstagram ? 'apify_instagram_hashtag' : 'apify_google_maps',
       category: canonicalCategory, area: String(area).trim(),
       requestedLimit, status: 'pending',
       estimatedCostUsd: Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
