@@ -2,6 +2,7 @@ import { readdir } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../utils/logger.js';
+import { assertRouterGated } from './routeGates.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,6 +39,11 @@ export async function loadRoutes(app) {
   let mounted = 0;
 
   for (const { file, router, meta } of routes) {
+    // Default-deny: an ungated, undeclared route refuses to BOOT — validated
+    // before the flag check so flag-off surfaces are held to the same bar the
+    // moment they are written, not the day their flag flips in prod.
+    assertRouterGated({ router, meta, file });
+
     const mounts = meta.mounts || [{ path: meta.path, flag: meta.flag, flagDefault: meta.flagDefault }];
 
     for (const mount of mounts) {

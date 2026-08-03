@@ -4,6 +4,8 @@ import * as ctrl from '../controllers/campaignPreviewController.js';
 import { uuidParamGuard } from '../middleware/uuidParam.js';
 
 export const meta = {
+  // Public routes (default-deny routing): public campaign pages
+  public: ['GET /slug/:slug', 'GET /public/:id'],
   mounts: [
     { path: '/api/campaigns' },
     { path: '/api/previews' },

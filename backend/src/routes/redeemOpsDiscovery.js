@@ -11,6 +11,8 @@ import * as ctrl from '../controllers/redeemOps/discoveryController.js';
  * URL secret only (server-to-server, no JWT).
  */
 export const meta = {
+  // Public routes (default-deny routing): Apify webhook — path secret is the credential
+  public: ['POST /discovery/webhook/:secret'],
   path: '/api/redeem-ops',
   flag: 'REDEEM_OPS_ENABLED',
   flagDefault: 'false',

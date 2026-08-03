@@ -23,6 +23,8 @@ import { logger } from '../utils/logger.js';
  * full lead PII (docs/redeem-ops/USER_SURFACES… §4).
  */
 export const meta = {
+  // Public routes (default-deny routing): claim link — the token IS the credential
+  public: ['GET /:token'],
   path: '/api/reward-claim',
   flag: 'REDEEM_OPS_ENTITLEMENTS_ENABLED',
   flagDefault: 'false',

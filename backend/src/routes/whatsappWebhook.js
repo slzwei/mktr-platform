@@ -23,7 +23,11 @@ import { logger } from '../utils/logger.js';
  * durability story: transient DB failure → 500 → Meta redelivers, and every
  * write in the processor is idempotent).
  */
-export const meta = { path: '/api/whatsapp' };
+export const meta = {
+  path: '/api/whatsapp',
+  // Public routes (default-deny routing): Meta verification + signature in the handler
+  public: ['GET /webhook', 'POST /webhook'],
+};
 
 const router = express.Router();
 

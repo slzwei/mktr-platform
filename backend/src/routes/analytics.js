@@ -3,6 +3,8 @@ import { makeLimiter } from '../middleware/rateLimiters.js';
 import * as ctrl from '../controllers/analyticsController.js';
 
 export const meta = {
+  // Public routes (default-deny routing): browser tracking beacons from the public funnel
+  public: ['POST /events', 'POST /referrals'],
   mounts: [
     { path: '/api/analytics' },
     { path: '/api/adtech/analytics', flag: 'ENABLE_DOMAIN_PREFIXES' },

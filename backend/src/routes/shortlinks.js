@@ -4,6 +4,8 @@ import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import * as shortlinkController from '../controllers/shortlinkController.js';
 
 export const meta = {
+  // Public routes (default-deny routing): public share/redirect surface
+  public: ['POST /public/share', 'GET /:slug'],
   mounts: [
     { path: '/api/shortlinks' },
     { path: '/share' },

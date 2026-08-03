@@ -15,7 +15,11 @@
 import express from 'express';
 import { handleLyfeUsersWebhook } from '../controllers/lyfeUsersWebhookController.js';
 
-export const meta = { path: '/api/integrations/lyfe' };
+export const meta = {
+  path: '/api/integrations/lyfe',
+  // Public routes (default-deny routing): Lyfe HMAC verified inside the handler
+  public: ['POST /users-webhook'],
+};
 
 const router = express.Router();
 

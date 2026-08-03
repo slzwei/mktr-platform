@@ -2,7 +2,11 @@ import express from 'express';
 import { makeLimiter } from '../middleware/rateLimiters.js';
 import { showUnsubscribe, confirmUnsubscribe } from '../controllers/unsubscribeController.js';
 
-export const meta = { path: '/api/unsubscribe' };
+export const meta = {
+  path: '/api/unsubscribe',
+  // Public routes (default-deny routing): one-click unsubscribe must never require login
+  public: ['GET /', 'POST /'],
+};
 
 const router = express.Router();
 

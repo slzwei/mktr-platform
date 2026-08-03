@@ -5,6 +5,8 @@ import * as campaignController from '../controllers/campaignController.js';
 import { uuidParamGuard } from '../middleware/uuidParam.js';
 
 export const meta = {
+  // Public routes (default-deny routing): public marketplace featured drops
+  public: ['GET /featured-drops'],
   mounts: [
     { path: '/api/campaigns' },
     { path: '/api/adtech/campaigns', flag: 'ENABLE_DOMAIN_PREFIXES' },

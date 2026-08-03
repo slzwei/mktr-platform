@@ -2,7 +2,11 @@ import express from 'express';
 import * as ctrl from '../controllers/verifyController.js';
 import { makeLimiter } from '../middleware/rateLimiters.js';
 
-export const meta = { path: '/api/verify' };
+export const meta = {
+  path: '/api/verify',
+  // Public routes (default-deny routing): public capture funnel OTP
+  public: ['POST /send', 'POST /check'],
+};
 
 const router = express.Router();
 

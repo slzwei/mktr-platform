@@ -22,7 +22,9 @@ describe('POST /api/dnc/check (route + controller)', () => {
   beforeEach(() => checkDncForForm.mockReset());
 
   it('mounts at /api/dnc (auto-loader contract: meta.path + default export)', () => {
-    expect(dncMeta).toEqual({ path: '/api/dnc' });
+    // meta.public: default-deny routing — /check is the capture funnel's
+    // consent pre-check, declared public by design (routeGates.js).
+    expect(dncMeta).toEqual({ path: '/api/dnc', public: ['POST /check'] });
     expect(typeof dncRouter).toBe('function');
   });
 

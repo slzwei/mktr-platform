@@ -22,6 +22,8 @@ import { logger } from '../utils/logger.js';
  * The resolved agent must be the lead's assigned consultant.
  */
 export const meta = {
+  // Public routes (default-deny routing): Lyfe HMAC verified inside the handler
+  public: ['POST /entitlement-unlock'],
   path: '/api/integrations/lyfe',
   flag: 'REDEEM_OPS_ENTITLEMENTS_ENABLED',
   flagDefault: 'false',

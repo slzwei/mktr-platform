@@ -2,7 +2,11 @@ import express from 'express';
 import { makeLimiter } from '../middleware/rateLimiters.js';
 import * as ctrl from '../controllers/dncController.js';
 
-export const meta = { path: '/api/dnc' };
+export const meta = {
+  path: '/api/dnc',
+  // Public routes (default-deny routing): public capture funnel consent pre-check
+  public: ['POST /check'],
+};
 
 const router = express.Router();
 

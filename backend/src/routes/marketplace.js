@@ -11,6 +11,8 @@ import * as marketplaceService from '../services/marketplaceService.js';
  * raw campaign row. Dark-launched behind MARKETPLACE_PUBLIC_API_ENABLED.
  */
 export const meta = {
+  // Public routes (default-deny routing): public redeem.sg marketplace
+  public: ['GET /campaigns', 'GET /campaigns/:slug'],
   path: '/api/marketplace',
   flag: 'MARKETPLACE_PUBLIC_API_ENABLED',
   flagDefault: 'false',

@@ -15,6 +15,8 @@ import { reassignLead, returnToHeld } from '../controllers/externalAdminLeadOpsC
 const router = express.Router();
 
 export const meta = {
+  // Public routes (default-deny routing): mktr-leads HMAC verified inside each handler
+  public: ['POST /reassign', 'POST /return-to-held'],
   path: '/api/external/admin-lead-ops',
   flag: 'ADMIN_LEAD_OPS_EXTERNAL_ENABLED',
   flagDefault: 'false'

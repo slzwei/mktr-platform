@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import * as retellController from '../controllers/retellController.js';
 
-export const meta = { path: '/api/retell' };
+export const meta = {
+  path: '/api/retell',
+  // Public routes (default-deny routing): Retell webhook — HMAC verified inside the handler
+  public: ['POST /webhook'],
+};
 
 const router = Router();
 
