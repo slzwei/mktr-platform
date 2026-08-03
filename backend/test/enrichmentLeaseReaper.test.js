@@ -18,11 +18,18 @@ let campaign, prospect
 const made = []
 
 /** A map job parked in 'leased' with a lease that expired `agoMs` ago. */
+let revisionSeq = 0
 async function leasedJob({ expiresInMs }) {
   const job = await EnrichmentJob.create({
     kind: 'map',
     status: 'leased',
     subjectProspectId: prospect.id,
+    // chk_ejobs_kind + uq_ejobs_map (migration 091, enforced in prod): a map
+    // job MUST carry its revision + content hash, and only ONE live job may
+    // exist per (prospect, revision) — the old sync-then-migrate boot dropped
+    // both after the first suite, so the fixtures got away without either.
+    sourceRevisionId: (revisionSeq += 1),
+    sourceContentHash: `hash-${randomUUID()}`,
     pipelineVersion: 'test-reaper-v1',
     leaseToken: randomUUID(), // the dead worker's token
     leaseExpiresAt: new Date(Date.now() + expiresInMs),

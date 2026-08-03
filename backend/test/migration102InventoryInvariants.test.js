@@ -168,7 +168,12 @@ describe('audit-ledger pointers', () => {
     const offer = await makeOffer()
     await expect(
       insertLedger(column, '00000000-0000-4000-8000-000000000000', offer.id)
-    ).rejects.toThrow(new RegExp(`foreign key constraint.*${column}|${column}.*foreign key`, 'i'))
+    // The live constraint carries migration 102's prod name (fk_rie_activation
+    // etc.), not the column-derived name the sync-era schema generated — match
+    // either so the assertion tracks the CONSTRAINT, not its christening.
+    ).rejects.toThrow(new RegExp(
+      `foreign key constraint.*(${column}|fk_rie_)|(${column}|fk_rie_).*foreign key`, 'i'
+    ))
   })
 
   it('still accepts NULL pointers — most ledger rows have no activation', async () => {

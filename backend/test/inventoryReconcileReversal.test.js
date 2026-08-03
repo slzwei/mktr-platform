@@ -90,15 +90,19 @@ describe('M4 — reconcile() subtracts redeem_reversed', () => {
     const offer = await makeOffer()
     await issueAndRedeem(offer.id, 1)
 
-    // Corrupt the counter without a ledger row — the drift reconcile exists for.
+    // Corrupt the counter without a ledger row — the drift reconcile exists
+    // for. The corruption must be one PROD could actually hold: a lost update
+    // (counter reset to 0 while the ledger says 1). The old test set the
+    // counter to 5 > issued, which chk_reward_offers_quantity_ordering makes
+    // unstorable — the degraded sync-era schema was the only place it fit.
     await sequelize.query(
-      'UPDATE reward_offers SET "redeemedQuantity" = 5 WHERE id = :id',
+      'UPDATE reward_offers SET "redeemedQuantity" = 0 WHERE id = :id',
       { replacements: { id: offer.id } }
     )
 
     const { consistent, derived, actual } = await inventory.reconcile(offer.id)
     expect(derived.redeemedQuantity).toBe(1)
-    expect(actual.redeemedQuantity).toBe(5)
+    expect(actual.redeemedQuantity).toBe(0)
     expect(consistent).toBe(false)
   })
 })
