@@ -257,6 +257,25 @@ export function makeWebhookService(overrides = {}) {
       // Carry the authoritative attempt count onto the in-memory copy.
       delivery.attempts = rows?.[0]?.attempts ?? delivery.attempts + 1;
       delivery.status = 'sending';
+
+      // Subscriber freshness: the retry timer holds an in-memory subscriber
+      // captured minutes ago — a disable (admin or the 50-failure auto-cut)
+      // or a secret rotation between attempts must govern THIS attempt. The
+      // recovery poll already filters enabled at query time; the timer path
+      // has to match, or a "disabled" endpoint keeps receiving retries signed
+      // with a rotated-away secret.
+      const fresh = await d.WebhookSubscriber.findByPk(delivery.subscriberId);
+      if (!fresh || !fresh.enabled) {
+        await delivery.update({
+          status: 'failed',
+          errorMessage: 'subscriber disabled or deleted between attempts',
+        });
+        d.logger.info('[Webhook] delivery dropped (subscriber no longer deliverable)', {
+          deliveryId: delivery.deliveryId,
+        });
+        return;
+      }
+      subscriber = fresh;
     }
     const rawBody = JSON.stringify(delivery.payload);
     const timestamp = new Date().toISOString();
