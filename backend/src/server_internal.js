@@ -19,7 +19,7 @@ import { makeLimiter } from './middleware/rateLimiters.js';
 import leadCaptureBind from './routes/leadCaptureBind.js';
 import { optionalAuth, authenticateToken, requireAdmin } from './middleware/auth.js';
 import { blockRedeemForInternalRoutes } from './middleware/internalRouteHostGuard.js';
-import { logger } from './utils/logger.js';
+import { logger, pinoInstance } from './utils/logger.js';
 import { maskTokenUrl } from './utils/redactTokens.js';
 import { isInlineSafePath } from './utils/fileSignature.js';
 import swaggerUi from 'swagger-ui-express';
@@ -144,7 +144,7 @@ export const init = async (app) => {
   // bearer tokens — /api/reward-claim/:token is a live credential and must
   // never land in access logs (see utils/redactTokens.js).
   app.use(pinoHttp({
-    logger,
+    logger: pinoInstance,
     autoLogging: { ignore: (req) => req.url === '/health' },
     serializers: {
       req(req) {

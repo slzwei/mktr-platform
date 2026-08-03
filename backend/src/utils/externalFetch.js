@@ -22,7 +22,7 @@ import { incCounter, observeDuration } from '../services/observability.js';
 export const DEFAULT_TIMEOUT_MS = 12_000;
 
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const noopLogger = { warn: () => {}, error: () => {}, info: () => {} };
+const noopLogger = { warn: (..._a) => {}, error: (..._a) => {}, info: (..._a) => {} };
 
 /** True for the errors that mean "try again" rather than "this request is wrong". */
 export function isTransientFetchError(err) {
@@ -34,14 +34,16 @@ export function isTransientFetchError(err) {
  * `name: 'AbortError'` and `timeout: true`, which the retry layer treats as
  * transient — the request may never have reached the provider.
  */
-export async function fetchWithTimeout(fetchImpl, url, opts = {}, { timeoutMs = DEFAULT_TIMEOUT_MS, label } = {}) {
+export async function fetchWithTimeout(fetchImpl, url, opts = {}, { timeoutMs = DEFAULT_TIMEOUT_MS, label } = /** @type {{timeoutMs?: number, label?: string}} */ ({})) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(url, { ...opts, signal: controller.signal });
   } catch (err) {
     if (controller.signal.aborted) {
-      const timeoutErr = new Error(`${label || 'external request'} timed out after ${timeoutMs}ms`);
+      const timeoutErr = /** @type {Error & {timeout?: boolean, cause?: unknown}} */ (
+        new Error(`${label || 'external request'} timed out after ${timeoutMs}ms`)
+      );
       timeoutErr.name = 'AbortError';
       timeoutErr.timeout = true;
       timeoutErr.cause = err;
@@ -65,7 +67,10 @@ export async function retryingFetch(fetchImpl, url, opts = {}, {
   sleep = defaultSleep,
   logger = noopLogger,
   logPrefix = 'external_fetch',
-} = {}) {
+} = /** @type {{label?: string, attempts?: number, timeoutMs?: number,
+      sleep?: (ms: number) => Promise<void>,
+      logger?: {warn: Function, error: Function, info: Function},
+      logPrefix?: string}} */ ({})) {
   // Every external call — WhatsApp Graph and Apify both — comes through here
   // (P2-1 unified the transport), so this is the one place that can measure
   // them, and `logPrefix` already names the dependency (P3-5).

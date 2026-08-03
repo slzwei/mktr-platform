@@ -22,6 +22,7 @@ const PII_KEY_PATTERN = /phone|email|nric|name|token|jwt|address|otp|password|si
  * of convenience. Keep these in step with lyfe-sg / lyfe-app if they gain a
  * value-level pass.
  */
+/** @type {[RegExp, string][]} */
 const PII_VALUE_PATTERNS = [
   [/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]'],
   // SPACED display form first (`+65 9123 4567` — the format this platform
