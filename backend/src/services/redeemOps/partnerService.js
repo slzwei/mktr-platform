@@ -692,6 +692,11 @@ export function makePartnerService(overrides = {}) {
     if (!body.name || !String(body.name).trim()) throw new AppError('Contact name is required', 400);
     return d.sequelize.transaction(async (t) => {
       if (body.isPrimary) {
+        // M7: serialize primary switches on the parent row — two concurrent
+        // "make primary" transactions otherwise both demote zero rows and
+        // both insert a primary. The partial unique index (migration 109) is
+        // the DB backstop; the lock keeps the demote+insert pair atomic.
+        await d.PartnerOrganisation.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
         await d.PartnerContact.update(
           { isPrimary: false },
           { where: { partnerOrganisationId: id }, transaction: t }
@@ -725,6 +730,8 @@ export function makePartnerService(overrides = {}) {
     }
     return d.sequelize.transaction(async (t) => {
       if (updates.isPrimary === true) {
+        // M7: same serialization as addContact — lock the parent, then swap.
+        await d.PartnerOrganisation.findByPk(contact.partnerOrganisationId, { transaction: t, lock: t.LOCK.UPDATE });
         await d.PartnerContact.update(
           { isPrimary: false },
           { where: { partnerOrganisationId: contact.partnerOrganisationId }, transaction: t }
