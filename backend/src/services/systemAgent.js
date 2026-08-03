@@ -6,16 +6,25 @@ import { pickFromRing } from './leadRing.js';
 
 // In-process queue to serialize round-robin updates per campaign (prevents race conditions)
 const rrQueues = new Map();
-function enqueueCampaign(campaignId, task) {
-  const chain = (rrQueues.get(campaignId) || Promise.resolve())
-    .then(task)
-    .finally(() => {
-      // Clear queue when this task finishes if it's still the last one
-      if (rrQueues.get(campaignId) === chain) rrQueues.delete(campaignId);
-    });
-  rrQueues.set(campaignId, chain.catch(() => { }));
+export function enqueueCampaign(campaignId, task) {
+  const prior = rrQueues.get(campaignId) || Promise.resolve();
+  // The caller sees the task's real outcome (rejections propagate)…
+  const chain = prior.then(task);
+  // …the STORED tail swallows them so the next enqueue still runs…
+  const tail = chain.catch(() => { });
+  // …and cleanup compares the EXACT object stored. M9: the old code stored
+  // chain.catch(...) while finally compared against `chain` — two different
+  // Promise objects, so the equality was ALWAYS false and every campaign ever
+  // routed left a settled entry in this process-global Map until restart.
+  const entry = tail.finally(() => {
+    if (rrQueues.get(campaignId) === entry) rrQueues.delete(campaignId);
+  });
+  rrQueues.set(campaignId, entry);
   return chain;
 }
+
+/** Test seam (M9): the queue map must drain back to empty once tasks settle. */
+export const rrQueueSize = () => rrQueues.size;
 
 dotenv.config();
 
