@@ -53,6 +53,11 @@ export function makePartnerService(overrides = {}) {
 
   const LIVE = { mergedIntoId: null };
   const OWNER_INCLUDE = { model: d.User, as: 'owner', attributes: ['id', 'fullName', 'email'] };
+  // Who first put the row on the books — NOT who works it now. Every creation
+  // path (manual add, CSV import, Discover) funnels through createPartner, and
+  // createdBy has been NOT NULL since migration 046 with RESTRICT on the user
+  // delete, so a live row always resolves a creator.
+  const CREATOR_INCLUDE = { model: d.User, as: 'creator', attributes: ['id', 'fullName'] };
 
   /**
    * Admin tier acts on any row; everyone else — BDMs included — must own it,
@@ -127,7 +132,7 @@ export function makePartnerService(overrides = {}) {
 
     const { rows, count } = await d.PartnerOrganisation.findAndCountAll({
       where,
-      include: [OWNER_INCLUDE],
+      include: [OWNER_INCLUDE, CREATOR_INCLUDE],
       order: [
         [d.sequelize.literal('"lastActivityAt" IS NULL'), 'ASC'],
         ['lastActivityAt', 'DESC'],

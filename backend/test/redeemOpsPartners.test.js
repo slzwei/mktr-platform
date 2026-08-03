@@ -815,3 +815,41 @@ describe('delete — plain vs force cascade', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('list carries who ADDED the row, not just who owns it', () => {
+  test('creator survives a reassignment — the two columns disagree on purpose', async () => {
+    const created = await createPartner(execA.token, { tradingName: 'Added By Probe Studio' });
+    expect(created.status).toBe(201);
+    const partnerId = created.body.data.partner.id;
+
+    // Hand it to execB, so owner and creator are two different people. This is
+    // the case the Partners table's "Added by" column exists to make readable.
+    const assigned = await request(app)
+      .post(`/api/redeem-ops/partners/${partnerId}/assign`)
+      .set(auth(admin.token))
+      .send({ toUserId: execB.user.id, reason: 'probe' });
+    expect(assigned.status).toBe(200);
+
+    const list = await request(app)
+      .get('/api/redeem-ops/partners')
+      .query({ search: 'Added By Probe Studio' })
+      .set(auth(admin.token));
+    expect(list.status).toBe(200);
+    const row = list.body.data.partners.find((p) => p.id === partnerId);
+    expect(row.owner.id).toBe(execB.user.id);
+    expect(row.creator.id).toBe(execA.user.id);
+    expect(row.creator.fullName).toBe(execA.user.fullName);
+  });
+
+  test('an unowned row still names its creator', async () => {
+    const created = await createPartner(execB.token, { tradingName: 'Unowned Probe Studio' });
+    const partnerId = created.body.data.partner.id;
+    const list = await request(app)
+      .get('/api/redeem-ops/partners')
+      .query({ owner: 'none', search: 'Unowned Probe Studio' })
+      .set(auth(admin.token));
+    const row = list.body.data.partners.find((p) => p.id === partnerId);
+    expect(row.owner).toBeNull();
+    expect(row.creator.id).toBe(execB.user.id);
+  });
+});

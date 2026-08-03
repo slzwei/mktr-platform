@@ -63,6 +63,57 @@ const EMPTY_FORM = {
   website: '', instagramHandle: '', uen: '', notes: '',
 };
 
+/** Column heading that carries its own explanation — the dotted underline is
+ * the invitation to hover, the bubble is the sentence that stops the misread.
+ * Same shape as RedemptionsPage's DeliveryHint, dropped below the header row
+ * instead of above it. Focusable so it isn't hover-only. */
+function ColumnHint({ label, hint }) {
+  const [open, setOpen] = useState(false);
+  const tipId = `ro-col-hint-${label.toLowerCase().replace(/\s+/g, '-')}`;
+  return (
+    <span
+      className="relative inline-block"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-describedby={open ? tipId : undefined}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen((v) => !v)}
+        className="border-0 bg-transparent p-0 cursor-help"
+        style={{
+          font: 'inherit',
+          color: 'inherit',
+          textDecoration: 'underline dotted',
+          textDecorationColor: 'var(--ro-text-3)',
+          textUnderlineOffset: 3,
+        }}
+      >
+        {label}
+      </button>
+      {open && (
+        <span
+          id={tipId}
+          role="tooltip"
+          // Right-anchored: the table sits in an overflow-x-auto wrapper, which
+          // clips anything past its right edge — and this column is second from
+          // the right, so a left-anchored bubble loses its last few words.
+          className="absolute right-0 z-40"
+          style={{
+            top: 'calc(100% + 7px)', width: 236, padding: '8px 11px',
+            background: '#fff', border: '1px solid var(--ro-line)', borderRadius: 9,
+            boxShadow: '0 10px 28px rgba(15, 23, 42, .14)',
+            fontSize: 11.5, fontWeight: 400, lineHeight: 1.5, color: 'var(--ro-text-2)',
+            whiteSpace: 'normal', textAlign: 'left', textDecoration: 'none',
+          }}
+        >{hint}</span>
+      )}
+    </span>
+  );
+}
+
 export default function PartnersList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -515,6 +566,12 @@ export default function PartnersList() {
                 <th className="font-semibold text-[12.5px] px-3 py-3">Category</th>
                 <th className="font-semibold text-[12.5px] px-3 py-3">Stage</th>
                 <th className="font-semibold text-[12.5px] px-3 py-3">Owner</th>
+                <th className="font-semibold text-[12.5px] px-3 py-3">
+                  <ColumnHint
+                    label="Added by"
+                    hint="Who first put this business on the books — not who owns it. Ownership sits in the Owner column and changes every time a business is claimed, assigned or released."
+                  />
+                </th>
                 <th className="font-semibold text-[12.5px] px-5 py-3 text-right">Last activity</th>
               </tr>
             </thead>
@@ -571,6 +628,13 @@ export default function PartnersList() {
                   <td className="px-3 py-2.5" style={{ color: 'var(--ro-text-2)' }}>{p.category || '—'}</td>
                   <td className="px-3 py-2.5"><RoStageTag stage={p.pipelineStage} /></td>
                   <td className="px-3 py-2.5"><RoOwner name={p.owner?.fullName} /></td>
+                  {/* Deliberately plainer than the Owner chip: this is a record
+                      of who typed it in, not a person you can act on. */}
+                  <td className="px-3 py-2.5 text-[12.5px]" style={{ color: 'var(--ro-text-2)' }}>
+                    {p.creator?.fullName
+                      ? <span title={p.creator.fullName}>{p.creator.fullName.split(/\s+/)[0]}</span>
+                      : '—'}
+                  </td>
                   <td className="px-5 py-2.5 text-right text-[12.5px] tabular-nums" style={{ color: 'var(--ro-text-3)' }}>
                     {p.lastActivityAt ? new Date(p.lastActivityAt).toLocaleDateString() : 'Never'}
                   </td>
@@ -578,7 +642,7 @@ export default function PartnersList() {
               ))}
               {!listQuery.isLoading && partners.length === 0 && (
                 <tr className="border-t border-border">
-                  <td colSpan={5} className="text-center py-12" style={{ color: 'var(--ro-text-2)' }}>
+                  <td colSpan={canBulk ? 7 : 6} className="text-center py-12" style={{ color: 'var(--ro-text-2)' }}>
                     {emptyCopy}
                   </td>
                 </tr>
