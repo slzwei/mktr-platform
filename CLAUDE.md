@@ -77,6 +77,12 @@ npx jest --testPathPattern="test/migrations"
 npx eslint src/ --quiet          # also `npx eslint src/ --quiet` at the repo root for the frontend
 ```
 
+**Typecheck ratchet:** `cd backend && npm run typecheck` (also a CI step) runs
+TypeScript `checkJs` over `backend/tsconfig.check.json`'s include list —
+currently `src/utils/**` at zero errors. Expand coverage by adding directories
+to that include list and driving them to zero; never delete the CI step. Its
+first run caught a real production bug (the pino argument-order metadata loss).
+
 **THE GOTCHA THIS EXISTS FOR — test schema ≠ prod schema.** Test boot runs `sync({force:true})` from the MODELS *first*, then migrations. So a `CREATE TABLE IF NOT EXISTS` in a migration is a **no-op** against a table sync already built, and the two shapes differ: Sequelize emits `createdAt`/`updatedAt` as NOT NULL with **no database default** (it fills them in the ORM), while migrations declare `DEFAULT now()`. Consequences:
 
 - **Any raw INSERT into a model-backed table must name `"createdAt"`/`"updatedAt"` explicitly** — omitting them passes in prod and dies in every test.
@@ -161,10 +167,12 @@ Optional: `RETELL_CAMPAIGN_MAP`, `DEFAULT_AGENT_ID`, `SYSTEM_AGENT_EMAIL` (defau
 ## Known technical debt
 
 1. **System Agent delivery gap**: leads assigned to System Agent can't reach Lyfe (`lead.created` needs agent phone). Needs a fallback path.
-2. **setTimeout-based retries lost on restart** (see above) — consider a persistent job queue (pg-boss/bullmq).
-3. **Agent sync is pull-only + manual**; `MAX_CONCURRENT_DELIVERIES = 3` may throttle at high volume; `env.example` incomplete.
+2. **Agent sync is pull-only + manual**; `MAX_CONCURRENT_DELIVERIES = 3` may throttle at high volume; `env.example` incomplete.
 
-Resolved (kept out of the list above): Retell leads now store `email: null` (no more fake `retell-{call_id}@calls.mktr.sg`); the System-Agent email redirect reads `SYSTEM_AGENT_REDIRECT_EMAIL` (mailer.js) — unset = skip, not a hardcoded inbox.
+Resolved (kept out of the list above): webhook retries are durable — persisted
+`nextRetryAt` + atomic pending→sending claim + boot/60s recovery poll (a restart
+costs ≤60s latency, never a delivery), and each attempt reloads the subscriber
+so disables/secret rotations govern retries (no queue dependency needed); Retell leads now store `email: null` (no more fake `retell-{call_id}@calls.mktr.sg`); the System-Agent email redirect reads `SYSTEM_AGENT_REDIRECT_EMAIL` (mailer.js) — unset = skip, not a hardcoded inbox.
 
 ## Pipeline-relevant files
 
