@@ -21,7 +21,16 @@ const PartnerContact = sequelize.define('PartnerContact', {
 }, {
   tableName: 'partner_contacts',
   indexes: [
-    { fields: ['partnerOrganisationId'], name: 'idx_pc_partner' }
+    { fields: ['partnerOrganisationId'], name: 'idx_pc_partner' },
+    // M7: at most ONE live primary per partner — concurrent "make primary"
+    // races hit this instead of leaving two primaries for the cadence
+    // materializer to pick between. Mirrored in migration 109 for prod.
+    {
+      unique: true,
+      fields: ['partnerOrganisationId'],
+      name: 'uq_pc_one_live_primary',
+      where: { isPrimary: true, archivedAt: null }
+    }
   ]
 });
 
