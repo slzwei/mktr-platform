@@ -10,6 +10,14 @@ export class AppError extends Error {
     super(message);
     this.statusCode = statusCode;
     this.details = details;
+    /**
+     * Typed-error payload ({ code, ...context }) surfaced to API clients by
+     * errorHandler — assigned after construction by the draw guards and
+     * friends. Declared here so the contract is visible (and typecheckable)
+     * instead of an ad-hoc expando.
+     * @type {Record<string, any>|undefined}
+     */
+    this.data = undefined;
     this.isOperational = true;
 
     Error.captureStackTrace(this, this.constructor);

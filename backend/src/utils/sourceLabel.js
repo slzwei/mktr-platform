@@ -109,6 +109,7 @@ function adPlatformLabel(utmSource) {
  * identically to the same lead once it's delivered to an agent. Keep in sync with
  * mktr-leads/supabase/functions/receive-mktr-lead/leadSource.ts.
  */
+/** @param {{leadSource?: string|null, qrTag?: {label?: string|null, slug?: string|null, externalId?: string|null}|null, sourceMetadata?: Record<string, any>|null}} [signup] */
 export function signupSourceLabel({ leadSource, qrTag, sourceMetadata } = {}) {
   const meta = sourceMetadata || {};
   const source = String(leadSource || '').toLowerCase();

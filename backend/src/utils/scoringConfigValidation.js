@@ -78,6 +78,7 @@ export const PENALTY_COMPONENTS = Object.freeze(new Set(['coverage_headroom']));
 const MAX_TARGET_SEGMENTS = 8;
 
 const isPlainObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+/** @type {(error: string) => {ok: false, error: string}} */
 const fail = (error) => ({ ok: false, error });
 const isFiniteNumber = (n) => typeof n === 'number' && Number.isFinite(n);
 
@@ -128,7 +129,7 @@ function checkComponentMap(raw, label) {
  */
 function checkDominance(components, grainLabel) {
   const positive = Object.entries(components)
-    .map(([name, def]) => [name, Number(def?.maxPoints) || 0])
+    .map(([name, def]) => /** @type {[string, number]} */ ([name, Number(def?.maxPoints) || 0]))
     .filter(([, pts]) => pts > 0);
 
   const total = positive.reduce((s, [, pts]) => s + pts, 0);

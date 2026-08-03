@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "NODE_OPTIONS=\"--experimental-vm-modules --max-old-space-size=6144\" jest",
+    "typecheck": "tsc -p tsconfig.check.json",
     "test:legacy-safe": "node scripts/legacy-safe-harness.js",
     "load:smoke": "node load/run-local-load.js",
     "load:spike": "LOAD_PROFILE=spike node load/run-local-load.js",
@@ -60,7 +61,8 @@
     "@types/node": "^20.10.0",
     "jest": "^29.7.0",
     "nodemon": "^3.0.2",
-    "supertest": "^6.3.3"
+    "supertest": "^6.3.3",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=18.0.0"

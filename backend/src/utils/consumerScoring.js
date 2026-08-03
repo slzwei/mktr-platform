@@ -628,15 +628,15 @@ export function normalizeConfig(configJson) {
 /**
  * Score one consumer.
  *
- * @param {Object} input
- * @param {Object} input.facts      resolveCurrentFacts() output (key → {value, confidence, observationId, basis, …})
- * @param {Object} input.telemetry  {signupCount, verifiedSignupCount, newestSignupAt, marketingConsent, hasEmail, whatsappReachable}
- * @param {Object} input.config     configJson from enrichment_scoring_configs (merged over defaults)
- * @param {number} input.now        epoch ms — injected so scoring is reproducible in tests and backfills
+ * @param {Object} [input]
+ * @param {Object} [input.facts]      resolveCurrentFacts() output (key → {value, confidence, observationId, basis, …})
+ * @param {Object} [input.telemetry]  {signupCount, verifiedSignupCount, newestSignupAt, marketingConsent, hasEmail, whatsappReachable}
+ * @param {Object} [input.config]     configJson from enrichment_scoring_configs (merged over defaults)
+ * @param {number} [input.now]        epoch ms — injected so scoring is reproducible in tests and backfills
  * @returns {{meetScore:number|null, buyScore:number|null, consumerScore:number|null,
  *            breakdown:Object, algorithmVersion:string}}
  */
-export function scoreConsumer({ facts = {}, telemetry = {}, config, now = Date.now() } = {}) {
+export function scoreConsumer({ facts = {}, telemetry = {}, config, now = Date.now() } = /** @type {{facts?: object, telemetry?: object, config?: any, now?: number}} */ ({})) {
   const cfg = normalizeConfig(config);
   return computeScore({ cfg, facts, telemetry, now, algorithmVersion: cfg.algorithmVersion });
 }
@@ -820,7 +820,7 @@ export function normalizeLeadConfig(configJson) {
  * @returns {{meetScore:number|null, buyScore:number|null, score:number|null,
  *            breakdown:Object, algorithmVersion:string}}
  */
-export function scoreLead({ facts = {}, telemetry = {}, config, now = Date.now() } = {}) {
+export function scoreLead({ facts = {}, telemetry = {}, config, now = Date.now() } = /** @type {{facts?: object, telemetry?: object, config?: any, now?: number}} */ ({})) {
   const cfg = normalizeLeadConfig(config);
   const r = computeScore({ cfg, facts, telemetry, now, algorithmVersion: LEAD_ALGORITHM_VERSION });
   // `score` rather than `consumerScore`: same number, named for the column it
