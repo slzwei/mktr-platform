@@ -54,7 +54,7 @@ const config = {
 };
 
 // Create Sequelize instance
-export const sequelize = new Sequelize(config);
+export const sequelize = new Sequelize(/** @type {import('sequelize').Options} */ (config));
 
 // Test connection function
 export async function testConnection() {

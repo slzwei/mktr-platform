@@ -164,7 +164,17 @@ export function makeProspectService(overrides = {}) {
    * Resolves attribution, normalizes input, wraps DB writes in a transaction.
    * Returns { prospect, assignedAgentId } — caller handles email side-effect.
    */
+  // createProspect reads as five banners: INTAKE (below) → SCORE → ROUTE →
+  // PERSIST → DISPATCH. The intake stretch stays INLINE by decision: its
+  // steps thread ~30 locals (consent evidence, attribution, campaign, gates)
+  // and every extraction shape trialled meant a context-object rewrite of the
+  // hottest business path for navigation value the banners already provide.
+  // The genuinely separable complexity was already extracted (P3-1):
+  // prospectCreateTx, prospectDispatch, prospectScoring, prospectQrRouting.
   async function createProspect(body, user, { cookies, headers, meta } = {}) {
+    // --- INTAKE: unpack the submission, build SERVER-authoritative consent
+    //     evidence, resolve campaign/attribution, and run every gate that can
+    //     reject before a row exists ---
     const safeBody = body || {};
     // Prefer controller-supplied meta context; fall back to body fields if any
     // caller posts directly without the controller's extraction step.

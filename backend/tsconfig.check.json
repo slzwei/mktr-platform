@@ -11,5 +11,11 @@
     "strict": false,
     "noImplicitAny": false
   },
-  "include": ["src/utils/**/*.js"]
+  "include": [
+    "src/utils/**/*.js",
+    "src/middleware/**/*.js",
+    "src/routes/routeGates.js",
+    "src/database/testRunLock.js",
+    "src/database/restoreBaseline.js"
+  ]
 }

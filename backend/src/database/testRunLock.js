@@ -29,7 +29,8 @@ const appName = () => `mktr-test-lock:${process.pid}`;
 
 function clientConfig() {
   const { database, username, password, host, port } = sequelize.config;
-  return { host, port, database, user: username, password, application_name: appName() };
+  // sequelize.config carries port as a string; pg.Client wants a number.
+  return { host, port: Number(port), database, user: username, password, application_name: appName() };
 }
 
 async function tryLock(client) {
