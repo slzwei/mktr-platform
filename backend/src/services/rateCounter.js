@@ -66,7 +66,7 @@ export async function bump(key, expiresAt, sequelize = defaultSequelize) {
   const [rows] = await sequelize.query(BUMP_SQL, {
     replacements: { key, expiresAt },
   });
-  const row = rows?.[0] || {};
+  const row = /** @type {{count?: number|string, expiresAt?: string|Date}} */ (rows?.[0] || {});
   return { count: Number(row.count), expiresAt: new Date(row.expiresAt) };
 }
 
@@ -91,7 +91,7 @@ export async function peek(key, sequelize = defaultSequelize) {
       WHERE key = :key AND "expiresAt" > now()`,
     { replacements: { key } },
   );
-  const row = rows?.[0];
+  const row = /** @type {{count?: number|string, expiresAt?: string|Date}|undefined} */ (rows?.[0]);
   return row ? { count: Number(row.count), expiresAt: new Date(row.expiresAt) } : { count: 0, expiresAt: null };
 }
 
@@ -110,5 +110,5 @@ export async function purgeExpired(sequelize = defaultSequelize) {
   const [, meta] = await sequelize.query(
     `DELETE FROM rate_counters WHERE "expiresAt" <= now() - interval '2 days'`,
   );
-  return meta?.rowCount ?? 0;
+  return /** @type {{rowCount?: number}} */ (meta)?.rowCount ?? 0;
 }

@@ -22,7 +22,7 @@ import { PostgresRateLimitStore, clientKey } from './pgRateLimitStore.js';
  * `prefix` is REQUIRED and must be unique per limiter: it namespaces the bucket,
  * so two limiters sharing one would charge each other's traffic.
  */
-export function makeLimiter({ prefix, ...options } = {}) {
+export function makeLimiter({ prefix, ...options } = /** @type {{prefix?: string} & Record<string, any>} */ ({})) {
   if (!prefix) {
     throw new Error('makeLimiter requires a unique `prefix` — limiters must not share a bucket');
   }

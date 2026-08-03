@@ -72,6 +72,18 @@ export function makePartnerService(overrides = {}) {
     );
   }
 
+  /**
+   * Fetch a live partner AND require the caller may act on its row, in ONE
+   * call — a site cannot take the row without passing the gate (H2 existed
+   * because a surface fetched without gating). `forbid` keeps each verb's
+   * exact 403 message; pass query `options` (transaction/lock) as usual.
+   */
+  async function getOwnedPartner(id, user, { forbid = 'You can only edit businesses you own', ...options } = {}) {
+    const partner = await getLivePartner(id, options);
+    if (!canActOnRow(user, partner)) throw new AppError(forbid, 403);
+    return partner;
+  }
+
   async function getLivePartner(id, options = {}) {
     const partner = await d.PartnerOrganisation.findByPk(id, options);
     if (!partner || partner.mergedIntoId) throw new AppError('Partner not found', 404);
@@ -209,10 +221,7 @@ export function makePartnerService(overrides = {}) {
   ];
 
   async function updatePartner(id, body, user, requestId = null) {
-    const partner = await getLivePartner(id);
-    if (!canActOnRow(user, partner)) {
-      throw new AppError('You can only edit businesses you own', 403);
-    }
+    const partner = await getOwnedPartner(id, user);
     const updates = {};
     for (const f of EDITABLE_FIELDS) if (body[f] !== undefined) updates[f] = body[f];
     // Verification is a public trust badge, not ordinary partner data —
@@ -445,10 +454,9 @@ export function makePartnerService(overrides = {}) {
    * until the stale sweep wakes it at snoozedUntil.
    */
   async function snoozePartnerTx(id, user, until, t, { requestId = null } = {}) {
-    const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!canActOnRow(user, partner)) {
-      throw new AppError('You can only snooze businesses you own', 403);
-    }
+    const partner = await getOwnedPartner(id, user, {
+      forbid: 'You can only snooze businesses you own', transaction: t, lock: t.LOCK.UPDATE,
+    });
     if (partner.pipelineStage === 'PARTNERED' || partner.pipelineStage === 'LOST') {
       throw new AppError('Partnered and Lost businesses cannot be snoozed', 400);
     }
@@ -476,10 +484,9 @@ export function makePartnerService(overrides = {}) {
   }
 
   async function unsnoozePartnerTx(id, user, t, { requestId = null } = {}) {
-    const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!canActOnRow(user, partner)) {
-      throw new AppError('You can only snooze businesses you own', 403);
-    }
+    const partner = await getOwnedPartner(id, user, {
+      forbid: 'You can only snooze businesses you own', transaction: t, lock: t.LOCK.UPDATE,
+    });
     if (partner.availability !== 'follow_up_later' && !partner.snoozedUntil) return partner;
     await partner.update(
       { availability: partner.ownerUserId ? 'owned' : 'available', snoozedUntil: null },
@@ -687,8 +694,7 @@ export function makePartnerService(overrides = {}) {
   // ── Contacts & locations ─────────────────────────────────────────────────
 
   async function addContact(id, body, user) {
-    const partner = await getLivePartner(id);
-    if (!canActOnRow(user, partner)) throw new AppError('You can only edit businesses you own', 403);
+    await getOwnedPartner(id, user);
     if (!body.name || !String(body.name).trim()) throw new AppError('Contact name is required', 400);
     return d.sequelize.transaction(async (t) => {
       if (body.isPrimary) {
@@ -722,8 +728,7 @@ export function makePartnerService(overrides = {}) {
   async function updateContact(contactId, body, user) {
     const contact = await d.PartnerContact.findByPk(contactId);
     if (!contact || contact.archivedAt) throw new AppError('Contact not found', 404);
-    const partner = await getLivePartner(contact.partnerOrganisationId);
-    if (!canActOnRow(user, partner)) throw new AppError('You can only edit businesses you own', 403);
+    await getOwnedPartner(contact.partnerOrganisationId, user);
     const updates = {};
     for (const f of ['name', 'roleTitle', 'mobile', 'whatsapp', 'email', 'preferredChannel', 'isPrimary', 'notes']) {
       if (body[f] !== undefined) updates[f] = body[f];
@@ -745,15 +750,13 @@ export function makePartnerService(overrides = {}) {
   async function archiveContact(contactId, user) {
     const contact = await d.PartnerContact.findByPk(contactId);
     if (!contact || contact.archivedAt) throw new AppError('Contact not found', 404);
-    const partner = await getLivePartner(contact.partnerOrganisationId);
-    if (!canActOnRow(user, partner)) throw new AppError('You can only edit businesses you own', 403);
+    await getOwnedPartner(contact.partnerOrganisationId, user);
     await contact.update({ archivedAt: new Date(), isPrimary: false });
     return contact;
   }
 
   async function addLocation(id, body, user) {
-    const partner = await getLivePartner(id);
-    if (!canActOnRow(user, partner)) throw new AppError('You can only edit businesses you own', 403);
+    await getOwnedPartner(id, user);
     return d.PartnerLocation.create({
       partnerOrganisationId: id,
       name: body.name || null,
@@ -770,8 +773,7 @@ export function makePartnerService(overrides = {}) {
   async function updateLocation(locationId, body, user) {
     const location = await d.PartnerLocation.findByPk(locationId);
     if (!location) throw new AppError('Location not found', 404);
-    const partner = await getLivePartner(location.partnerOrganisationId);
-    if (!canActOnRow(user, partner)) throw new AppError('You can only edit businesses you own', 403);
+    await getOwnedPartner(location.partnerOrganisationId, user);
     const updates = {};
     for (const f of ['name', 'addressLine', 'postalCode', 'area', 'phone', 'isActive', 'notes']) {
       if (body[f] !== undefined) updates[f] = body[f];
