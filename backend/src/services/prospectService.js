@@ -63,7 +63,7 @@ import {
   getProspectOutcomes,
 } from './leadProfileService.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
-import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
+import { sgtDayEndExclusiveMs, cleanYmd, sgtAgeFromDob } from '../utils/sgtTime.js';
 
 // Redeem Ops capture hook (docs/redeem-ops/MKTR_INTEGRATION.md §2): a
 // dependency-INVERTED callback — this module never imports Redeem Ops code.
@@ -624,20 +624,24 @@ export function makeProspectService(overrides = {}) {
     // leave dob optional keep behaving exactly as before, so this can never
     // start rejecting entrants on a live funnel that was set up to allow them.
     const dobRequired = sourceDesign.requiredFields?.dob === true;
-    const parsedDob = safeBody.date_of_birth ? new Date(safeBody.date_of_birth) : null;
-    const dobUsable = !!parsedDob && !isNaN(parsedDob.getTime());
-    if (dobRequired && !dobUsable) {
+    // M8: STRICT calendar date, evaluated on the SINGAPORE calendar. The old
+    // gate parsed arbitrary strings with new Date() and compared server-LOCAL
+    // Y/M/D — on the UTC prod host an applicant whose birthday began at 00:00
+    // SGT stayed "yesterday" until 08:00 SGT and was rejected as underage by
+    // the Singapore-facing form; timezone-bearing inputs shifted the DOB day;
+    // and garbage strings silently SKIPPED the gate (no age stored at all).
+    const dobRaw = safeBody.date_of_birth;
+    const dobProvided = dobRaw !== undefined && dobRaw !== null && String(dobRaw).trim() !== '';
+    const dobCanonical = dobProvided ? cleanYmd(String(dobRaw)) : undefined;
+    if (dobProvided && !dobCanonical) {
+      throw new d.AppError('Date of birth must be a real calendar date (YYYY-MM-DD).', 422);
+    }
+    if (dobRequired && !dobCanonical) {
       throw new d.AppError('Date of birth is required for this campaign.', 422);
     }
-    if (dobUsable) {
-      const dob = parsedDob;
+    if (dobCanonical) {
       {
-        const today = new Date();
-        let age = today.getFullYear() - dob.getFullYear();
-        const m_ = today.getMonth() - dob.getMonth();
-        if (m_ < 0 || (m_ === 0 && today.getDate() < dob.getDate())) {
-          age--;
-        }
+        const age = sgtAgeFromDob(dobCanonical);
 
         // sourceCampaign is already loaded above (same row, full attributes) —
         // the old second findByPk here was a redundant query.
@@ -659,7 +663,7 @@ export function makeProspectService(overrides = {}) {
         incoming.demographics = {
           ...(incoming.demographics || {}),
           age: age,
-          dateOfBirth: safeBody.date_of_birth,
+          dateOfBirth: dobCanonical,
         };
       }
     }

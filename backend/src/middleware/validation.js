@@ -181,7 +181,10 @@ export const schemas = {
     budget: Joi.object().optional(),
     location: Joi.object().optional(),
     // Added optional fields for Lead Capture
-    date_of_birth: Joi.alternatives().try(Joi.string(), Joi.date()).optional(),
+    // M8: strict calendar date only — the SGT age gate refuses Date-parser
+    // ambiguity (TZ-bearing strings shifted the birth day on a UTC host).
+    date_of_birth: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional()
+      .messages({ 'string.pattern.base': 'date_of_birth must be YYYY-MM-DD' }),
     postal_code: Joi.string().optional(),
     education_level: Joi.string().optional(),
     monthly_income: Joi.string().optional(),

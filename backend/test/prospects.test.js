@@ -376,7 +376,10 @@ describe('DOB and postal code mapping', () => {
       campaignId: gated.id,
       date_of_birth: 'not-a-date',
     })
-    expect(res.status).toBe(422)
+    // M8: garbage now dies at the Joi door (400, strict YYYY-MM-DD) — one
+    // gate earlier than the service's 422, same protection.
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(res.status).toBeLessThan(500)
   })
 
   it('maps postal_code to location.postalCode', async () => {
