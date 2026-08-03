@@ -262,6 +262,19 @@ export async function updateQrCode(id, body, user) {
     Object.entries(rawData).filter(([k]) => QR_UPDATE_FIELDS.includes(k))
   );
 
+  // M1: `active` is a mirror of the canonical status — a PUT flipping the
+  // boolean must move the lifecycle with it, or the status-gated scan path
+  // keeps accepting a "disabled" tag (and the CHECK from migration 106 would
+  // reject the lone write anyway). active:false preserves an archived state;
+  // active:true relaunches, matching the boolean's public effect it always had.
+  if (updateData.active !== undefined) {
+    const nextActive = updateData.active === true || updateData.active === 'true';
+    updateData.active = nextActive;
+    updateData.status = nextActive
+      ? 'active'
+      : (qrTag.status === 'archived' ? 'archived' : 'inactive');
+  }
+
   // Resolve assignedAgentId from phone when phone is being updated (dual-write)
   if (updateData.assignedAgentPhone && !updateData.assignedAgentId) {
     const agent = await User.findOne({
@@ -396,16 +409,19 @@ export async function bulkOperateQrCodes(operation, qrTagIds, data, user) {
 
   let message;
   switch (operation) {
+    // M1: status and active are dual-written in the SAME statement — writing
+    // status alone left the tag publicly resolvable (the slug/attribution
+    // resolvers gate on `active`) after a "successful" deactivation.
     case 'activate':
-      await QrTag.update({ status: 'active' }, { where });
+      await QrTag.update({ status: 'active', active: true }, { where });
       message = `${qrTags.length} QR codes activated`;
       break;
     case 'deactivate':
-      await QrTag.update({ status: 'inactive' }, { where });
+      await QrTag.update({ status: 'inactive', active: false }, { where });
       message = `${qrTags.length} QR codes deactivated`;
       break;
     case 'archive':
-      await QrTag.update({ status: 'archived' }, { where });
+      await QrTag.update({ status: 'archived', active: false }, { where });
       message = `${qrTags.length} QR codes archived`;
       break;
     case 'update': {

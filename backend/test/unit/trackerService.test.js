@@ -26,7 +26,7 @@ describe('trackerService (unit)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockQrTag = { id: 'qr-1', slug: 'test-slug', active: true, campaignId: 'camp-1' };
+    mockQrTag = { id: 'qr-1', slug: 'test-slug', status: 'active', active: true, campaignId: 'camp-1' };
     mockScan = { id: 'scan-1', qrTagId: 'qr-1', ipHash: 'hash123', ua: 'Mozilla/5.0', ts: new Date() };
     mockAttribution = {
       id: 'attr-1',
@@ -55,7 +55,7 @@ describe('trackerService (unit)', () => {
     it('finds active QR tag by slug', async () => {
       const result = await resolveQrTag('test-slug');
 
-      expect(QrTag.findOne).toHaveBeenCalledWith({ where: { slug: 'test-slug', active: true } });
+      expect(QrTag.findOne).toHaveBeenCalledWith({ where: { slug: 'test-slug', status: 'active' } });
       expect(result).toBe(mockQrTag);
     });
 

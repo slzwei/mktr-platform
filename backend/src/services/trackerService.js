@@ -14,10 +14,12 @@ const IP_HASH_SALT = process.env.IP_HASH_SALT || 'dev-salt';
 const ATTRIB_SECRET = process.env.ATTRIB_SECRET || 'dev-attrib-secret';
 
 /**
- * Resolve a QR tag by slug (active only). Returns null if not found.
+ * Resolve a QR tag by slug (live only). Returns null if not found.
+ * M1: gates on the CANONICAL lifecycle column — a bulk deactivate/archive
+ * (which historically wrote status only) must kill public resolution.
  */
 export async function resolveQrTag(slug) {
-  return QrTag.findOne({ where: { slug, active: true } });
+  return QrTag.findOne({ where: { slug, status: 'active' } });
 }
 
 /**
@@ -152,7 +154,9 @@ export async function resolveSession(sid, atkCookie) {
   if (!attrib) return null;
 
   const qrTag = await QrTag.findByPk(attrib.qrTagId);
-  if (!qrTag || !qrTag.active) return null;
+  // M1: canonical lifecycle gate — a bulk-deactivated tag must stop
+  // attributing scans, not just stop resolving.
+  if (!qrTag || qrTag.status !== 'active') return null;
 
   let campaign = null;
   if (qrTag.campaignId) {

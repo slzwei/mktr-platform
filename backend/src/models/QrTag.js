@@ -75,9 +75,13 @@ const QrTag = sequelize.define('QrTag', {
     type: DataTypes.STRING(16),
     allowNull: true
   },
-  // Active flag (replace status enum usage)
+  // Dual-written MIRROR of `status` (M1, migration 106): true iff
+  // status === 'active'. The CHECK ck_qr_tags_lifecycle_coherent makes a
+  // contradiction unstorable — every lifecycle write must set BOTH fields in
+  // the same statement (see qrCodeService bulk ops + updateQrCode).
   active: {
     type: DataTypes.BOOLEAN,
+    allowNull: false,
     defaultValue: true
   },
   location: {
