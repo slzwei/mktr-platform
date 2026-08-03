@@ -7,7 +7,7 @@ import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail, getTransporter } from './mailer.js';
 import { ensureUnsubToken, findConsumerByUnsubToken } from './consentService.js';
-import { canMarketToBatch, listCohortMembers, normalizeDefinition } from './cohortService.js';
+import { canMarketToBatch, listCohortMembers, enumerateCohortMembers, normalizeDefinition } from './cohortService.js';
 import { emailNormKey } from './repeatSignup.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { renderBroadcastEmail } from './emailBroadcastTemplate.js';
@@ -92,6 +92,7 @@ const defaultDeps = {
   findConsumerByUnsubToken,
   canMarketToBatch,
   listCohortMembers,
+  enumerateCohortMembers,
   normalizeDefinition,
   logger,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -274,20 +275,21 @@ export function makeEmailBroadcastService(overrides = {}) {
     definition.marketingContext = { ...definition.marketingContext, campaignId: broadcast.campaignId };
 
     const cap = maxRecipients();
-    const members = new Map(); // consumerId → member (page-shift dedupe)
-    let offset = 0;
-    for (;;) {
-      const page = await d.listCohortMembers(definition, {
-        channel: 'email', status: 'reachable', limit: 200, offset,
-      });
-      for (const m of page.members) members.set(m.consumerId, m);
-      if (members.size > cap) {
-        throw new AppError(`Audience exceeds EMAIL_BROADCAST_MAX_RECIPIENTS (${cap})`, 422);
-      }
-      if (page.members.length < 200) break;
-      offset += 200;
+    // M10: the frozen audience is built with keyset pagination over the
+    // IMMUTABLE consumer id inside one REPEATABLE READ snapshot — offset
+    // pages over mutable lastSeenAt shifted when a recipient re-signed
+    // mid-freeze, repeating a page-1 row (hidden by the old dedup Map) and
+    // silently omitting the shifted consumer from the broadcast forever.
+    const { members, capExceeded } = await d.sequelize.transaction(
+      { isolationLevel: 'REPEATABLE READ' },
+      (t) => d.enumerateCohortMembers(definition, {
+        channel: 'email', status: 'reachable', cap, transaction: t,
+      })
+    );
+    if (capExceeded) {
+      throw new AppError(`Audience exceeds EMAIL_BROADCAST_MAX_RECIPIENTS (${cap})`, 422);
     }
-    if (members.size === 0) {
+    if (members.length === 0) {
       throw new AppError('Cohort has no reachable email recipients for this campaign scope', 422);
     }
 
@@ -296,7 +298,7 @@ export function makeEmailBroadcastService(overrides = {}) {
 
     await d.sequelize.transaction(async (t) => {
       await d.EmailBroadcastRecipient.bulkCreate(
-        [...members.values()].map((m) => ({
+        members.map((m) => ({
           broadcastId: broadcast.id,
           consumerId: m.consumerId,
           email: m.email || null,
