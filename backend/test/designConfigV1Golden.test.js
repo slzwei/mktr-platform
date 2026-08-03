@@ -23,6 +23,7 @@ import { Op } from 'sequelize';
 jest.unstable_mockModule('../src/models/index.js', () => ({
   Campaign: {}, QrTag: {}, Prospect: {}, Commission: {}, Device: {},
   CampaignMediaItem: {}, CampaignAgentAssignment: {},
+  User: { findAll: async () => [] }, // H5: assigned_agents id resolution
   sequelize: { transaction: jest.fn() },
   Draw: { findOne: async () => null }, // PR 5: closesAt-lock seam
   DrawTermsVersion: {

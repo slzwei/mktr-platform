@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { Campaign, QrTag, Prospect, CampaignAgentAssignment, sequelize } from '../models/index.js';
+import { Campaign, QrTag, Prospect, CampaignAgentAssignment, User, sequelize } from '../models/index.js';
 import { storageService } from './storage.js';
 import { buildCampaignWhere, buildOwnerWhere } from './campaignScope.js';
 import { AppError } from '../middleware/appError.js';
@@ -349,9 +349,19 @@ export async function createCampaign(body, user) {
     });
   }
 
+  // H5: the campaign row and its agent links are ONE create — a ghost or
+  // ineligible assigned_agents id aborts the whole thing with a 422 instead of
+  // committing the campaign and then dying on the join-table FK (an orphan
+  // campaign behind a 500).
   let campaign;
   try {
-    campaign = await Campaign.create(campaignData);
+    campaign = await sequelize.transaction(async (t) => {
+      const row = await Campaign.create(campaignData, { transaction: t });
+      if (assigned_agents && Array.isArray(assigned_agents) && assigned_agents.length > 0) {
+        await syncAgentAssignments(row.id, assigned_agents, t);
+      }
+      return row;
+    });
   } catch (err) {
     if (err?.name === 'SequelizeUniqueConstraintError') {
       throw new AppError('That marketplace slug is already taken by another campaign.', 409);
@@ -387,11 +397,6 @@ export async function createCampaign(body, user) {
     // Born-active draw gets its engine record too — after the doc (stamped
     // rail + pinned terms) is stored. Best-effort; the reconciler retries.
     if (campaignData.is_active) await ensureRecord({ campaignId: campaign.id, user });
-  }
-
-  // Write agent assignments to join table
-  if (assigned_agents && Array.isArray(assigned_agents) && assigned_agents.length > 0) {
-    await syncAgentAssignments(campaign.id, assigned_agents);
   }
 
   // Return with backward-compatible virtual fields for API compatibility
@@ -540,11 +545,8 @@ export async function updateCampaign(id, body, req) {
       }
     }
 
-    if (arming) {
-      const rail = await ensureRail({ campaign, designConfig: nextDoc, user: req.user });
-      const stamped = stampRailActivationId(nextDoc, rail.activationId);
-      if (stamped !== nextDoc) updateData.design_config = stamped;
-    }
+    // The ensureRail call itself rides the write transaction below (H1) so the
+    // rail can never outlive a failed save.
   }
 
   // Draw pass colourway — a NARROW, top-level field rather than a design_config
@@ -591,17 +593,34 @@ export async function updateCampaign(id, body, req) {
     }
   }
 
+  // H1 + H5: the arming rail, the campaign row, and the agent links commit or
+  // fail as ONE transaction. Pre-fix, ensureRail committed independently first
+  // (a slug-conflict 409 then left a live rail + allocated stock on a campaign
+  // that never activated), and syncAgentAssignments committed separately after
+  // (an assignment failure left a half-applied save).
   try {
-    await campaign.update(updateData);
-    // Draw record rides the arming moment, AFTER the doc (with its stamped
-    // rail + pinned terms) is stored — best-effort; the reconciler retries.
-    if (armedDraw) await ensureRecord({ campaignId: campaign.id, user: req.user });
+    await sequelize.transaction(async (t) => {
+      if (armedDraw) {
+        const nextDoc = updateData.design_config !== undefined ? updateData.design_config : campaign.design_config;
+        const rail = await ensureRail({ campaign, designConfig: nextDoc, user: req.user, transaction: t });
+        const stamped = stampRailActivationId(nextDoc, rail.activationId);
+        if (stamped !== nextDoc) updateData.design_config = stamped;
+      }
+      await campaign.update(updateData, { transaction: t });
+      if (assigned_agents !== undefined) {
+        await syncAgentAssignments(id, assigned_agents || [], t);
+      }
+    });
   } catch (err) {
     if (err?.name === 'SequelizeUniqueConstraintError') {
       throw new AppError('That marketplace slug is already taken by another campaign.', 409);
     }
     throw err;
   }
+  // Draw record rides the arming moment, AFTER the committed doc (with its
+  // stamped rail + pinned terms) is durable — best-effort by contract
+  // (ensureRecord never throws); the reconciler retries.
+  if (armedDraw) await ensureRecord({ campaignId: campaign.id, user: req.user });
   // Audit AFTER the row actually changed (Codex diff #4) — a clamp/draw-422 or
   // DB failure above must never leave a success-looking rollback entry.
   if (designRollbackApplied) {
@@ -619,11 +638,6 @@ export async function updateCampaign(id, body, req) {
   // would keep scoring under it for up to a TTL. Cheap and whole-map, like the
   // config writer's own bust.
   if (updateData.targetAudience !== undefined) bustScoringConfigCache();
-
-  // Sync agent assignments to join table when assigned_agents is provided
-  if (assigned_agents !== undefined) {
-    await syncAgentAssignments(id, assigned_agents || []);
-  }
 
   // Return with backward-compatible virtual fields for API compatibility
   const agentRows = await CampaignAgentAssignment.findAll({
@@ -720,22 +734,25 @@ export async function setCampaignLaunchState(id, state, req) {
   // readiness, never this: an armed draw with no rail is the exact silent
   // failure this exists to prevent. The promise-consistency gate (PR-3) rides
   // the same arming moment — a contradiction-carrying draw cannot launch.
-  let stampedDoc = null;
-  if (state === 'active' && drawEnabledIn(campaign.design_config)) {
-    assertDrawPromiseConsistency({
-      minAge: campaign.min_age, maxAge: campaign.max_age, designConfig: campaign.design_config,
-    });
-    const rail = await ensureRail({ campaign, designConfig: campaign.design_config, user: req.user });
-    const stamped = stampRailActivationId(campaign.design_config, rail.activationId);
-    if (stamped !== campaign.design_config) stampedDoc = stamped;
-  }
-
   const isActive = state === 'active';
-  await campaign.update({
-    is_active: isActive,
-    status: isActive ? 'active' : 'paused',
-    ...(stampedDoc ? { design_config: stampedDoc } : {}),
-    ...(isActive && !campaign.firstActivatedAt ? { firstActivatedAt: new Date() } : {}),
+  // H1: rail ensure + launch flip commit as ONE transaction — a failed flip
+  // must never leave the rail's activation + allocated stock behind.
+  await sequelize.transaction(async (t) => {
+    let stampedDoc = null;
+    if (isActive && drawEnabledIn(campaign.design_config)) {
+      assertDrawPromiseConsistency({
+        minAge: campaign.min_age, maxAge: campaign.max_age, designConfig: campaign.design_config,
+      });
+      const rail = await ensureRail({ campaign, designConfig: campaign.design_config, user: req.user, transaction: t });
+      const stamped = stampRailActivationId(campaign.design_config, rail.activationId);
+      if (stamped !== campaign.design_config) stampedDoc = stamped;
+    }
+    await campaign.update({
+      is_active: isActive,
+      status: isActive ? 'active' : 'paused',
+      ...(stampedDoc ? { design_config: stampedDoc } : {}),
+      ...(isActive && !campaign.firstActivatedAt ? { firstActivatedAt: new Date() } : {}),
+    }, { transaction: t });
   });
   // The engine record is born with the launch (best-effort — a record hiccup
   // must never un-launch a campaign; the boot reconciler retries).
@@ -1083,8 +1100,15 @@ async function deleteStorageAssets(campaign) {
  * Sync agent assignments to the join table.
  * Accepts an array of agent IDs (UUIDs) or objects with { id }.
  * Handles both shapes for backward compatibility with the old JSON column.
+ *
+ * H5: Joi checks UUID *syntax* only, so the ids are resolved to real users
+ * here — a ghost id 422s instead of dying on the join-table FK. Newly ADDED
+ * agents must be active; an id already on the campaign may stay through
+ * deactivation, so a routine save that resends the stored list keeps working.
+ * Runs on the caller's transaction when given one (the campaign write and its
+ * agent links must commit or fail together); standalone calls open their own.
  */
-async function syncAgentAssignments(campaignId, agents) {
+async function syncAgentAssignments(campaignId, agents, transaction = null) {
   if (!Array.isArray(agents)) return;
 
   // Normalize: extract UUID from either string or { id } object
@@ -1095,7 +1119,28 @@ async function syncAgentAssignments(campaignId, agents) {
   // Deduplicate
   const uniqueIds = [...new Set(agentIds)];
 
-  await sequelize.transaction(async (t) => {
+  const run = async (t) => {
+    if (uniqueIds.length > 0) {
+      const existingRows = await CampaignAgentAssignment.findAll({
+        where: { campaignId }, attributes: ['agentId'], transaction: t, raw: true,
+      });
+      const alreadyAssigned = new Set(existingRows.map(r => r.agentId));
+      const users = await User.findAll({
+        where: { id: uniqueIds }, attributes: ['id', 'isActive'], transaction: t, raw: true,
+      });
+      const byId = new Map(users.map(u => [u.id, u]));
+      const rejected = uniqueIds.filter(id => {
+        const u = byId.get(id);
+        return !u || (u.isActive !== true && !alreadyAssigned.has(id));
+      });
+      if (rejected.length > 0) {
+        throw new AppError(
+          `assigned_agents contains unknown or inactive users: ${rejected.join(', ')}`,
+          422
+        );
+      }
+    }
+
     await CampaignAgentAssignment.destroy({ where: { campaignId }, transaction: t });
 
     if (uniqueIds.length > 0) {
@@ -1104,7 +1149,9 @@ async function syncAgentAssignments(campaignId, agents) {
         { transaction: t }
       );
     }
-  });
+  };
+
+  return transaction ? run(transaction) : sequelize.transaction(run);
 }
 
 /**

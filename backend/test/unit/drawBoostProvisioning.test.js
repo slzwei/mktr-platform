@@ -284,3 +284,31 @@ describe('topUpDrawBoostAllocations', () => {
     await expect(svc.topUpDrawBoostAllocations()).resolves.toEqual({ toppedUp: 0 });
   });
 });
+
+describe('ensureDrawBoostRail — caller-transaction join (H1)', () => {
+  it('joins the given transaction instead of opening its own; every write carries it', async () => {
+    const { d, seq } = deps();
+    const callerTx = { LOCK: { UPDATE: 'U' }, id: 'caller-tx' };
+    const svc = makeDrawBoostProvisioningService(d);
+    const out = await svc.ensureDrawBoostRail({ campaign: CAMPAIGN, user: USER, transaction: callerTx });
+
+    expect(out.outcome).toBe('provisioned');
+    // The rail must commit WITH the caller's save, never in its own tx.
+    expect(seq.transaction).not.toHaveBeenCalled();
+    // Advisory lock + all writes ride the caller transaction.
+    expect(seq.calls[0].sql).toContain('pg_advisory_xact_lock');
+    expect(seq.calls[0].opts.transaction).toBe(callerTx);
+    expect(d.Activation.create.mock.calls[0][1].transaction).toBe(callerTx);
+    expect(d.RewardOffer.create.mock.calls[0][1].transaction).toBe(callerTx);
+    expect(d.inventory.allocate).toHaveBeenCalledWith(expect.objectContaining({ transaction: callerTx }));
+    expect(d.audit.recordAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ transaction: callerTx }));
+  });
+
+  it('without a caller transaction, still opens its own (standalone contract unchanged)', async () => {
+    const { d, seq } = deps();
+    const svc = makeDrawBoostProvisioningService(d);
+    const out = await svc.ensureDrawBoostRail({ campaign: CAMPAIGN, user: USER });
+    expect(out.outcome).toBe('provisioned');
+    expect(seq.transaction).toHaveBeenCalledTimes(1);
+  });
+});

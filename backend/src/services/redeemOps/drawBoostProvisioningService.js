@@ -129,7 +129,7 @@ export function makeDrawBoostProvisioningService(overrides = {}) {
    * { activationId, outcome } — caller stamps luckyDraw.activationId.
    * Throws typed 422s; NEVER partially provisions (single tx).
    */
-  async function ensureDrawBoostRail({ campaign, designConfig = null, user = null }) {
+  async function ensureDrawBoostRail({ campaign, designConfig = null, user = null, transaction = null }) {
     const cfg = provisioningConfig();
     if (!cfg.enabled) {
       d.logger.warn('[DrawBoost] auto-provision disabled by kill switch — rail not ensured', { campaignId: campaign.id });
@@ -145,7 +145,7 @@ export function makeDrawBoostProvisioningService(overrides = {}) {
     const doc = designConfig || campaign.design_config;
     const ld = normalizeLuckyDraw(getStoredLuckyDraw(doc));
 
-    return d.sequelize.transaction(async (t) => {
+    const provision = async (t) => {
       await d.sequelize.query(`SELECT pg_advisory_xact_lock(hashtext(:k))`, {
         replacements: { k: `draw-boost:${campaign.id}` },
         transaction: t,
@@ -275,7 +275,15 @@ export function makeDrawBoostProvisioningService(overrides = {}) {
         campaignId: campaign.id, activationId: activation.id, offerId: offer.id, allocation: cfg.defaultAllocation,
       });
       return { activationId: activation.id, outcome: 'provisioned' };
-    });
+    };
+
+    // H1: when the caller passes its transaction, the rail joins it — the rail
+    // must commit WITH the campaign save that arms it, never in a transaction
+    // of its own that survives the save failing (slug 409 → live rail +
+    // allocated stock on a campaign that never activated). The advisory xact
+    // lock then holds until the CALLER commits, which also covers the save.
+    // Standalone callers keep the self-contained transaction.
+    return transaction ? provision(transaction) : d.sequelize.transaction(provision);
   }
 
   /**

@@ -14,7 +14,10 @@ jest.unstable_mockModule('../src/models/index.js', () => ({
   QrTag: {}, Prospect: {}, Commission: {}, Device: {},
   CampaignMediaItem: { findAll: jest.fn(async () => []), bulkCreate: jest.fn(async () => []) },
   CampaignAgentAssignment: { findAll: jest.fn(async () => []), bulkCreate: jest.fn(async () => []) },
-  sequelize: { transaction: jest.fn() },
+  User: { findAll: jest.fn(async () => []) }, // H5: assigned_agents id resolution
+  // updateCampaign now writes inside a managed transaction (H1/H5) — run the
+  // callback so campaign.update actually executes.
+  sequelize: { transaction: jest.fn(async (cb) => cb({ LOCK: { UPDATE: 'U' } })) },
   DrawTermsVersion: {
     findOne: jest.fn(async () => null),
     max: jest.fn(async () => null),
