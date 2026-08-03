@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { QrTag, Campaign, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember, sequelize } from '../models/index.js';
+import { QrTag, Campaign, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember } from '../models/index.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/appError.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
@@ -327,29 +327,6 @@ export async function deleteQrCode(id, user) {
   await QrScan.destroy({ where: { qrTagId: qrTag.id } });
 
   await qrTag.destroy();
-}
-
-export async function recordScan(id, metadata = {}) {
-  const qrTag = await QrTag.findByPk(id);
-  if (!qrTag) throw new AppError('QR code not found', 404);
-  if (qrTag.status !== 'active') throw new AppError('QR code is not active', 400);
-
-  // today is derived from Date, not user input — safe to interpolate
-  const today = new Date().toISOString().split('T')[0];
-
-  await qrTag.update({
-    scanCount: sequelize.literal('"scanCount" + 1'),
-    lastScanned: new Date(),
-    analytics: sequelize.literal(`
-      jsonb_set(
-        COALESCE(analytics::jsonb, '{"dailyScans":{}}'),
-        ARRAY['dailyScans', '${today}'],
-        to_jsonb(COALESCE((analytics->'dailyScans'->>'${today}')::int, 0) + 1)
-      )
-    `)
-  });
-
-  return { scanCount: (qrTag.scanCount || 0) + 1, destinationUrl: qrTag.destinationUrl };
 }
 
 export async function getAnalytics(id, user) {

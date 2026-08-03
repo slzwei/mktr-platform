@@ -27,8 +27,11 @@ router.put('/:id', authenticateToken, requireAdmin, qrCodeController.updateQrCod
 // Delete QR code
 router.delete('/:id', authenticateToken, requireAdmin, qrCodeController.deleteQrCode);
 
-// Record scan
-router.post('/:id/scan', authenticateToken, qrCodeController.recordScan);
+// (M3) The authenticated POST /:id/scan endpoint is RETIRED. It duplicated
+// the public tracker path (/t/:slug) with no owner scoping — any logged-in
+// user holding another owner's QR UUID could inflate that tag's scanCount and
+// dailyScans analytics. The tracker flow is the one real scan recorder; no
+// frontend surface ever called this route (dead client method removed with it).
 
 // Get analytics
 router.get('/:id/analytics', authenticateToken, qrCodeController.getAnalytics);

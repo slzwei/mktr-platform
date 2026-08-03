@@ -41,11 +41,6 @@ const putTag = (id, body) => request(app)
   .set('Authorization', `Bearer ${adminToken}`)
   .send(body)
 
-const scan = (id) => request(app)
-  .post(`/api/qrcodes/${id}/scan`)
-  .set('Authorization', `Bearer ${adminToken}`)
-  .send({})
-
 describe('M1 — bulk lifecycle ops kill public resolution', () => {
   it('bulk deactivate stops the slug resolver, the scan path, and mirrors active=false', async () => {
     const tag = await createTestQrTag(campaign.id, adminUser.id)
@@ -61,8 +56,6 @@ describe('M1 — bulk lifecycle ops kill public resolution', () => {
     expect(row.status).toBe('inactive')
     expect(row.active).toBe(false)
 
-    const scanRes = await scan(tag.id)
-    expect(scanRes.status).toBe(400)
   })
 
   it('bulk archive does the same', async () => {
@@ -84,7 +77,6 @@ describe('M1 — bulk lifecycle ops kill public resolution', () => {
     const row = await QrTag.findByPk(tag.id, { raw: true })
     expect(row.status).toBe('active')
     expect(row.active).toBe(true)
-    expect((await scan(tag.id)).status).toBe(200)
   })
 })
 
@@ -98,9 +90,8 @@ describe('M1 — PUT {active} moves the canonical lifecycle too', () => {
     expect(row.active).toBe(false)
     expect(row.status).toBe('inactive')
 
-    // Pre-fix: status stayed 'active', so the authenticated scan path kept
-    // accepting (and counting) the supposedly disabled QR.
-    expect((await scan(tag.id)).status).toBe(400)
+    // (The authenticated scan path this used to leak through was retired in
+    // M3 — the resolver + row state above are the surviving lifecycle gates.)
     expect(await resolveQrTag(tag.slug)).toBeNull()
   })
 
@@ -125,6 +116,5 @@ describe('M1 — PUT {active} moves the canonical lifecycle too', () => {
     expect(row.status).toBe('active')
     expect(row.active).toBe(true)
     expect(await resolveQrTag(tag.slug)).not.toBeNull()
-    expect((await scan(tag.id)).status).toBe(200)
   })
 })

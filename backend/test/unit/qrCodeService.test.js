@@ -289,32 +289,8 @@ describe('qrCodeService (unit)', () => {
     });
   });
 
-  // ── recordScan ──
-
-  describe('recordScan', () => {
-    it('increments scan count and returns new count', async () => {
-      const result = await service.recordScan('qr-1', {});
-
-      expect(mocks.mockQrTag.update).toHaveBeenCalledWith(
-        expect.objectContaining({ scanCount: expect.anything() })
-      );
-      expect(result.scanCount).toBe(11); // 10 + 1
-    });
-
-    it('throws 404 when QR code not found', async () => {
-      mocks.QrTag.findByPk.mockResolvedValue(null);
-
-      await expect(service.recordScan('bad-id', {}))
-        .rejects.toThrow('QR code not found');
-    });
-
-    it('throws 400 when QR code is not active', async () => {
-      mocks.QrTag.findByPk.mockResolvedValue({ ...mocks.mockQrTag, status: 'inactive' });
-
-      await expect(service.recordScan('qr-1', {}))
-        .rejects.toThrow('QR code is not active');
-    });
-  });
+  // (recordScan retired — M3: the authenticated scan endpoint duplicated the
+  // public tracker path with no owner scoping.)
 
   // ── getAnalytics ──
 
