@@ -102,11 +102,13 @@ export const getLedger = asyncHandler(async (req, res) => {
 // ── Onboarding checklist (brief §22) ───────────────────────────────────────
 
 export const getOnboarding = asyncHandler(async (req, res) => {
-  let items = await onboardingService.getChecklist(req.params.id);
+  // getChecklist enforces row ownership (H2) — the lazy seed below is only
+  // reachable once the caller may act on this partner.
+  let items = await onboardingService.getChecklist(req.params.id, req.user);
   if (items.length === 0) {
     // Lazily seed for partners that hit PARTNERED before Phase 4 shipped
     await onboardingService.seedChecklist(req.params.id);
-    items = await onboardingService.getChecklist(req.params.id);
+    items = await onboardingService.getChecklist(req.params.id, req.user);
   }
   res.json({ success: true, data: { items } });
 });

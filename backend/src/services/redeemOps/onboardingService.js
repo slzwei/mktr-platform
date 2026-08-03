@@ -1,6 +1,7 @@
-import { PartnerOnboardingItem, PartnerOrganisation, sequelize } from '../../models/index.js';
+import { PartnerOnboardingItem, PartnerOrganisation, User, sequelize } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
+import { canActOnPartnerRow, isRedeemOpsUser } from './permissions.js';
 
 /**
  * Partner onboarding checklist (brief §22). Seeded when a partner hits
@@ -24,7 +25,30 @@ export const ONBOARDING_TEMPLATE = [
 const ITEM_STATUSES = ['pending', 'in_progress', 'done', 'na'];
 
 export function makeOnboardingService(overrides = {}) {
-  const d = { PartnerOnboardingItem, PartnerOrganisation, sequelize, logger, ...overrides };
+  const d = {
+    PartnerOnboardingItem, PartnerOrganisation, User, sequelize, logger,
+    canActOnPartnerRow, isRedeemOpsUser, ...overrides,
+  };
+
+  /**
+   * H2: onboarding.manage is a CAPABILITY, not row access — an outreach_exec
+   * holds it yet may only act on partners they own. Every read/write below
+   * loads the parent row and applies the same ownership gate as stage moves
+   * and detail edits (canActOnPartnerRow: owner, ops_admin+, platform admin).
+   */
+  async function assertPartnerActionable(partnerOrganisationId, user) {
+    const partner = await d.PartnerOrganisation.findByPk(partnerOrganisationId);
+    if (!partner || partner.mergedIntoId) throw new AppError('Partner not found', 404);
+    if (!d.canActOnPartnerRow(user, partner)) {
+      throw new AppError(
+        partner.ownerUserId
+          ? 'You can only manage onboarding for businesses you own'
+          : 'Claim this business first, then you can manage its onboarding',
+        403
+      );
+    }
+    return partner;
+  }
 
   /** Idempotent template seed — safe to call on every PARTNERED transition. */
   async function seedChecklist(partnerOrganisationId, transaction = null) {
@@ -37,7 +61,8 @@ export function makeOnboardingService(overrides = {}) {
     }
   }
 
-  async function getChecklist(partnerOrganisationId) {
+  async function getChecklist(partnerOrganisationId, user) {
+    await assertPartnerActionable(partnerOrganisationId, user);
     return d.PartnerOnboardingItem.findAll({
       where: { partnerOrganisationId },
       order: [['sortOrder', 'ASC']],
@@ -47,13 +72,26 @@ export function makeOnboardingService(overrides = {}) {
   async function updateItem(itemId, body, user) {
     const item = await d.PartnerOnboardingItem.findByPk(itemId);
     if (!item) throw new AppError('Checklist item not found', 404);
+    // The item's parent decides who may touch it — knowing another partner's
+    // item UUID must not grant writes across the ownership boundary (H2).
+    await assertPartnerActionable(item.partnerOrganisationId, user);
     const updates = {};
     if (body.status !== undefined) {
       if (!ITEM_STATUSES.includes(body.status)) throw new AppError('Unknown status', 400);
       updates.status = body.status;
       updates.completedAt = body.status === 'done' ? new Date() : null;
     }
-    if (body.assigneeUserId !== undefined) updates.assigneeUserId = body.assigneeUserId;
+    if (body.assigneeUserId !== undefined) {
+      if (body.assigneeUserId === null || body.assigneeUserId === '') {
+        updates.assigneeUserId = null;
+      } else {
+        const assignee = await d.User.findByPk(body.assigneeUserId);
+        if (!assignee || assignee.isActive !== true || !d.isRedeemOpsUser(assignee)) {
+          throw new AppError('assigneeUserId must be an active Redeem Ops user', 422);
+        }
+        updates.assigneeUserId = assignee.id;
+      }
+    }
     if (body.notes !== undefined) updates.notes = body.notes;
     await item.update(updates);
     return item;
