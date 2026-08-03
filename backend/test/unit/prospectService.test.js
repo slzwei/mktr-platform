@@ -785,6 +785,7 @@ describe('prospectService (unit)', () => {
         assignedAgentId: 'agent-1',
         update: jest.fn().mockResolvedValue(true),
         save: jest.fn().mockResolvedValue(true),
+        reload: jest.fn().mockResolvedValue(true),
         assignedAgent: { firstName: 'Agent', lastName: 'Smith', email: 'agent@test.com' },
       };
       mocks.models.Prospect.findOne.mockResolvedValue(prospect);
@@ -792,9 +793,13 @@ describe('prospectService (unit)', () => {
 
       await service.updateProspect('prospect-1', { leadStatus: 'won' }, user);
 
-      const [updateArg] = prospect.update.mock.calls[0];
+      // H4: the won transition goes through the CONDITIONAL model update
+      // (assignment re-checked in the WHERE), not the instance update.
+      const [updateArg, updateOpts] = mocks.models.Prospect.update.mock.calls[0];
       expect(updateArg.leadStatus).toBe('won');
       expect(updateArg.conversionDate).toBeInstanceOf(Date);
+      expect(updateOpts.where.id).toBe('prospect-1');
+      expect(prospect.update).not.toHaveBeenCalled();
       expect(mocks.models.Commission.create).not.toHaveBeenCalled();
     });
 
@@ -860,13 +865,14 @@ describe('prospectService (unit)', () => {
       expect(mocks.processLeadOutcome).not.toHaveBeenCalled();
     });
 
-    it('won updates status + conversionDate in one plain update (no transaction needed)', async () => {
+    it('won writes through the conditional model update (assignment re-checked in WHERE)', async () => {
       const prospect = {
         ...mocks.mockProspect,
         leadStatus: 'contacted',
         assignedAgentId: 'agent-1',
         update: jest.fn().mockResolvedValue(true),
         save: jest.fn().mockResolvedValue(true),
+        reload: jest.fn().mockResolvedValue(true),
         assignedAgent: null,
       };
       mocks.models.Prospect.findOne.mockResolvedValue(prospect);
@@ -874,11 +880,54 @@ describe('prospectService (unit)', () => {
 
       await service.updateProspect('prospect-1', { leadStatus: 'won' }, user);
 
-      const [updateArg, updateOpts] = prospect.update.mock.calls[0];
+      const [updateArg, updateOpts] = mocks.models.Prospect.update.mock.calls[0];
       expect(updateArg.leadStatus).toBe('won');
       expect(updateArg.conversionDate).toBeInstanceOf(Date);
-      expect(updateOpts).toBeUndefined();
+      expect(updateOpts.where.id).toBe('prospect-1');
+      expect(updateOpts.transaction).toBeUndefined(); // still no tx for a plain status edit
+      expect(prospect.update).not.toHaveBeenCalled();
+      expect(prospect.reload).toHaveBeenCalled();
       expect(mocks.models.Commission.create).not.toHaveBeenCalled();
+    });
+
+    it('H4: zero affected rows (concurrent unassignment) rejects with 400 and skips the hook', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'contacted',
+        assignedAgentId: 'agent-1',
+        update: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+        reload: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+      mocks.models.Prospect.update.mockResolvedValue([0]); // the row moved under us
+      mocks.getSystemAgentId.mockResolvedValue('system-agent-id');
+
+      await expect(
+        service.updateProspect('prospect-1', { leadStatus: 'won' }, user)
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(mocks.processLeadOutcome).not.toHaveBeenCalled();
+    });
+
+    it('H4: an unassigned lead (null agent, null external) is rejected before any write', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'contacted',
+        assignedAgentId: null,
+        externalAgentId: null,
+        update: jest.fn().mockResolvedValue(true),
+        reload: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+      mocks.getSystemAgentId.mockResolvedValue('system-agent-id');
+
+      await expect(
+        service.updateProspect('prospect-1', { leadStatus: 'won' }, user)
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(mocks.models.Prospect.update).not.toHaveBeenCalled();
+      expect(prospect.update).not.toHaveBeenCalled();
     });
 
     // ── admin-recorded down-funnel CAPI hook (Phase 3) ──
@@ -909,6 +958,7 @@ describe('prospectService (unit)', () => {
         assignedAgentId: 'agent-1',
         update: jest.fn().mockResolvedValue(true),
         save: jest.fn().mockResolvedValue(true),
+        reload: jest.fn().mockResolvedValue(true),
         assignedAgent: null,
       };
       mocks.models.Prospect.findOne.mockResolvedValue(prospect);

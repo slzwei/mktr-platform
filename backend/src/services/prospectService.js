@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { Transaction } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import {
   Prospect,
   User,
@@ -866,14 +866,19 @@ export function makeProspectService(overrides = {}) {
       safeUpdates.consumerId = null;
     }
 
-    // Won-transition precondition runs BEFORE any mutation (Codex R1 #5):
-    // a lead may only be marked won while assigned to a real agent (assignment
-    // integrity for down-funnel attribution — the retired commission mint is
-    // gone, the rule stays).
+    // Won-transition precondition (Codex R1 #5, H4): a lead may only be marked
+    // won while assigned to a REAL assignee — an internal agent that isn't the
+    // System Agent, or an external (mktr-leads) agent. A null assignedAgentId
+    // is just as unassigned as the System Agent, so it rejects too. This early
+    // check only shapes the friendly 400 for obvious requests — ENFORCEMENT is
+    // the conditional UPDATE below, which re-checks under the row's write lock.
     const becomingWon = oldStatus !== 'won' && safeUpdates.leadStatus === 'won';
+    let systemAgentId = null;
     if (becomingWon) {
-      const systemId = await d.getSystemAgentId();
-      if (prospect.assignedAgentId && prospect.assignedAgentId === systemId) {
+      systemAgentId = await d.getSystemAgentId();
+      const hasRealInternalAgent =
+        prospect.assignedAgentId && prospect.assignedAgentId !== systemAgentId;
+      if (!hasRealInternalAgent && !prospect.externalAgentId) {
         throw new d.AppError('Lead must be assigned to a real agent before marking as won', 400);
       }
     }
@@ -889,10 +894,43 @@ export function makeProspectService(overrides = {}) {
     // committing fields the enrichment pipeline never hears about.
     const editingDemographics = safeUpdates.demographics !== undefined;
     const updatePayload = becomingWon ? { ...safeUpdates, conversionDate: new Date() } : safeUpdates;
+
+    // H4: a won-transition is enforced AT MUTATION TIME — the UPDATE's WHERE
+    // re-checks the assignment under the row's write lock, so a concurrent
+    // unassignment that commits after our unlocked read above can never
+    // produce a won-and-unassigned row. Zero affected rows = the state moved
+    // under us = reject with the same 400 as the precheck.
+    const applyProspectWrite = async (transaction = null) => {
+      const opts = transaction ? { transaction } : {};
+      if (!becomingWon) {
+        await prospect.update(updatePayload, opts);
+        return;
+      }
+      const [affected] = await m.Prospect.update(updatePayload, {
+        ...opts,
+        where: {
+          id: prospect.id,
+          [Op.or]: [
+            {
+              [Op.and]: [
+                { assignedAgentId: { [Op.not]: null } },
+                { assignedAgentId: { [Op.ne]: systemAgentId } },
+              ],
+            },
+            { externalAgentId: { [Op.not]: null } },
+          ],
+        },
+      });
+      if (affected === 0) {
+        throw new d.AppError('Lead must be assigned to a real agent before marking as won', 400);
+      }
+      await prospect.reload(opts);
+    };
+
     try {
       if (editingDemographics) {
         await d.sequelize.transaction(async (t) => {
-          await prospect.update(updatePayload, { transaction: t });
+          await applyProspectWrite(t);
           const [rows] = await d.sequelize.query(
             `UPDATE prospects
                 SET "enrichmentRevision" = COALESCE("enrichmentRevision", 1) + 1
@@ -916,7 +954,7 @@ export function makeProspectService(overrides = {}) {
           });
         });
       } else {
-        await prospect.update(updatePayload);
+        await applyProspectWrite();
       }
     } catch (err) {
       if (err?.name === 'SequelizeUniqueConstraintError') {
