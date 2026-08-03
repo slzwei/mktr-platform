@@ -528,11 +528,6 @@ class QrTagEntity extends BaseEntity {
  super('/qrcodes', 'qrTags', 'qrTag');
  }
 
- async recordScan(id, metadata = {}) {
- const response = await apiClient.post(`${this.endpoint}/${id}/scan`, { metadata });
- return response.data;
- }
-
  async getAnalytics(id, period = '30d') {
  const response = await apiClient.get(`${this.endpoint}/${id}/analytics`, { period });
  return response.data;

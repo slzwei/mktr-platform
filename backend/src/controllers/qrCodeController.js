@@ -35,11 +35,6 @@ export const deleteQrCode = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'QR code deleted successfully' });
 });
 
-export const recordScan = asyncHandler(async (req, res) => {
-  const data = await qrCodeService.recordScan(req.params.id, req.body.metadata);
-  res.json({ success: true, message: 'Scan recorded successfully', data });
-});
-
 export const getAnalytics = asyncHandler(async (req, res) => {
   const analytics = await qrCodeService.getAnalytics(req.params.id, req.user);
   res.json({ success: true, data: { analytics } });
