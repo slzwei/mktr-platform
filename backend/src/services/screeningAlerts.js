@@ -16,9 +16,9 @@ import { logger } from '../utils/logger.js';
  * Two channels, both idempotent:
  *  - ONE ProspectActivity per lead ("fund a package"), so the admin drawer
  *    shows WHY the lead is stuck without log access.
- *  - ONE ops email per campaign per 24h (throttled via idempotency_keys —
- *    `key` is the table's PRIMARY KEY, so the throttle key embeds the scope
- *    prefix and an expired row is refreshed in place, never insert-raced).
+ *  - ONE ops email per campaign per 24h. Both are gated by ONE atomic
+ *    idempotency claim (INSERT … ON CONFLICT DO UPDATE WHERE expired …
+ *    RETURNING) — exactly one concurrent sweep call wins the window (M6).
  *
  * Only alarms holds older than MIN_HOLD_ALERT_MS: a capture-time transient
  * (subscriber briefly disabled, race with funding) must not page anyone —
@@ -29,6 +29,39 @@ const MIN_HOLD_ALERT_MS = 30 * 60 * 1000; // 30 min held-and-qualified before al
 const EMAIL_THROTTLE_MS = 24 * 60 * 60 * 1000; // one ops email per campaign per day
 const ACTIVITY_ALERT_TAG = 'screening_undeliverable';
 const THROTTLE_SCOPE = 'screening:undeliverable-alert';
+// Effectively-forever claim for the once-per-lead activity: the hourly
+// idempotency cleanup only purges expiresAt < now, so this row never dies.
+const ACTIVITY_CLAIM_TTL_MS = 100 * 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * Atomically claim (scope, key) for ttlMs — exactly ONE concurrent caller
+ * wins. The INSERT takes a fresh row; when the stored claim has EXPIRED the
+ * conditional DO UPDATE revives it for a single winner; a live claim returns
+ * no row. (M6: the old select-then-insert/update raced — concurrent sweep
+ * calls both saw no throttle row, the loser's caught unique error was
+ * DISCARDED and both continued to sendEmail; an expired row was update-raced
+ * by both callers the same way.)
+ */
+async function claimIdempotencyWindow(d, { scope, key, ttlMs, meta = null }) {
+  const [rows] = await d.sequelize.query(
+    `INSERT INTO idempotency_keys
+       (scope, key, "responseBody", "responseCode", "expiresAt", "createdAt", "updatedAt")
+     VALUES (:scope, :key, CAST(:body AS json), 200, :expiresAt, now(), now())
+     ON CONFLICT (scope, key) DO UPDATE
+       SET "expiresAt" = EXCLUDED."expiresAt", "updatedAt" = now()
+       WHERE idempotency_keys."expiresAt" <= now()
+     RETURNING key`,
+    {
+      replacements: {
+        scope,
+        key,
+        body: meta ? JSON.stringify(meta) : null,
+        expiresAt: new Date(d.now() + ttlMs),
+      },
+    }
+  );
+  return Array.isArray(rows) && rows.length > 0;
+}
 
 function alertRecipient() {
   return process.env.SCREENING_ALERT_EMAIL || process.env.SMS_ALERT_EMAIL || null;
@@ -55,15 +88,23 @@ export async function notifyUndeliverableHold({ prospect, reason, campaign = nul
       return { alerted: false, reason: 'too_fresh' };
     }
 
-    // Once-per-lead activity. metadata->>'alert' is the dedup tag — checked
-    // with a raw indexed-enough probe (small per-prospect activity sets).
+    // Once-per-lead activity. The atomic claim is the RACE gate (exactly one
+    // concurrent sweep call wins); the probe keeps claim-era calls from
+    // double-writing next to historical rows created before the claim existed.
+    const activityClaimed = await claimIdempotencyWindow(d, {
+      scope: THROTTLE_SCOPE,
+      key: `${ACTIVITY_ALERT_TAG}:${prospect.id}`,
+      ttlMs: ACTIVITY_CLAIM_TTL_MS,
+      meta: { prospectId: prospect.id },
+    });
     const [rows] = await d.sequelize.query(
       `SELECT 1 FROM prospect_activities
         WHERE "prospectId" = :id AND metadata->>'alert' = :tag LIMIT 1`,
       { replacements: { id: prospect.id, tag: ACTIVITY_ALERT_TAG } }
     );
     const activityExists = Array.isArray(rows) && rows.length > 0;
-    if (!activityExists) {
+    const activityCreated = activityClaimed && !activityExists;
+    if (activityCreated) {
       await d.ProspectActivity.create({
         prospectId: prospect.id,
         type: 'updated',
@@ -74,32 +115,22 @@ export async function notifyUndeliverableHold({ prospect, reason, campaign = nul
       });
     }
 
-    // Per-campaign 24h email throttle. `key` is the PK — no row expiry job
-    // exists, so an expired throttle row is UPDATEd back to life rather than
-    // re-created (insert would PK-collide forever after the first day).
+    // Per-campaign 24h email throttle — the SAME atomic claim: absent row →
+    // insert wins; expired row → one winner revives it; live row → throttled.
+    // Send ONLY when the claim returned a row (M6).
     const to = alertRecipient();
-    if (!to) return { alerted: !activityExists, email: 'unconfigured' };
+    if (!to) return { alerted: activityCreated, email: 'unconfigured' };
 
     const throttleKey = `${THROTTLE_SCOPE}:${prospect.campaignId || 'none'}`;
     const nowMs = d.now();
-    const existing = await d.IdempotencyKey.findOne({ where: { key: throttleKey } });
-    if (existing && new Date(existing.expiresAt).getTime() > nowMs) {
-      return { alerted: !activityExists, email: 'throttled' };
-    }
-    if (existing) {
-      await existing.update({ expiresAt: new Date(nowMs + EMAIL_THROTTLE_MS) });
-    } else {
-      await d.IdempotencyKey.create({
-        key: throttleKey,
-        scope: THROTTLE_SCOPE,
-        responseBody: { campaignId: prospect.campaignId || null },
-        responseCode: 200,
-        expiresAt: new Date(nowMs + EMAIL_THROTTLE_MS),
-      }).catch((err) => {
-        // Lost a same-instant race — the winner sends; treat as throttled.
-        if (err?.name === 'SequelizeUniqueConstraintError') return null;
-        throw err;
-      });
+    const emailClaimed = await claimIdempotencyWindow(d, {
+      scope: THROTTLE_SCOPE,
+      key: throttleKey,
+      ttlMs: EMAIL_THROTTLE_MS,
+      meta: { campaignId: prospect.campaignId || null },
+    });
+    if (!emailClaimed) {
+      return { alerted: activityCreated, email: 'throttled' };
     }
 
     const campaignName = campaign?.name || prospect.campaignId || 'unknown campaign';
