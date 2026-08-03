@@ -13,7 +13,14 @@ const QrScan = { findOne: jest.fn(), create: jest.fn() };
 const Attribution = { create: jest.fn(), findOne: jest.fn(), findByPk: jest.fn() };
 const Campaign = { findByPk: jest.fn() };
 
-jest.unstable_mockModule('../../src/models/index.js', () => ({ QrTag, QrScan, Attribution, Campaign }));
+// M2: recordScan runs in a managed transaction under a per-scanner advisory
+// lock — the mock executes the callback and absorbs the lock query.
+const sequelize = {
+  transaction: jest.fn(async (cb) => cb({ id: 'tx' })),
+  query: jest.fn(async () => [[]]),
+};
+
+jest.unstable_mockModule('../../src/models/index.js', () => ({ QrTag, QrScan, Attribution, Campaign, sequelize }));
 
 const { resolveQrTag, recordScan, createAttribution, buildRedirectParams, resolveSession, generateSessionId } =
   await import('../../src/services/trackerService.js');
@@ -83,7 +90,8 @@ describe('trackerService (unit)', () => {
           device: 'mobile',
           botFlag: false,
           isDuplicate: false,
-        })
+        }),
+        expect.objectContaining({ transaction: expect.anything() })
       );
     });
 
@@ -109,19 +117,23 @@ describe('trackerService (unit)', () => {
       expect(createArg.botFlag).toBe(true);
     });
 
-    it('marks scan as duplicate within 2-minute window', async () => {
+    it('marks scan as duplicate when a windowed same-scanner row exists (M2)', async () => {
       const expectedHash = crypto.createHash('sha256').update('1.2.3.4:test-salt').digest('hex');
-      QrScan.findOne.mockResolvedValue({
-        ts: new Date(),
-        ipHash: expectedHash,
-        ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS)',
-      });
+      QrScan.findOne.mockResolvedValue({ id: 'prior-scan' });
 
       await recordScan(mockQrTag, {
         userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS)',
         referer: null,
         ip: '1.2.3.4',
       });
+
+      // The dedup decision is scoped to THIS scanner in the query itself —
+      // not compared in JS against whatever the tag's latest scan was.
+      const findArg = QrScan.findOne.mock.calls[0][0];
+      expect(findArg.where.qrTagId).toBe('qr-1');
+      expect(findArg.where.ipHash).toBe(expectedHash);
+      expect(findArg.where.ua).toBe('Mozilla/5.0 (iPhone; CPU iPhone OS)');
+      expect(findArg.where.ts).toBeDefined();
 
       const createArg = QrScan.create.mock.calls[0][0];
       expect(createArg.isDuplicate).toBe(true);
