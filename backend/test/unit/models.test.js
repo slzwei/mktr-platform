@@ -251,9 +251,11 @@ describe('Sequelize Models (definitions & validations)', () => {
       expect(attrs(WebhookDelivery).attempts.defaultValue).toBe(0);
     });
 
-    it('has subscriberId foreign key', () => {
+    it('has subscriberId foreign key (nullable — history survives SET NULL, M5)', () => {
       expect(attrs(WebhookDelivery).subscriberId.references.model).toBe('webhook_subscribers');
-      expect(attrs(WebhookDelivery).subscriberId.allowNull).toBe(false);
+      // ON DELETE SET NULL (migrations 014+108) requires the column nullable —
+      // the old allowNull:false made every used-subscriber delete a 500.
+      expect(attrs(WebhookDelivery).subscriberId.allowNull).toBe(true);
     });
   });
 });

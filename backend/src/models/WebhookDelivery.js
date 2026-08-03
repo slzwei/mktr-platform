@@ -9,7 +9,14 @@ const WebhookDelivery = sequelize.define('WebhookDelivery', {
   },
   subscriberId: {
     type: DataTypes.UUID,
-    allowNull: false,
+    // M5: nullable — the FK is ON DELETE SET NULL (migrations 014 + 108), so
+    // delivery history SURVIVES subscriber deletion as an audit record.
+    // Pre-fix this said allowNull:false while the FK said SET NULL: deleting
+    // any subscriber with history made Postgres null a NOT NULL column and
+    // reject the delete (admin 500). Consumers tolerate the null: listings
+    // LEFT JOIN the subscriber, and retryDelivery rejects cleanly when the
+    // subscriber is gone.
+    allowNull: true,
     references: {
       model: 'webhook_subscribers',
       key: 'id'
