@@ -196,6 +196,23 @@ describe('IG run start', () => {
     expect(audit.after.hashtags).toEqual(['sgnails', 'homebasednailssg']);
   });
 
+  test('uncapped (limit 0) clamps to maxResultsPerRun — the hashtag actor needs a numeric budget', async () => {
+    process.env.DISCOVERY_MAX_RESULTS_PER_RUN = '75';
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+
+    const run = await svc.startDiscovery(
+      { area: 'All Singapore', limit: 0, provider: 'instagram_hashtag', hashtags: ['sgnails'] },
+      solo.user,
+    );
+
+    expect(run.requestedLimit).toBe(75);
+    const [, input] = apify.startRun.mock.calls[0];
+    expect(input).toEqual({ hashtags: ['sgnails'], resultsLimit: 75 });
+  });
+
   // Regression: ad-hoc hashtags without a category leave `resolved` null; the audit
   // payload used to read resolved.hashtags and crash AFTER Apify spend began.
   test('ad-hoc-only start (no category) completes and audits the fired hashtags', async () => {

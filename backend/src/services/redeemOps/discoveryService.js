@@ -235,7 +235,15 @@ export function makeDiscoveryService(overrides = {}) {
     const canonicalCategory = resolved ? resolved.name : null;
     const c = cfg();
     if (!c.resultQuotaEnabled) await assertQuota(user);
-    const requestedLimit = Math.min(Math.max(Number(limit) || 60, 1), c.maxResultsPerRun);
+    // limit 0 (or absent) = UNCAPPED (requestedLimit 0): pull every matching
+    // place, so re-running a search surfaces new businesses instead of the same
+    // top slice. Two modes can't run uncapped and clamp to maxResultsPerRun:
+    // the IG hashtag actor requires a numeric post budget, and result-quota
+    // mode must reserve a concrete amount up front.
+    const askedUncapped = !Number(limit);
+    const requestedLimit = askedUncapped
+      ? (isInstagram || c.resultQuotaEnabled ? c.maxResultsPerRun : 0)
+      : Math.min(Math.max(Number(limit), 1), c.maxResultsPerRun);
     const igHashtagsUsed = isInstagram
       ? (overrideTags.length ? overrideTags : resolved.hashtags)
       : null;
@@ -262,9 +270,13 @@ export function makeDiscoveryService(overrides = {}) {
       );
     }
     // The Maps actor applies this cap to EACH search string, so divide the requested
-    // total across terms to avoid multiplying crawl cost by N (a single term = full limit).
+    // total across terms to avoid multiplying crawl cost by N (a single term = full
+    // limit). Uncapped runs send the actor's own "all places" sentinel instead.
+    const UNCAPPED_PLACES_PER_SEARCH = 9999999;
     const perSearchLimit = isInstagram ? null
-      : Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length));
+      : (requestedLimit === 0
+        ? UNCAPPED_PLACES_PER_SEARCH
+        : Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length)));
 
     const runValues = {
       // createdByEmail: immutable identity snapshot — survives the operator's
@@ -273,7 +285,11 @@ export function makeDiscoveryService(overrides = {}) {
       provider: isInstagram ? 'apify_instagram_hashtag' : 'apify_google_maps',
       category: canonicalCategory, area: String(area).trim(),
       requestedLimit, status: 'pending',
-      estimatedCostUsd: Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
+      // Uncapped runs have no up-front bound — cost is only known when the run
+      // finishes (actualCostUsd from the provider); null ≠ free.
+      estimatedCostUsd: requestedLimit === 0
+        ? null
+        : Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
     };
     // Snapshot the fired query so the recent-searches list and the results query
     // bar can show exactly what was searched — the category is only the CRM bucket
@@ -414,6 +430,8 @@ export function makeDiscoveryService(overrides = {}) {
       return;
     }
 
+    // requestedLimit 0 (uncapped) is falsy → apifyClient omits the limit param
+    // and the dataset download returns every item the crawl produced.
     const items = await d.apify.getDatasetItems(info.datasetId, { limit: run.requestedLimit });
     if (run.provider === 'apify_instagram') {
       await applyEnrichment(run, items);

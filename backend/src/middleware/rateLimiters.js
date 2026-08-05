@@ -43,3 +43,15 @@ export function makeLimiter({ prefix, ...options } = /** @type {{prefix?: string
 export function userOrClientKey(req) {
   return req.user?.id ? `u:${req.user.id}` : clientKey(req);
 }
+
+/**
+ * Authenticated internal staff are exempt from the public transport limiter.
+ * The ops console legitimately polls (Discover refetches a running search
+ * every 2.5s), which burned the 200/15min public budget and 429'd the whole
+ * surface for the operator (2026-08-05). Requires a VERIFIED token — an
+ * expired/forged one leaves req.user unset and the public limit applies.
+ */
+const INTERNAL_STAFF_ROLES = ['admin', 'redeem_ops'];
+export function isInternalStaff(req) {
+  return Boolean(req.user && INTERNAL_STAFF_ROLES.includes(req.user.role));
+}

@@ -87,6 +87,19 @@ describe('start + quota', () => {
     expect(Number(run.estimatedCostUsd)).toBeGreaterThan(0);
   });
 
+  test('limit 0 = uncapped: all-places sentinel to the actor, requestedLimit 0, no cost estimate', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    const run = await svc.startDiscovery({ category: 'Nail Salon', area: 'Tampines', limit: 0 }, solo.user);
+    expect(run.requestedLimit).toBe(0);
+    // null ≠ free: an uncapped run has no up-front bound, only actualCostUsd.
+    expect(run.estimatedCostUsd).toBeNull();
+    const input = apify.startRun.mock.calls[0][1];
+    expect(input.maxCrawledPlacesPerSearch).toBe(9999999);
+  });
+
   test('per-user daily quota → 429', async () => {
     process.env.DISCOVERY_MAX_RUNS_PER_USER_DAY = '2';
     const apify = makeApifyStub();

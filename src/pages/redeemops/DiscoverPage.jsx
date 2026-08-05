@@ -65,7 +65,9 @@ const timeAgo = (iso) => {
 export default function DiscoverPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
-    area: '', limit: '30', provider: 'google_maps',
+    // limit 'all' → API limit 0 = uncapped: re-running a capped search just
+    // returns the same top slice, so the default pulls everything.
+    area: '', limit: 'all', provider: 'google_maps',
     adhoc: '', minStars: 'any', skipClosed: true, filterWords: '',
   });
   const [runId, setRunId] = useState(null);
@@ -317,7 +319,7 @@ export default function DiscoverPage() {
   const runSearch = () => {
     const terms = parseCsv(form.adhoc); // the search is what you type: terms (Maps) / hashtags (IG)
     if (!form.area.trim() || terms.length === 0 || startMutation.isPending) return;
-    const body = { area: form.area.trim(), limit: Number(form.limit), provider: form.provider };
+    const body = { area: form.area.trim(), limit: form.limit === 'all' ? 0 : Number(form.limit), provider: form.provider };
     if (isIg) {
       body.hashtags = terms;
     } else {
@@ -481,7 +483,7 @@ export default function DiscoverPage() {
                 <Label>Results</Label>
                 <Select value={form.limit} onValueChange={(v) => setForm((f) => ({ ...f, limit: v }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>{['30', '60', '120', '300', '500'].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
+                  <SelectContent>{['all', '30', '60', '120', '300', '500'].map((n) => <SelectItem key={n} value={n}>{n === 'all' ? 'No limit' : n}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <Button disabled={!canSearch} onClick={() => runSearch()}>
@@ -543,12 +545,16 @@ export default function DiscoverPage() {
                 </span>
               ) : (
                 <span className="text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
-                  Results is a total, split across your phrases.
+                  {form.limit === 'all'
+                    ? 'No limit — pulls every match Google returns for your phrases.'
+                    : 'Results is a total, split across your phrases.'}
                 </span>
               )}
               {!isIg && quota?.costPerResultUsd > 0 && (
                 <span className="ml-auto text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
-                  ≈ ${(Number(form.limit) * quota.costPerResultUsd).toFixed(2)} max
+                  {form.limit === 'all'
+                    ? `$${quota.costPerResultUsd.toFixed(3)} per result — no cap`
+                    : `≈ $${(Number(form.limit) * quota.costPerResultUsd).toFixed(2)} max`}
                 </span>
               )}
             </div>
@@ -598,7 +604,7 @@ export default function DiscoverPage() {
                 ? [['Categories', run.rawPayload.categoryFilterWords.join(', '), true]] : []),
               ...(run?.rawPayload?.categoryFilterWordsDropped?.length
                 ? [['Ignored', run.rawPayload.categoryFilterWordsDropped.join(', '), true]] : []),
-              ['Area', run?.area, false], ['Results', run?.requestedLimit, false],
+              ['Area', run?.area, false], ['Results', run?.requestedLimit === 0 ? 'No limit' : run?.requestedLimit, false],
               ...(run?.actualCostUsd != null ? [['Cost', `$${Number(run.actualCostUsd).toFixed(2)}`, false]] : []),
             ].map(([k, v, truncate]) => (
               <span key={k} className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-[13.5px] font-semibold max-w-full min-w-0" style={{ border: '1px solid var(--ro-border-strong)' }}>
@@ -619,7 +625,7 @@ export default function DiscoverPage() {
             <span className="w-[18px] h-[18px] rounded-full animate-spin" style={{ border: '2.4px solid var(--ro-azure-tint)', borderTopColor: 'var(--ro-azure)' }} />
             <b className="text-[15px]">{isIgRun ? 'Searching Instagram…' : 'Searching Google Maps…'}</b>
             <span className="hidden sm:inline text-[13px]" style={{ color: 'var(--ro-text-2)' }}>
-              {run?.requestedLimit > 120 ? 'large search — usually 2–6 minutes' : 'usually 30–60 seconds'} · you can keep working other tabs
+              {run?.requestedLimit === 0 || run?.requestedLimit > 120 ? 'large search — usually 2–6 minutes' : 'usually 30–60 seconds'} · you can keep working other tabs
             </span>
           </div>
           <div className="rounded-2xl border border-border bg-white overflow-hidden">
