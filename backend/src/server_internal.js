@@ -13,7 +13,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 import { bootstrapDatabase } from './database/bootstrap.js';
 import { requestId } from './middleware/requestId.js';
-import { makeLimiter } from './middleware/rateLimiters.js';
+import { makeLimiter, isInternalStaff } from './middleware/rateLimiters.js';
 
 // Non-autodiscoverable middleware
 import leadCaptureBind from './routes/leadCaptureBind.js';
@@ -99,7 +99,7 @@ export const init = async (app) => {
     })
   );
 
-  // Rate limiting (relaxed for development, bypass for authenticated admins)
+  // Rate limiting (relaxed for development, bypass for internal staff)
   const isProd = process.env.NODE_ENV === 'production';
   // Client-keyed + durable like every other limiter (P1-6): the default
   // MemoryStore + req.ip keyed this on the Cloudflare EDGE address, so every
@@ -108,26 +108,27 @@ export const init = async (app) => {
   const limiter = makeLimiter({
     prefix: 'rl:api',
     windowMs: isProd ? parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000 : 60 * 1000, // 1 minute window in dev
-    max: (req) => {
-      if (isProd && req.user && req.user.role === 'admin') return 2000;
-      return isProd
+    max: () =>
+      isProd
         ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200
-        : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000;
-    },
-    // Exempt server-to-server webhooks under /api/integrations/lyfe/,
-    // /api/external/ and /api/whatsapp/ — they are HMAC-authenticated (not
-    // IP-based), and a Supabase pg_net burst, a reconciliation backfill or a
-    // Meta status-callback burst must not be throttled by the public IP
-    // limiter. The WhatsApp route rejects unsigned traffic with a cheap HMAC
-    // check before doing any work.
+        : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000,
+    // Exempt: (1) authenticated internal staff — the ops console's Discover
+    // polling burned the public budget and 429'd the operator; the limiter is
+    // for unauthenticated public traffic. (2) server-to-server webhooks under
+    // /api/integrations/lyfe/, /api/external/ and /api/whatsapp/ — they are
+    // HMAC-authenticated (not IP-based), and a Supabase pg_net burst, a
+    // reconciliation backfill or a Meta status-callback burst must not be
+    // throttled by the public IP limiter. The WhatsApp route rejects unsigned
+    // traffic with a cheap HMAC check before doing any work.
     skip: (req) =>
       !isProd ||
+      isInternalStaff(req) ||
       req.originalUrl.startsWith('/api/integrations/lyfe/') ||
       req.originalUrl.startsWith('/api/external/') ||
       req.originalUrl.startsWith('/api/whatsapp/'),
     message: 'Too many requests from this IP, please try again later.',
   });
-  // Ensure we decode JWT (if present) before limiter so skip() can see admin
+  // Ensure we decode JWT (if present) before limiter so skip() can see staff
   if (isProd) {
     logger.info('Rate limiter enabled (production mode)');
     app.use('/api', optionalAuth, limiter);

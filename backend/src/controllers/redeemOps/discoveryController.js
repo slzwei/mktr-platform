@@ -7,7 +7,7 @@ import { logger } from '../../utils/logger.js';
 const startSchema = Joi.object({
   category: Joi.string().max(64).allow(''), // optional — ad-hoc terms/hashtags can stand in
   area: Joi.string().min(1).max(120).required(),
-  limit: Joi.number().integer().min(1).max(500), // sanity bound; service clamps to DISCOVERY_MAX_RESULTS_PER_RUN
+  limit: Joi.number().integer().min(0).max(500), // 0 (or absent) = uncapped — pull every match; bounded runs clamp to DISCOVERY_MAX_RESULTS_PER_RUN
   // Mechanism pick; omitted = Maps. The IG pilot additionally needs DISCOVERY_IG_ENABLED.
   provider: Joi.string().valid('google_maps', 'instagram_hashtag'),
   // Ad-hoc, type-and-go overrides of the category's saved terms/hashtags.

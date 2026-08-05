@@ -119,6 +119,21 @@ describe('search reservation lifecycle', () => {
     expect(quota.estimatedSpendUsd).toBe(0.021);
   });
 
+  test('quota mode clamps an uncapped (limit 0) run to maxResultsPerRun — never reserves 0', async () => {
+    process.env.DISCOVERY_RESULT_QUOTA_ENABLED = 'true';
+    process.env.DISCOVERY_MAX_RESULTS_PER_RUN = '40';
+    process.env.DISCOVERY_RESULTS_PER_USER_DAY = '100';
+    process.env.DISCOVERY_RESULTS_PER_TEAM_DAY = '10000';
+    const { user } = await createTestUser({ role: 'admin' });
+    const apify = apifyStub();
+    const discovery = makeDiscoveryService({ apify });
+    const run = await discovery.startDiscovery(
+      { category: 'Nail Salon', area: 'Bedok', limit: 0 }, user,
+    );
+    expect(run.requestedLimit).toBe(40);
+    expect((await makeDiscoveryUsageService().getUsage(user.id, sgDateKey())).resultsUsed).toBe(40);
+  });
+
   test('pre-Apify start failure refunds the full search reservation', async () => {
     process.env.DISCOVERY_RESULT_QUOTA_ENABLED = 'true';
     process.env.DISCOVERY_RESULTS_PER_USER_DAY = '100';
