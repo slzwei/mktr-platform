@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
@@ -117,12 +117,17 @@ function ColumnHint({ label, hint }) {
 export default function PartnersList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('all');
   // Reps live in their own book — default to it; the dropdown flips to the
-  // whole database ("Any owner") in one click.
-  const [owner, setOwner] = useState('me');
+  // whole database ("Any owner") in one click. ?owner=none|all|me deep-links a
+  // pre-filtered view (the Pipeline's Unowned button lands here).
+  const [owner, setOwner] = useState(() => {
+    const fromUrl = searchParams.get('owner');
+    return ['me', 'none', 'all'].includes(fromUrl) ? fromUrl : 'me';
+  });
   const [category, setCategory] = useState('all');
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounced(search);
