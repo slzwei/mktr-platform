@@ -62,7 +62,7 @@ Most routes need `Authorization: Bearer <jwt>`. Open to the public: lead capture
 
 Retell (capture bot + screening calls), Meta Pixel/CAPI, TikTok, the Lyfe and mktr-leads webhooks, OTP (AWS SNS / Meta WhatsApp), WhatsApp template sends, DNC scrubbing, Redeem Ops, Apify Discover, HitPay, and object storage are **all optional and disabled unless their env vars are set** — the app boots and the core lead flow works without any of them. Lead delivery additionally requires the master switch `WEBHOOK_ENABLED="true"`. See [`backend/env.example`](backend/env.example) for the annotated list of every var the server reads.
 
-> There is no Meta Lead Ads ingestion path. `sourceMetadata.metaLeadgenId` is only ever *read*, as a CAPI/TikTok suppression guard for leads already attributed to Meta lead-gen.
+> Meta Lead Ads ingestion (native instant forms) is flag-gated behind `META_LEAD_ADS_ENABLED` — off by default; with it on in production, boot fails unless `META_APP_SECRET`, `META_VERIFY_TOKEN`, and `META_PAGE_TOKEN_ENC_KEY` are set. Design: `docs/plans/meta-lead-ads-native-pipe.md`.
 
 ---
 

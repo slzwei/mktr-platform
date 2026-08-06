@@ -76,13 +76,16 @@ export function makeConsentService(overrides = {}) {
     externalConsent,    // consentMetadata.external evidence | null
     dncConsent,         // consentMetadata.dnc evidence | null
     drawTerms,          // consentMetadata.drawTerms evidence | null
+    source = 'signup',  // ConsentEvent.source — non-web channels pass their own (e.g. 'meta_lead_ad')
+    occurredAt = null,  // the consent ACT's instant — delayed ingestion (Meta inbox) passes submission time
   } = {}) {
     try {
       if (!consumerId) return 0;
-      const now = new Date();
+      const now = occurredAt instanceof Date && !Number.isNaN(occurredAt.getTime())
+        ? occurredAt : new Date();
       const base = {
         consumerId, prospectId: prospectId || null, campaignId,
-        source: 'signup', sourceUrl: sourceUrl || null, verified: verified === true,
+        source, sourceUrl: sourceUrl || null, verified: verified === true,
         occurredAt: now,
       };
       const rows = [];
@@ -231,7 +234,8 @@ export function makeConsentService(overrides = {}) {
         WHERE p."consumerId" IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM consent_events ce
-             WHERE ce."prospectId" = p.id AND ce.source = 'signup'
+             WHERE ce."prospectId" = p.id
+               AND ce.source IN ('signup', 'meta_lead_ad')
           )`,
       { transaction }
     );

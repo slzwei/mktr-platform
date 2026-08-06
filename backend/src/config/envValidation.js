@@ -61,6 +61,32 @@ export function validateEnv() {
     }
   }
 
+  // Meta Lead Ads ingestion (docs/plans/meta-lead-ads-native-pipe.md §7): the
+  // flag arms a PUBLIC lead-bearing webhook, so a partial config must refuse
+  // to boot — a missing secret would force the handler to drop or blindly
+  // trust payloads, and a bad enc key strands every stored page token.
+  if (String(process.env.META_LEAD_ADS_ENABLED || 'false').toLowerCase() === 'true') {
+    const metaRequired = ['META_APP_SECRET', 'META_VERIFY_TOKEN', 'META_PAGE_TOKEN_ENC_KEY'];
+    const missingMeta = metaRequired.filter((key) => !process.env[key]);
+    if (missingMeta.length > 0) {
+      throw new Error(`FATAL: META_LEAD_ADS_ENABLED=true but missing: ${missingMeta.join(', ')}`);
+    }
+    const rawKey = process.env.META_PAGE_TOKEN_ENC_KEY;
+    const keyBytes = /^[0-9a-fA-F]{64}$/.test(rawKey) ? 32 : Buffer.from(rawKey, 'utf8').length;
+    if (keyBytes !== 32) {
+      throw new Error('FATAL: META_PAGE_TOKEN_ENC_KEY must be 32 bytes (64-char hex or a 32-char string)');
+    }
+    if (Boolean(process.env.META_PAGE_ID) !== Boolean(process.env.META_PAGE_ACCESS_TOKEN)) {
+      throw new Error('FATAL: META_PAGE_ID and META_PAGE_ACCESS_TOKEN must be set together (the env fallback binds its token to exactly one page) or not at all');
+    }
+    if (String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
+      // Assigned Meta leads persist their delivery INSIDE the capture txn and
+      // fail closed on zero subscribers — with delivery disabled they would
+      // retry to dead-letter with no prospect ever created.
+      throw new Error('FATAL: META_LEAD_ADS_ENABLED=true requires WEBHOOK_ENABLED=true — Meta leads cannot deliver with webhooks off');
+    }
+  }
+
   if (process.env.WEBHOOK_ENABLED && String(process.env.WEBHOOK_ENABLED).toLowerCase() !== 'true') {
     console.warn(`⚠️ WEBHOOK_ENABLED is "${process.env.WEBHOOK_ENABLED}" (not "true") — webhook delivery is disabled, leads will not reach Lyfe`);
   }
@@ -100,6 +126,7 @@ export function validateEnv() {
     'ENRICHMENT_MAP_ARTIFACT_JOBS', 'ENRICHMENT_SCORING_ENABLED',
     'LYFE_LEAD_SUPPRESSED_ENABLED', 'MKTR_LEADS_LEAD_SUPPRESSED_ENABLED',
     'SYNC_AGENT_CRON', 'WHATSAPP_QR_HEADER', 'ENABLE_AUTH_MAPPING',
+    'META_LEAD_ADS_ENABLED',
   ];
   const mistyped = booleanFlags.filter((k) => {
     const v = process.env[k];

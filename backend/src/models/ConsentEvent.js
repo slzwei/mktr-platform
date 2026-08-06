@@ -34,7 +34,7 @@ const ConsentEvent = sequelize.define('ConsentEvent', {
   source: {
     type: DataTypes.STRING(32),
     allowNull: false,
-    validate: { isIn: [['signup', 'backfill', 'unsubscribe', 'admin', 'erasure', 'resubscribe']] },
+    validate: { isIn: [['signup', 'backfill', 'unsubscribe', 'admin', 'erasure', 'resubscribe', 'meta_lead_ad']] },
   },
   sourceUrl: { type: DataTypes.TEXT, allowNull: true },
   verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
