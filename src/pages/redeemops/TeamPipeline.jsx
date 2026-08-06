@@ -181,6 +181,9 @@ export default function TeamPipeline() {
   const [lostMove, setLostMove] = useState(null); // { card } — Lost requires a reason
   const [lostReason, setLostReason] = useState(null);
   const [showLost, setShowLost] = useState(false);
+  // Lanes render 30 cards then a "+N more" expander (perf guard, not a cap).
+  // Keyed by stage ('LOST' included); true = the lane shows everything.
+  const [expandedLanes, setExpandedLanes] = useState({});
   // Reps live in their own book — the board opens on it; Team is one click away.
   const [view, setView] = useState('mine'); // 'mine' | 'team'
 
@@ -370,7 +373,7 @@ export default function TeamPipeline() {
             const items = byStage[stage] || [];
             return (
               <Lane key={stage} stage={stage} items={items} activeCard={activeCard} legalTargets={legalTargets} backTargets={backTargets}>
-                {items.slice(0, 30).map((p) => (
+                {(expandedLanes[stage] ? items : items.slice(0, 30)).map((p) => (
                   <BoardCard
                     key={p.id}
                     p={p}
@@ -379,9 +382,14 @@ export default function TeamPipeline() {
                   />
                 ))}
                 {items.length > 30 && (
-                  <p className="text-[11.5px] text-center font-semibold m-0 py-1.5 bg-white border border-border rounded-full" style={{ color: 'var(--ro-text-2)' }}>
-                    + {items.length - 30} more
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedLanes((e) => ({ ...e, [stage]: !e[stage] }))}
+                    className="text-[11.5px] text-center font-semibold m-0 py-1.5 bg-white border border-border rounded-full cursor-pointer hover:bg-[var(--ro-subtle)] transition-colors"
+                    style={{ color: 'var(--ro-text-2)' }}
+                  >
+                    {expandedLanes[stage] ? 'Show first 30' : `+ ${items.length - 30} more`}
+                  </button>
                 )}
                 {items.length === 0 && (
                   <p className="text-[11.5px] m-0 px-1.5 py-2" style={{ color: 'var(--ro-text-3)' }}>
@@ -393,7 +401,7 @@ export default function TeamPipeline() {
           })}
           {showLost && (
             <Lane stage="LOST" items={lostItems} activeCard={activeCard} legalTargets={legalTargets}>
-              {lostItems.slice(0, 30).map((p) => (
+              {(expandedLanes.LOST ? lostItems : lostItems.slice(0, 30)).map((p) => (
                 <BoardCard
                   key={p.id}
                   p={p}
@@ -401,6 +409,16 @@ export default function TeamPipeline() {
                   onOpen={(pid) => navigate(`/redeem-ops/partners/${pid}`)}
                 />
               ))}
+              {lostItems.length > 30 && (
+                <button
+                  type="button"
+                  onClick={() => setExpandedLanes((e) => ({ ...e, LOST: !e.LOST }))}
+                  className="text-[11.5px] text-center font-semibold m-0 py-1.5 bg-white border border-border rounded-full cursor-pointer hover:bg-[var(--ro-subtle)] transition-colors"
+                  style={{ color: 'var(--ro-text-2)' }}
+                >
+                  {expandedLanes.LOST ? 'Show first 30' : `+ ${lostItems.length - 30} more`}
+                </button>
+              )}
               {lostItems.length === 0 && (
                 <p className="text-[11.5px] m-0 px-1.5 py-2" style={{ color: 'var(--ro-text-3)' }}>
                   Nothing marked Lost — drag back to Contacted to re-engage.

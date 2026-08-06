@@ -112,3 +112,24 @@ it('an empty book points at Unowned instead of showing a bare board', async () =
   await waitFor(() => expect(api.getTeamPipeline).toHaveBeenCalled());
   expect(await screen.findByText(/No businesses in your book yet/)).toBeInTheDocument();
 });
+
+it('"+N more" is a real button: expands the lane to every card, then collapses back', async () => {
+  api.getTeamPipeline.mockResolvedValue({
+    counts: [],
+    partners: Array.from({ length: 35 }, (_, i) => mine(`p-${i + 1}`, `Biz ${i + 1}`, 'CONTACTED')),
+  });
+  renderPage();
+  await screen.findByText('Biz 1');
+
+  // perf guard: 30 cards render, the 31st waits behind the expander
+  expect(screen.queryByText('Biz 31')).not.toBeInTheDocument();
+  const expander = screen.getByRole('button', { name: '+ 5 more' });
+  await userEvent.click(expander);
+  expect(screen.getByText('Biz 31')).toBeInTheDocument();
+  expect(screen.getByText('Biz 35')).toBeInTheDocument();
+
+  // and back — the same button now collapses the lane
+  await userEvent.click(screen.getByRole('button', { name: 'Show first 30' }));
+  expect(screen.queryByText('Biz 35')).not.toBeInTheDocument();
+  expect(screen.getByText('Biz 30')).toBeInTheDocument();
+});
