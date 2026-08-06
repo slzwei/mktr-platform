@@ -181,6 +181,8 @@ export default function TeamPipeline() {
   const [lostMove, setLostMove] = useState(null); // { card } — Lost requires a reason
   const [lostReason, setLostReason] = useState(null);
   const [showLost, setShowLost] = useState(false);
+  // Reps live in their own book — the board opens on it; Team is one click away.
+  const [view, setView] = useState('mine'); // 'mine' | 'team'
 
   const constants = useQuery({
     queryKey: ['redeem-ops', 'constants'],
@@ -230,13 +232,22 @@ export default function TeamPipeline() {
   const lostReasons = constants.data?.lostReasons || [];
   const partners = boardQuery.data?.partners || [];
 
+  // Unowned businesses aren't on either board view — the button links to the
+  // Partners list pre-filtered to them, where claiming (incl. bulk) lives.
+  const unownedCount = useMemo(() => partners.filter((p) => !p.ownerUserId).length, [partners]);
+
+  const visiblePartners = useMemo(
+    () => (view === 'mine' ? partners.filter((p) => p.ownerUserId === user?.id) : partners),
+    [partners, view, user?.id]
+  );
+
   const byStage = useMemo(() => {
     const map = {};
-    for (const p of partners) {
+    for (const p of visiblePartners) {
       (map[p.pipelineStage] = map[p.pipelineStage] || []).push(p);
     }
     return map;
-  }, [partners]);
+  }, [visiblePartners]);
 
   // Admin tier drags anyone's card; everyone else only their own, so they get
   // an extra line of explanation for the cards that won't lift.
@@ -297,7 +308,7 @@ export default function TeamPipeline() {
     <div className="flex flex-col md:h-full md:min-h-0 p-6 md:p-8 md:pb-4 gap-0">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <h1 className="ro-title">Team pipeline</h1>
+          <h1 className="ro-title">Pipeline</h1>
           <p className="ro-sub">
           Drag a business forward — or onto the red bar to mark it Lost. Dragging back to an earlier column asks you to confirm.
           {!movesAnyCard && ' You can move the businesses you own; claim an unowned one to work it.'}
@@ -305,17 +316,48 @@ export default function TeamPipeline() {
           <span className="hidden md:inline"> Click to open.</span>
         </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowLost((v) => !v)}
-          className="ml-auto h-[34px] px-4 rounded-full text-[12.5px] font-semibold border cursor-pointer"
-          style={showLost
-            ? { background: 'var(--ro-bunker)', borderColor: 'var(--ro-bunker)', color: '#fff' }
-            : { background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
-        >
-          Lost ({lostItems.length})
-        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex rounded-full border overflow-hidden" style={{ borderColor: 'var(--ro-border-strong)' }}>
+            {[['mine', 'My pipeline'], ['team', 'Team']].map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className="h-[34px] px-4 text-[12.5px] font-semibold cursor-pointer border-0"
+                style={view === v
+                  ? { background: 'var(--ro-bunker)', color: '#fff' }
+                  : { background: '#fff', color: 'var(--ro-bunker)' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/redeem-ops/partners?owner=none')}
+            className="h-[34px] px-4 rounded-full text-[12.5px] font-semibold border cursor-pointer"
+            style={{ background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+          >
+            Unowned ({unownedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowLost((v) => !v)}
+            className="h-[34px] px-4 rounded-full text-[12.5px] font-semibold border cursor-pointer"
+            style={showLost
+              ? { background: 'var(--ro-bunker)', borderColor: 'var(--ro-bunker)', color: '#fff' }
+              : { background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+          >
+            Lost ({lostItems.length})
+          </button>
+        </div>
       </div>
+
+      {view === 'mine' && !boardQuery.isLoading && visiblePartners.length === 0 && (
+        <p className="text-[12.5px] mt-3 mb-0" style={{ color: 'var(--ro-text-2)' }}>
+          No businesses in your book yet — open <b>Unowned ({unownedCount})</b> to claim some, or switch to Team.
+        </p>
+      )}
 
       <DndContext
         sensors={sensors}
