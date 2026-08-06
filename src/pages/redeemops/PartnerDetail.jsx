@@ -35,7 +35,7 @@ import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
 import { RoStageTag, RoAvatar, RoTag, prettyEnum } from '@/components/redeemops/ui';
-import { CadencePanel } from '@/components/redeemops/cadence';
+import { CadencePanel, invalidateCadenceData } from '@/components/redeemops/cadence';
 import CategorySelect from '@/components/redeemops/CategorySelect';
 
 function useDebounced(value, ms = 300) {
@@ -316,7 +316,14 @@ export default function PartnerDetail() {
     // Edits, tasks, contacts and stage moves all create timeline entries now —
     // keep the open timeline honest (review finding: stale after edit).
     queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', id, 'timeline'] });
+    // Contact/detail writes can auto-resume a cadence parked on missing info —
+    // refresh the cadence card and task rail so the revived task shows at once.
+    invalidateCadenceData(queryClient, id);
   };
+
+  // Controlled so the cadence card's "Add contact info" nudge can land the
+  // rep straight on the Contacts / Locations tab.
+  const [activeTab, setActiveTab] = useState('timeline');
 
   const useSimpleMutation = (fn, okMsg) => useMutation({
     mutationFn: fn,
@@ -711,10 +718,11 @@ export default function PartnerDetail() {
         variant="summary"
         onAddTask={() => setTaskOpen(true)}
         onEditTask={openTaskEdit}
+        onFixContactInfo={(tab) => setActiveTab(tab || 'contacts')}
       />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-start">
-        <Tabs defaultValue="timeline">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <div className="max-w-full overflow-x-auto">
           <TabsList className="w-max">
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
@@ -866,6 +874,7 @@ export default function PartnerDetail() {
               canRunCadence={canActOnRow && hasCapability(user, 'tasks.manage')}
               onAddTask={() => setTaskOpen(true)}
               onEditTask={openTaskEdit}
+              onFixContactInfo={(tab) => setActiveTab(tab || 'contacts')}
             />
           </div>
 

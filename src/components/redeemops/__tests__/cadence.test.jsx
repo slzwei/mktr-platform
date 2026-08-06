@@ -36,11 +36,12 @@ const toastMock = vi.hoisted(() => {
   const t = vi.fn();
   t.success = vi.fn();
   t.error = vi.fn();
+  t.warning = vi.fn();
   return t;
 });
 vi.mock('sonner', () => ({ toast: toastMock }));
 
-import { CadenceOutcomeButton, CadenceChip, CadencePanel } from '../cadence';
+import { CadenceOutcomeButton, CadenceChip, CadencePanel, unreachableChannels, needsSentence } from '../cadence';
 import { toBuilderSteps } from '../cadenceBuilder';
 import CadenceEditorPage from '@/pages/redeemops/CadenceEditorPage';
 import { useAuthStore } from '@/stores/authStore';
@@ -516,5 +517,122 @@ describe('CadencePanel — outstanding tasks zone', () => {
     wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'LOST' }} onAddTask={onAddTask} />);
     await screen.findByText(/no open tasks/i);
     expect(screen.queryByRole('button', { name: /add task/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('reachability helpers', () => {
+  const bare = { id: 'p-1', ownerUserId: 'u-1' };
+
+  it('unreachableChannels names what each unreachable channel needs', () => {
+    expect(unreachableChannels(bare, ['call', 'whatsapp', 'email', 'instagram_dm', 'visit'])).toEqual([
+      { channel: 'call', need: 'a phone number' },
+      { channel: 'whatsapp', need: 'a phone number' },
+      { channel: 'email', need: 'an email address' },
+      { channel: 'instagram_dm', need: 'an Instagram handle' },
+      { channel: 'visit', need: 'an outlet address' },
+    ]);
+  });
+
+  it('org fields, live contacts and active locations all satisfy reachability; archived contacts do not', () => {
+    const partner = {
+      ...bare,
+      instagramHandle: 'cafe.sg',
+      contacts: [
+        { id: 'c-1', email: 'gone@x.sg', archivedAt: '2026-01-01' },
+        { id: 'c-2', mobile: '+6581112222' },
+      ],
+      locations: [{ id: 'l-1', isActive: true }],
+    };
+    // email only lives on the ARCHIVED contact → still missing
+    expect(unreachableChannels(partner, ['call', 'email', 'instagram_dm', 'visit', 'custom'])).toEqual([
+      { channel: 'email', need: 'an email address' },
+    ]);
+  });
+
+  it('needsSentence joins deduped needs readably', () => {
+    expect(needsSentence([{ channel: 'call', need: 'a phone number' }, { channel: 'whatsapp', need: 'a phone number' }]))
+      .toBe('a phone number');
+    expect(needsSentence(unreachableChannels({ id: 'p' }, ['email', 'instagram_dm'])))
+      .toBe('an email address and an Instagram handle');
+  });
+});
+
+describe('paused-for-missing-info guidance', () => {
+  it('names the missing info and deep-links the fix tab', async () => {
+    api.getPartnerCadence.mockResolvedValue({
+      enrollment: {
+        id: 'e-1', state: 'paused', pausedReason: 'missing_info',
+        cadence: {
+          id: 'c-1', name: 'Tuition chase', version: 4,
+          steps: [
+            { id: 's-1', stepOrder: 1, title: 'DM', channel: 'instagram_dm' },
+            { id: 's-2', stepOrder: 2, title: 'Email', channel: 'email' },
+          ],
+        },
+        currentStep: { id: 's-1', stepOrder: 1, channel: 'instagram_dm' },
+      },
+      openTask: null,
+    });
+    api.listTasks.mockResolvedValue({ tasks: [] });
+    const onFixContactInfo = vi.fn();
+    const user = userEvent.setup();
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }}
+        onFixContactInfo={onFixContactInfo}
+      />
+    );
+    await screen.findByText(/no way to reach them for the remaining steps/i);
+    expect(screen.getByText(/an Instagram handle and an email address/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /add contact info/i }));
+    expect(onFixContactInfo).toHaveBeenCalledWith('contacts');
+  });
+
+  it('a plain manual pause keeps the old quiet copy', async () => {
+    api.getPartnerCadence.mockResolvedValue({
+      enrollment: {
+        id: 'e-2', state: 'paused', pausedReason: 'manual',
+        cadence: { id: 'c-1', name: 'Chase', version: 1, steps: [] },
+        currentStep: null,
+      },
+      openTask: null,
+    });
+    api.listTasks.mockResolvedValue({ tasks: [] });
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+    await screen.findByText(/no tasks will be scheduled until resumed/i);
+    expect(screen.queryByText(/no way to reach them/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('enroll dialog reachability warnings', () => {
+  it('flags a fully-unreachable cadence as pausing on enroll', async () => {
+    api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
+    api.listTasks.mockResolvedValue({ tasks: [] });
+    api.listCadences.mockResolvedValue({
+      cadences: [
+        {
+          id: 'c-ig', name: 'IG only', publishedAt: '2026-01-01',
+          steps: [{ id: 's-1', stepOrder: 1, channel: 'instagram_dm', title: 'DM' }],
+        },
+        {
+          id: 'c-call', name: 'Call first', publishedAt: '2026-01-01',
+          steps: [
+            { id: 's-2', stepOrder: 1, channel: 'call', title: 'Call' },
+            { id: 's-3', stepOrder: 2, channel: 'email', title: 'Email' },
+          ],
+        },
+      ],
+    });
+    useAuthStore.setState({ user: { id: 'u-1', role: 'redeem_ops', redeemOpsRole: 'outreach_exec' } });
+    const user = userEvent.setup();
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW', primaryPhone: '+6581110000' }}
+      />
+    );
+    await user.click(await screen.findByRole('button', { name: /start cadence/i }));
+    // IG-only: nothing reachable → hard warning; call-first: email step only → soft skip note
+    expect(await screen.findByText(/needs an instagram handle — enrolling pauses/i)).toBeInTheDocument();
+    expect(screen.getByText(/missing an email address — those steps will be skipped/i)).toBeInTheDocument();
   });
 });

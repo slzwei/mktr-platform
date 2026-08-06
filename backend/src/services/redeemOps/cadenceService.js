@@ -456,14 +456,51 @@ export function makeCadenceService(overrides = {}) {
   }
 
   /**
+   * The edge a BLOCKED (unreachable-channel) step skips forward through: its
+   * explicit '*' edge, or its SOLE outgoing edge — builder cadences compile
+   * exactly one outgoing edge per step, and for single-outcome channels an
+   * explicit 'sent' is semantically identical to '*', so authoring "Sent"
+   * instead of "Any outcome" must not turn skip-unreachable into
+   * end-the-whole-cadence. Only a genuine branch (several specific edges,
+   * no '*') refuses to skip.
+   */
+  async function resolveSkipEdgeTx(cadenceId, fromStepId, t) {
+    const edges = await d.OutreachCadenceTransition.findAll({
+      where: { cadenceId, fromStepId }, transaction: t,
+    });
+    return edges.find((e) => e.disposition === CADENCE_WILDCARD_DISPOSITION)
+      || (edges.length === 1 ? edges[0] : null);
+  }
+
+  /**
+   * Park the enrollment because every remaining step is unreachable. The old
+   * behavior ended it as 'completed' — which the UI reads as success — while
+   * the rep could have FIXED the blockers (add an email, a handle, an outlet).
+   * Paused on the walk's entry step, it resumes through the contact-info hook
+   * or a manual Resume once the record is filled in.
+   */
+  async function pauseForInfoTx(enrollment, partner, entryStep, blocked, actorUser, t) {
+    await enrollment.update({
+      state: 'paused', pausedAt: d.now(), pausedReason: 'missing_info', currentStepId: entryStep.id,
+    }, { transaction: t });
+    await d.tasks.recomputeNextTaskAt(partner.id, t);
+    await d.audit.recordAuditEvent({
+      actorUser, actorType: actorUser ? 'staff' : 'system', action: 'cadence.paused_missing_info',
+      entityType: 'outreach_cadence_enrollment', entityId: enrollment.id,
+      after: { blocked }, transaction: t,
+    });
+  }
+
+  /**
    * Land the enrollment on `step` (materialize its task), chaining through
-   * blocked steps via their '*' edges; finishes the enrollment if the chain
-   * runs out (§5.3).
+   * blocked steps via their skip edges; pauses for missing contact info if the
+   * chain runs out (§5.3).
    */
   async function placeAtStepTx(enrollment, partner, step, timing, actorUser, t) {
     let cur = step;
     let curTiming = timing;
     let guard = 0;
+    const blocked = [];
     while (cur) {
       const mat = await tryMaterializeTx(enrollment, partner, cur, curTiming, actorUser, t);
       if (!mat.blocked) {
@@ -479,10 +516,11 @@ export function makeCadenceService(overrides = {}) {
         await endEnrollmentTx(enrollment, { state: 'exited', exitReason: 'released' }, actorUser, t);
         return { finished: true, reason: mat.reason };
       }
-      const edge = await resolveTransitionTx(enrollment.cadenceId, cur.id, CADENCE_WILDCARD_DISPOSITION, t);
+      blocked.push({ stepId: cur.id, stepTitle: cur.title, channel: cur.channel, reason: mat.reason });
+      const edge = await resolveSkipEdgeTx(enrollment.cadenceId, cur.id, t);
       if (!edge || !edge.toStepId) {
-        await endEnrollmentTx(enrollment, { state: 'completed', exitReason: 'finished' }, actorUser, t);
-        return { finished: true, reason: mat.reason };
+        await pauseForInfoTx(enrollment, partner, step, blocked, actorUser, t);
+        return { pausedForInfo: true, blocked };
       }
       cur = await d.OutreachCadenceStep.findByPk(edge.toStepId, { transaction: t });
       curTiming = { delayDays: edge.delayDays, timeWindow: edge.timeWindow };
@@ -573,7 +611,11 @@ export function makeCadenceService(overrides = {}) {
         after: { cadenceKey: cadence.key, version: cadence.version, partnerId, capacityOverride: !!overrideCapacity },
         requestId, transaction: t,
       });
-      return { enrollment, cadence, firstTask: placed.task || null, finishedImmediately: !!placed.finished };
+      return {
+        enrollment, cadence, firstTask: placed.task || null,
+        finishedImmediately: !!placed.finished,
+        pausedForInfo: placed.pausedForInfo ? { blocked: placed.blocked } : null,
+      };
     });
   }
 
@@ -640,10 +682,25 @@ export function makeCadenceService(overrides = {}) {
 
       await enrollment.update({ lastDisposition: disposition }, { transaction: t });
 
+      // 2b. A completed cadence touch IS first contact — a business still in
+      //    NEW moves to CONTACTED in the same transaction. Cadence completions
+      //    only; manual activity logging still never moves stages. systemAuto
+      //    because the move is a side-effect of the completion — a manager
+      //    finishing another rep's task must not 403 on row rights. Skipped
+      //    when this same completion marks the business Lost (NEW → LOST is
+      //    one honest move, not two). The stage hook ignores CONTACTED, so
+      //    the enrollment survives its own stage move.
+      if (partner.pipelineStage === 'NEW' && !(disposition === 'not_interested' && alsoMarkLost)) {
+        await d.partners.changeStageTx(partner.id, 'CONTACTED', user, t, {
+          reason: 'Auto: first cadence touch', requestId, systemAuto: true,
+        });
+      }
+
       // 3. Terminal dispositions end the enrollment; the stage move (if asked
       //    for) happens in the SAME transaction so no contradictory half-state
       //    can survive a crash (§5.2.6).
       let nextTask = null;
+      let cadencePaused = null;
       if (CADENCE_TERMINAL_DISPOSITIONS.includes(disposition)) {
         const exitReason = disposition === 'replied' ? 'replied' : 'not_interested';
         await endEnrollmentTx(enrollment, { state: 'exited', exitReason }, user, t);
@@ -663,6 +720,7 @@ export function makeCadenceService(overrides = {}) {
             { delayDays: edge.delayDays, timeWindow: edge.timeWindow }, user, t
           );
           nextTask = placed.task || null;
+          if (placed.pausedForInfo) cadencePaused = { blocked: placed.blocked };
         }
       }
 
@@ -672,7 +730,7 @@ export function makeCadenceService(overrides = {}) {
         entityId: taskId, after: { disposition, enrollmentState: enrollment.state }, requestId, transaction: t,
       });
 
-      return { task, enrollment, nextTask };
+      return { task, enrollment, nextTask, cadencePaused };
     });
   }
 
@@ -696,7 +754,7 @@ export function makeCadenceService(overrides = {}) {
         { status: 'cancelled' },
         { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }
       );
-      await enrollment.update({ state: 'paused', pausedAt: d.now() }, { transaction: t });
+      await enrollment.update({ state: 'paused', pausedAt: d.now(), pausedReason: 'manual' }, { transaction: t });
       await d.tasks.recomputeNextTaskAt(partnerId, t);
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'cadence.paused', entityType: 'outreach_cadence_enrollment',
@@ -707,16 +765,20 @@ export function makeCadenceService(overrides = {}) {
   }
 
   async function resumeEnrollmentTx(enrollment, partner, actorUser, t) {
-    await enrollment.update({ state: 'active', pausedAt: null }, { transaction: t });
+    await enrollment.update({ state: 'active', pausedAt: null, pausedReason: null }, { transaction: t });
     const step = await d.OutreachCadenceStep.findByPk(enrollment.currentStepId, { transaction: t });
     if (!step) {
       return endEnrollmentTx(enrollment, { state: 'completed', exitReason: 'finished' }, actorUser, t);
     }
-    await placeAtStepTx(enrollment, partner, step, { delayDays: 0, timeWindow: 'any' }, actorUser, t);
-    await d.audit.recordAuditEvent({
-      actorUser, actorType: actorUser ? 'staff' : 'system', action: 'cadence.resumed',
-      entityType: 'outreach_cadence_enrollment', entityId: enrollment.id, transaction: t,
-    });
+    const placed = await placeAtStepTx(enrollment, partner, step, { delayDays: 0, timeWindow: 'any' }, actorUser, t);
+    // A resume that immediately re-parks (still nothing reachable) is not a
+    // resume — the paused_missing_info audit row already tells that story.
+    if (!placed.pausedForInfo) {
+      await d.audit.recordAuditEvent({
+        actorUser, actorType: actorUser ? 'staff' : 'system', action: 'cadence.resumed',
+        entityType: 'outreach_cadence_enrollment', entityId: enrollment.id, transaction: t,
+      });
+    }
     return enrollment;
   }
 
@@ -783,7 +845,7 @@ export function makeCadenceService(overrides = {}) {
           { status: 'cancelled' },
           { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }
         );
-        await enrollment.update({ state: 'paused', pausedAt: d.now() }, { transaction: t });
+        await enrollment.update({ state: 'paused', pausedAt: d.now(), pausedReason: 'snoozed' }, { transaction: t });
         await d.tasks.recomputeNextTaskAt(partner.id, t);
       },
       onUnsnooze: async ({ partner, partnerId, user, transaction }) => {
@@ -791,11 +853,28 @@ export function makeCadenceService(overrides = {}) {
         const run = async (t) => {
           const enrollment = await liveEnrollmentForPartnerTx(pid, t, { states: ['paused'] });
           if (!enrollment) return;
+          // A wake only undoes the pause the snooze created — a manual pause
+          // or a missing-info park stays put until ITS trigger clears it.
+          if (enrollment.pausedReason && enrollment.pausedReason !== 'snoozed') return;
           const p = await d.PartnerOrganisation.findByPk(pid, { transaction: t, lock: t.LOCK.UPDATE });
           if (!p || p.mergedIntoId || p.archivedAt) return;
           await resumeEnrollmentTx(enrollment, p, user || null, t);
         };
         // Sweep wake arrives without a transaction — open our own.
+        if (transaction) return run(transaction);
+        return d.sequelize.transaction(run);
+      },
+      onContactInfoAdded: async ({ partnerId, user, transaction }) => {
+        const run = async (t) => {
+          // Global lock order: partner → enrollment.
+          const p = await d.PartnerOrganisation.findByPk(partnerId, { transaction: t, lock: t.LOCK.UPDATE });
+          if (!p || p.mergedIntoId || p.archivedAt || !p.ownerUserId) return;
+          const enrollment = await liveEnrollmentForPartnerTx(partnerId, t, { states: ['paused'] });
+          // Only the park THIS event can clear — snoozes wake on their own
+          // schedule and a manual pause stays the rep's call.
+          if (!enrollment || enrollment.pausedReason !== 'missing_info') return;
+          await resumeEnrollmentTx(enrollment, p, user || null, t);
+        };
         if (transaction) return run(transaction);
         return d.sequelize.transaction(run);
       },
@@ -831,11 +910,14 @@ export function makeCadenceService(overrides = {}) {
       // the global partner → enrollment order and re-validates under lock.
 
       // (a) paused enrollments whose partner is awake — the sweep-wake hook
-      //     failed or crashed mid-way; finish the resume it owed.
+      //     failed or crashed mid-way; finish the resume it owed. Scoped to
+      //     snooze-born pauses (+ legacy NULL rows): a rep's manual pause and
+      //     a missing-contact-info park are DELIBERATE states, not faults.
       const strandedPaused = await d.sequelize.query(
         `SELECT e.id, e."partnerOrganisationId" AS pid FROM outreach_cadence_enrollments e
            JOIN partner_organisations p ON p.id = e."partnerOrganisationId"
           WHERE e.state = 'paused' AND e."pausedAt" < NOW() - INTERVAL '10 minutes'
+            AND (e."pausedReason" IS NULL OR e."pausedReason" = 'snoozed')
             AND p.availability NOT IN ('follow_up_later')
             AND p."archivedAt" IS NULL AND p."mergedIntoId" IS NULL
             AND p."ownerUserId" IS NOT NULL
@@ -846,6 +928,7 @@ export function makeCadenceService(overrides = {}) {
         const partner = await d.PartnerOrganisation.findByPk(row.pid, { transaction: t, lock: t.LOCK.UPDATE });
         const enrollment = await d.OutreachCadenceEnrollment.findByPk(row.id, { transaction: t, lock: t.LOCK.UPDATE });
         if (!partner || !enrollment || enrollment.state !== 'paused' || partner.availability === 'follow_up_later') continue;
+        if (enrollment.pausedReason && enrollment.pausedReason !== 'snoozed') continue;
         await resumeEnrollmentTx(enrollment, partner, null, t);
         resumed += 1;
       }
