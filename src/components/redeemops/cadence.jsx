@@ -47,13 +47,44 @@ const CHANNEL_LABELS = {
 /* The rail shows at most this many rows; the rest sit behind "View all n". */
 const MAX_VISIBLE_TASKS = 4;
 
-function invalidateCadenceData(queryClient, partnerId) {
+export function invalidateCadenceData(queryClient, partnerId) {
   queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'queue'] });
   queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'tasks'] });
   if (partnerId) {
     queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', partnerId] });
     queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner-cadence', partnerId] });
   }
+}
+
+/**
+ * Client-side mirror of the engine's recipient resolution: which of these
+ * channels can reach THIS business right now, and what each unreachable one
+ * needs. Contacts/locations ride the partner payload the detail page already
+ * holds. `custom` steps need nothing.
+ */
+export function unreachableChannels(partner, channels) {
+  const contacts = (partner?.contacts || []).filter((c) => !c.archivedAt);
+  const hasPhone = !!(partner?.primaryPhone || contacts.some((c) => c.mobile || c.whatsapp));
+  const hasEmail = !!(partner?.primaryEmail || contacts.some((c) => c.email));
+  const reach = {
+    call: { ok: hasPhone, need: 'a phone number' },
+    whatsapp: { ok: hasPhone, need: 'a phone number' },
+    email: { ok: hasEmail, need: 'an email address' },
+    instagram_dm: { ok: !!partner?.instagramHandle, need: 'an Instagram handle' },
+    visit: { ok: (partner?.locations || []).some((l) => l.isActive !== false), need: 'an outlet address' },
+  };
+  const out = [];
+  for (const ch of channels || []) {
+    const r = reach[ch];
+    if (r && !r.ok && !out.some((o) => o.channel === ch)) out.push({ channel: ch, need: r.need });
+  }
+  return out;
+}
+
+/** "an email address and an Instagram handle" — dedupes repeated needs. */
+export function needsSentence(missing) {
+  const needs = [...new Set(missing.map((m) => m.need))];
+  return needs.length <= 1 ? needs.join('') : `${needs.slice(0, -1).join(', ')} and ${needs[needs.length - 1]}`;
 }
 
 /**
@@ -157,6 +188,11 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
       if (next) {
         toast.success('Logged — next step scheduled', {
           description: `${next.title} · ${new Date(next.dueAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}`,
+        });
+      } else if (data?.cadencePaused) {
+        toast.warning('Logged — cadence paused: the remaining steps can’t reach anyone', {
+          description: 'Add the missing contact info (email, phone, handle or outlet) on the business record and the cadence continues on its own.',
+          duration: 8000,
         });
       } else {
         toast.success('Logged — cadence finished for this business');
@@ -408,7 +444,7 @@ function PartnerTaskRow({
 // canManage = may work TASKS here. canRunCadence = may start/pause/stop the
 // cadence, which is working the deal itself and so follows business ownership
 // (#307); it defaults to canManage so other call sites keep their behavior.
-export function CadencePanel({ partner, canManage = true, canRunCadence = canManage, variant = 'card', onAddTask, onEditTask }) {
+export function CadencePanel({ partner, canManage = true, canRunCadence = canManage, variant = 'card', onAddTask, onEditTask, onFixContactInfo }) {
   const queryClient = useQueryClient();
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [stripExpanded, setStripExpanded] = useState(false);
@@ -442,9 +478,16 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
     mutationFn: (body) => redeemOpsApi.enrollCadence(partnerId, body),
     onSuccess: (data) => {
       setEnrollOpen(false);
-      toast.success(data?.finishedImmediately
-        ? 'Enrolled — but every step was blocked (check phone/handle on record)'
-        : 'Cadence started — first task is in the queue');
+      if (data?.pausedForInfo) {
+        toast.warning('Enrolled — paused: no way to reach them yet', {
+          description: 'Add an email, phone, handle or outlet to the record and the cadence starts on its own.',
+          duration: 8000,
+        });
+      } else if (data?.finishedImmediately) {
+        toast.warning('Enrolled — but the cadence ended immediately');
+      } else {
+        toast.success('Cadence started — first task is in the queue');
+      }
       invalidateCadenceData(queryClient, partnerId);
     },
     onError: (err) => toast.error('Could not enroll', { description: err.message }),
@@ -456,7 +499,16 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
   });
   const resumeMutation = useMutation({
     mutationFn: () => redeemOpsApi.resumeCadence(partnerId),
-    onSuccess: () => { toast.success('Cadence resumed'); invalidateCadenceData(queryClient, partnerId); },
+    onSuccess: (resumed) => {
+      // A resume that re-parked means nothing became reachable — say so
+      // instead of pretending it's running.
+      if (resumed?.state === 'paused') {
+        toast.warning('Still can’t reach them — add the missing contact info first');
+      } else {
+        toast.success('Cadence resumed');
+      }
+      invalidateCadenceData(queryClient, partnerId);
+    },
     onError: (err) => toast.error('Could not resume', { description: err.message }),
   });
   const stopMutation = useMutation({
@@ -483,6 +535,14 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
   const steps = enrollment?.cadence?.steps || [];
   const currentOrder = enrollment?.currentStep?.stepOrder || 0;
   const terminalStage = ['PARTNERED', 'LOST'].includes(partner?.pipelineStage);
+
+  // Parked on missing contact info: name exactly what the remaining steps
+  // need, so the fix is one glance away (the hook resumes it automatically).
+  const pausedForInfo = paused && enrollment?.pausedReason === 'missing_info';
+  const missingInfo = pausedForInfo
+    ? unreachableChannels(partner, steps.filter((s) => s.stepOrder >= currentOrder).map((s) => s.channel))
+    : [];
+  const fixTab = missingInfo.length > 0 && missingInfo.every((m) => m.channel === 'visit') ? 'locations' : 'contacts';
 
   // Rows: the live cadence task always leads; manual tasks follow in the
   // backend's dueAt-ascending order (overdue first by construction).
@@ -566,7 +626,23 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
               ))}
             </div>
           )}
-          {paused && (
+          {pausedForInfo ? (
+            <div className="rounded-lg px-3 py-2.5 mt-2" style={{ background: 'var(--ro-tag-yellow-bg, #FFF6DE)' }}>
+              <p className="text-[12.5px] font-semibold m-0" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
+                Paused — no way to reach them for the remaining steps.
+              </p>
+              <p className="text-[12px] m-0 mt-1 leading-relaxed" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
+                {missingInfo.length > 0
+                  ? <>Add {needsSentence(missingInfo)} and the cadence continues on its own.</>
+                  : 'Add contact info (or lift the do-not-contact block) and resume.'}
+              </p>
+              {onFixContactInfo && (
+                <Button size="sm" variant="outline" className="mt-2" onClick={() => onFixContactInfo(fixTab)}>
+                  Add contact info
+                </Button>
+              )}
+            </div>
+          ) : paused && (
             <p className="text-[12.5px] mt-2 mb-0" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
               Paused — no tasks will be scheduled until resumed.
             </p>
@@ -709,7 +785,7 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
       <span className="font-semibold" style={{ color: 'var(--ro-bunker)' }}>
         <CadenceName cadence={enrollment.cadence} /> · step {currentOrder}/{steps.length}
       </span>
-      {paused ? ' · paused' : ' · scheduling next step…'}
+      {pausedForInfo ? ' · paused — add contact info' : paused ? ' · paused' : ' · scheduling next step…'}
     </p>
   ) : (
     <div className="flex items-center justify-between gap-2">
@@ -743,31 +819,47 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 min-h-0 overflow-y-auto">
-            {cadenceDefs.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className="w-full text-left rounded-xl border border-border px-4 py-3 hover:bg-[var(--ro-subtle)] transition-colors disabled:opacity-60"
-                disabled={enrollMutation.isPending}
-                onClick={() => enrollMutation.mutate({ cadenceId: c.id })}
-              >
-                <p className="text-sm font-semibold m-0">
-                  {c.name}
-                  {/* drafts only reach their creator + admins — flag them */}
-                  {!c.publishedAt && (
-                    <span
-                      className="ml-2 inline-block align-middle rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
-                      style={{ color: 'var(--ro-text-2)' }}
-                    >
-                      Draft
-                    </span>
+            {cadenceDefs.map((c) => {
+              // Warn BEFORE enrolling: which of this cadence's channels can't
+              // reach the business yet. Unreachable steps skip; if none are
+              // reachable the cadence pauses until the record is filled in.
+              const missing = unreachableChannels(partner, (c.steps || []).map((s) => s.channel));
+              const reachableSteps = (c.steps || []).filter(
+                (s) => s.channel === 'custom' || !missing.some((m) => m.channel === s.channel)
+              );
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="w-full text-left rounded-xl border border-border px-4 py-3 hover:bg-[var(--ro-subtle)] transition-colors disabled:opacity-60"
+                  disabled={enrollMutation.isPending}
+                  onClick={() => enrollMutation.mutate({ cadenceId: c.id })}
+                >
+                  <p className="text-sm font-semibold m-0">
+                    {c.name}
+                    {/* drafts only reach their creator + admins — flag them */}
+                    {!c.publishedAt && (
+                      <span
+                        className="ml-2 inline-block align-middle rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
+                        style={{ color: 'var(--ro-text-2)' }}
+                      >
+                        Draft
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+                    {c.steps?.length || 0} steps — {(c.steps || []).map((s) => CHANNEL_LABELS[s.channel] || s.channel).join(' → ')}
+                  </p>
+                  {missing.length > 0 && (
+                    <p className="text-xs m-0 mt-1 font-medium" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
+                      {reachableSteps.length === 0
+                        ? `Needs ${needsSentence(missing)} — enrolling pauses until it's added.`
+                        : `Missing ${needsSentence(missing)} — those steps will be skipped.`}
+                    </p>
                   )}
-                </p>
-                <p className="text-xs m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
-                  {c.steps?.length || 0} steps — {(c.steps || []).map((s) => CHANNEL_LABELS[s.channel] || s.channel).join(' → ')}
-                </p>
-              </button>
-            ))}
+                </button>
+              );
+            })}
             {defsQuery.isLoading && <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>Loading cadences…</p>}
             {!defsQuery.isLoading && cadenceDefs.length === 0 && (
               <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>No cadences defined yet.</p>

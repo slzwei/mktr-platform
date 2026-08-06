@@ -388,7 +388,10 @@ export default function CadenceEditorPage() {
               A step only reaches the next one on its “continue when” outcome. Replies and
               “not interested” end the cadence immediately; moving the business to Meeting or
               beyond, snoozing, or releasing it stops the schedule automatically. Steps that can’t
-              reach anyone (no phone or handle on record) are skipped.
+              reach anyone (no phone or handle on record) are skipped — and if none of the
+              remaining steps can reach the business, the cadence pauses until contact info is
+              added, then continues on its own. Completing a step also moves a New business to
+              Contacted.
             </p>
           </div>
         </div>

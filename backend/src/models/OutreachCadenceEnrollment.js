@@ -16,6 +16,7 @@ const OutreachCadenceEnrollment = sequelize.define('OutreachCadenceEnrollment', 
   exitReason: { type: DataTypes.STRING(32), allowNull: true },
   enrolledBy: { type: DataTypes.UUID, allowNull: false, references: { model: 'users', key: 'id' } },
   pausedAt: { type: DataTypes.DATE, allowNull: true },
+  pausedReason: { type: DataTypes.STRING(32), allowNull: true, comment: 'manual|snoozed|missing_info (NULL = legacy pause)' },
   endedAt: { type: DataTypes.DATE, allowNull: true },
 }, {
   tableName: 'outreach_cadence_enrollments',

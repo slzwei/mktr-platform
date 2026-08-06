@@ -301,3 +301,27 @@ merge exits duplicate BEFORE repointing. 3. `visit` becomes a real activity type
 bootstrap. 5. No automatic stage movement; one-click suggestion after `replied`. 6. Queue
 excludes scheduled cadence first-touches; coverage counts outreach-type tasks only. 7. Capacity
 cap ships in P1.
+
+## 14. Revision 2026-08-06 — missing contact info pauses (not silent-finish), auto-CONTACTED
+
+Two product calls (Shawn, 2026-08-06) supersede parts of §5.3 and §13.5:
+
+- **Blocked-step skip follows a step's SOLE outgoing edge, not just `'*'`.** The builder
+  compiles one edge per step, and for single-outcome channels an explicit `sent` is
+  semantically `'*'` — authoring "Sent" must not disable skipping (the tuition-centre cadence
+  ended at step 1 for handle-less businesses while Email/WhatsApp/Call/Visit were reachable).
+  Genuine branches (several specific edges, no `'*'`) still refuse to skip.
+- **A walk with nothing reachable PAUSES instead of completing.** `pausedReason='missing_info'`,
+  parked on the walk's entry step; the old silent `completed/finished` read as success while a
+  fixable record (no email on file) killed the run. Resumed by the `onContactInfoAdded` hook
+  (contact/location/reachability-field writes) or a manual Resume. UI names exactly what's
+  missing and deep-links the Contacts/Locations tab.
+- **`pausedReason` now disambiguates every pause** (`manual` | `snoozed` | `missing_info`;
+  legacy NULL = pre-migration). The reconciler's stranded-pause auto-resume is scoped to
+  `snoozed`/NULL — it was silently un-pausing MANUAL pauses after 10 minutes (latent bug, fixed
+  here); unsnooze wakes only snooze-born pauses.
+- **§13.5 narrowed: completing a cadence task auto-moves a NEW business to CONTACTED** (same
+  transaction, `systemAuto` bypasses only the row-ownership check, transition map still
+  enforced, skipped when the completion itself marks the business Lost). Manual activity
+  logging still never moves stages. Rationale: the queue already treats a cadence touch as
+  "first outreach done" — the kanban column disagreeing with it was operator-visible drift.

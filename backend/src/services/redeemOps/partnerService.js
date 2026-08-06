@@ -255,6 +255,11 @@ export function makePartnerService(overrides = {}) {
         actorUser: user, action: 'partner.edited', entityType: 'partner_organisation',
         entityId: id, before, after: updates, requestId, transaction: t,
       });
+      // A newly-filled reachability field can wake a cadence parked on
+      // missing contact info (pausedReason 'missing_info').
+      if (['primaryPhone', 'primaryEmail', 'instagramHandle'].some((f) => updates[f])) {
+        await d.fireCadenceHook('onContactInfoAdded', { partnerId: id, user, transaction: t });
+      }
     });
     return partner;
   }
@@ -288,13 +293,18 @@ export function makePartnerService(overrides = {}) {
     }
   }
 
-  async function changeStageTx(id, toStage, user, t, { reason = null, requestId = null, lostReason = null } = {}) {
+  async function changeStageTx(id, toStage, user, t, { reason = null, requestId = null, lostReason = null, systemAuto = false } = {}) {
     if (!PIPELINE_STAGES.includes(toStage)) throw new AppError('Unknown stage', 400);
     if (toStage === 'LOST' && !LOST_REASONS.includes(lostReason)) {
       throw new AppError('A reason is required when marking a business as Lost', 400);
     }
     const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
-    assertCanMoveRow(user, partner);
+    // systemAuto = the engine moving the stage as a side-effect of an action
+    // that was itself permission-checked (e.g. completing a cadence task moves
+    // NEW → CONTACTED). The transition map below still applies — only the
+    // row-ownership check is waived, so a manager completing another rep's
+    // task doesn't 403 on a move neither of them chose.
+    if (!systemAuto) assertCanMoveRow(user, partner);
     const fromStage = partner.pipelineStage;
     if (fromStage === toStage) return partner;
 
@@ -713,7 +723,7 @@ export function makePartnerService(overrides = {}) {
           { where: { partnerOrganisationId: id }, transaction: t }
         );
       }
-      return d.PartnerContact.create(
+      const contact = await d.PartnerContact.create(
         {
           partnerOrganisationId: id,
           name: String(body.name).trim(),
@@ -727,6 +737,10 @@ export function makePartnerService(overrides = {}) {
         },
         { transaction: t }
       );
+      if (contact.mobile || contact.whatsapp || contact.email) {
+        await d.fireCadenceHook('onContactInfoAdded', { partnerId: id, user, transaction: t });
+      }
+      return contact;
     });
   }
 
@@ -738,16 +752,25 @@ export function makePartnerService(overrides = {}) {
     for (const f of ['name', 'roleTitle', 'mobile', 'whatsapp', 'email', 'preferredChannel', 'isPrimary', 'notes']) {
       if (body[f] !== undefined) updates[f] = body[f];
     }
+    // Reachability gained? Then the contact-info hook fires below — and the
+    // parent must be locked BEFORE the contact row (merge holds partner →
+    // repoints contacts; the reverse order here would be an AB-BA deadlock).
+    const touchesReachability = ['mobile', 'whatsapp', 'email'].some((f) => updates[f]);
     return d.sequelize.transaction(async (t) => {
-      if (updates.isPrimary === true) {
+      if (updates.isPrimary === true || touchesReachability) {
         // M7: same serialization as addContact — lock the parent, then swap.
         await d.PartnerOrganisation.findByPk(contact.partnerOrganisationId, { transaction: t, lock: t.LOCK.UPDATE });
+      }
+      if (updates.isPrimary === true) {
         await d.PartnerContact.update(
           { isPrimary: false },
           { where: { partnerOrganisationId: contact.partnerOrganisationId }, transaction: t }
         );
       }
       await contact.update(updates, { transaction: t });
+      if (touchesReachability) {
+        await d.fireCadenceHook('onContactInfoAdded', { partnerId: contact.partnerOrganisationId, user, transaction: t });
+      }
       return contact;
     });
   }
@@ -762,16 +785,23 @@ export function makePartnerService(overrides = {}) {
 
   async function addLocation(id, body, user) {
     await getOwnedPartner(id, user);
-    return d.PartnerLocation.create({
-      partnerOrganisationId: id,
-      name: body.name || null,
-      addressLine: body.addressLine || null,
-      postalCode: body.postalCode || null,
-      postalDistrict: postalDistrictOf(body.postalCode),
-      area: body.area || null,
-      phone: body.phone || null,
-      isActive: body.isActive !== false,
-      notes: body.notes || null,
+    return d.sequelize.transaction(async (t) => {
+      const location = await d.PartnerLocation.create({
+        partnerOrganisationId: id,
+        name: body.name || null,
+        addressLine: body.addressLine || null,
+        postalCode: body.postalCode || null,
+        postalDistrict: postalDistrictOf(body.postalCode),
+        area: body.area || null,
+        phone: body.phone || null,
+        isActive: body.isActive !== false,
+        notes: body.notes || null,
+      }, { transaction: t });
+      // A first active outlet makes 'visit' steps reachable.
+      if (location.isActive) {
+        await d.fireCadenceHook('onContactInfoAdded', { partnerId: id, user, transaction: t });
+      }
+      return location;
     });
   }
 
@@ -784,8 +814,18 @@ export function makePartnerService(overrides = {}) {
       if (body[f] !== undefined) updates[f] = body[f];
     }
     if (updates.postalCode !== undefined) updates.postalDistrict = postalDistrictOf(updates.postalCode);
-    await location.update(updates);
-    return location;
+    if (updates.isActive !== true) {
+      await location.update(updates);
+      return location;
+    }
+    // Re-activation can wake a missing_info pause; partner lock FIRST (same
+    // AB-BA reasoning as updateContact — merge repoints locations too).
+    return d.sequelize.transaction(async (t) => {
+      await d.PartnerOrganisation.findByPk(location.partnerOrganisationId, { transaction: t, lock: t.LOCK.UPDATE });
+      await location.update(updates, { transaction: t });
+      await d.fireCadenceHook('onContactInfoAdded', { partnerId: location.partnerOrganisationId, user, transaction: t });
+      return location;
+    });
   }
 
   // ── Merge ────────────────────────────────────────────────────────────────

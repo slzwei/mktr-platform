@@ -19,6 +19,7 @@ const HOOK_NAMES = [
   'onStageChange', // changeStageTx + undoStageChange
   'onSnooze', // snoozePartnerTx
   'onUnsnooze', // unsnoozePartnerTx (source:'manual') + stale-sweep wake (source:'sweep')
+  'onContactInfoAdded', // contact/location/reachability-field writes — wakes missing_info pauses
   'onRelease', // claimService.releasePartner
   'onReassign', // claimService.assignPartner
   'onMergeDuplicate', // mergePartners — fired BEFORE child repointing (§5.4 ordering)

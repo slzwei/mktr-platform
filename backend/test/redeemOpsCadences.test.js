@@ -330,15 +330,153 @@ describe('hook-driven exits and pauses', () => {
 });
 
 describe('suppressions', () => {
-  test("an 'any'-channel suppression blocks every step → enrollment finishes immediately", async () => {
+  test("an 'any'-channel suppression blocks every step → enrollment pauses for info", async () => {
     const p = await ownedPartner('Suppressed Cafe');
     await OutreachSuppression.create({ channel: 'any', value: p.primaryPhone, reason: 'opt_out' });
-    // IG / visit steps blocked too (no handle, no location), so the chain finishes
-    const { enrollment, finishedImmediately } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
-    expect(finishedImmediately).toBe(true);
+    // IG / visit steps blocked too (no handle, no location) — nothing is
+    // reachable, so instead of the old silent 'completed' the enrollment parks.
+    const { enrollment, finishedImmediately, pausedForInfo } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+    expect(finishedImmediately).toBe(false);
+    expect(pausedForInfo).toBeTruthy();
+    expect(pausedForInfo.blocked.length).toBeGreaterThanOrEqual(7); // every seed step audited
     const e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
-    expect(e.state).toBe('completed');
+    expect(e.state).toBe('paused');
+    expect(e.pausedReason).toBe('missing_info');
     expect(await openCadenceTask(enrollment.id)).toBeNull();
+  });
+});
+
+describe('blocked steps & missing contact info', () => {
+  test("a blocked step skips through its sole explicit edge ('sent'), not just '*'", async () => {
+    // Builder dialect: authors pick "Sent" instead of "Any outcome" — for
+    // single-outcome channels the two are semantically identical and must
+    // both skip an unreachable step (the tuition-centre trap).
+    await svc.createCadence({
+      name: 'Sent Edge Skip',
+      steps: [
+        { channel: 'email', title: 'Email intro', delayDays: 0, timeWindow: 'any', continueOn: 'sent' },
+        { channel: 'whatsapp', title: 'WA fallback', delayDays: 0, timeWindow: 'any' },
+      ],
+    }, admin.user);
+    const p = await ownedPartner('Sent Edge Cafe'); // phone on record, no email
+    const { enrollment, firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'sent_edge_skip' }, execA.user);
+    expect(firstTask.title).toBe('WA fallback'); // email skipped, not cadence-ended
+    const e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('active');
+  });
+
+  test('nothing reachable at enroll → paused missing_info; adding a contact email auto-resumes', async () => {
+    await svc.createCadence({
+      name: 'Email Only Chase',
+      steps: [{ channel: 'email', title: 'The email', delayDays: 0, timeWindow: 'any' }],
+    }, admin.user);
+    const p = await ownedPartner('No Email Cafe');
+    const { enrollment, firstTask, pausedForInfo } = await svc.enrollPartner(p.id, { cadenceKey: 'email_only_chase' }, execA.user);
+    expect(firstTask).toBeNull();
+    expect(pausedForInfo.blocked).toEqual([
+      expect.objectContaining({ channel: 'email', reason: 'no_email' }),
+    ]);
+    let e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('paused');
+    expect(e.pausedReason).toBe('missing_info');
+
+    // The reconciler must NOT clobber the park (it only owns snoozed/legacy pauses).
+    await sequelize.query(
+      `UPDATE outreach_cadence_enrollments SET "pausedAt" = NOW() - INTERVAL '30 minutes' WHERE id = :eid`,
+      { replacements: { eid: enrollment.id } }
+    );
+    await svc.reconcile();
+    e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('paused');
+
+    // Adding reachability wakes it via onContactInfoAdded — no manual Resume.
+    await partnerSvc.addContact(p.id, { name: 'Owner', email: 'Owner@Resume.SG' }, execA.user);
+    e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('active');
+    expect(e.pausedReason).toBeNull();
+    const task = await openCadenceTask(enrollment.id);
+    expect(task).toBeTruthy();
+    expect(task.title).toBe('The email');
+    expect(task.snapshotRecipient).toBe('owner@resume.sg');
+  });
+
+  test('advance onto an unreachable tail pauses (reported to the completer); a partner-field edit resumes it', async () => {
+    await svc.createCadence({
+      name: 'Call Then Email',
+      steps: [
+        { channel: 'call', title: 'First call', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
+        { channel: 'email', title: 'Follow-up email', delayDays: 0, timeWindow: 'any' },
+      ],
+    }, admin.user);
+    const p = await ownedPartner('Advance Park Cafe');
+    const { enrollment, firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'call_then_email' }, execA.user);
+    const result = await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
+    expect(result.nextTask).toBeNull();
+    expect(result.cadencePaused).toBeTruthy();
+    let e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('paused');
+    expect(e.pausedReason).toBe('missing_info');
+
+    await partnerSvc.updatePartner(p.id, { primaryEmail: 'biz@park.sg' }, execA.user);
+    e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('active');
+    const task = await openCadenceTask(enrollment.id);
+    expect(task.title).toBe('Follow-up email');
+    expect(task.snapshotRecipient).toBe('biz@park.sg');
+  });
+
+  test('a manual pause survives the reconciler (it used to auto-resume after 10 minutes)', async () => {
+    const p = await ownedPartner('Manual Pause Cafe');
+    const { enrollment } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+    await svc.pauseEnrollment(p.id, execA.user);
+    let e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.pausedReason).toBe('manual');
+    await sequelize.query(
+      `UPDATE outreach_cadence_enrollments SET "pausedAt" = NOW() - INTERVAL '30 minutes' WHERE id = :eid`,
+      { replacements: { eid: enrollment.id } }
+    );
+    const result = await svc.reconcile();
+    expect(result.skipped).toBeUndefined();
+    e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('paused');
+  });
+});
+
+describe('auto NEW → CONTACTED on cadence touches', () => {
+  test('the first completed touch moves the stage; later touches are a no-op; the enrollment survives', async () => {
+    const p = await ownedPartner('Auto Contacted Cafe');
+    expect(p.pipelineStage).toBe('NEW');
+    const { enrollment, firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+
+    const r1 = await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
+    let reloaded = await PartnerOrganisation.findByPk(p.id);
+    expect(reloaded.pipelineStage).toBe('CONTACTED');
+    let e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('active'); // the CONTACTED move must not exit its own cadence
+
+    await svc.completeCadenceTask(r1.nextTask.id, { disposition: 'sent' }, execA.user);
+    reloaded = await PartnerOrganisation.findByPk(p.id);
+    expect(reloaded.pipelineStage).toBe('CONTACTED'); // idempotent, no error
+  });
+
+  test("a manager completing another rep's task still moves the stage (systemAuto bypasses row rights)", async () => {
+    const p = await ownedPartner('Manager Touch Cafe', execA);
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+    // bdm is manager-tier for completion but deliberately fails
+    // canActOnPartnerRow — without systemAuto the auto-move would 403.
+    await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, bdm.user);
+    const reloaded = await PartnerOrganisation.findByPk(p.id);
+    expect(reloaded.pipelineStage).toBe('CONTACTED');
+  });
+
+  test('not_interested + alsoMarkLost goes NEW → LOST in one move, no CONTACTED detour', async () => {
+    const p = await ownedPartner('Straight Lost Cafe');
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+    await svc.completeCadenceTask(firstTask.id, {
+      disposition: 'not_interested', alsoMarkLost: true, lostReason: 'not_interested',
+    }, execA.user);
+    const reloaded = await PartnerOrganisation.findByPk(p.id);
+    expect(reloaded.pipelineStage).toBe('LOST');
   });
 });
 
