@@ -84,6 +84,10 @@ const PUBLIC_SURFACE = {
     "GET /campaigns",
     "GET /campaigns/:slug"
   ],
+  "meta.js": [
+    "GET /webhook",
+    "POST /webhook"
+  ],
   "prospects.js": [
     "POST /"
   ],

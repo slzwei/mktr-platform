@@ -337,6 +337,11 @@ function defineAssociations() {
   OutreachCadenceEnrollment.belongsTo(User, { foreignKey: 'enrolledBy', as: 'enrolledByUser', onDelete: 'RESTRICT' });
   OutreachTask.belongsTo(OutreachCadenceEnrollment, { foreignKey: 'cadenceEnrollmentId', as: 'cadenceEnrollment' });
   OutreachTask.belongsTo(OutreachCadenceStep, { foreignKey: 'cadenceStepId', as: 'cadenceStep' });
+
+  // Meta Lead Ads routing (docs/plans/meta-lead-ads-native-pipe.md §3)
+  Campaign.hasMany(models.MetaFormMapping, { foreignKey: 'campaignId', as: 'metaFormMappings', onDelete: 'RESTRICT' });
+  models.MetaFormMapping.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
+  models.MetaFormMapping.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag' });
 }
 
 defineAssociations();
@@ -382,7 +387,8 @@ export const {
   AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression,
   SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient,
   WaMessageStatus, WaMessageSend, ConsumerObservation, ConsumerProfile, EnrichmentJob,
-  EnrichmentScoringConfig, EnrichmentSweepRun
+  EnrichmentScoringConfig, EnrichmentSweepRun,
+  MetaPage, MetaFormMapping, MetaLeadgenEvent
 } = models;
 
 export { sequelize };

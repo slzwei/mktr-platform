@@ -124,7 +124,11 @@ export const init = async (app) => {
       !isProd ||
       req.originalUrl.startsWith('/api/integrations/lyfe/') ||
       req.originalUrl.startsWith('/api/external/') ||
-      req.originalUrl.startsWith('/api/whatsapp/'),
+      req.originalUrl.startsWith('/api/whatsapp/') ||
+      // Exact webhook path ONLY — /api/meta/ also hosts admin CRUD, which
+      // must stay behind the normal limiter (the HMAC check is the webhook's
+      // own gate; admin JWTs are not).
+      req.originalUrl.startsWith('/api/meta/webhook'),
     message: 'Too many requests from this IP, please try again later.',
   });
   // Ensure we decode JWT (if present) before limiter so skip() can see admin
@@ -160,6 +164,7 @@ export const init = async (app) => {
   //   - /api/integrations/lyfe/ — Lyfe→MKTR push (notify_mktr_user_change trigger; HMAC since 2026-05-12)
   //   - /api/external/       — MKTR Leads buyer app → lead outcomes (HMAC, body-only)
   //   - /api/whatsapp/       — Meta status/inbound webhook (X-Hub-Signature-256 over raw bytes)
+  //   - /api/meta/           — Meta Lead Ads leadgen webhook (X-Hub-Signature-256 over raw bytes)
   app.use(
     express.json({
       limit: '1mb',
@@ -168,7 +173,8 @@ export const init = async (app) => {
           req.originalUrl.startsWith('/api/retell/') ||
           req.originalUrl.startsWith('/api/integrations/lyfe/') ||
           req.originalUrl.startsWith('/api/external/') ||
-          req.originalUrl.startsWith('/api/whatsapp/')
+          req.originalUrl.startsWith('/api/whatsapp/') ||
+          req.originalUrl.startsWith('/api/meta/webhook')
         ) {
           req.rawBody = buf;
         }

@@ -62,6 +62,13 @@ export async function bootstrapDatabase() {
 
   await safeRun('Retell campaigns', ensureRetellCampaigns);
 
+  // Meta Lead Ads (docs/plans/meta-lead-ads-native-pipe.md §3.3): deliberately
+  // NOT safeRun — with the flag on, a missing fallback pool or worker would
+  // silently strand webhook leads, so ensure failure is boot-fatal.
+  if (String(process.env.META_LEAD_ADS_ENABLED || 'false').toLowerCase() === 'true') {
+    await ensureMetaLeadAds();
+  }
+
   await safeRun('Webhook recovery', async () => {
     const { recoverPendingRetries } = await import('../services/webhookService.js');
     await recoverPendingRetries();
@@ -683,4 +690,63 @@ async function ensureRetellCampaigns() {
 
     logger.info('Retell campaign created', { name: campaignName, retellAgentId: agent.agentId });
   }
+}
+
+/**
+ * Meta Lead Ads boot (docs/plans/meta-lead-ads-native-pipe.md §3.3): ensure
+ * the [Meta] Unmapped held pool — looked up by reserved SLUG (names are not
+ * unique) — and start the durable-inbox worker. Called only when
+ * META_LEAD_ADS_ENABLED; throws on failure (boot-fatal by design: every
+ * unmapped/undeliverable lead depends on this pool existing quota-enforced).
+ */
+async function ensureMetaLeadAds() {
+  const META_UNMAPPED_SLUG = 'meta-unmapped';
+  const systemAgentId = await initSystemAgent();
+
+  const existing = await Campaign.findOne({ where: { slug: META_UNMAPPED_SLUG } });
+  if (existing) {
+    // Drift repair re-asserts EVERY invariant — including firstActivatedAt,
+    // which is what locks the reserved slug against ordinary campaign CRUD
+    // (campaignService's immutability rule keys off it).
+    const drift = existing.status !== 'active' || !existing.is_active
+      || existing.enforceLeadQuota !== true || existing.externalEligible !== false
+      || !existing.firstActivatedAt;
+    if (drift) {
+      await existing.update({
+        status: 'active',
+        is_active: true,
+        enforceLeadQuota: true,
+        externalEligible: false,
+        firstActivatedAt: existing.firstActivatedAt || new Date(),
+      });
+      logger.info('[Meta] unmapped pool campaign re-armed', { slug: META_UNMAPPED_SLUG });
+    }
+  } else {
+    await Campaign.create({
+      name: '[Meta] Unmapped',
+      slug: META_UNMAPPED_SLUG,
+      type: DEFAULT_CAMPAIGN_TYPE,
+      status: 'active',
+      is_active: true,
+      enforceLeadQuota: true,
+      externalEligible: false,
+      // Locks the slug immediately (campaignService immutability rule) so
+      // admin CRUD can never rename/clear the reserved handle from under
+      // every future unmapped lead.
+      firstActivatedAt: new Date(),
+      description: 'Auto-created held pool for Meta Lead Ads leads whose form has no active mapping (or whose route is undeliverable). enforceLeadQuota quarantines every lead here into the admin held queue — never delivered free, never lost on the System Agent.',
+      createdBy: systemAgentId,
+    });
+    logger.info('[Meta] unmapped pool campaign created', { slug: META_UNMAPPED_SLUG });
+  }
+
+  const { drainMetaInbox, armMetaLeadAds } = await import('../services/metaLeadService.js');
+  setInterval(() => {
+    drainMetaInbox().catch((err) => logger.warn('[Meta] inbox drain failed', { error: err?.message }));
+  }, 30_000);
+  // Arm ONLY now — pool ensured + worker scheduled. The webhook 503s until
+  // this point (the server shell keeps routes serving even on init failure).
+  armMetaLeadAds();
+  drainMetaInbox().catch((err) => logger.warn('[Meta] boot drain failed', { error: err?.message }));
+  logger.info('[Meta] leadgen inbox worker started (30s interval)');
 }
