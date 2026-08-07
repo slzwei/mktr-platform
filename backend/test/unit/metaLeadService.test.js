@@ -94,6 +94,7 @@ function makeDeps(overrides = {}) {
     resolveConsumerForCaptureTx: jest.fn().mockResolvedValue('consumer-1'),
     recordCaptureConsentEventsTx: jest.fn().mockResolvedValue(1),
     persistEventDeliveries: jest.fn().mockResolvedValue([{ delivery: {}, subscriber: {} }]),
+    buildLeadCreatedPayload: jest.fn().mockReturnValue({ event: 'lead.created' }),
     flushDeliveries: jest.fn(),
     sendLeadAssignmentEmail: jest.fn().mockResolvedValue({}),
     resolvePageAccessToken: jest.fn().mockResolvedValue({ token: 'tok' }),
@@ -281,6 +282,12 @@ describe('metaLeadService (unit)', () => {
       }));
       expect(deps.persistEventDeliveries).toHaveBeenCalledWith(
         'lead.created', expect.any(Function), { destination: 'mktr_leads' }, expect.anything()
+      );
+      // The payload must NOT carry the routing qrTag (6th arg null): the
+      // receiver labels any qrTag as "scanned a QR code" — wrong for Meta.
+      deps.persistEventDeliveries.mock.calls[0][1]();
+      expect(deps.buildLeadCreatedPayload).toHaveBeenCalledWith(
+        expect.anything(), 'meta_lead_ad', expect.anything(), 'agent-1', expect.anything(), null, null
       );
       expect(row.status).toBe('completed');
       expect(seq.txs[0].commit).toHaveBeenCalled();

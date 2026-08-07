@@ -558,7 +558,11 @@ export function makeMetaLeadService(overrides = {}) {
         } : null;
         deliveryPairs = await d.persistEventDeliveries(
           'lead.created',
-          () => d.buildLeadCreatedPayload(prospect, 'meta_lead_ad', agentForWebhook, assignedAgentId, campaign, qrTag || null, null),
+          // qrTag is deliberately NOT shipped: for Meta leads it is a routing
+          // artifact (per-agent form → that agent), not a capture source — the
+          // receiver's label logic treats any qrTag as "scanned a QR code" and
+          // would mislabel the lead (found live on the first pilot lead).
+          () => d.buildLeadCreatedPayload(prospect, 'meta_lead_ad', agentForWebhook, assignedAgentId, campaign, null, null),
           { destination },
           t
         );
