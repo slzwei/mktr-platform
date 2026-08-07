@@ -6,7 +6,9 @@ import { logger } from '../../utils/logger.js';
 
 const startSchema = Joi.object({
   category: Joi.string().max(64).allow(''), // optional — ad-hoc terms/hashtags can stand in
-  area: Joi.string().min(1).max(120).required(),
+  // Optional legacy knob — omitted (the UI always omits it) = whole-country
+  // 'All Singapore'; the territory picker was removed 2026-08 (SG is small).
+  area: Joi.string().min(1).max(120),
   limit: Joi.number().integer().min(1).max(500), // sanity bound; service clamps to DISCOVERY_MAX_RESULTS_PER_RUN
   // Mechanism pick; omitted = Maps. The IG pilot additionally needs DISCOVERY_IG_ENABLED.
   provider: Joi.string().valid('google_maps', 'instagram_hashtag'),

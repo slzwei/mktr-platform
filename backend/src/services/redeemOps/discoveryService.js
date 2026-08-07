@@ -29,7 +29,6 @@ export function cfg() {
     // AI keyword suggestions (LLM-backed) — free-text description → search terms.
     aiTermsEnabled: process.env.DISCOVERY_AI_TERMS_ENABLED === 'true',
     searchTermsEnabled: process.env.DISCOVERY_SEARCH_TERMS_ENABLED === 'true',
-    territoriesEnabled: process.env.DISCOVERY_TERRITORIES_ENABLED === 'true',
     resultQuotaEnabled: process.env.DISCOVERY_RESULT_QUOTA_ENABLED === 'true',
     mapsActor: process.env.APIFY_MAPS_ACTOR_ID || 'compass~crawler-google-places',
     // MUST be the PROFILE scraper — apify~instagram-scraper (its sibling) has no
@@ -191,7 +190,10 @@ export function makeDiscoveryService(overrides = {}) {
 
   // ── Start a discovery search ───────────────────────────────────────────
   /** `provider` selects the mechanism ('google_maps' default | 'instagram_hashtag'
-   *  pilot); Category + Territory stay the operator picks either way. */
+   *  pilot); Category stays the operator pick either way. Searches cover the whole
+   *  country: `area` is a legacy knob that defaults to 'All Singapore' when omitted
+   *  (the territory picker was removed 2026-08 — Singapore is small enough that one
+   *  sweep covers it; see maxResultsPerRun). */
   async function startDiscovery({
     category, area, limit, provider = 'google_maps',
     searchTerms: adHocTerms, hashtags: adHocTags, minStars, skipClosed,
@@ -205,7 +207,7 @@ export function makeDiscoveryService(overrides = {}) {
     if (isInstagram && !cfg().igEnabled) {
       throw new AppError('Instagram discovery is not enabled', 503);
     }
-    if (!area || !String(area).trim()) throw new AppError('Area is required', 400);
+    const areaValue = String(area ?? '').trim() || 'All Singapore';
     // Ad-hoc, type-and-go terms/hashtags. When supplied they ARE the search, so a
     // category is OPTIONAL — it's then just the CRM bucket for filing (an ad-hoc-only
     // run is Uncategorised until its results are added to the pipeline).
@@ -271,7 +273,7 @@ export function makeDiscoveryService(overrides = {}) {
       // deletion (M11: createdBy goes SET NULL, the history row stays).
       createdBy: user.id, createdByEmail: user.email || null,
       provider: isInstagram ? 'apify_instagram_hashtag' : 'apify_google_maps',
-      category: canonicalCategory, area: String(area).trim(),
+      category: canonicalCategory, area: areaValue,
       requestedLimit, status: 'pending',
       estimatedCostUsd: Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
     };

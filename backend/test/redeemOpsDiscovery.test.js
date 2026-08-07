@@ -378,7 +378,18 @@ describe('geo-anchored search input', () => {
     expect(run.area).toBe('All Singapore');
   });
 
-  test('a normal territory keeps the existing Singapore suffix behavior', async () => {
+  test("omitting area entirely defaults to a whole-country 'All Singapore' run", async () => {
+    // The UI stopped sending area when the territory picker was removed (2026-08).
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    const run = await svc.startDiscovery({ category: 'Nail Salon', limit: 5 }, solo.user);
+    expect(apify.startRun.mock.calls[0][1].locationQuery).toBe('Singapore');
+    expect(run.area).toBe('All Singapore');
+  });
+
+  test('a legacy named area keeps the existing Singapore suffix behavior', async () => {
     const apify = makeApifyStub();
     const svc = makeDiscoveryService({ apify });
     const solo = await createTestUser({ role: 'admin' });

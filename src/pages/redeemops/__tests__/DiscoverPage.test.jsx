@@ -13,7 +13,6 @@ import { MemoryRouter } from 'react-router-dom';
 
 const api = vi.hoisted(() => ({
   listDiscoveryRuns: vi.fn(),
-  listTerritories: vi.fn(),
   getDiscoveryRun: vi.fn(),
   startDiscovery: vi.fn(),
   suggestDiscoveryTerms: vi.fn(),
@@ -70,7 +69,6 @@ async function openResults() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.listTerritories.mockResolvedValue({ enabled: false, territories: [] });
   api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota });
 });
 
@@ -86,28 +84,13 @@ describe('DiscoverPage', () => {
     expect(screen.queryByRole('button', { name: /More filters/i })).not.toBeInTheDocument();
   });
 
-  it('uses the territory picker with All Singapore only when the runtime flag is enabled', async () => {
-    api.listTerritories.mockResolvedValue({
-      enabled: true,
-      territories: [{ name: 'Bedok' }, { name: 'Tampines' }],
-    });
+  it('offers no area controls — every search covers all of Singapore', async () => {
     renderPage();
-    const areaPicker = await screen.findByRole('combobox', { name: 'Search territory' });
+    await screen.findByRole('button', { name: /Search Google Maps/i }); // page settled
+    expect(screen.queryByText('Search territory')).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Neighbourhood or district…')).not.toBeInTheDocument();
     expect(screen.queryByText('Popular areas')).not.toBeInTheDocument();
-    areaPicker.hasPointerCapture = vi.fn(() => false);
-    areaPicker.releasePointerCapture = vi.fn();
-    HTMLElement.prototype.scrollIntoView = vi.fn();
-    await userEvent.click(areaPicker);
-    expect(await screen.findByRole('option', { name: 'All Singapore' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'Bedok' })).toBeInTheDocument();
-  });
-
-  it('keeps the existing free-text Area controls when the territories request fails', async () => {
-    api.listTerritories.mockRejectedValue(new Error('territories unavailable'));
-    renderPage();
-    expect(await screen.findByPlaceholderText('Neighbourhood or district…')).toBeInTheDocument();
-    expect(screen.getByText('Popular areas')).toBeInTheDocument();
+    expect(screen.getByText(/Searches all of Singapore/)).toBeInTheDocument();
   });
 
   it('falls back to keyword search when the backend reports no aiEnabled', async () => {
@@ -181,8 +164,13 @@ describe('DiscoverPage', () => {
     await userEvent.type(await screen.findByLabelText('Describe who you\'re looking for'), 'robotics for kids');
     await userEvent.click(screen.getByRole('button', { name: 'Find terms' }));
     await screen.findByDisplayValue('children robotics, coding enrichment');
-    await userEvent.type(screen.getByPlaceholderText('Neighbourhood or district…'), 'All Singapore');
     await userEvent.click(screen.getByRole('button', { name: /Search Google Maps/i }));
+    // The search fires with no area — the backend records it as All Singapore.
+    await waitFor(() => expect(api.startDiscovery).toHaveBeenCalledWith({
+      limit: 30, provider: 'google_maps',
+      searchTerms: ['children robotics', 'coding enrichment'],
+      skipClosed: true, categoryFilterWords: ['Learning center'],
+    }));
     // results load; the off-target category (Korean restaurant) is auto-hidden, the on-target one stays
     expect(await screen.findByText('Robotics Academy')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('Korean Buffet')).not.toBeInTheDocument());
@@ -208,7 +196,6 @@ describe('DiscoverPage', () => {
     });
     renderPage();
     await userEvent.type(await screen.findByPlaceholderText(/nail salon, taekwondo/), 'gymnastics');
-    await userEvent.type(screen.getByPlaceholderText('Neighbourhood or district…'), 'Tampines');
     await userEvent.type(screen.getByPlaceholderText('learning center, education center'), 'Gymnastics center, kids gym');
     await userEvent.click(screen.getByRole('button', { name: /Search Google Maps/i }));
     await waitFor(() => expect(toastMock.info).toHaveBeenCalledWith(
@@ -283,18 +270,24 @@ describe('DiscoverPage', () => {
     expect(screen.getByText('Robotics Academy')).toBeInTheDocument();
   });
 
-  it('recent searches show the exact terms that were searched', async () => {
+  it('recent searches show the exact terms; only a legacy narrow area is appended', async () => {
     api.listDiscoveryRuns.mockResolvedValue({
       runs: [{
         id: 'r9', status: 'completed', category: null, area: 'All Singapore',
         requestedLimit: 500, resultCount: 365, createdAt: new Date().toISOString(),
         rawPayload: { searchTerms: ['nail salon', 'facial', 'lashes'] },
+      }, {
+        id: 'r8', status: 'completed', category: null, area: 'Tampines',
+        requestedLimit: 30, resultCount: 12, createdAt: new Date().toISOString(),
+        rawPayload: { searchTerms: ['tuition'] },
       }],
       quota,
     });
     renderPage();
-    // terms lead the row title, area follows — not just the bare area
-    expect(await screen.findByText('nail salon, facial, lashes · All Singapore')).toBeInTheDocument();
+    // Every new run is country-wide, so 'All Singapore' would be noise on each row…
+    expect(await screen.findByText('nail salon, facial, lashes')).toBeInTheDocument();
+    // …but a pre-removal run that really was scoped keeps its saved area visible.
+    expect(screen.getByText('tuition · Tampines')).toBeInTheDocument();
   });
 
   it('the results view shows a Terms pill and a back button that returns to the list', async () => {
