@@ -115,7 +115,11 @@ export function signupSourceLabel({ leadSource, qrTag, sourceMetadata } = {}) {
   const source = String(leadSource || '').toLowerCase();
 
   if (source === 'referral') return 'Referral';
-  if ((qrTag && (qrTag.slug || qrTag.externalId)) || source === 'qr_code') return 'QR code';
+  // Meta-native lead (instant form): metaLeadgenId is written ONLY by the Meta
+  // ingestion pipe. Any qrTag on such a lead is per-agent ROUTING plumbing,
+  // never a scan — without this guard the QR branch below mislabels it.
+  const metaNative = Boolean(meta.metaLeadgenId);
+  if (!metaNative && ((qrTag && (qrTag.slug || qrTag.externalId)) || source === 'qr_code')) return 'QR code';
   if (source === 'call_bot') return 'Voice call';
 
   const utmSource = meta.utm?.utm_source;
