@@ -22,7 +22,6 @@ import { RoPageHeader, RoTag, RoAvatar } from '@/components/redeemops/ui';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 const RUNS_KEY = ['redeem-ops', 'discovery', 'runs'];
-const ALL_SINGAPORE = 'All Singapore';
 const IG_PROVIDER = 'instagram_hashtag';
 const IG_RUN_PROVIDER = 'apify_instagram_hashtag';
 // Home-based / mobile is the Maps-invisible segment IG discovery exists to reach.
@@ -41,7 +40,12 @@ const SORTS = [
   { v: 'reviews', label: 'Reviews' },
   { v: 'name', label: 'Name' },
 ];
-const POPULAR_AREAS = ['Tampines', 'Orchard', 'Jurong East', 'Katong', 'Bedok', 'Serangoon'];
+// Searches always cover the whole country now (the territory picker is gone —
+// Singapore is small); only pre-removal runs carry a narrower saved area worth showing.
+const legacyAreaOf = (r) => {
+  const area = String(r?.area || '').trim();
+  return area && !/^all\s+singapore$/i.test(area) ? area : null;
+};
 const num = (v) => (v == null ? -1 : v);
 const fmtFollowers = (n) => (n == null ? null : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
 // The exact query a run fired: #hashtags (IG) or comma-joined terms (Maps).
@@ -65,7 +69,7 @@ const timeAgo = (iso) => {
 export default function DiscoverPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
-    area: '', limit: '30', provider: 'google_maps',
+    limit: '30', provider: 'google_maps',
     adhoc: '', minStars: 'any', skipClosed: true, filterWords: '',
   });
   const [runId, setRunId] = useState(null);
@@ -108,18 +112,6 @@ export default function DiscoverPage() {
   // page must never depend on an LLM being reachable to run a search.
   const aiMode = aiEnabled && (modeChoice ?? 'ai') === 'ai';
   const isIg = form.provider === IG_PROVIDER;
-  const territoriesQuery = useQuery({
-    queryKey: ['redeem-ops', 'territories'],
-    queryFn: () => redeemOpsApi.listTerritories(),
-    staleTime: 60_000,
-  });
-  const territoriesEnabled = territoriesQuery.isSuccess && territoriesQuery.data.enabled;
-  const territoryNames = (territoriesQuery.data?.territories || []).map((territory) => territory.name);
-  const customArea = form.area
-    && form.area !== ALL_SINGAPORE
-    && !territoryNames.includes(form.area)
-    ? form.area
-    : null;
 
   const runQuery = useQuery({
     queryKey: ['redeem-ops', 'discovery', 'run', runId],
@@ -284,7 +276,6 @@ export default function DiscoverPage() {
     mutationFn: () => redeemOpsApi.suggestDiscoveryTerms({
       description: aiDesc.trim(),
       provider: form.provider,
-      ...(form.area.trim() ? { area: form.area.trim() } : {}),
     }),
     onSuccess: ({ terms, categories }) => {
       const cats = isIg ? [] : (categories || []);
@@ -316,8 +307,9 @@ export default function DiscoverPage() {
   const parseCsv = (v) => (v || '').split(',').map((s) => s.trim().replace(/^#+/, '')).filter(Boolean);
   const runSearch = () => {
     const terms = parseCsv(form.adhoc); // the search is what you type: terms (Maps) / hashtags (IG)
-    if (!form.area.trim() || terms.length === 0 || startMutation.isPending) return;
-    const body = { area: form.area.trim(), limit: Number(form.limit), provider: form.provider };
+    if (terms.length === 0 || startMutation.isPending) return;
+    // No area — the backend records every search as country-wide 'All Singapore'.
+    const body = { limit: Number(form.limit), provider: form.provider };
     if (isIg) {
       body.hashtags = terms;
     } else {
@@ -351,14 +343,14 @@ export default function DiscoverPage() {
     if (ids.length === 0) { toast.info('Nothing to enrich — no un-enriched Instagram handles'); return; }
     enrichMutation.mutate(ids);
   };
-  const canSearch = form.area.trim() && parseCsv(form.adhoc).length > 0 && !startMutation.isPending;
+  const canSearch = parseCsv(form.adhoc).length > 0 && !startMutation.isPending;
   const canSuggest = aiDesc.trim().length >= 3 && !suggestMutation.isPending;
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 pb-24">
       <RoPageHeader
         title="Discover"
-        sub="Find businesses to prospect by keyword and area — deduped against your partners, one click to your pipeline."
+        sub="Find businesses to prospect across Singapore — deduped against your partners, one click to your pipeline."
         actions={quota && (
           <span className="hidden sm:inline-flex items-center gap-2 text-[12.5px] font-semibold rounded-full px-3 py-1.5"
             style={{ color: 'var(--ro-text-2)', background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
@@ -455,29 +447,9 @@ export default function DiscoverPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-[1fr_120px_auto] md:items-end mt-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="disc-area">{isIg ? 'Location hint' : 'Search territory'}</Label>
-                {territoriesEnabled ? (
-                  <Select value={form.area} onValueChange={(area) => setForm((f) => ({ ...f, area }))}>
-                    <SelectTrigger id="disc-area" className="w-full">
-                      <SelectValue placeholder="Select a territory…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL_SINGAPORE}>{ALL_SINGAPORE}</SelectItem>
-                      {territoryNames.map((name) => (
-                        <SelectItem key={name} value={name}>{name}</SelectItem>
-                      ))}
-                      {customArea && <SelectItem value={customArea}>{customArea}</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input id="disc-area" value={form.area} placeholder="Neighbourhood or district…"
-                    onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
-                )}
-              </div>
-              <div className="space-y-1.5">
+            <div className="flex flex-wrap items-end gap-3 mt-4">
+              {/* Every search covers all of Singapore — no area to pick. */}
+              <div className="space-y-1.5 w-[120px]">
                 <Label>Results</Label>
                 <Select value={form.limit} onValueChange={(v) => setForm((f) => ({ ...f, limit: v }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -527,23 +499,13 @@ export default function DiscoverPage() {
               </div>
             )}
             <div className="flex flex-wrap items-center gap-2 mt-3">
-              {!territoriesEnabled && !isIg && (
-                <>
-                  <span className="text-xs font-semibold" style={{ color: 'var(--ro-text-3)' }}>Popular areas</span>
-                  {POPULAR_AREAS.map((a) => (
-                    <button key={a} type="button" onClick={() => setForm((f) => ({ ...f, area: a }))}
-                      className="h-7 px-3 rounded-full text-[12.5px] font-semibold"
-                      style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)', color: 'var(--ro-text-2)' }}>{a}</button>
-                  ))}
-                </>
-              )}
               {isIg ? (
                 <span className="text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
-                  Area is a soft filter — Instagram location data is incomplete. Finds IG-native shops Maps misses.
+                  Searches all of Singapore — finds IG-native shops Maps misses.
                 </span>
               ) : (
                 <span className="text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
-                  Results is a total, split across your phrases.
+                  Searches all of Singapore. Results is a total, split across your phrases.
                 </span>
               )}
               {!isIg && quota?.costPerResultUsd > 0 && (
@@ -565,7 +527,7 @@ export default function DiscoverPage() {
                       <Search className="w-4 h-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0">
-                      <b className="text-[14px] block truncate">{[searchTermsOf(r) || r.category, r.area].filter(Boolean).join(' · ') || '—'}</b>
+                      <b className="text-[14px] block truncate">{[searchTermsOf(r) || r.category, legacyAreaOf(r)].filter(Boolean).join(' · ') || '—'}</b>
                       <span className="text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}>
                         {timeAgo(r.createdAt)} · {r.resultCount || 0} result{r.resultCount === 1 ? '' : 's'}
                         {r.actualCostUsd != null && ` · $${Number(r.actualCostUsd).toFixed(2)}`}
@@ -598,7 +560,10 @@ export default function DiscoverPage() {
                 ? [['Categories', run.rawPayload.categoryFilterWords.join(', '), true]] : []),
               ...(run?.rawPayload?.categoryFilterWordsDropped?.length
                 ? [['Ignored', run.rawPayload.categoryFilterWordsDropped.join(', '), true]] : []),
-              ['Area', run?.area, false], ['Results', run?.requestedLimit, false],
+              // Area only appears on legacy runs — everything since the territory
+              // removal is country-wide, and a constant "All Singapore" pill is noise.
+              ...(legacyAreaOf(run) ? [['Area', legacyAreaOf(run), false]] : []),
+              ['Results', run?.requestedLimit, false],
               ...(run?.actualCostUsd != null ? [['Cost', `$${Number(run.actualCostUsd).toFixed(2)}`, false]] : []),
             ].map(([k, v, truncate]) => (
               <span key={k} className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-[13.5px] font-semibold max-w-full min-w-0" style={{ border: '1px solid var(--ro-border-strong)' }}>
@@ -642,7 +607,7 @@ export default function DiscoverPage() {
       {failed && (
         <div className="rounded-2xl border border-border bg-white p-6 text-center">
           <p className="text-sm m-0" style={{ color: 'var(--ro-tag-red-fg)' }}>
-            Search {run.status.replace('_', ' ')} — {run.error || 'no results'}. Try again or narrow the area.
+            Search {run.status.replace('_', ' ')} — {run.error || 'no results'}. Try again, or adjust your search phrases.
           </p>
         </div>
       )}
@@ -725,7 +690,7 @@ export default function DiscoverPage() {
           <div className="rounded-2xl border border-border bg-white overflow-hidden">
             {visible.length === 0 && (
               <p className="text-sm text-center py-10 m-0" style={{ color: 'var(--ro-text-2)' }}>
-                {counts.total === 0 ? 'No businesses found — try a broader area.' : 'Nothing in this filter.'}
+                {counts.total === 0 ? 'No businesses found — try different search phrases.' : 'Nothing in this filter.'}
               </p>
             )}
             {visible.map((c) => {
@@ -842,8 +807,8 @@ export default function DiscoverPage() {
           {counts.materialized > 0 && run?.requestedLimit >= 30 && counts.materialized < Math.ceil(run.requestedLimit * 0.25) && (
             <p className="text-[12px] mt-2 mb-0" style={{ color: 'var(--ro-text-2)' }}>
               {isIgRun
-                ? `Instagram surfaced only ${counts.materialized} account${counts.materialized === 1 ? '' : 's'} — add more hashtags to the category in Settings, or widen the area.`
-                : `Google found only ${counts.materialized} match${counts.materialized === 1 ? '' : 'es'} in this area — small central districts (like Orchard) genuinely have few of some business types. Try a broader or neighbouring area, and check each row's category label for weak matches.`}
+                ? `Instagram surfaced only ${counts.materialized} account${counts.materialized === 1 ? '' : 's'} — try searching more hashtags, or add more to the category in Settings.`
+                : `Google found only ${counts.materialized} match${counts.materialized === 1 ? '' : 'es'} across Singapore — some business types genuinely have few listings. Try extra or broader search phrases, and check each row's category label for weak matches.`}
             </p>
           )}
           <p className="text-[11.5px] mt-2 mb-0" style={{ color: 'var(--ro-text-3)' }}>

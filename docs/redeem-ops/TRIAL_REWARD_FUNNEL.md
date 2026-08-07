@@ -158,7 +158,7 @@ UNIQUE constraint. Multi-session rewards are out of scope for now.
 | `REDEEM_OPS_ENTITLEMENTS_ENABLED` | **ON** | probe: `/api/reward-claim/<junk>` returns the handler's own 404 shape (router mounts at boot only when true) |
 | `REDEEM_OPS_WHATSAPP_ENABLED` (+ `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` / approved `reward_pass` + `reward_voucher` templates) | **ON** | prod delivery receipts: 11 pass + 7 voucher WhatsApp `notified` (latest 2026-07-20); the single `notify_failed` was the transient blip that drove #208's retries |
 | `REDEEM_OPS_CADENCES_ENABLED` (+ `_AI_`) | ON | probe 401 on `/api/redeem-ops/cadences` + live bundle |
-| `DISCOVERY_ENABLED` (+ IG pilot, AI terms, search-terms, territories) | ON | deploy-verified 2026-07-12/14 |
+| `DISCOVERY_ENABLED` (+ IG pilot, AI terms, search-terms) | ON | deploy-verified 2026-07-12/14. Territories retired 2026-08 (`DISCOVERY_TERRITORIES_ENABLED` no longer read — searches are always All Singapore) |
 | `DISCOVERY_RESULT_QUOTA_ENABLED` | OFF (dark) | the only dark flag in the module |
 | `EXTERNAL_APP_SECRET` / `LYFE_LEAD_OUTCOME_SECRET` | set (endpoints 401, not error) | worth re-confirming values match the apps when building step 7. Since PR D a MISSING Lyfe secret returns 500 "Server misconfigured" (parity with the external surface) — a 401 now always means bad signature, so the probe is unambiguous |
 

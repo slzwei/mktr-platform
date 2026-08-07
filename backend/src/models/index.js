@@ -380,7 +380,7 @@ export const {
   RewardTermsVersion, DrawTermsVersion, Draw, DrawEntry, DrawAttempt,
   DrawBoostReview, RewardOfferLocation, RewardInventoryEvent,
   PartnerOnboardingItem, Activation, ActivationIssuanceSkip, RewardEntitlement, Redemption,
-  RedemptionEvent, RedeemOpsCategory, DiscoveryTerritory, DiscoveryDailyUsage,
+  RedemptionEvent, RedeemOpsCategory, DiscoveryDailyUsage,
   DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
