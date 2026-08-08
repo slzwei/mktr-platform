@@ -261,6 +261,80 @@ describe('metaConnectService (unit)', () => {
       expect(deps.MetaFormMapping.create).toHaveBeenCalledWith(expect.objectContaining({ formId: 'form-77', qrTagId: 'qr-1' }));
     });
 
+    it('leadgen_tos_accepted:false is ADVISORY, not a gate — a lead-capable page still connects (2026-08-08 false-negative fix)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'Redeem SG', access_token: 'PAGE-TOK', tasks: ['MANAGE'] }] });
+      // Override ONLY the page-node advisory read to report false (as the real
+      // Redeem SG page does) — subscribe + form-create still succeed downstream.
+      const happy = deps.graph.call.getMockImplementation();
+      deps.graph.call.mockImplementation(async (path, opts = {}) => {
+        if (String(path).match(/^\d+$/)) return { leadgen_tos_accepted: false };
+        return happy(path, opts);
+      });
+      const r = await svc.processConnection(row);
+      expect(r).toEqual({ status: 'connected' });
+      expect(row.status).toBe('connected');
+      // The signal is recorded for observability, never used to block.
+      const patches = deps.MetaAgentConnection.update.mock.calls.map(([p]) => p);
+      expect(patches.some((p) => p.leadsAccessOk === false)).toBe(true);
+      expect(patches.some((p) => p.statusDetail === 'leadgen_tos_required')).toBe(false);
+    });
+
+    it('a GENUINE Lead-Ads-TOS refusal at form-create maps to leadgen_tos_required (subcode 1815605)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'PAGE-TOK', tasks: ['MANAGE'] }] });
+      const happy = deps.graph.call.getMockImplementation();
+      deps.graph.call.mockImplementation(async (path, opts = {}) => {
+        if (String(path).endsWith('/leadgen_forms') && opts.method === 'POST') {
+          throw new GraphError('The Page has not accepted the Lead Ad terms of service', { retryable: false, code: 100, subcode: 1815605 });
+        }
+        return happy(path, opts);
+      });
+      const r = await svc.processConnection(row);
+      expect(r).toEqual({ status: 'failed' });
+      expect(row.statusDetail).toBe('leadgen_tos_required');
+      expect(row.leadsAccessOk).toBe(false);
+    });
+
+    it('the TOS message fallback catches wording drift with NO subcode ("Lead Generation Terms of Service")', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'PAGE-TOK', tasks: ['MANAGE'] }] });
+      const happy = deps.graph.call.getMockImplementation();
+      deps.graph.call.mockImplementation(async (path, opts = {}) => {
+        if (String(path).endsWith('/leadgen_forms') && opts.method === 'POST') {
+          // Real Meta wording variant, and NO error_subcode — must still map via the regex.
+          throw new GraphError('(#100) You must accept the Lead Generation Terms of Service for this Page', { retryable: false, code: 100 });
+        }
+        return happy(path, opts);
+      });
+      const r = await svc.processConnection(row);
+      expect(r).toEqual({ status: 'failed' });
+      expect(row.statusDetail).toBe('leadgen_tos_required');
+    });
+
+    it('an UNRELATED permanent 100 error at form-create is NOT mislabeled as TOS', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'PAGE-TOK', tasks: ['MANAGE'] }] });
+      const happy = deps.graph.call.getMockImplementation();
+      deps.graph.call.mockImplementation(async (path, opts = {}) => {
+        if (String(path).endsWith('/leadgen_forms') && opts.method === 'POST') {
+          throw new GraphError('(#100) Invalid parameter: questions', { retryable: false, code: 100 });
+        }
+        return happy(path, opts);
+      });
+      const r = await svc.processConnection(row);
+      expect(r).toEqual({ status: 'failed' });
+      expect(row.statusDetail).toBe('form_create:graph_100');
+    });
+
     it('resume after crash-post-exchange does NOT re-exchange (secretKind long_token)', async () => {
       const { deps } = makeDeps();
       const svc = makeMetaConnectService(deps);
