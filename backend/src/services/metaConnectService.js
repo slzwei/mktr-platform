@@ -37,6 +37,20 @@ const LIVE = ['awaiting_callback', 'provisioning', 'needs_page_selection', 'wait
 const REQUIRED_SCOPES = ['leads_retrieval', 'pages_show_list', 'pages_manage_metadata', 'pages_read_engagement', 'pages_manage_ads'];
 const LEAD_CAPABLE_TASKS = ['MANAGE', 'ADVERTISE'];
 
+// Meta's "Page hasn't accepted the Lead Ads Terms" refusal, as it surfaces from
+// a real subscribe / leadgen_forms call. The error_subcode is the durable
+// signal; the message fallback catches wording drift — Meta uses both "Lead Ad
+// Terms" and "Lead Generation Terms of Service". Only consulted after a
+// permanent GraphError on a lead-ads op, so co-occurrence of "lead" with
+// terms/TOS is a high-precision signal (no unrelated messages live there).
+const LEADGEN_TOS_SUBCODES = new Set([1815605]);
+function isLeadgenTosError(err) {
+  if (!err) return false;
+  if (err.subcode != null && LEADGEN_TOS_SUBCODES.has(Number(err.subcode))) return true;
+  const msg = String(err.message || '');
+  return /lead/i.test(msg) && /(terms?|\btos\b)/i.test(msg);
+}
+
 const cxAad = (row) => `cx:${row.id}`;
 
 // ── armed latch (F7): the server shell keeps mounted routes serving even
@@ -316,6 +330,18 @@ export function makeMetaConnectService(overrides = {}) {
 
   /** Map a permanent GraphError to the right terminal (F16). */
   async function graphTerminal(row, err, phase) {
+    // A genuine "this Page hasn't accepted the Lead Ads Terms" refusal from the
+    // real subscribe / form-create calls maps to the actionable taxonomy so the
+    // app shows the exact fix (accept the TOS), instead of an opaque graph code.
+    // Meta signals it via subcode 1815605 or a message mentioning the lead-ads
+    // terms; match either, only on the operations where it can actually occur.
+    if (['subscribe', 'forms', 'form_create'].includes(phase) && isLeadgenTosError(err)) {
+      await fencedPatch(row, {
+        status: 'failed', statusDetail: 'leadgen_tos_required',
+        leadsAccessOk: false, oauthCodeEnc: null, secretKind: null,
+      });
+      return { status: 'failed' };
+    }
     const detail = `${phase}:graph_${err.code ?? err.kind ?? 'permanent'}`;
     if (err.code === 190) {
       await fencedPatch(row, {
@@ -501,22 +527,30 @@ export function makeMetaConnectService(overrides = {}) {
       });
       return { status: 'failed' };
     }
+    // `leadgen_tos_accepted` is an ADVISORY page signal, NOT a gate: it reports
+    // false even for pages with ACTIVE lead forms that deliver leads, and a page
+    // token can create forms on such a page anyway (verified live against the
+    // production Redeem SG page, 2026-08-08 — false here yet form-create + lead
+    // delivery both work). Hard-failing on `=== false` was a universal
+    // false-negative that blocked EVERY self-serve connect. We record the signal
+    // for observability and let the authoritative gate be the real subscribe +
+    // form-create calls below, which surface a genuine Lead-Ads-TOS refusal via
+    // graphTerminal → `leadgen_tos_required` (see isLeadgenTosError).
     let leadsAccessOk = null;
     try {
       const pageInfo = await graph.call(String(page.id), {
         token: page.access_token, params: { fields: 'leadgen_tos_accepted' },
       });
-      if (pageInfo.leadgen_tos_accepted === false) {
-        await fencedPatch(row, {
-          status: 'failed', statusDetail: 'leadgen_tos_required',
-          pageTasks: page.tasks || null, leadsAccessOk: false, oauthCodeEnc: null, secretKind: null,
-        });
-        return { status: 'failed' };
-      }
-      leadsAccessOk = pageInfo.leadgen_tos_accepted === true ? true : null;
+      leadsAccessOk = pageInfo.leadgen_tos_accepted === true ? true
+        : pageInfo.leadgen_tos_accepted === false ? false : null;
     } catch (err) {
-      if (err instanceof GraphError && !err.retryable) return graphTerminal(row, err, 'tos');
-      throw err; // transport errors retry — drift must not bypass the gate silently
+      // The advisory read failing must not fail the connect on its own — the
+      // real operations below decide. Only a dead token (190) is worth stopping
+      // for; everything else proceeds and the subscribe/form calls re-surface it.
+      if (err instanceof GraphError && !err.retryable && err.code === 190) {
+        return graphTerminal(row, err, 'tos');
+      }
+      // otherwise: swallow, leave leadsAccessOk null, continue to the real gate.
     }
 
     // ── meta_pages provenance (F3): never take over someone else's page ──
