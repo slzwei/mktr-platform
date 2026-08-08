@@ -1,8 +1,9 @@
 import { jest } from '@jest/globals';
 import crypto from 'crypto';
 import '../setup.js';
-import { verifyWebhook, handleWebhook } from '../../src/controllers/metaController.js';
+import { verifyWebhook, handleWebhook, oauthCallback } from '../../src/controllers/metaController.js';
 import { armMetaLeadAds, disarmMetaLeadAdsForTests } from '../../src/services/metaLeadService.js';
+import { disarmMetaOauthForTests } from '../../src/services/metaConnectService.js';
 
 const SECRET = 'meta-app-secret-under-test';
 
@@ -100,6 +101,17 @@ describe('metaController (unit)', () => {
       const res = mockRes();
       await handleWebhook(signedReq({ object: 'page', entry: [] }), res);
       expect(res.sendStatus).toHaveBeenCalledWith(503);
+    });
+  });
+
+  describe('GET /oauth/callback (armed latch, round-2 #7)', () => {
+    it('an unarmed OAuth subsystem answers 503, never an acknowledged redirect', async () => {
+      process.env.META_OAUTH_ENABLED = 'true';
+      disarmMetaOauthForTests();
+      const res = mockRes();
+      await oauthCallback({ query: { code: 'c', state: 's' } }, res);
+      expect(res.sendStatus).toHaveBeenCalledWith(503);
+      delete process.env.META_OAUTH_ENABLED;
     });
   });
 });

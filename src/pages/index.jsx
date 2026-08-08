@@ -55,6 +55,8 @@ const Onboarding = lazy(() => import('./Onboarding'));
 const PendingApproval = lazy(() => import('./PendingApproval'));
 const ForgotPassword = lazy(() => import('./ForgotPassword'));
 const PersonalDataPolicy = lazy(() => import('./PersonalDataPolicy'));
+const FbConnected = lazy(() => import('./FbConnected'));
+const FbDataDeletion = lazy(() => import('./FbDataDeletion'));
 const LeadsPrivacy = lazy(() => import('./LeadsPrivacy'));
 const DevRoutes = lazy(() => import('../dev/DevRoutes'));
 
@@ -256,6 +258,8 @@ function PagesContent() {
  <Route path="/about" element={brand.showAbout ? <About /> : MARKETPLACE_ON ? <MarketplaceStatic mode="about" /> : <NotFoundForBrand />} />
  <Route path="/Contact" element={<Contact />} />
  <Route path="/personal-data-policy" element={<PersonalDataPolicy />} />
+ <Route path="/fb-connected" element={<FbConnected />} />
+ <Route path="/fb-data-deletion" element={<FbDataDeletion />} />
  <Route path="/leads/privacy" element={<LeadsPrivacy />} />
 
  {/* D13: internal/auth/admin/onboarding routes redirect to mktr.sg on the redeem build. */}

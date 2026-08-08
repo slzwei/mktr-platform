@@ -17,13 +17,23 @@ export const meta = {
   path: '/api/meta',
   flag: 'META_LEAD_ADS_ENABLED',
   flagDefault: 'false',
-  public: ['GET /webhook', 'POST /webhook'],
+  // OAuth trio is public by protocol (browser redirect + Meta's signed_request
+  // callbacks — verified inside the handlers); all three 404 unless
+  // META_OAUTH_ENABLED is also on.
+  public: [
+    'GET /webhook', 'POST /webhook',
+    'GET /oauth/callback', 'POST /oauth/deauthorize', 'POST /oauth/data-deletion',
+  ],
 };
 
 const router = express.Router();
 
 router.get('/webhook', metaController.verifyWebhook);
 router.post('/webhook', metaController.handleWebhook);
+
+router.get('/oauth/callback', metaController.oauthCallback);
+router.post('/oauth/deauthorize', metaController.oauthDeauthorize);
+router.post('/oauth/data-deletion', metaController.oauthDataDeletion);
 
 router.post('/pages', authenticateToken, requireAdmin, metaController.upsertPage);
 router.get('/pages', authenticateToken, requireAdmin, metaController.listPages);

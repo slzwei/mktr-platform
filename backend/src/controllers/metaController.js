@@ -2,6 +2,7 @@ import {
   MetaPage, MetaFormMapping, MetaLeadgenEvent, Campaign, QrTag, User,
 } from '../models/index.js';
 import { verifyMetaSignature, enqueueLeadgenChanges, drainMetaInbox, isMetaLeadAdsArmed } from '../services/metaLeadService.js';
+import { handleOAuthCallback, handleDeauthorize, handleDataDeletion } from '../services/metaConnectService.js';
 import { sealPageToken } from '../services/metaPageTokens.js';
 import { logger } from '../utils/logger.js';
 
@@ -88,6 +89,53 @@ export const handleWebhook = async (req, res) => {
     logger.error('[Meta] drain kick failed', { error: err?.message })));
 };
 
+// ── Connect Facebook: OAuth + platform callbacks ─────────────────────────
+
+const oauthEnabled = () => String(process.env.META_OAUTH_ENABLED || 'false').toLowerCase() === 'true';
+const completionUrl = () => process.env.META_OAUTH_COMPLETION_URL || 'https://redeem.sg/fb-connected';
+
+/**
+ * GET /api/meta/oauth/callback — the browser lands here from Facebook's
+ * dialog. MINIMUM work (nonce consume + sealed-code stash + worker kick in
+ * the service), then a 302 to the HTTPS completion page carrying nothing
+ * but a coarse status token (URLs leak via history/referrers).
+ */
+export const oauthCallback = async (req, res) => {
+  if (!oauthEnabled()) return res.sendStatus(404);
+  try {
+    const r = await handleOAuthCallback({
+      code: req.query.code,
+      state: req.query.state,
+      error: req.query.error,
+      errorDescription: req.query.error_description,
+    });
+    // Unarmed subsystem = infrastructure failure, not a user outcome — 503
+    // (round-2 #7) so nothing acknowledges intake the worker can't service.
+    if (r.code === 'not_armed') return res.sendStatus(503);
+    const suffix = r.redirect === 'pending' ? 's=pending' : `s=${r.redirect}${r.code ? `&c=${encodeURIComponent(r.code)}` : ''}`;
+    return res.redirect(302, `${completionUrl()}?${suffix}`);
+  } catch (err) {
+    logger.error('[Meta] oauth callback failed', { error: err?.message });
+    return res.redirect(302, `${completionUrl()}?s=error&c=internal`);
+  }
+};
+
+/** POST /api/meta/oauth/deauthorize — Meta's user-revoked-access callback (signed_request). */
+export const oauthDeauthorize = async (req, res) => {
+  if (!oauthEnabled()) return res.sendStatus(404);
+  const r = await handleDeauthorize(req.body?.signed_request);
+  if (!r.ok) return res.sendStatus(400);
+  return res.json({ success: true });
+};
+
+/** POST /api/meta/oauth/data-deletion — Meta's data-deletion request callback (signed_request). */
+export const oauthDataDeletion = async (req, res) => {
+  if (!oauthEnabled()) return res.sendStatus(404);
+  const r = await handleDataDeletion(req.body?.signed_request);
+  if (!r) return res.sendStatus(400);
+  return res.json(r);
+};
+
 // ── Admin: pages ──────────────────────────────────────────────────────────
 
 const pageDto = (row) => ({
@@ -106,6 +154,25 @@ export const upsertPage = async (req, res) => {
   if (!existing && !accessToken) {
     return res.status(400).json({ error: 'accessToken is required for a new page' });
   }
+  // Tombstone guard (review F17): an inactive row with a wiped token can
+  // only come back to life WITH a fresh token — isActive ⇒ token present.
+  if (existing && !existing.accessTokenEnc && req.body.isActive === true && !accessToken) {
+    return res.status(422).json({ error: 'this page was disconnected — reactivating requires a fresh accessToken' });
+  }
+  // OAuth-ownership handoff (round-2 NEW-3): reactivating an OAuth tombstone
+  // with a fresh token CONVERTS it to admin management — stale connection
+  // ownership must not let a later deauth/deletion wipe an admin page. A
+  // LIVE owner blocks the takeover entirely.
+  let ownershipClear = {};
+  if (existing && existing.connectionId && accessToken) {
+    const { MetaAgentConnection: MAC } = await import('../models/index.js');
+    const owner = await MAC.findByPk(existing.connectionId);
+    const ownerLive = owner && ['awaiting_callback', 'provisioning', 'needs_page_selection', 'waiting_for_agent', 'connected', 'reauth_required'].includes(owner.status);
+    if (ownerLive) {
+      return res.status(409).json({ error: 'this page belongs to a live agent connection — disconnect it first' });
+    }
+    ownershipClear = { connectionId: null, connectedVia: null };
+  }
   let accessTokenEnc;
   if (accessToken) {
     try {
@@ -118,6 +185,7 @@ export const upsertPage = async (req, res) => {
     ? await existing.update({
         ...(name !== undefined ? { name: String(name).slice(0, 120) } : {}),
         ...(accessTokenEnc ? { accessTokenEnc } : {}),
+        ...ownershipClear,
         isActive: req.body.isActive !== undefined ? req.body.isActive === true : existing.isActive,
       })
     : await MetaPage.create({
