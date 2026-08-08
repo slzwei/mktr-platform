@@ -26,7 +26,14 @@ export async function down(queryInterface) {
   await queryInterface.sequelize.query('DROP INDEX IF EXISTS idx_meta_pages_connection');
   await queryInterface.sequelize.query('ALTER TABLE meta_pages DROP COLUMN IF EXISTS "connectedVia"');
   await queryInterface.sequelize.query('ALTER TABLE meta_pages DROP COLUMN IF EXISTS "connectionId"');
-  // Rows with a wiped token cannot re-acquire NOT NULL — leave nullability in
-  // place on down (compatible with pre-117 code, which never reads NULL rows
-  // because inactive pages are DENY).
+  // Honest rollback (review F18): NOT NULL can only be restored when no
+  // wiped-token tombstones exist — refuse loudly instead of "succeeding"
+  // while silently leaving the schema changed.
+  const [[{ count }]] = await queryInterface.sequelize.query(
+    'SELECT COUNT(*)::int AS count FROM meta_pages WHERE "accessTokenEnc" IS NULL'
+  );
+  if (count > 0) {
+    throw new Error(`117 down: ${count} meta_pages row(s) have a wiped (NULL) token — delete those tombstones first, then re-run`);
+  }
+  await queryInterface.sequelize.query('ALTER TABLE meta_pages ALTER COLUMN "accessTokenEnc" SET NOT NULL');
 }

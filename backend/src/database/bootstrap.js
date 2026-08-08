@@ -790,9 +790,12 @@ async function ensureMetaOauth() {
     logger.info('[MetaConnect] agent-ads campaign re-armed', { campaignId });
   }
 
+  const { drainMetaConnections, probeConnectionsHealth, armMetaOauth } = await import('../services/metaConnectService.js');
+  // Armed ONLY here (review F7): the server shell keeps mounted routes
+  // serving on init failure — the OAuth surface refuses until this point.
+  armMetaOauth();
   if (isTest) return; // jest drives drains manually — never leak intervals
 
-  const { drainMetaConnections, probeConnectionsHealth } = await import('../services/metaConnectService.js');
   setInterval(() => {
     drainMetaConnections().catch((err) => logger.warn('[MetaConnect] drain failed', { error: err?.message }));
   }, 60_000);

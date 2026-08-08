@@ -20,7 +20,11 @@
  *   ?t= / &t=                                    redeem.sg/callback?t=<screening token>
  */
 const TOKEN_PATH_RE = /(\/(?:api\/reward-claim|r|api\/screening-callback|api\/redeem-ops\/discovery\/webhook|api\/auth\/(?:verify-email|reset-password|invite-info)|api\/provision\/check)\/)[^/?#\s]+/gi;
-const TOKEN_QUERY_RE = /([?&]t=)[^&#\s]+/gi;
+// ?t= (screening token) + the OAuth/Graph credential family
+// (docs/plans/facebook-connect-self-serve.md §4): the FB callback carries
+// code+state; Graph URLs can carry access_token/appsecret_proof and the
+// exchange parameters. Any of these in a logged URL is a live credential.
+const TOKEN_QUERY_RE = /([?&](?:t|code|state|access_token|fb_exchange_token|client_secret|appsecret_proof|signed_request)=)[^&#\s]+/gi;
 
 export function maskTokenUrl(url) {
   if (typeof url !== 'string' || url.length === 0) return url;

@@ -29,7 +29,10 @@ export async function up(queryInterface, Sequelize) {
       formId: { type: Sequelize.STRING(64), allowNull: true },
       mappingId: { type: Sequelize.UUID, allowNull: true },
       stateNonce: { type: Sequelize.STRING(64), allowNull: true },
+      stateExpiresAt: { type: Sequelize.DATE, allowNull: true },
       oauthCodeEnc: { type: Sequelize.TEXT, allowNull: true },
+      secretKind: { type: Sequelize.STRING(16), allowNull: true },
+      deletionCode: { type: Sequelize.STRING(48), allowNull: true },
       candidatePages: { type: Sequelize.JSONB, allowNull: true },
       grantedScopes: { type: Sequelize.JSONB, allowNull: true },
       pageTasks: { type: Sequelize.JSONB, allowNull: true },
@@ -52,8 +55,10 @@ export async function up(queryInterface, Sequelize) {
   // 1:1 v1 — one LIVE connection per agent, one per page.
   await idx(`CREATE UNIQUE INDEX IF NOT EXISTS uq_mac_live_user ON meta_agent_connections ("userId")
              WHERE status IN ('awaiting_callback','provisioning','needs_page_selection','waiting_for_agent','connected','reauth_required')`);
+  // Page reservation (review F3): the reserve happens DURING provisioning and
+  // reauth keeps the page while awaiting — every live status holds the claim.
   await idx(`CREATE UNIQUE INDEX IF NOT EXISTS uq_mac_live_page ON meta_agent_connections ("pageId")
-             WHERE "pageId" IS NOT NULL AND status IN ('provisioning','needs_page_selection','waiting_for_agent','connected','reauth_required')`);
+             WHERE "pageId" IS NOT NULL AND status IN ('awaiting_callback','provisioning','needs_page_selection','waiting_for_agent','connected','reauth_required')`);
   await idx('CREATE INDEX IF NOT EXISTS idx_mac_status_next ON meta_agent_connections (status, "nextAttemptAt")');
   await idx('CREATE INDEX IF NOT EXISTS idx_mac_fb_user ON meta_agent_connections ("fbUserIdAppScoped")');
 }

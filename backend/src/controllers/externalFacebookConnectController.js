@@ -24,10 +24,18 @@ function fail(res, err, op) {
   return res.status(500).json({ success: false, error: 'Internal server error' });
 }
 
+const oauthEnabled = () => String(process.env.META_OAUTH_ENABLED || 'false').toLowerCase() === 'true';
+
 export async function facebookConnect(req, res) {
   const { action, agentMktrUserId, pageId } = req.body || {};
   if (!agentMktrUserId || typeof agentMktrUserId !== 'string') {
     return res.status(400).json({ success: false, error: 'agentMktrUserId is required' });
+  }
+  // Feature dark (review F17): status answers honestly so the app screen can
+  // hide itself; mutations refuse with a stable taxonomy code.
+  if (!oauthEnabled()) {
+    if (action === 'status') return res.json({ success: true, connection: { enabled: false, status: 'none' } });
+    return res.status(409).json({ success: false, error: 'feature_disabled' });
   }
   try {
     switch (action) {

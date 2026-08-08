@@ -33,7 +33,10 @@ const MetaAgentConnection = sequelize.define('MetaAgentConnection', {
   formId: { type: DataTypes.STRING(64), allowNull: true },
   mappingId: { type: DataTypes.UUID, allowNull: true },
   stateNonce: { type: DataTypes.STRING(64), allowNull: true },
-  oauthCodeEnc: { type: DataTypes.TEXT, allowNull: true, comment: 'sealed OAuth code (metaPageTokens envelope, AAD=connection id)' },
+  stateExpiresAt: { type: DataTypes.DATE, allowNull: true },
+  oauthCodeEnc: { type: DataTypes.TEXT, allowNull: true, comment: 'sealed OAuth secret (metaPageTokens envelope, AAD=cx:<id>) — kind in secretKind; wiped at terminals' },
+  secretKind: { type: DataTypes.STRING(16), allowNull: true, validate: { isIn: [['oauth_code', 'long_token']] }, comment: 'phase of oauthCodeEnc (review F1: a code is never a token)' },
+  deletionCode: { type: DataTypes.STRING(48), allowNull: true, comment: 'opaque Meta data-deletion confirmation code (never the row PK)' },
   candidatePages: { type: DataTypes.JSONB, allowNull: true },
   grantedScopes: { type: DataTypes.JSONB, allowNull: true },
   pageTasks: { type: DataTypes.JSONB, allowNull: true },
@@ -51,6 +54,10 @@ const MetaAgentConnection = sequelize.define('MetaAgentConnection', {
   tableName: 'meta_agent_connections',
   indexes: [
     { unique: true, fields: ['stateNonce'], name: 'uq_mac_state_nonce', where: { stateNonce: { [Op.ne]: null } } },
+    // Mirrors of migration 116's partial uniques (review F18) — one live
+    // connection per agent AND per page.
+    { unique: true, fields: ['userId'], name: 'uq_mac_live_user', where: { status: { [Op.in]: MAC_LIVE_STATUSES } } },
+    { unique: true, fields: ['pageId'], name: 'uq_mac_live_page', where: { pageId: { [Op.ne]: null }, status: { [Op.in]: MAC_LIVE_STATUSES } } },
     { fields: ['status', 'nextAttemptAt'], name: 'idx_mac_status_next' },
     { fields: ['fbUserIdAppScoped'], name: 'idx_mac_fb_user' },
   ],

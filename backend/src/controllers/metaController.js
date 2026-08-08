@@ -151,6 +151,11 @@ export const upsertPage = async (req, res) => {
   if (!existing && !accessToken) {
     return res.status(400).json({ error: 'accessToken is required for a new page' });
   }
+  // Tombstone guard (review F17): an inactive row with a wiped token can
+  // only come back to life WITH a fresh token — isActive ⇒ token present.
+  if (existing && !existing.accessTokenEnc && req.body.isActive === true && !accessToken) {
+    return res.status(422).json({ error: 'this page was disconnected — reactivating requires a fresh accessToken' });
+  }
   let accessTokenEnc;
   if (accessToken) {
     try {

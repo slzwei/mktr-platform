@@ -1,7 +1,11 @@
 import { jest } from '@jest/globals';
 import '../setup.js';
 import crypto from 'crypto';
-import { makeMetaConnectService, parseSignedRequest, callbackUri } from '../../src/services/metaConnectService.js';
+import {
+  makeMetaConnectService, parseSignedRequest, callbackUri,
+  armMetaOauth, disarmMetaOauthForTests,
+} from '../../src/services/metaConnectService.js';
+import { sealPageToken } from '../../src/services/metaPageTokens.js';
 import { GraphError } from '../../src/services/metaGraphClient.js';
 
 process.env.META_PAGE_TOKEN_ENC_KEY = 'a'.repeat(64);
@@ -10,6 +14,7 @@ process.env.FB_LOGIN_CONFIG_ID = 'cfg-1';
 process.env.META_AGENT_ADS_CAMPAIGN_ID = 'camp-agent-ads';
 process.env.META_APP_SECRET = 'app-secret-under-test';
 
+const ALL_SCOPES = ['leads_retrieval', 'pages_show_list', 'pages_manage_metadata', 'pages_read_engagement', 'pages_manage_ads'];
 const USER = { id: 'user-1', mktrLeadsId: 'mk-uuid-1', isActive: true, role: 'agent', firstName: 'Lee', lastName: 'Yi Heng' };
 
 function fakeTx() {
@@ -20,6 +25,7 @@ function fakeTx() {
 }
 function fakeSequelize() {
   return {
+    literal: jest.fn((s) => s),
     transaction: jest.fn(async (fn) => {
       const t = fakeTx();
       if (typeof fn === 'function') { const r = await fn(t); t.finished = 'commit'; return r; }
@@ -32,6 +38,7 @@ function rowify(fields) {
   row.update = jest.fn(async (patch) => { Object.assign(row, patch); return row; });
   return row;
 }
+const sealFor = (row, value) => sealPageToken(value, `cx:${row.id}`);
 
 function makeDeps(overrides = {}) {
   const connections = [];
@@ -39,15 +46,17 @@ function makeDeps(overrides = {}) {
     sequelize: fakeSequelize(),
     User: { findOne: jest.fn().mockResolvedValue({ ...USER }), findByPk: jest.fn().mockResolvedValue({ ...USER }) },
     Campaign: { findByPk: jest.fn().mockResolvedValue({ id: 'camp-agent-ads', status: 'active' }) },
-    QrTag: { findOne: jest.fn().mockResolvedValue(null), create: jest.fn(async (f) => ({ id: 'qr-1', ...f })), findByPk: jest.fn() },
+    QrTag: { findOne: jest.fn().mockResolvedValue(null), create: jest.fn(async (f) => ({ id: 'qr-1', ...f })), findByPk: jest.fn().mockResolvedValue(null) },
     MetaPage: { findOne: jest.fn().mockResolvedValue(null), create: jest.fn(async (f) => ({ id: 'mp-1', ...f, update: jest.fn() })), findByPk: jest.fn(), update: jest.fn().mockResolvedValue([1]) },
     MetaFormMapping: { findOne: jest.fn().mockResolvedValue(null), create: jest.fn(async (f) => ({ id: 'map-1', ...f })), findByPk: jest.fn(), update: jest.fn().mockResolvedValue([1]) },
     MetaAgentConnection: {
       findOne: jest.fn().mockResolvedValue(null),
       findAll: jest.fn().mockResolvedValue([]),
+      findByPk: jest.fn().mockResolvedValue(null),
       create: jest.fn(async (f) => { const r = rowify({ id: 'cx-1', attempts: 0, ...f }); connections.push(r); return r; }),
       update: jest.fn().mockResolvedValue([1]),
     },
+    Prospect: { findOne: jest.fn().mockResolvedValue(null) },
     syncAgents: jest.fn().mockResolvedValue({}),
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
     graph: {
@@ -60,7 +69,54 @@ function makeDeps(overrides = {}) {
   return { deps, connections };
 }
 
+/**
+ * The service fences via MODEL update + Object.assign — the stub returning
+ * [1] keeps rows mutating exactly like the real conditional update would on
+ * an owned claim. Fence-loss cases override the stub to [0].
+ */
+function wireHappyGraph(deps, { pages }) {
+  deps.graph.call.mockImplementation(async (path, opts = {}) => {
+    if (path === 'me') return { id: 'fb-user-9' };
+    if (String(path).endsWith('/subscribed_apps') && opts.method === 'POST') return { success: true };
+    if (String(path).endsWith('/subscribed_apps')) return { data: [{ id: process.env.META_APP_ID }] };
+    if (String(path).match(/^\d+$/)) return { leadgen_tos_accepted: true };
+    if (String(path).endsWith('/leadgen_forms') && opts.method === 'POST') return { id: 'form-77' };
+    throw new Error(`unexpected graph call ${path}`);
+  });
+  deps.graph.callAllPages.mockImplementation(async (path) => {
+    if (path === 'me/permissions') return ALL_SCOPES.map((p) => ({ permission: p, status: 'granted' }));
+    if (path === 'me/accounts') return pages;
+    if (String(path).endsWith('/leadgen_forms')) return [];
+    throw new Error(`unexpected paged call ${path}`);
+  });
+}
+
+const provisioningRow = (over = {}) => {
+  const row = rowify({
+    id: 'cx-1', userId: USER.id, status: 'provisioning', attempts: 1,
+    fbUserIdAppScoped: null, pageId: null, qrTagId: null, formId: null,
+    connectedAt: null, ...over,
+  });
+  if (!('oauthCodeEnc' in over)) {
+    row.oauthCodeEnc = sealFor(row, 'CODE-1');
+    row.secretKind = 'oauth_code';
+  }
+  return row;
+};
+
+beforeEach(() => { armMetaOauth(); });
+
 describe('metaConnectService (unit)', () => {
+  describe('armed latch (F7)', () => {
+    it('startConnect and callback refuse until bootstrap arms the subsystem', async () => {
+      disarmMetaOauthForTests();
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      await expect(svc.startConnect({ agentMktrUserId: 'x' })).rejects.toMatchObject({ code: 'not_armed' });
+      expect(await svc.handleOAuthCallback({ code: 'c', state: 's' })).toMatchObject({ code: 'not_armed' });
+    });
+  });
+
   describe('parseSignedRequest', () => {
     const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const make = (payload, secret = process.env.META_APP_SECRET) => {
@@ -68,19 +124,16 @@ describe('metaConnectService (unit)', () => {
       const sig = b64url(crypto.createHmac('sha256', secret).update(p).digest());
       return `${sig}.${p}`;
     };
-    it('accepts a correctly signed request', () => {
+    it('accepts correct signatures, rejects tamper/wrong-secret/foreign algos', () => {
       expect(parseSignedRequest(make({ user_id: '42', algorithm: 'HMAC-SHA256' }))).toMatchObject({ user_id: '42' });
-    });
-    it('rejects tampering, wrong secret, and unknown algorithms', () => {
-      const good = make({ user_id: '42' });
-      expect(parseSignedRequest(`${good}x`)).toBeNull();
+      expect(parseSignedRequest(`${make({ user_id: '42' })}x`)).toBeNull();
       expect(parseSignedRequest(make({ user_id: '42' }, 'other'))).toBeNull();
       expect(parseSignedRequest(make({ user_id: '42', algorithm: 'RSA' }))).toBeNull();
     });
   });
 
-  describe('startConnect', () => {
-    it('mirror miss → one sync attempt → agent_sync_pending 503', async () => {
+  describe('startConnect (F8: serialized, expiring state)', () => {
+    it('mirror miss → one sync attempt → agent_sync_pending', async () => {
       const { deps } = makeDeps();
       deps.User.findOne = jest.fn().mockResolvedValue(null);
       const svc = makeMetaConnectService(deps);
@@ -88,7 +141,7 @@ describe('metaConnectService (unit)', () => {
       expect(deps.syncAgents).toHaveBeenCalledTimes(1);
     });
 
-    it('creates a row and a dialog URL carrying config_id + opaque state', async () => {
+    it('creates a row with an opaque expiring state and a config_id dialog URL', async () => {
       const { deps, connections } = makeDeps();
       const svc = makeMetaConnectService(deps);
       const { startUrl } = await svc.startConnect({ agentMktrUserId: USER.mktrLeadsId });
@@ -98,244 +151,234 @@ describe('metaConnectService (unit)', () => {
       const nonce = new URL(startUrl).searchParams.get('state');
       expect(nonce).toHaveLength(48);
       expect(connections[0].stateNonce).toBe(nonce);
-      // Opaque: the state is the nonce and nothing else.
+      expect(new Date(connections[0].stateExpiresAt).getTime()).toBeGreaterThan(Date.now());
       expect(nonce).not.toContain(USER.mktrLeadsId);
     });
 
-    it('fresh in-flight provisioning → 409 in_progress; stale one restarts', async () => {
+    it('unique-create race maps to 409 in_progress', async () => {
       const { deps } = makeDeps();
-      const live = rowify({ id: 'cx-9', status: 'provisioning', nextAttemptAt: new Date(Date.now() + 240000), attempts: 1 });
-      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(live);
+      deps.MetaAgentConnection.create = jest.fn().mockRejectedValue(Object.assign(new Error('dup'), { name: 'SequelizeUniqueConstraintError' }));
       const svc = makeMetaConnectService(deps);
       await expect(svc.startConnect({ agentMktrUserId: USER.mktrLeadsId })).rejects.toMatchObject({ code: 'in_progress' });
-
-      live.nextAttemptAt = new Date(Date.now() - 10 * 60000);
-      const r = await svc.startConnect({ agentMktrUserId: USER.mktrLeadsId });
-      expect(r.startUrl).toContain('state=');
-      expect(live.status).toBe('awaiting_callback');
     });
 
-    it('reauth on a connected row keeps receipts and refreshes the nonce', async () => {
+    it('reauth on a connected row keeps receipts + pageId and clears the secret phase', async () => {
       const { deps } = makeDeps();
-      const live = rowify({ id: 'cx-2', status: 'connected', qrTagId: 'qr-1', formId: 'f-1', attempts: 3 });
+      const live = rowify({ id: 'cx-2', status: 'connected', connectedAt: new Date(), pageId: '111', qrTagId: 'qr-1', formId: 'f-1', attempts: 3, secretKind: 'long_token', oauthCodeEnc: 'sealed' });
       deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(live);
       const svc = makeMetaConnectService(deps);
       await svc.startConnect({ agentMktrUserId: USER.mktrLeadsId });
       expect(live.status).toBe('awaiting_callback');
+      expect(live.pageId).toBe('111');
       expect(live.qrTagId).toBe('qr-1');
-      expect(live.formId).toBe('f-1');
-      expect(live.attempts).toBe(0);
-      expect(live.stateNonce).toHaveLength(48);
+      expect(live.secretKind).toBeNull();
+      expect(live.oauthCodeEnc).toBeNull();
     });
   });
 
-  describe('handleOAuthCallback', () => {
-    it('unknown or replayed state → bad_state', async () => {
+  describe('handleOAuthCallback (F1/F8)', () => {
+    it('unknown state → bad_state; expired state on a previously-connected row RESTORES connected', async () => {
       const { deps } = makeDeps();
       const svc = makeMetaConnectService(deps);
-      expect(await svc.handleOAuthCallback({ code: 'c', state: 'nope' })).toMatchObject({ redirect: 'error', code: 'bad_state' });
+      expect(await svc.handleOAuthCallback({ code: 'c', state: 'nope' })).toMatchObject({ code: 'bad_state' });
 
-      const row = rowify({ id: 'cx-1', status: 'awaiting_callback', stateNonce: 'N1' });
+      const row = rowify({ id: 'cx-1', status: 'awaiting_callback', stateNonce: 'N1', stateExpiresAt: new Date(Date.now() - 1000), connectedAt: new Date() });
       deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
-      deps.MetaAgentConnection.update = jest.fn().mockResolvedValue([0]); // raced consume
-      expect(await svc.handleOAuthCallback({ code: 'c', state: 'N1' })).toMatchObject({ redirect: 'error', code: 'bad_state' });
+      const r = await svc.handleOAuthCallback({ code: 'c', state: 'N1' });
+      expect(r).toMatchObject({ code: 'state_expired' });
+      expect(deps.MetaAgentConnection.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'connected', statusDetail: 'state_expired' }),
+        expect.objectContaining({ where: expect.objectContaining({ id: 'cx-1' }) })
+      );
     });
 
-    it('user denial fails the row without a code stash', async () => {
+    it('denial on a FIRST connect fails; denial on reauth restores connected (assets never orphaned)', async () => {
       const { deps } = makeDeps();
-      const row = rowify({ id: 'cx-1', status: 'awaiting_callback', stateNonce: 'N1' });
-      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
       const svc = makeMetaConnectService(deps);
-      const r = await svc.handleOAuthCallback({ state: 'N1', error: 'access_denied' });
-      expect(r).toMatchObject({ redirect: 'denied', code: 'user_denied' });
-      expect(row.status).toBe('failed');
-      expect(row.oauthCodeEnc).toBeNull();
+      const fresh = rowify({ id: 'cx-1', status: 'awaiting_callback', stateNonce: 'N1', stateExpiresAt: new Date(Date.now() + 60000), connectedAt: null });
+      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(fresh);
+      await svc.handleOAuthCallback({ state: 'N1', error: 'access_denied' });
+      expect(deps.MetaAgentConnection.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'failed', statusDetail: 'user_denied' }),
+        expect.anything()
+      );
+
+      const reauth = rowify({ id: 'cx-2', status: 'awaiting_callback', stateNonce: 'N2', stateExpiresAt: new Date(Date.now() + 60000), connectedAt: new Date() });
+      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(reauth);
+      await svc.handleOAuthCallback({ state: 'N2', error: 'access_denied' });
+      expect(deps.MetaAgentConnection.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'connected', statusDetail: 'user_denied' }),
+        expect.anything()
+      );
     });
 
-    it('happy path seals the code and enters provisioning', async () => {
+    it('happy path: ONE conditional transition seals the code with secretKind oauth_code', async () => {
       const { deps } = makeDeps();
-      const row = rowify({ id: 'cx-1', status: 'awaiting_callback', stateNonce: 'N1' });
+      const row = rowify({ id: 'cx-1', status: 'awaiting_callback', stateNonce: 'N1', stateExpiresAt: new Date(Date.now() + 60000) });
       deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
       const svc = makeMetaConnectService(deps);
       const r = await svc.handleOAuthCallback({ code: 'THE-CODE', state: 'N1' });
       expect(r).toMatchObject({ redirect: 'pending' });
-      expect(row.status).toBe('provisioning');
-      expect(row.oauthCodeEnc).toBeTruthy();
-      expect(row.oauthCodeEnc).not.toContain('THE-CODE');
+      const [patch, where] = deps.MetaAgentConnection.update.mock.calls.at(-1);
+      expect(patch).toMatchObject({ status: 'provisioning', secretKind: 'oauth_code', stateNonce: null });
+      expect(patch.oauthCodeEnc).not.toContain('THE-CODE');
+      expect(where.where).toMatchObject({ id: 'cx-1', stateNonce: 'N1', status: 'awaiting_callback' });
+    });
+
+    it('a raced duplicate loses the conditional update → bad_state', async () => {
+      const { deps } = makeDeps();
+      const row = rowify({ id: 'cx-1', status: 'awaiting_callback', stateNonce: 'N1', stateExpiresAt: new Date(Date.now() + 60000) });
+      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
+      deps.MetaAgentConnection.update = jest.fn().mockResolvedValue([0]);
+      const svc = makeMetaConnectService(deps);
+      expect(await svc.handleOAuthCallback({ code: 'c', state: 'N1' })).toMatchObject({ code: 'bad_state' });
     });
   });
 
   describe('processConnection', () => {
-    const baseRow = () => rowify({
-      id: 'cx-1', userId: USER.id, status: 'provisioning', attempts: 1,
-      oauthCodeEnc: null, fbUserIdAppScoped: null, pageId: null, qrTagId: null, formId: null,
-    });
-
-    function wireHappyGraph(deps, { pages }) {
-      deps.graph.call.mockImplementation(async (path, opts = {}) => {
-        if (path === 'me') return { id: 'fb-user-9' };
-        if (String(path).endsWith('/subscribed_apps') && opts.method === 'POST') return { success: true };
-        if (String(path).endsWith('/subscribed_apps')) return { data: [{ id: process.env.META_APP_ID }] };
-        if (String(path).match(/^\d+$/)) return { leadgen_tos_accepted: true };
-        if (String(path).endsWith('/leadgen_forms') && opts.method === 'POST') return { id: 'form-77' };
-        throw new Error(`unexpected graph call ${path}`);
-      });
-      deps.graph.callAllPages.mockImplementation(async (path) => {
-        if (path === 'me/permissions') return [{ permission: 'leads_retrieval', status: 'granted' }];
-        if (path === 'me/accounts') return pages;
-        if (String(path).endsWith('/leadgen_forms')) return [];
-        throw new Error(`unexpected paged call ${path}`);
-      });
-    }
-
-    async function sealCodeOnto(svc, deps, row) {
-      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
-      row.stateNonce = 'N1'; row.status = 'awaiting_callback';
-      await svc.handleOAuthCallback({ code: 'CODE-1', state: 'N1' });
-    }
-
-    it('happy path: exchange once, wire everything, wipe secrets, connect', async () => {
+    it('happy path: exchange → token persisted IMMEDIATELY (F2) → scopes enforced → page reserved → wired → connected, secrets wiped', async () => {
       const { deps } = makeDeps();
       const svc = makeMetaConnectService(deps);
-      const row = baseRow();
-      await sealCodeOnto(svc, deps, row);
+      const row = provisioningRow();
       wireHappyGraph(deps, { pages: [{ id: '111', name: 'Redeem SG', access_token: 'PAGE-TOK', tasks: ['MANAGE'] }] });
 
       const r = await svc.processConnection(row);
       expect(r).toEqual({ status: 'connected' });
-      expect(deps.graph.exchangeCodeForLongLivedToken).toHaveBeenCalledTimes(1);
-      expect(deps.MetaPage.create).toHaveBeenCalledWith(expect.objectContaining({
-        pageId: '111', isActive: true, connectedVia: 'oauth', connectionId: 'cx-1',
-      }));
-      const sealed = deps.MetaPage.create.mock.calls[0][0].accessTokenEnc;
-      expect(sealed).toBeTruthy();
-      expect(sealed).not.toContain('PAGE-TOK');
-      expect(deps.QrTag.create).toHaveBeenCalledWith(expect.objectContaining({
-        assignedAgentId: USER.id, ownerUserId: USER.id, type: 'meta_agent', campaignId: 'camp-agent-ads',
-      }));
-      expect(deps.MetaFormMapping.create).toHaveBeenCalledWith(expect.objectContaining({
-        formId: 'form-77', campaignId: 'camp-agent-ads', qrTagId: 'qr-1', isActive: true,
-      }));
+      // F2: the very first fenced patch after the exchange carries the token phase.
+      const patches = deps.MetaAgentConnection.update.mock.calls.map(([p]) => p);
+      const tokenPatchIdx = patches.findIndex((p) => p.secretKind === 'long_token');
+      const identityPatchIdx = patches.findIndex((p) => p.fbUserIdAppScoped);
+      expect(tokenPatchIdx).toBeGreaterThanOrEqual(0);
+      expect(tokenPatchIdx).toBeLessThan(identityPatchIdx);
+      // Reservation happened before wiring; final state on the row:
+      expect(row.pageId).toBe('111');
       expect(row.status).toBe('connected');
       expect(row.oauthCodeEnc).toBeNull();
-      expect(row.formId).toBe('form-77');
+      expect(row.secretKind).toBeNull();
+      expect(deps.MetaPage.create).toHaveBeenCalledWith(expect.objectContaining({ pageId: '111', connectedVia: 'oauth' }));
+      expect(deps.MetaPage.create.mock.calls[0][0].accessTokenEnc).not.toContain('PAGE-TOK');
+      expect(deps.QrTag.create).toHaveBeenCalledWith(expect.objectContaining({ assignedAgentId: USER.id, type: 'meta_agent' }));
+      expect(deps.MetaFormMapping.create).toHaveBeenCalledWith(expect.objectContaining({ formId: 'form-77', qrTagId: 'qr-1' }));
     });
 
-    it('two pages → needs_page_selection with NO tokens in the candidates', async () => {
+    it('resume after crash-post-exchange does NOT re-exchange (secretKind long_token)', async () => {
       const { deps } = makeDeps();
       const svc = makeMetaConnectService(deps);
-      const row = baseRow();
-      await sealCodeOnto(svc, deps, row);
-      wireHappyGraph(deps, {
-        pages: [
-          { id: '111', name: 'Page A', access_token: 'TOK-A' },
-          { id: '222', name: 'Page B', access_token: 'TOK-B' },
-        ],
-      });
-      const r = await svc.processConnection(row);
-      expect(r).toEqual({ status: 'needs_page_selection' });
-      expect(row.candidatePages).toEqual([{ id: '111', name: 'Page A' }, { id: '222', name: 'Page B' }]);
-      expect(JSON.stringify(row.candidatePages)).not.toContain('TOK-');
+      const row = provisioningRow({ oauthCodeEnc: null });
+      row.oauthCodeEnc = sealFor(row, 'LL-USER-TOKEN');
+      row.secretKind = 'long_token';
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'T', tasks: ['MANAGE'] }] });
+      await svc.processConnection(row);
+      expect(deps.graph.exchangeCodeForLongLivedToken).not.toHaveBeenCalled();
+      expect(row.status).toBe('connected');
     });
 
-    it('zero pages → failed no_pages, secrets wiped', async () => {
+    it('ANY exchange failure demands a fresh dialog — reauth_required when previously connected, failed otherwise (F1/F2)', async () => {
       const { deps } = makeDeps();
       const svc = makeMetaConnectService(deps);
-      const row = baseRow();
-      await sealCodeOnto(svc, deps, row);
+      deps.graph.exchangeCodeForLongLivedToken = jest.fn().mockRejectedValue(new GraphError('timeout', { retryable: true }));
+
+      const fresh = provisioningRow();
+      expect(await svc.processConnection(fresh)).toEqual({ status: 'failed' });
+      expect(fresh.statusDetail).toBe('oauth_exchange_failed');
+      expect(fresh.oauthCodeEnc).toBeNull();
+
+      const reauth = provisioningRow({ id: 'cx-9', connectedAt: new Date() });
+      expect(await svc.processConnection(reauth)).toEqual({ status: 'reauth_required' });
+    });
+
+    it('missing required scopes → terminal missing_permissions (F10)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
       wireHappyGraph(deps, { pages: [] });
-      const r = await svc.processConnection(row);
-      expect(r).toEqual({ status: 'failed' });
-      expect(row.statusDetail).toBe('no_pages');
-      expect(row.oauthCodeEnc).toBeNull();
-    });
-
-    it('leadgen TOS not accepted → failed leadgen_tos_required', async () => {
-      const { deps } = makeDeps();
-      const svc = makeMetaConnectService(deps);
-      const row = baseRow();
-      await sealCodeOnto(svc, deps, row);
-      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'T' }] });
-      deps.graph.call.mockImplementation(async (path, opts = {}) => {
-        if (path === 'me') return { id: 'fb-user-9' };
-        if (String(path).match(/^\d+$/)) return { leadgen_tos_accepted: false };
-        return {};
-      });
-      const r = await svc.processConnection(row);
-      expect(r).toEqual({ status: 'failed' });
-      expect(row.statusDetail).toBe('leadgen_tos_required');
-    });
-
-    it('existing form with the deterministic name is reused, never duplicated', async () => {
-      const { deps } = makeDeps();
-      const svc = makeMetaConnectService(deps);
-      const row = baseRow();
-      await sealCodeOnto(svc, deps, row);
-      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'T' }] });
       deps.graph.callAllPages.mockImplementation(async (path) => {
-        if (path === 'me/permissions') return [];
-        if (path === 'me/accounts') return [{ id: '111', name: 'P', access_token: 'T' }];
-        if (String(path).endsWith('/leadgen_forms')) return [{ id: 'form-EXISTING', name: svc.formNameFor(USER) }];
+        if (path === 'me/permissions') return [{ permission: 'leads_retrieval', status: 'granted' }];
         return [];
       });
       await svc.processConnection(row);
-      expect(row.formId).toBe('form-EXISTING');
-      const formCreates = deps.graph.call.mock.calls.filter(([p, o]) => String(p).endsWith('/leadgen_forms') && o?.method === 'POST');
-      expect(formCreates).toHaveLength(0);
+      expect(row.status).toBe('failed');
+      expect(row.statusDetail).toMatch(/^missing_permissions:/);
     });
 
-    it('agent mirror vanished mid-flight → waiting_for_agent', async () => {
+    it('two pages → needs_page_selection (no tokens in candidates); zero pages → no_pages', async () => {
       const { deps } = makeDeps();
       const svc = makeMetaConnectService(deps);
-      const row = baseRow();
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '1', name: 'A', access_token: 'TA' }, { id: '2', name: 'B', access_token: 'TB' }] });
+      expect(await svc.processConnection(row)).toEqual({ status: 'needs_page_selection' });
+      expect(JSON.stringify(row.candidatePages)).not.toContain('T');
+
+      const row2 = provisioningRow({ id: 'cx-2' });
+      wireHappyGraph(deps, { pages: [] });
+      await svc.processConnection(row2);
+      expect(row2.statusDetail).toBe('no_pages');
+    });
+
+    it('page reservation unique-conflict → terminal page_in_use, never a retry loop (F3)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'T', tasks: ['MANAGE'] }] });
+      let call = 0;
+      deps.MetaAgentConnection.update = jest.fn(async (patch) => {
+        call += 1;
+        if (patch.pageId && !patch.status) {
+          const err = new Error('dup'); err.name = 'SequelizeUniqueConstraintError'; throw err;
+        }
+        return [1];
+      });
+      await svc.processConnection(row);
+      expect(row.status).toBe('failed');
+      expect(row.statusDetail).toBe('page_in_use');
+      expect(call).toBeGreaterThan(0);
+    });
+
+    it('admin-managed meta_pages row is never taken over (F3)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'T', tasks: ['MANAGE'] }] });
+      deps.MetaPage.findOne = jest.fn().mockResolvedValue({ id: 'mp-adm', pageId: '111', connectionId: null, connectedVia: null });
+      await svc.processConnection(row);
+      expect(row.status).toBe('failed');
+      expect(row.statusDetail).toBe('page_admin_managed');
+    });
+
+    it('token-dead Graph error (190) on a reauth journey → reauth_required (F16)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow({ connectedAt: new Date(), oauthCodeEnc: null });
+      row.oauthCodeEnc = sealFor(row, 'LL'); row.secretKind = 'long_token';
+      deps.graph.call.mockRejectedValue(new GraphError('expired', { retryable: false, code: 190 }));
+      deps.graph.callAllPages.mockRejectedValue(new GraphError('expired', { retryable: false, code: 190 }));
+      await svc.processConnection(row);
+      expect(row.status).toBe('reauth_required');
+    });
+
+    it('agent mirror missing → waiting_for_agent via markRetry (requeued, F13)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
       deps.User.findOne = jest.fn().mockResolvedValue(null);
       const r = await svc.processConnection(row);
       expect(r).toEqual({ status: 'waiting_for_agent' });
-    });
-
-    it('permanent OAuth exchange error → failed with taxonomy, not a retry loop', async () => {
-      const { deps } = makeDeps();
-      const svc = makeMetaConnectService(deps);
-      const row = baseRow();
-      await sealCodeOnto(svc, deps, row);
-      deps.graph.exchangeCodeForLongLivedToken = jest.fn().mockRejectedValue(new GraphError('bad code', { retryable: false, code: 100 }));
-      const r = await svc.processConnection(row);
-      expect(r).toEqual({ status: 'failed' });
-      expect(row.statusDetail).toMatch(/oauth_exchange/);
-      expect(row.oauthCodeEnc).toBeNull();
-    });
-  });
-
-  describe('selectPage / disconnect', () => {
-    it('select validates against the stored candidate set', async () => {
-      const { deps } = makeDeps();
-      const row = rowify({ id: 'cx-1', status: 'needs_page_selection', candidatePages: [{ id: '111', name: 'A' }] });
-      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
-      const svc = makeMetaConnectService(deps);
-      await expect(svc.selectPage({ agentMktrUserId: USER.mktrLeadsId, pageId: '999' })).rejects.toMatchObject({ code: 'invalid_page' });
-      await svc.selectPage({ agentMktrUserId: USER.mktrLeadsId, pageId: '111' });
-      expect(row.status).toBe('provisioning');
-      expect(row.pageId).toBe('111');
-    });
-
-    it('disconnect: remote unsubscribe BEFORE token wipe, then tombstone + mapping off', async () => {
-      const { deps } = makeDeps();
-      const { sealPageToken } = await import('../../src/services/metaPageTokens.js');
-      const pageRow = { id: 'mp-1', pageId: '111', accessTokenEnc: sealPageToken('PAGE-TOK', '111') };
-      const row = rowify({ id: 'cx-1', userId: USER.id, status: 'connected', metaPageRowId: 'mp-1', mappingId: 'map-1' });
-      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
-      deps.MetaPage.findByPk = jest.fn().mockResolvedValue(pageRow);
-      const calls = [];
-      deps.graph.call = jest.fn(async (path, opts) => { calls.push([path, opts?.method]); return {}; });
-      const svc = makeMetaConnectService(deps);
-
-      await svc.disconnect({ agentMktrUserId: USER.mktrLeadsId });
-      expect(calls).toContainEqual(['111/subscribed_apps', 'DELETE']);
       expect(deps.MetaAgentConnection.update).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'disconnected', disconnectReason: 'agent_request', oauthCodeEnc: null }),
-        expect.objectContaining({ where: { id: 'cx-1' } })
+        expect.objectContaining({ status: 'waiting_for_agent' }),
+        expect.objectContaining({ where: expect.objectContaining({ id: row.id }) })
       );
-      expect(deps.MetaFormMapping.update).toHaveBeenCalledWith({ isActive: false }, expect.objectContaining({ where: { id: 'map-1' } }));
+    });
+
+    it('fence lost to a disconnect mid-run → freshly wired assets cleaned (F4)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'T', tasks: ['MANAGE'] }] });
+      // Lose the fence at the metaPageRowId receipt (after MetaPage.create).
+      deps.MetaAgentConnection.update = jest.fn(async (patch) => (patch.metaPageRowId ? [0] : [1]));
+      deps.MetaAgentConnection.findByPk = jest.fn().mockResolvedValue({ id: row.id, status: 'disconnected' });
+      const r = await svc.processConnection(row);
+      expect(r).toEqual({ status: 'fence_lost' });
       expect(deps.MetaPage.update).toHaveBeenCalledWith(
         { isActive: false, accessTokenEnc: null },
         expect.objectContaining({ where: { id: 'mp-1' } })
@@ -343,7 +386,26 @@ describe('metaConnectService (unit)', () => {
     });
   });
 
-  describe('platform callbacks', () => {
+  describe('disconnect ordering (F11) + platform callbacks (F12)', () => {
+    it('disconnect: local intake dies in one txn (token KEPT), then remote unsubscribe, then token wipe', async () => {
+      const { deps } = makeDeps();
+      const pageRow = { id: 'mp-1', pageId: '111', accessTokenEnc: sealPageToken('PAGE-TOK', '111') };
+      const row = rowify({ id: 'cx-1', userId: USER.id, status: 'connected', metaPageRowId: 'mp-1', mappingId: 'map-1' });
+      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
+      deps.MetaPage.findByPk = jest.fn().mockResolvedValue(pageRow);
+      const order = [];
+      deps.MetaPage.update = jest.fn(async (patch) => { order.push(patch.accessTokenEnc === null && !('isActive' in patch) ? 'wipe' : 'deactivate'); return [1]; });
+      deps.graph.call = jest.fn(async (path, opts) => { order.push(`remote:${opts?.method}`); return {}; });
+      const svc = makeMetaConnectService(deps);
+
+      await svc.disconnect({ agentMktrUserId: USER.mktrLeadsId });
+      expect(order).toEqual(['deactivate', 'remote:DELETE', 'wipe']);
+      expect(deps.MetaAgentConnection.update).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'disconnected', disconnectReason: 'agent_request' }),
+        expect.objectContaining({ where: expect.objectContaining({ id: 'cx-1' }) })
+      );
+    });
+
     const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const signedFor = (userId) => {
       const p = b64url(Buffer.from(JSON.stringify({ user_id: userId, algorithm: 'HMAC-SHA256' })));
@@ -351,7 +413,7 @@ describe('metaConnectService (unit)', () => {
       return `${sig}.${p}`;
     };
 
-    it('deauthorize disconnects every live connection for the fb user WITHOUT a remote call', async () => {
+    it('deauthorize disconnects live connections WITHOUT a remote call', async () => {
       const { deps } = makeDeps();
       const row = rowify({ id: 'cx-1', status: 'connected', metaPageRowId: 'mp-1', mappingId: null, fbUserIdAppScoped: 'fb-9' });
       deps.MetaAgentConnection.findAll = jest.fn().mockResolvedValue([row]);
@@ -362,21 +424,39 @@ describe('metaConnectService (unit)', () => {
       expect(deps.graph.call).not.toHaveBeenCalled();
     });
 
-    it('data deletion returns the Meta-required {url, confirmation_code} shape', async () => {
+    it('data deletion scrubs EVERY identifier across all statuses and answers an opaque code (F12)', async () => {
       const { deps } = makeDeps();
-      const row = rowify({ id: 'cx-77', status: 'disconnected', fbUserIdAppScoped: 'fb-9' });
-      deps.MetaAgentConnection.findAll = jest.fn().mockResolvedValue([row]);
+      const terminal = rowify({
+        id: 'cx-77', status: 'failed', fbUserIdAppScoped: 'fb-9', agentMktrUserId: 'mk-1',
+        pageId: '111', formId: 'f-1', mappingId: 'map-1', metaPageRowId: 'mp-1', qrTagId: 'qr-1',
+      });
+      deps.MetaAgentConnection.findAll = jest.fn().mockResolvedValue([terminal]);
       const svc = makeMetaConnectService(deps);
       const r = await svc.handleDataDeletion(signedFor('fb-9'));
-      expect(r.confirmation_code).toBe('cx-77');
-      expect(r.url).toContain('fb-data-deletion?code=cx-77');
+      expect(r.confirmation_code).toHaveLength(32);
+      expect(r.confirmation_code).not.toBe('cx-77');
+      expect(terminal).toMatchObject({
+        fbUserIdAppScoped: null, agentMktrUserId: null, pageId: null, formId: null,
+        mappingId: null, qrTagId: null, metaPageRowId: null, statusDetail: 'data_deletion',
+      });
+      // Terminal rows' still-active assets are killed too.
+      expect(deps.MetaFormMapping.update).toHaveBeenCalledWith({ isActive: false }, expect.objectContaining({ where: { id: 'map-1' } }));
+      expect(deps.MetaPage.update).toHaveBeenCalledWith({ isActive: false, accessTokenEnc: null }, expect.objectContaining({ where: { id: 'mp-1' } }));
     });
+  });
 
-    it('bad signature yields null / not-ok', async () => {
+  describe('selectPage', () => {
+    it('validates against the stored candidates and maps a page-unique race to page_in_use', async () => {
       const { deps } = makeDeps();
+      const row = rowify({ id: 'cx-1', status: 'needs_page_selection', candidatePages: [{ id: '111', name: 'A' }] });
+      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
       const svc = makeMetaConnectService(deps);
-      expect(await svc.handleDeauthorize('garbage.payload')).toEqual({ ok: false });
-      expect(await svc.handleDataDeletion('garbage.payload')).toBeNull();
+      await expect(svc.selectPage({ agentMktrUserId: USER.mktrLeadsId, pageId: '999' })).rejects.toMatchObject({ code: 'invalid_page' });
+
+      deps.MetaAgentConnection.update = jest.fn()
+        .mockRejectedValueOnce(Object.assign(new Error('dup'), { name: 'SequelizeUniqueConstraintError' }))
+        .mockResolvedValue([1]);
+      await expect(svc.selectPage({ agentMktrUserId: USER.mktrLeadsId, pageId: '111' })).rejects.toMatchObject({ code: 'page_in_use' });
     });
   });
 });

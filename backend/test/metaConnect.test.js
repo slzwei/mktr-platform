@@ -23,7 +23,7 @@ import {
   MetaAgentConnection, MetaPage, MetaFormMapping, QrTag, Prospect,
   MetaLeadgenEvent, WebhookSubscriber, WebhookDelivery,
 } from '../src/models/index.js';
-import { makeMetaConnectService } from '../src/services/metaConnectService.js';
+import { makeMetaConnectService, armMetaOauth } from '../src/services/metaConnectService.js';
 import { makeMetaLeadService } from '../src/services/metaLeadService.js';
 
 let app, admin, agent;
@@ -53,7 +53,10 @@ function stubbedGraph({ pageId, formIdOnCreate = `form-${uid()}` }) {
       return {};
     }),
     callAllPages: jest.fn(async (path) => {
-      if (path === 'me/permissions') return [{ permission: 'leads_retrieval', status: 'granted' }];
+      if (path === 'me/permissions') {
+        return ['leads_retrieval', 'pages_show_list', 'pages_manage_metadata', 'pages_read_engagement', 'pages_manage_ads']
+          .map((p) => ({ permission: p, status: 'granted' }));
+      }
       if (path === 'me/accounts') return [{ id: pageId, name: `Page ${pageId}`, access_token: `PAGETOK-${pageId}`, tasks: ['MANAGE'] }];
       if (String(path).endsWith('/leadgen_forms')) return [];
       return [];
@@ -63,6 +66,7 @@ function stubbedGraph({ pageId, formIdOnCreate = `form-${uid()}` }) {
 
 beforeAll(async () => {
   app = await getApp();
+  armMetaOauth(); // bootstrap soft-skips fixtures in test env — arm manually
   ({ user: admin } = await createTestUser({ role: 'admin' }));
   ({ user: agent } = await createTestUser({
     role: 'agent',
@@ -183,7 +187,10 @@ describe('Connect Facebook (integration)', () => {
     const pageB = `72${uid()}`.slice(0, 15);
     const graph = stubbedGraph({ pageId: pageA });
     graph.callAllPages = jest.fn(async (path) => {
-      if (path === 'me/permissions') return [];
+      if (path === 'me/permissions') {
+        return ['leads_retrieval', 'pages_show_list', 'pages_manage_metadata', 'pages_read_engagement', 'pages_manage_ads']
+          .map((p) => ({ permission: p, status: 'granted' }));
+      }
       if (path === 'me/accounts') {
         return [
           { id: pageA, name: 'Page A', access_token: `PT-${pageA}` },
@@ -217,5 +224,22 @@ describe('Connect Facebook (integration)', () => {
     row = await MetaAgentConnection.findOne({ where: { userId: agent2.id } });
     expect(row.status).toBe('connected');
     expect(row.pageId).toBe(pageB);
+
+    // ── page_in_use (review F3): a third agent granting the SAME page must
+    // terminal-fail against the live-page reservation, never wire anything.
+    const { user: agent3 } = await createTestUser({
+      role: 'agent', mktrLeadsId: '550e8400-e29b-41d4-a716-446655440999',
+      firstName: 'Late', lastName: 'Claimer',
+    });
+    const svc3 = makeMetaConnectService({ graph: stubbedGraph({ pageId: pageB }) });
+    const s3 = await svc3.startConnect({ agentMktrUserId: agent3.mktrLeadsId });
+    await svc3.handleOAuthCallback({ code: `code-${uid()}`, state: new URL(s3.startUrl).searchParams.get('state') });
+    await svc3.drainMetaConnections();
+    const row3 = await MetaAgentConnection.findOne({ where: { userId: agent3.id } });
+    expect(row3.status).toBe('failed');
+    expect(row3.statusDetail).toBe('page_in_use');
+    // The winner keeps the page.
+    const winner = await MetaAgentConnection.findOne({ where: { userId: agent2.id } });
+    expect(winner.status).toBe('connected');
   });
 });

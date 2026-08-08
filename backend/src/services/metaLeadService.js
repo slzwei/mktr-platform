@@ -19,6 +19,7 @@ import {
 } from './prospectHelpers.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
 import { resolvePageAccessToken } from './metaPageTokens.js';
+import { appsecretProof } from './metaGraphClient.js';
 import { META_LEADGEN_CONSENT_VERSION } from './contactConsent.js';
 import { logger } from '../utils/logger.js';
 
@@ -135,7 +136,10 @@ export function makeMetaLeadService(overrides = {}) {
   }
 
   async function fetchLeadFromGraph(leadgenId, accessToken) {
-    const url = `https://graph.facebook.com/${graphVersion()}/${leadgenId}?fields=${GRAPH_FIELDS}`;
+    // appsecret_proof (review F5): with Meta's "Require App Secret" setting
+    // on, an unproofed server call is rejected — every lead would dead-letter.
+    const proof = appsecretProof(accessToken);
+    const url = `https://graph.facebook.com/${graphVersion()}/${leadgenId}?fields=${GRAPH_FIELDS}${proof ? `&appsecret_proof=${proof}` : ''}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     // Body consumption stays INSIDE the abort window — Meta can send headers

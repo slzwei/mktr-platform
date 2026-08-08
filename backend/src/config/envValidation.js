@@ -98,8 +98,13 @@ export function validateEnv() {
     if (missingOauth.length > 0) {
       throw new Error(`FATAL: META_OAUTH_ENABLED=true but missing: ${missingOauth.join(', ')}`);
     }
+    // Explicit in production (review F18): a staging/custom host silently
+    // inheriting the api.mktr.sg default would register the WRONG callback.
     const origin = process.env.META_OAUTH_CALLBACK_ORIGIN;
-    if (origin && !/^https:\/\/[^/]+$/.test(origin)) {
+    if (!origin) {
+      throw new Error('FATAL: META_OAUTH_ENABLED=true requires META_OAUTH_CALLBACK_ORIGIN (bare https origin, e.g. https://api.mktr.sg)');
+    }
+    if (!/^https:\/\/[^/]+$/.test(origin)) {
       throw new Error('FATAL: META_OAUTH_CALLBACK_ORIGIN must be a bare https origin (e.g. https://api.mktr.sg)');
     }
   }
