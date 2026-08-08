@@ -109,6 +109,9 @@ export const oauthCallback = async (req, res) => {
       error: req.query.error,
       errorDescription: req.query.error_description,
     });
+    // Unarmed subsystem = infrastructure failure, not a user outcome — 503
+    // (round-2 #7) so nothing acknowledges intake the worker can't service.
+    if (r.code === 'not_armed') return res.sendStatus(503);
     const suffix = r.redirect === 'pending' ? 's=pending' : `s=${r.redirect}${r.code ? `&c=${encodeURIComponent(r.code)}` : ''}`;
     return res.redirect(302, `${completionUrl()}?${suffix}`);
   } catch (err) {
@@ -156,6 +159,20 @@ export const upsertPage = async (req, res) => {
   if (existing && !existing.accessTokenEnc && req.body.isActive === true && !accessToken) {
     return res.status(422).json({ error: 'this page was disconnected — reactivating requires a fresh accessToken' });
   }
+  // OAuth-ownership handoff (round-2 NEW-3): reactivating an OAuth tombstone
+  // with a fresh token CONVERTS it to admin management — stale connection
+  // ownership must not let a later deauth/deletion wipe an admin page. A
+  // LIVE owner blocks the takeover entirely.
+  let ownershipClear = {};
+  if (existing && existing.connectionId && accessToken) {
+    const { MetaAgentConnection: MAC } = await import('../models/index.js');
+    const owner = await MAC.findByPk(existing.connectionId);
+    const ownerLive = owner && ['awaiting_callback', 'provisioning', 'needs_page_selection', 'waiting_for_agent', 'connected', 'reauth_required'].includes(owner.status);
+    if (ownerLive) {
+      return res.status(409).json({ error: 'this page belongs to a live agent connection — disconnect it first' });
+    }
+    ownershipClear = { connectionId: null, connectedVia: null };
+  }
   let accessTokenEnc;
   if (accessToken) {
     try {
@@ -168,6 +185,7 @@ export const upsertPage = async (req, res) => {
     ? await existing.update({
         ...(name !== undefined ? { name: String(name).slice(0, 120) } : {}),
         ...(accessTokenEnc ? { accessTokenEnc } : {}),
+        ...ownershipClear,
         isActive: req.body.isActive !== undefined ? req.body.isActive === true : existing.isActive,
       })
     : await MetaPage.create({

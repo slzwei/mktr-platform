@@ -28,6 +28,7 @@ export function redactGraphError(message) {
     .replace(/fb_exchange_token=[^&\s]+/gi, 'fb_exchange_token=REDACTED')
     .replace(/client_secret=[^&\s]+/gi, 'client_secret=REDACTED')
     .replace(/code=[^&\s]+/gi, 'code=REDACTED')
+    .replace(/input_token=[^&\s]+/gi, 'input_token=REDACTED')
     .replace(/Bearer\s+[A-Za-z0-9._-]+/g, 'Bearer REDACTED')
     .slice(0, 500);
 }

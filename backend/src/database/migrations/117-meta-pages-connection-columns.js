@@ -23,17 +23,20 @@ export async function up(queryInterface, Sequelize) {
 }
 
 export async function down(queryInterface) {
-  await queryInterface.sequelize.query('DROP INDEX IF EXISTS idx_meta_pages_connection');
-  await queryInterface.sequelize.query('ALTER TABLE meta_pages DROP COLUMN IF EXISTS "connectedVia"');
-  await queryInterface.sequelize.query('ALTER TABLE meta_pages DROP COLUMN IF EXISTS "connectionId"');
-  // Honest rollback (review F18): NOT NULL can only be restored when no
-  // wiped-token tombstones exist — refuse loudly instead of "succeeding"
-  // while silently leaving the schema changed.
+  // Honest rollback (review F18 + round-2 NEW-5): the refusal check runs
+  // BEFORE any DDL, and the whole rollback is one transaction — a refusal
+  // leaves the schema untouched, never half-rolled-back.
   const [[{ count }]] = await queryInterface.sequelize.query(
     'SELECT COUNT(*)::int AS count FROM meta_pages WHERE "accessTokenEnc" IS NULL'
   );
   if (count > 0) {
     throw new Error(`117 down: ${count} meta_pages row(s) have a wiped (NULL) token — delete those tombstones first, then re-run`);
   }
-  await queryInterface.sequelize.query('ALTER TABLE meta_pages ALTER COLUMN "accessTokenEnc" SET NOT NULL');
+  await queryInterface.sequelize.transaction(async (transaction) => {
+    const q = (sql) => queryInterface.sequelize.query(sql, { transaction });
+    await q('DROP INDEX IF EXISTS idx_meta_pages_connection');
+    await q('ALTER TABLE meta_pages DROP COLUMN IF EXISTS "connectedVia"');
+    await q('ALTER TABLE meta_pages DROP COLUMN IF EXISTS "connectionId"');
+    await q('ALTER TABLE meta_pages ALTER COLUMN "accessTokenEnc" SET NOT NULL');
+  });
 }

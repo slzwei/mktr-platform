@@ -390,16 +390,18 @@ export function makeMetaConnectService(overrides = {}) {
       return { status: 'failed' };
     }
 
-    // ── credential phase (F1/F2) ──
+    // ── credential phase (F1/F2 + round-2 #2) ──
     let userToken;
     if (row.secretKind === 'oauth_code') {
       const code = d.openPageToken(row.oauthCodeEnc, cxAad(row));
+      // Mark the code CONSUMED before touching the token endpoint: a crash or
+      // lost lease during the exchange must resume as "ambiguous — fresh
+      // dialog required", never as a replay of a possibly-spent code.
+      await fencedPatch(row, { secretKind: 'exchanging' });
       let exchanged;
       try {
         exchanged = await graph.exchangeCodeForLongLivedToken(code, callbackUri());
       } catch (err) {
-        // The code is single-use: ANY failure here (including an ambiguous
-        // timeout that may have consumed it) demands a fresh dialog.
         await fencedPatch(row, {
           status: wasConnected(row) ? 'reauth_required' : 'failed',
           statusDetail: 'oauth_exchange_failed',
@@ -414,6 +416,14 @@ export function makeMetaConnectService(overrides = {}) {
         secretKind: 'long_token',
         tokenExpiresAt: exchanged.expiresIn ? new Date(Date.now() + exchanged.expiresIn * 1000) : null,
       });
+    } else if (row.secretKind === 'exchanging') {
+      // A previous run died mid-exchange — the code may or may not be spent.
+      await fencedPatch(row, {
+        status: wasConnected(row) ? 'reauth_required' : 'failed',
+        statusDetail: 'code_ambiguous',
+        oauthCodeEnc: null, secretKind: null,
+      });
+      return { status: row.status };
     } else {
       userToken = d.openPageToken(row.oauthCodeEnc, cxAad(row));
     }
@@ -481,8 +491,10 @@ export function makeMetaConnectService(overrides = {}) {
     }
 
     // ── usability validation (F10) ──
-    if (Array.isArray(page.tasks) && page.tasks.length > 0
-      && !page.tasks.some((task) => LEAD_CAPABLE_TASKS.includes(String(task).toUpperCase()))) {
+    // Round-2 #10: MISSING/empty tasks are as disqualifying as wrong ones —
+    // /me/accounts always reports tasks for real page roles.
+    if (!Array.isArray(page.tasks) || page.tasks.length === 0
+      || !page.tasks.some((task) => LEAD_CAPABLE_TASKS.includes(String(task).toUpperCase()))) {
       await fencedPatch(row, {
         status: 'failed', statusDetail: 'page_task_missing', pageTasks: page.tasks,
         oauthCodeEnc: null, secretKind: null,
@@ -676,9 +688,11 @@ export function makeMetaConnectService(overrides = {}) {
       if (n === 0) { const e = new AppError('no selection pending', 409); e.code = 'no_selection_pending'; throw e; }
     } catch (err) {
       if (err?.name === 'SequelizeUniqueConstraintError') {
+        // Status-conditioned (round-2 NEW-4): a disconnect that landed first
+        // must not be overwritten back to 'failed'.
         await d.MetaAgentConnection.update(
           { status: 'failed', statusDetail: 'page_in_use', oauthCodeEnc: null, secretKind: null },
-          { where: { id: row.id } }
+          { where: { id: row.id, status: 'needs_page_selection' } }
         );
         const e = new AppError('page already connected by another agent', 409); e.code = 'page_in_use'; throw e;
       }
@@ -755,9 +769,14 @@ export function makeMetaConnectService(overrides = {}) {
     });
     if (!disconnected) return false;
 
+    // Ownership-conditioned teardown (round-2 NEW-1): the moment our row went
+    // terminal, the page reservation is free — a reconnect can re-own this
+    // MetaPage row and store a NEW token. Every post-txn read/wipe therefore
+    // predicates on connectionId still being OURS; a takeover makes both a
+    // clean no-op instead of unsubscribing/wiping the new owner.
     if (remote && row.metaPageRowId) {
       try {
-        const pageRow = await d.MetaPage.findByPk(row.metaPageRowId);
+        const pageRow = await d.MetaPage.findOne({ where: { id: row.metaPageRowId, connectionId: row.id } });
         if (pageRow?.accessTokenEnc) {
           const token = d.openPageToken(pageRow.accessTokenEnc, pageRow.pageId);
           await graph.call(`${pageRow.pageId}/subscribed_apps`, { method: 'DELETE', token });
@@ -767,7 +786,10 @@ export function makeMetaConnectService(overrides = {}) {
       }
     }
     if (row.metaPageRowId) {
-      await d.MetaPage.update({ accessTokenEnc: null }, { where: { id: row.metaPageRowId } }).catch(() => {});
+      await d.MetaPage.update(
+        { accessTokenEnc: null },
+        { where: { id: row.metaPageRowId, connectionId: row.id } }
+      ).catch(() => {});
     }
     return true;
   }
@@ -821,23 +843,36 @@ export function makeMetaConnectService(overrides = {}) {
       where: { fbUserIdAppScoped: String(payload.user_id) },
     });
     const code = crypto.randomBytes(16).toString('hex');
+    // Round-2 #12: a scrub step that fails must be LOUD — Meta gets its
+    // confirmation either way (their contract demands a response), but a
+    // silent partial deletion is a compliance lie we refuse to tell quietly.
+    let scrubFailures = 0;
+    const attempt = async (label, fn) => {
+      try { await fn(); } catch (err) {
+        scrubFailures += 1;
+        d.logger.error('[MetaConnect] DATA-DELETION SCRUB STEP FAILED', { step: label, error: redactGraphError(err?.message) });
+      }
+    };
     for (const row of rows) {
       if (LIVE.includes(row.status)) {
-        await disconnectConnection(row, { reason: 'fb_data_deletion', remote: false });
+        await attempt('disconnect', () => disconnectConnection(row, { reason: 'fb_data_deletion', remote: false }));
       } else {
         // Terminal rows can still point at active assets — kill those too.
-        if (row.mappingId) await d.MetaFormMapping.update({ isActive: false }, { where: { id: row.mappingId } }).catch(() => {});
+        if (row.mappingId) await attempt('mapping', () => d.MetaFormMapping.update({ isActive: false }, { where: { id: row.mappingId } }));
         if (row.metaPageRowId) {
-          await d.MetaPage.update({ isActive: false, accessTokenEnc: null }, { where: { id: row.metaPageRowId } }).catch(() => {});
+          await attempt('page', () => d.MetaPage.update({ isActive: false, accessTokenEnc: null }, { where: { id: row.metaPageRowId } }));
         }
       }
-      await row.update({
+      await attempt('scrub', () => row.update({
         fbUserIdAppScoped: null, agentMktrUserId: null,
         pageId: null, formId: null, mappingId: null, qrTagId: null, metaPageRowId: null,
         oauthCodeEnc: null, secretKind: null, candidatePages: null,
         grantedScopes: null, pageTasks: null, lastError: null,
         statusDetail: 'data_deletion', deletionCode: code,
-      }).catch(() => {});
+      }));
+    }
+    if (scrubFailures > 0) {
+      d.logger.error('[MetaConnect] data deletion INCOMPLETE — manual follow-up required', { scrubFailures, confirmationCode: code });
     }
     return { url: `https://redeem.sg/fb-data-deletion?code=${code}`, confirmation_code: code };
   }

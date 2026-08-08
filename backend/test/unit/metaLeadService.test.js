@@ -110,6 +110,7 @@ describe('metaLeadService (unit)', () => {
   beforeEach(() => {
     for (const k of ['META_APP_SECRET', 'HELD_LEAD_PING_ENABLED']) envBackup[k] = process.env[k];
     delete process.env.HELD_LEAD_PING_ENABLED;
+    process.env.META_APP_SECRET = 'proof-secret-for-lead-fetch';
   });
   afterEach(() => {
     for (const [k, v] of Object.entries(envBackup)) {
@@ -292,6 +293,9 @@ describe('metaLeadService (unit)', () => {
       expect(row.status).toBe('completed');
       expect(seq.txs[0].commit).toHaveBeenCalled();
       expect(deps.flushDeliveries).toHaveBeenCalled();
+      // appsecret_proof on the live lead fetch (fb-connect round-2 F5 pin):
+      // without it, Meta's "Require App Secret" setting dead-letters leads.
+      expect(deps.fetch.mock.calls[0][0]).toContain('appsecret_proof=');
     });
 
     it('undeliverable fallback assignee (no provenance) re-routes to the unmapped pool and quarantines', async () => {

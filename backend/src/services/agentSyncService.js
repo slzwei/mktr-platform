@@ -497,41 +497,40 @@ async function runSync(adapter, localIdField, startedAt) {
       // 3. Hard-delete agents whose grace window expired AND still no
       //    prospects (re-check at delete time to close the read-then-delete
       //    race).
-      // Terminal-history policy (review F9): scrub disconnected/failed
-      // connection rows for delete-eligible users first, so history can never
-      // block the RESTRICT FK; a LIVE connection still blocks the delete
-      // (excluded below) until the deactivation hook has disconnected it.
-      await sequelize.query(
-        `DELETE FROM meta_agent_connections
-          WHERE status IN ('disconnected','failed')
-            AND "userId" IN (
-              SELECT id FROM users
-               WHERE role = 'agent'
-                 AND "isActive" = false
-                 AND "${localIdField}" IS NOT NULL
-                 AND "${localIdField}" NOT IN (:upstreamExternalIds)
-                 AND pending_deletion_at IS NOT NULL
-                 AND pending_deletion_at < NOW() - INTERVAL '${DELETE_GRACE_HOURS} hours')`,
-        { replacements: { upstreamExternalIds } }
-      );
-      const [{ count: deletedCount }] = await sequelize.query(
-        `WITH deleted AS (
-            DELETE FROM users
-             WHERE role = 'agent'
-               AND "isActive" = false
-               AND "${localIdField}" IS NOT NULL
-               AND "${localIdField}" NOT IN (:upstreamExternalIds)
-               AND pending_deletion_at IS NOT NULL
-               AND pending_deletion_at < NOW() - INTERVAL '${DELETE_GRACE_HOURS} hours'
-               AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)
-               AND id NOT IN (SELECT DISTINCT "agentId" FROM wallet_ledger)
-               AND id NOT IN (SELECT DISTINCT "userId" FROM meta_agent_connections)
-            RETURNING id
-         )
-         SELECT COUNT(*)::int AS count FROM deleted`,
-        { replacements: { upstreamExternalIds }, type: sequelize.QueryTypes.SELECT }
-      );
-      hardDeleted = deletedCount || 0;
+      // Terminal-history policy (review F9 + round-2 NEW-2): ONE transaction
+      // computes the EXACT delete candidates (every predicate — prospects,
+      // wallet, LIVE connections), scrubs their terminal connection history,
+      // then deletes the users. History is never erased for a user any other
+      // predicate retains, and a crash can't separate the two deletes.
+      hardDeleted = await sequelize.transaction(async (t) => {
+        const candidates = await sequelize.query(
+          `SELECT id FROM users
+            WHERE role = 'agent'
+              AND "isActive" = false
+              AND "${localIdField}" IS NOT NULL
+              AND "${localIdField}" NOT IN (:upstreamExternalIds)
+              AND pending_deletion_at IS NOT NULL
+              AND pending_deletion_at < NOW() - INTERVAL '${DELETE_GRACE_HOURS} hours'
+              AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)
+              AND id NOT IN (SELECT DISTINCT "agentId" FROM wallet_ledger)
+              AND id NOT IN (SELECT DISTINCT "userId" FROM meta_agent_connections
+                              WHERE status IN ('awaiting_callback','provisioning','needs_page_selection','waiting_for_agent','connected','reauth_required'))
+            FOR UPDATE SKIP LOCKED`,
+          { replacements: { upstreamExternalIds }, type: sequelize.QueryTypes.SELECT, transaction: t }
+        );
+        const ids = candidates.map((c) => c.id);
+        if (ids.length === 0) return 0;
+        await sequelize.query(
+          'DELETE FROM meta_agent_connections WHERE "userId" IN (:ids) AND status IN (\'disconnected\',\'failed\')',
+          { replacements: { ids }, transaction: t }
+        );
+        const [{ count }] = await sequelize.query(
+          `WITH deleted AS (DELETE FROM users WHERE id IN (:ids) RETURNING id)
+           SELECT COUNT(*)::int AS count FROM deleted`,
+          { replacements: { ids }, type: sequelize.QueryTypes.SELECT, transaction: t }
+        );
+        return count || 0;
+      });
     }
   } catch (err) {
     logger.error(

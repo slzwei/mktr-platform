@@ -287,6 +287,28 @@ describe('metaConnectService (unit)', () => {
       expect(await svc.processConnection(reauth)).toEqual({ status: 'reauth_required' });
     });
 
+    it('a row stranded mid-exchange resumes as code_ambiguous — the code is never replayed (round-2 #2)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow({ oauthCodeEnc: null });
+      row.oauthCodeEnc = sealFor(row, 'MAYBE-SPENT-CODE');
+      row.secretKind = 'exchanging';
+      const r = await svc.processConnection(row);
+      expect(r).toEqual({ status: 'failed' });
+      expect(row.statusDetail).toBe('code_ambiguous');
+      expect(deps.graph.exchangeCodeForLongLivedToken).not.toHaveBeenCalled();
+    });
+
+    it('a page with MISSING or empty tasks is terminal page_task_missing (round-2 #10)', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const row = provisioningRow();
+      wireHappyGraph(deps, { pages: [{ id: '111', name: 'P', access_token: 'T' }] }); // no tasks at all
+      await svc.processConnection(row);
+      expect(row.status).toBe('failed');
+      expect(row.statusDetail).toBe('page_task_missing');
+    });
+
     it('missing required scopes → terminal missing_permissions (F10)', async () => {
       const { deps } = makeDeps();
       const svc = makeMetaConnectService(deps);
@@ -389,10 +411,12 @@ describe('metaConnectService (unit)', () => {
   describe('disconnect ordering (F11) + platform callbacks (F12)', () => {
     it('disconnect: local intake dies in one txn (token KEPT), then remote unsubscribe, then token wipe', async () => {
       const { deps } = makeDeps();
-      const pageRow = { id: 'mp-1', pageId: '111', accessTokenEnc: sealPageToken('PAGE-TOK', '111') };
+      const pageRow = { id: 'mp-1', pageId: '111', connectionId: 'cx-1', accessTokenEnc: sealPageToken('PAGE-TOK', '111') };
       const row = rowify({ id: 'cx-1', userId: USER.id, status: 'connected', metaPageRowId: 'mp-1', mappingId: 'map-1' });
       deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
-      deps.MetaPage.findByPk = jest.fn().mockResolvedValue(pageRow);
+      // The teardown read is ownership-conditioned (round-2 NEW-1): findOne
+      // with {id, connectionId} — still OUR page here, so it resolves.
+      deps.MetaPage.findOne = jest.fn().mockResolvedValue(pageRow);
       const order = [];
       deps.MetaPage.update = jest.fn(async (patch) => { order.push(patch.accessTokenEnc === null && !('isActive' in patch) ? 'wipe' : 'deactivate'); return [1]; });
       deps.graph.call = jest.fn(async (path, opts) => { order.push(`remote:${opts?.method}`); return {}; });
@@ -404,6 +428,21 @@ describe('metaConnectService (unit)', () => {
         expect.objectContaining({ status: 'disconnected', disconnectReason: 'agent_request' }),
         expect.objectContaining({ where: expect.objectContaining({ id: 'cx-1' }) })
       );
+    });
+
+    it('a takeover by a reconnect makes the old disconnect a NO-OP on the page (round-2 NEW-1)', async () => {
+      const { deps } = makeDeps();
+      // The page row is now owned by a DIFFERENT connection — teardown reads
+      // are conditioned on ownership and must find nothing.
+      const row = rowify({ id: 'cx-OLD', userId: USER.id, status: 'connected', metaPageRowId: 'mp-1', mappingId: null });
+      deps.MetaAgentConnection.findOne = jest.fn().mockResolvedValue(row);
+      deps.MetaPage.findOne = jest.fn().mockResolvedValue(null); // ownership predicate misses
+      const svc = makeMetaConnectService(deps);
+      await svc.disconnect({ agentMktrUserId: USER.mktrLeadsId });
+      expect(deps.graph.call).not.toHaveBeenCalled(); // no unsubscribe of the new owner
+      // The token wipe carried the ownership predicate.
+      const wipe = deps.MetaPage.update.mock.calls.find(([p]) => p.accessTokenEnc === null && !('isActive' in p));
+      expect(wipe[1].where).toMatchObject({ id: 'mp-1', connectionId: 'cx-OLD' });
     });
 
     const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

@@ -35,7 +35,7 @@ const MetaAgentConnection = sequelize.define('MetaAgentConnection', {
   stateNonce: { type: DataTypes.STRING(64), allowNull: true },
   stateExpiresAt: { type: DataTypes.DATE, allowNull: true },
   oauthCodeEnc: { type: DataTypes.TEXT, allowNull: true, comment: 'sealed OAuth secret (metaPageTokens envelope, AAD=cx:<id>) — kind in secretKind; wiped at terminals' },
-  secretKind: { type: DataTypes.STRING(16), allowNull: true, validate: { isIn: [['oauth_code', 'long_token']] }, comment: 'phase of oauthCodeEnc (review F1: a code is never a token)' },
+  secretKind: { type: DataTypes.STRING(16), allowNull: true, validate: { isIn: [['oauth_code', 'exchanging', 'long_token']] }, comment: 'phase of oauthCodeEnc (F1: a code is never a token; exchanging = ambiguous-on-resume)' },
   deletionCode: { type: DataTypes.STRING(48), allowNull: true, comment: 'opaque Meta data-deletion confirmation code (never the row PK)' },
   candidatePages: { type: DataTypes.JSONB, allowNull: true },
   grantedScopes: { type: DataTypes.JSONB, allowNull: true },

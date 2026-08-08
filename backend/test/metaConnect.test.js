@@ -193,8 +193,8 @@ describe('Connect Facebook (integration)', () => {
       }
       if (path === 'me/accounts') {
         return [
-          { id: pageA, name: 'Page A', access_token: `PT-${pageA}` },
-          { id: pageB, name: 'Page B', access_token: `PT-${pageB}` },
+          { id: pageA, name: 'Page A', access_token: `PT-${pageA}`, tasks: ['MANAGE'] },
+          { id: pageB, name: 'Page B', access_token: `PT-${pageB}`, tasks: ['MANAGE'] },
         ];
       }
       if (String(path).endsWith('/leadgen_forms')) return [];

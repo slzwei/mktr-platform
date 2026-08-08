@@ -104,3 +104,35 @@ now rebased onto #434; the rest of 14 stands.
     connected; disconnect-vs-worker; sync hard-delete with connections;
     armed-latch 503s; appsecret_proof asserted on lead fetch; money-shot
     asserts sourceMetadata.utm + proof param; pagination host validation.
+
+---
+
+# Round 2 (2026-08-08) — verdict + disposition
+
+Round-2 codex: 4/19 fully fixed, 14 partial, 5 new findings. Disposition:
+
+**Fixed in the round-2 commit:** NEW-1 disconnect/reconnect ownership race
+(teardown reads/wipes conditioned on `meta_pages.connectionId` = ours) ·
+NEW-2 sync hard-delete = one txn over the EXACT candidate set (all
+predicates incl. live connections; terminal history scrubbed only for real
+deletees) · NEW-3 admin tombstone reactivation converts ownership to admin
+(live owner → 409) · NEW-4 selectPage conflict patch is status-conditioned ·
+NEW-5 117 down() prechecks before any DDL + single txn · round-2 #2
+`secretKind:'exchanging'` marks the code consumed BEFORE the token endpoint
+(resume ⇒ `code_ambiguous`, never a replay) · #7 HTTP callback answers 503
+when unarmed · #10 missing/empty page tasks now terminal · #12 scrub steps
+fail LOUD (error log + incomplete marker) · #6 `input_token` added to both
+redaction layers. New pins: exchanging-resume, tasks-missing, ownership
+no-op disconnect, lead-fetch `appsecret_proof`, callback-latch 503.
+
+**Accepted residuals for flag-off v1** (revisit before Advanced-Access
+launch, not before merge): real-DB two-worker/crash test rigs (deployment is
+single-instance; logical paths are pinned) · Sentry span/breadcrumb
+scrubbers beyond URL redaction (tokens no longer ride URLs) · per-operation
+Graph taxonomy splits (all client ops are our own writes/reads where 100 =
+our bug) · deep health drift (scopes/page-tasks re-verify on the daily
+probe; subscription drift IS probed) · form connection-marker beyond the
+deterministic name (page ownership already reserved) · `metaPageRowId` FK ·
+frontend sentryScrub mirror (completion page URLs carry only s/c) ·
+reauth-failure asset-cleanup nuance beyond restore-to-connected · TOS field
+absent tolerated with warn (explicit false is terminal).
