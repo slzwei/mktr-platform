@@ -87,6 +87,23 @@ export function validateEnv() {
     }
   }
 
+  // Connect Facebook (docs/plans/facebook-connect-self-serve.md §5): the flag
+  // arms a PUBLIC OAuth surface — half-configured must refuse to boot.
+  if (String(process.env.META_OAUTH_ENABLED || 'false').toLowerCase() === 'true') {
+    if (String(process.env.META_LEAD_ADS_ENABLED || 'false').toLowerCase() !== 'true') {
+      throw new Error('FATAL: META_OAUTH_ENABLED=true requires META_LEAD_ADS_ENABLED=true — self-serve connects ride the lead pipe');
+    }
+    const oauthRequired = ['META_APP_ID', 'FB_LOGIN_CONFIG_ID', 'META_AGENT_ADS_CAMPAIGN_ID', 'EXTERNAL_APP_SECRET'];
+    const missingOauth = oauthRequired.filter((key) => !process.env[key]);
+    if (missingOauth.length > 0) {
+      throw new Error(`FATAL: META_OAUTH_ENABLED=true but missing: ${missingOauth.join(', ')}`);
+    }
+    const origin = process.env.META_OAUTH_CALLBACK_ORIGIN;
+    if (origin && !/^https:\/\/[^/]+$/.test(origin)) {
+      throw new Error('FATAL: META_OAUTH_CALLBACK_ORIGIN must be a bare https origin (e.g. https://api.mktr.sg)');
+    }
+  }
+
   if (process.env.WEBHOOK_ENABLED && String(process.env.WEBHOOK_ENABLED).toLowerCase() !== 'true') {
     console.warn(`⚠️ WEBHOOK_ENABLED is "${process.env.WEBHOOK_ENABLED}" (not "true") — webhook delivery is disabled, leads will not reach Lyfe`);
   }
@@ -125,7 +142,7 @@ export function validateEnv() {
     'ENRICHMENT_MAP_ARTIFACT_JOBS', 'ENRICHMENT_SCORING_ENABLED',
     'LYFE_LEAD_SUPPRESSED_ENABLED', 'MKTR_LEADS_LEAD_SUPPRESSED_ENABLED',
     'SYNC_AGENT_CRON', 'WHATSAPP_QR_HEADER', 'ENABLE_AUTH_MAPPING',
-    'META_LEAD_ADS_ENABLED',
+    'META_LEAD_ADS_ENABLED', 'META_OAUTH_ENABLED',
   ];
   const mistyped = booleanFlags.filter((k) => {
     const v = process.env[k];

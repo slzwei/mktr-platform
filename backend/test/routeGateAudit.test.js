@@ -85,7 +85,10 @@ const PUBLIC_SURFACE = {
     "GET /campaigns/:slug"
   ],
   "meta.js": [
+    "GET /oauth/callback",
     "GET /webhook",
+    "POST /oauth/data-deletion",
+    "POST /oauth/deauthorize",
     "POST /webhook"
   ],
   "prospects.js": [

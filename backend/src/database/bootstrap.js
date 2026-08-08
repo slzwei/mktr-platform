@@ -67,6 +67,12 @@ export async function bootstrapDatabase() {
   // silently strand webhook leads, so ensure failure is boot-fatal.
   if (String(process.env.META_LEAD_ADS_ENABLED || 'false').toLowerCase() === 'true') {
     await ensureMetaLeadAds();
+    // Connect Facebook (docs/plans/facebook-connect-self-serve.md): also
+    // boot-fatal — a mis-set agent-ads campaign would mis-route every
+    // self-serve agent's leads.
+    if (String(process.env.META_OAUTH_ENABLED || 'false').toLowerCase() === 'true') {
+      await ensureMetaOauth();
+    }
   }
 
   await safeRun('Webhook recovery', async () => {
@@ -749,4 +755,50 @@ async function ensureMetaLeadAds() {
   armMetaLeadAds();
   drainMetaInbox().catch((err) => logger.warn('[Meta] boot drain failed', { error: err?.message }));
   logger.info('[Meta] leadgen inbox worker started (30s interval)');
+}
+
+/**
+ * Connect Facebook boot (docs/plans/facebook-connect-self-serve.md §0):
+ * validate the agent-ads campaign every self-serve connection routes into,
+ * then start the provisioning worker + daily token-health probe. Called only
+ * when META_OAUTH_ENABLED (inside the META_LEAD_ADS_ENABLED block); throws on
+ * failure — boot-fatal by design.
+ */
+async function ensureMetaOauth() {
+  // Tests own their fixtures (the campaign row can only exist AFTER boot ran
+  // the migrations) — soft-skip there; production stays boot-fatal.
+  const isTest = process.env.NODE_ENV === 'test';
+  const campaignId = process.env.META_AGENT_ADS_CAMPAIGN_ID;
+  if (!campaignId) {
+    if (isTest) { logger.warn('[MetaConnect] META_AGENT_ADS_CAMPAIGN_ID unset (test) — ensure skipped'); return; }
+    throw new Error('META_OAUTH_ENABLED=true requires META_AGENT_ADS_CAMPAIGN_ID');
+  }
+  const campaign = await Campaign.findByPk(campaignId);
+  if (!campaign) {
+    if (isTest) { logger.warn('[MetaConnect] agent-ads campaign missing (test) — ensure skipped'); return; }
+    throw new Error(`META_AGENT_ADS_CAMPAIGN_ID ${campaignId} not found`);
+  }
+  // "Agents pay with ad spend": EITHER quota trigger would start charging
+  // credits per lead — both must be off, and the campaign must accept intake.
+  const drift = campaign.status !== 'active' || !campaign.is_active
+    || campaign.enforceLeadQuota !== false
+    || (Number.isInteger(campaign.leadPriceCents) && campaign.leadPriceCents > 0);
+  if (drift) {
+    await campaign.update({
+      status: 'active', is_active: true, enforceLeadQuota: false, leadPriceCents: null,
+    });
+    logger.info('[MetaConnect] agent-ads campaign re-armed', { campaignId });
+  }
+
+  if (isTest) return; // jest drives drains manually — never leak intervals
+
+  const { drainMetaConnections, probeConnectionsHealth } = await import('../services/metaConnectService.js');
+  setInterval(() => {
+    drainMetaConnections().catch((err) => logger.warn('[MetaConnect] drain failed', { error: err?.message }));
+  }, 60_000);
+  setInterval(() => {
+    probeConnectionsHealth().catch((err) => logger.warn('[MetaConnect] health probe failed', { error: err?.message }));
+  }, 6 * 3600 * 1000);
+  drainMetaConnections().catch(() => {});
+  logger.info('[MetaConnect] provisioning worker started (60s) + health probe (6h)');
 }

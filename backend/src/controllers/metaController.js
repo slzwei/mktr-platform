@@ -2,6 +2,7 @@ import {
   MetaPage, MetaFormMapping, MetaLeadgenEvent, Campaign, QrTag, User,
 } from '../models/index.js';
 import { verifyMetaSignature, enqueueLeadgenChanges, drainMetaInbox, isMetaLeadAdsArmed } from '../services/metaLeadService.js';
+import { handleOAuthCallback, handleDeauthorize, handleDataDeletion } from '../services/metaConnectService.js';
 import { sealPageToken } from '../services/metaPageTokens.js';
 import { logger } from '../utils/logger.js';
 
@@ -86,6 +87,50 @@ export const handleWebhook = async (req, res) => {
   // the happy path (form submit → agent push) sub-second.
   setImmediate(() => drainMetaInbox().catch((err) =>
     logger.error('[Meta] drain kick failed', { error: err?.message })));
+};
+
+// ── Connect Facebook: OAuth + platform callbacks ─────────────────────────
+
+const oauthEnabled = () => String(process.env.META_OAUTH_ENABLED || 'false').toLowerCase() === 'true';
+const completionUrl = () => process.env.META_OAUTH_COMPLETION_URL || 'https://redeem.sg/fb-connected';
+
+/**
+ * GET /api/meta/oauth/callback — the browser lands here from Facebook's
+ * dialog. MINIMUM work (nonce consume + sealed-code stash + worker kick in
+ * the service), then a 302 to the HTTPS completion page carrying nothing
+ * but a coarse status token (URLs leak via history/referrers).
+ */
+export const oauthCallback = async (req, res) => {
+  if (!oauthEnabled()) return res.sendStatus(404);
+  try {
+    const r = await handleOAuthCallback({
+      code: req.query.code,
+      state: req.query.state,
+      error: req.query.error,
+      errorDescription: req.query.error_description,
+    });
+    const suffix = r.redirect === 'pending' ? 's=pending' : `s=${r.redirect}${r.code ? `&c=${encodeURIComponent(r.code)}` : ''}`;
+    return res.redirect(302, `${completionUrl()}?${suffix}`);
+  } catch (err) {
+    logger.error('[Meta] oauth callback failed', { error: err?.message });
+    return res.redirect(302, `${completionUrl()}?s=error&c=internal`);
+  }
+};
+
+/** POST /api/meta/oauth/deauthorize — Meta's user-revoked-access callback (signed_request). */
+export const oauthDeauthorize = async (req, res) => {
+  if (!oauthEnabled()) return res.sendStatus(404);
+  const r = await handleDeauthorize(req.body?.signed_request);
+  if (!r.ok) return res.sendStatus(400);
+  return res.json({ success: true });
+};
+
+/** POST /api/meta/oauth/data-deletion — Meta's data-deletion request callback (signed_request). */
+export const oauthDataDeletion = async (req, res) => {
+  if (!oauthEnabled()) return res.sendStatus(404);
+  const r = await handleDataDeletion(req.body?.signed_request);
+  if (!r) return res.sendStatus(400);
+  return res.json(r);
 };
 
 // ── Admin: pages ──────────────────────────────────────────────────────────

@@ -342,6 +342,11 @@ function defineAssociations() {
   Campaign.hasMany(models.MetaFormMapping, { foreignKey: 'campaignId', as: 'metaFormMappings', onDelete: 'RESTRICT' });
   models.MetaFormMapping.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   models.MetaFormMapping.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag' });
+
+  // Connect Facebook state machine (docs/plans/facebook-connect-self-serve.md §1)
+  User.hasMany(models.MetaAgentConnection, { foreignKey: 'userId', as: 'metaConnections', onDelete: 'RESTRICT' });
+  models.MetaAgentConnection.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  models.MetaAgentConnection.belongsTo(models.MetaPage, { foreignKey: 'metaPageRowId', as: 'metaPage' });
 }
 
 defineAssociations();
@@ -388,7 +393,7 @@ export const {
   SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient,
   WaMessageStatus, WaMessageSend, ConsumerObservation, ConsumerProfile, EnrichmentJob,
   EnrichmentScoringConfig, EnrichmentSweepRun,
-  MetaPage, MetaFormMapping, MetaLeadgenEvent
+  MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection
 } = models;
 
 export { sequelize };
