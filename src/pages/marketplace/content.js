@@ -244,12 +244,25 @@ export function composeValueLine(campaign) {
   return `Worth S$${ops.retail_value}${dc.activation?.required ? ' · free with activation' : ' · free'}`;
 }
 
-export function ageLabelOf(dc = {}) {
+/**
+ * "Who it's for". `age_range` is hand-entered marketplace content; the range
+ * the funnel actually ENFORCES is campaigns.min_age/max_age (client
+ * getAgeValidationError + the server gate in prospectService). They were
+ * unlinked, and age_range has no default anywhere — so the standard case
+ * (defaults 18-65, age_range never filled) advertised "Everyone" and then
+ * rejected a 70-year-old at the DOB field. Falling back to the enforced
+ * columns makes the label honest; an explicit age_range still wins, because
+ * an operator who typed one meant it.
+ */
+export function ageLabelOf(dc = {}, campaign = null) {
   const lv = dc.school_levels || [];
-  const ar = dc.age_range || {};
   if (lv.length) return lv.length > 1 ? `${lv[0]}–${lv[lv.length - 1]}` : lv[0];
+  const explicit = dc.age_range || {};
+  const ar = explicit.min != null
+    ? explicit
+    : { min: campaign?.min_age ?? null, max: campaign?.max_age ?? null };
   if (ar.min == null) return null;
-  if (ar.max >= 99) return ar.min >= 21 ? 'Adults (21+)' : `Ages ${ar.min}+`;
+  if (ar.max == null || ar.max >= 99) return ar.min >= 21 ? 'Adults (21+)' : `Ages ${ar.min}+`;
   return `Ages ${ar.min}–${ar.max}`;
 }
 
