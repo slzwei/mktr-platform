@@ -11,7 +11,7 @@ import Copy from 'lucide-react/icons/copy';
 import Ellipsis from 'lucide-react/icons/ellipsis';
 import { redeemOpsApi } from '@/api/redeemOps';
 import { useAuthStore } from '@/stores/authStore';
-import { hasCapability } from '@/lib/redeemOpsPermissions';
+import { hasCapability, canActOnPartnerRow } from '@/lib/redeemOpsPermissions';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -120,6 +120,28 @@ export function blockedStepPhrase(entry) {
   return `${title} can’t be prepared`;
 }
 
+/** Short reason label for list rows (MyQueue "Waiting on info" bucket). */
+export function blockedReasonLabel(reason) {
+  const meta = BLOCKED_REASON_META[reason];
+  if (meta?.need) return `no ${meta.need.replace(/^an? /, '')} on record`;
+  if (meta?.text) return meta.text;
+  return 'needs attention';
+}
+
+/**
+ * Full toast description for a park: the phrase plus what ACTUALLY unblocks
+ * it — only record gaps get the "add it and it resumes on its own" promise
+ * (the contact-info hook is the sole auto-resume; a DNC block or a template
+ * bug can't be fixed by adding contact info).
+ */
+export function blockedStepToast(entry, verb = 'continues') {
+  const phrase = blockedStepPhrase(entry);
+  const meta = entry ? BLOCKED_REASON_META[entry.reason] : null;
+  if (meta?.need) return `${phrase}. Add it and the cadence ${verb} on its own — or skip that step.`;
+  if (entry?.reason === 'unresolved_template') return `${phrase}. Skip that step, or fix the cadence and re-enroll.`;
+  return `${phrase}. Skip that step or stop the cadence.`;
+}
+
 /**
  * Due label per the Cadence & Tasks spec: overdue reads "Overdue · 14 Jul" in
  * red, today/tomorrow are words, anything later is "Wed 18 Jul" in gray.
@@ -204,20 +226,29 @@ export function CadenceChip({ task }) {
  * banner (step the record can't serve). Cancels the step's open task, if any,
  * and advances through the step's continue edge on the authored delay.
  */
-export function SkipStepDialog({ open, onOpenChange, partnerId, stepTitle, blocked = false }) {
+export function SkipStepDialog({ open, onOpenChange, partnerId, stepTitle, expectedStepId, blocked = false }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
+  // Closing by any route (Back, Esc, overlay) drops the draft note — a stale
+  // note must not ride into a later, unrelated skip's audit entry.
+  const setOpen = (v) => {
+    if (!v) setNote('');
+    onOpenChange(v);
+  };
 
   const skipMutation = useMutation({
-    mutationFn: () => redeemOpsApi.skipCadenceStep(partnerId, note.trim() ? { note: note.trim() } : {}),
+    mutationFn: () => redeemOpsApi.skipCadenceStep(partnerId, {
+      ...(note.trim() ? { note: note.trim() } : {}),
+      // Staleness guard: the server 409s if this is no longer the current step.
+      ...(expectedStepId ? { expectedStepId } : {}),
+    }),
     onSuccess: (data) => {
-      onOpenChange(false);
-      setNote('');
+      setOpen(false);
       if (data?.finished) {
         toast.success('Step skipped — that was the last step, so the cadence is finished');
       } else if (data?.pausedForInfo) {
         toast.warning('Step skipped — the next one is waiting too', {
-          description: `${blockedStepPhrase(data.pausedForInfo.blocked?.[0])}. Add it and the cadence continues on its own — or skip that step as well.`,
+          description: blockedStepToast(data.pausedForInfo.blocked?.[0]),
           duration: 8000,
         });
       } else if (data?.nextTask) {
@@ -233,7 +264,7 @@ export function SkipStepDialog({ open, onOpenChange, partnerId, stepTitle, block
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Skip {stepTitle ? `“${stepTitle}”` : 'this step'}?</DialogTitle>
@@ -250,7 +281,7 @@ export function SkipStepDialog({ open, onOpenChange, partnerId, stepTitle, block
           onChange={(e) => setNote(e.target.value)}
         />
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Back</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>Back</Button>
           <Button disabled={skipMutation.isPending} onClick={() => skipMutation.mutate()}>
             {skipMutation.isPending ? 'Skipping…' : 'Skip step'}
           </Button>
@@ -269,6 +300,7 @@ export function SkipStepDialog({ open, onOpenChange, partnerId, stepTitle, block
  */
 export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disabledHint }) {
   const queryClient = useQueryClient();
+  const authUser = useAuthStore((s) => s.user);
   const [confirmNI, setConfirmNI] = useState(false);
   const [alsoMarkLost, setAlsoMarkLost] = useState(true);
   const [scriptOpen, setScriptOpen] = useState(false);
@@ -277,6 +309,11 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
   const channel = task?.cadenceStep?.channel || 'custom';
   const dispositions = CHANNEL_DISPOSITIONS[channel] || CHANNEL_DISPOSITIONS.custom;
   const partnerId = task.partnerOrganisationId || task.partner?.id;
+  // Skipping is a deal decision (owner-or-admin), narrower than completing
+  // (manager tier). Cadence tasks are always assigned to the business owner,
+  // so the assignee stands in for row ownership — mirrors the server rule
+  // instead of offering a menu item that can only 403.
+  const canSkip = canActOnPartnerRow(authUser, { ownerUserId: task.assigneeUserId });
 
   const completeMutation = useMutation({
     mutationFn: (body) => redeemOpsApi.completeCadenceTask(task.id, body),
@@ -288,8 +325,8 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
           description: `${next.title} · ${new Date(next.dueAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}`,
         });
       } else if (data?.cadencePaused) {
-        toast.warning('Logged — the cadence is waiting at the next step', {
-          description: `${blockedStepPhrase(data.cadencePaused.blocked?.[0])}. Nothing is skipped: add the missing info (it resumes on its own) or skip that step from the business page.`,
+        toast.warning('Logged — the cadence is waiting at the next step (nothing skipped)', {
+          description: blockedStepToast(data.cadencePaused.blocked?.[0], 'resumes'),
           duration: 8000,
         });
       } else {
@@ -338,12 +375,16 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
               </DropdownMenuItem>
             </>
           )}
-          <DropdownMenuSeparator />
-          {/* The nothing-happened exit: for a step that doesn't apply to this
-              business. Confirms first; the server enforces owner-or-admin. */}
-          <DropdownMenuItem onSelect={() => setSkipOpen(true)}>
-            <SkipForward className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Skip this step…
-          </DropdownMenuItem>
+          {canSkip && (
+            <>
+              <DropdownMenuSeparator />
+              {/* The nothing-happened exit: for a step that doesn't apply to
+                  this business. Confirms first; the server re-checks the row. */}
+              <DropdownMenuItem onSelect={() => setSkipOpen(true)}>
+                <SkipForward className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Skip this step…
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -352,6 +393,7 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
         onOpenChange={setSkipOpen}
         partnerId={partnerId}
         stepTitle={task.title}
+        expectedStepId={task.cadenceStep?.id}
       />
 
       <Dialog open={confirmNI} onOpenChange={setConfirmNI}>
@@ -592,11 +634,9 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
       setEnrollOpen(false);
       if (data?.pausedForInfo) {
         toast.warning('Enrolled — waiting at step 1', {
-          description: `${blockedStepPhrase(data.pausedForInfo.blocked?.[0])}. Add it and the cadence starts on its own — or skip the step from the cadence card.`,
+          description: blockedStepToast(data.pausedForInfo.blocked?.[0], 'starts'),
           duration: 8000,
         });
-      } else if (data?.finishedImmediately) {
-        toast.warning('Enrolled — but the cadence ended immediately');
       } else {
         toast.success('Cadence started — first task is in the queue');
       }
@@ -612,10 +652,16 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
   const resumeMutation = useMutation({
     mutationFn: () => redeemOpsApi.resumeCadence(partnerId),
     onSuccess: (resumed) => {
-      // A resume that re-parked means nothing became reachable — say so
-      // instead of pretending it's running.
+      // A resume that re-parked means the step is still blocked — say WHY
+      // instead of pretending it's running (or blaming missing contact info
+      // for a DNC or template block it can't fix).
       if (resumed?.state === 'paused') {
-        toast.warning('Still can’t reach them — add the missing contact info first');
+        const meta = BLOCKED_REASON_META[resumed?.blockedReason];
+        toast.warning(meta?.need
+          ? `Still waiting — add ${meta.need} first`
+          : meta
+            ? `Still blocked — ${meta.text}`
+            : 'Still can’t reach them — add the missing contact info first');
       } else {
         toast.success('Cadence resumed');
       }
@@ -822,7 +868,7 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
       {rows.length === 0 && !tasksQuery.isLoading && (
         <p className="text-[12.5px] m-0 px-5 pb-3.5 leading-relaxed" style={{ color: 'var(--ro-text-3)' }}>
           {canManage && !terminalStage
-            ? `No open tasks — add one${CADENCES_ENABLED && canRunCadence ? ' or start a cadence' : ''}.`
+            ? `No open tasks — add one${CADENCES_ENABLED && canRunCadence && !live ? ' or start a cadence' : ''}.`
             : 'No open tasks.'}
         </p>
       )}
@@ -847,6 +893,33 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
   );
 
   /* ── Mobile strip: the primary owed task, actionable in place ── */
+  // The phone layout renders ONLY this strip (the card with the parked banner
+  // is hidden lg:block on PartnerDetail) — so a park must surface its levers
+  // here too, and even when manual tasks push the cadence out of `primary`.
+  const parkedNotice = pausedForInfo ? (
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-[10px] px-3 py-2 mb-2"
+      style={{ background: 'var(--ro-tag-yellow-bg, #FFF6DE)' }}
+    >
+      <p className="text-[12px] font-semibold m-0 flex-1 min-w-0" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
+        Cadence waiting at step {currentOrder}
+        {parkedStepTitle ? ` · ${parkedStepTitle}` : ''}
+        {enrollment.blockedReason ? ` — ${blockedReasonLabel(enrollment.blockedReason)}` : ''}
+      </p>
+      {canRunCadence && (
+        <span className="flex gap-1.5 shrink-0">
+          {(!blockedMeta || blockedMeta.need) && onFixContactInfo && (
+            <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11.5px]" onClick={() => onFixContactInfo(fixTab)}>
+              Add info
+            </Button>
+          )}
+          <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11.5px]" onClick={() => setSkipParkedOpen(true)}>
+            Skip step
+          </Button>
+        </span>
+      )}
+    </div>
+  ) : null;
   const primary = rows[0];
   const others = rows.slice(1);
   const othersOverdue = others.reduce((n, t) => n + (taskDueMeta(t).overdue ? 1 : 0), 0);
@@ -917,7 +990,7 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
       <span className="font-semibold" style={{ color: 'var(--ro-bunker)' }}>
         <CadenceName cadence={enrollment.cadence} /> · step {currentOrder}/{steps.length}
       </span>
-      {pausedForInfo ? ' · waiting — add info or skip the step' : paused ? ' · paused' : ' · scheduling next step…'}
+      {pausedForInfo ? ' · waiting' : paused ? ' · paused' : ' · scheduling next step…'}
     </p>
   ) : (
     <div className="flex items-center justify-between gap-2">
@@ -930,6 +1003,7 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
     <>
       {variant === 'summary' ? (
         <div className="rounded-2xl border border-border bg-white px-4 py-3 lg:hidden">
+          {parkedNotice}
           {strip}
         </div>
       ) : (
@@ -945,6 +1019,7 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
         onOpenChange={setSkipParkedOpen}
         partnerId={partnerId}
         stepTitle={parkedStepTitle}
+        expectedStepId={enrollment?.currentStep?.id}
         blocked
       />
 

@@ -449,6 +449,68 @@ describe('blocked steps & missing contact info', () => {
     expect(task.snapshotRecipient).toBe('biz@park.sg');
   });
 
+  test("a park keeps the step's authored delay: the contact-info auto-resume schedules it on time, not NOW", async () => {
+    await svc.createCadence({
+      name: 'Paced Park',
+      steps: [
+        { channel: 'call', title: 'Paced call', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
+        { channel: 'email', title: 'Paced email', delayDays: 3, timeWindow: 'any' },
+      ],
+    }, admin.user);
+    const p = await ownedPartner('Paced Park Cafe');
+    const { enrollment, firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'paced_park' }, execA.user);
+    await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
+    let e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.blockedReason).toBe('no_email');
+    expect(new Date(e.blockedDueAt).getTime()).toBeGreaterThan(Date.now() + 2 * 24 * 3600 * 1000);
+
+    // Fixing the record minutes later must NOT fire the +3d step today.
+    await partnerSvc.addContact(p.id, { name: 'O', email: 'paced@park.sg' }, execA.user);
+    e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('active');
+    const task = await openCadenceTask(enrollment.id);
+    expect(new Date(task.dueAt).getTime()).toBeGreaterThan(Date.now() + 2 * 24 * 3600 * 1000);
+  });
+
+  test("the rep's explicit Retry (resume) means NOW — it drops the parked timing", async () => {
+    await svc.createCadence({
+      name: 'Paced Park Manual',
+      steps: [
+        { channel: 'call', title: 'PPM call', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
+        { channel: 'email', title: 'PPM email', delayDays: 3, timeWindow: 'any' },
+      ],
+    }, admin.user);
+    const p = await ownedPartner('Paced Manual Cafe');
+    const { enrollment, firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'paced_park_manual' }, execA.user);
+    await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
+    // fix the record WITHOUT the hook (raw write) so the park is still in place
+    await p.update({ primaryEmail: 'ppm@now.sg' });
+    await svc.resumeEnrollment(p.id, execA.user);
+    const task = await openCadenceTask(enrollment.id);
+    expect(task).toBeTruthy();
+    expect(new Date(task.dueAt).getTime()).toBeLessThan(Date.now() + 24 * 3600 * 1000);
+  });
+
+  test('a whatsapp-only second contact satisfies the phone chain (was parked no_phone forever)', async () => {
+    const p = await ownedPartner('WA Only Cafe', execA, { primaryPhone: null });
+    await partnerSvc.addContact(p.id, { name: 'Primary', email: 'primary@waonly.sg' }, execA.user);
+    await partnerSvc.addContact(p.id, { name: 'Second', whatsapp: '+6581119999' }, execA.user);
+    const { firstTask, pausedForInfo } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+    expect(pausedForInfo).toBeFalsy();
+    expect(firstTask.snapshotRecipient).toBe('+6581119999');
+  });
+
+  test('stopping a parked cadence clears the park residue on the terminal row', async () => {
+    const p = await ownedPartner('Stop Parked Cafe');
+    const { enrollment } = await svc.enrollPartner(p.id, { cadenceKey: 'email_only_chase' }, execA.user);
+    await svc.stopEnrollment(p.id, execA.user);
+    const e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    expect(e.state).toBe('exited');
+    expect(e.pausedReason).toBeNull();
+    expect(e.blockedReason).toBeNull();
+    expect(e.blockedDueAt).toBeNull();
+  });
+
   test('a manual pause survives the reconciler (it used to auto-resume after 10 minutes)', async () => {
     const p = await ownedPartner('Manual Pause Cafe');
     const { enrollment } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
@@ -527,6 +589,31 @@ describe('manual skip (skip-step)', () => {
     e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
     expect(e.state).toBe('active');
     expect((await openCadenceTask(enrollment.id)).title).toBe('The email');
+  });
+
+  test('expectedStepId guards a stale skip: the rep must skip the step they SAW', async () => {
+    const p = await ownedPartner('Stale Skip Cafe');
+    const { enrollment, firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'fnb_call_first' }, execA.user);
+    // The rep's screen shows step 1; a colleague logs its outcome first.
+    await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
+    const stale = await request(app)
+      .post(`/api/redeem-ops/partners/${p.id}/cadence/skip-step`)
+      .set(auth(execA.token))
+      .send({ expectedStepId: firstTask.cadenceStepId });
+    expect(stale.status).toBe(409);
+    expect(stale.body.message).toMatch(/no longer/);
+    // The refused skip touched nothing — step 2's task is still open.
+    const survivor = await openCadenceTask(enrollment.id);
+    expect(survivor).toBeTruthy();
+
+    // With the CURRENT step id the skip goes through.
+    const e = await OutreachCadenceEnrollment.findByPk(enrollment.id);
+    const ok = await request(app)
+      .post(`/api/redeem-ops/partners/${p.id}/cadence/skip-step`)
+      .set(auth(execA.token))
+      .send({ expectedStepId: e.currentStepId });
+    expect(ok.status).toBe(200);
+    expect((await OutreachTask.findByPk(survivor.id)).status).toBe('cancelled');
   });
 
   test('refusals: genuine branch 409 (rolled back), non-owner 403, manual pause 409, no live cadence 404', async () => {
@@ -621,6 +708,28 @@ describe('queue accounting', () => {
     ];
     const chip = allTasks.find((tk) => tk.partner?.id === enrolled.id);
     expect(chip?.cadenceStep?.cadence?.key).toBe('fnb_call_first');
+  });
+
+  test('a mid-cadence park surfaces in the waitingOnInfo bucket (no task ranks it anywhere else)', async () => {
+    const owner = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
+    await svc.createCadence({
+      name: 'Queue Park',
+      steps: [
+        { channel: 'call', title: 'QP call', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
+        { channel: 'email', title: 'QP email', delayDays: 0, timeWindow: 'any' },
+      ],
+    }, admin.user);
+    const p = await ownedPartner('Queue Park Cafe', owner);
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'queue_park' }, owner.user);
+    await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, owner.user);
+
+    const res = await request(app).get('/api/redeem-ops/queue').set(auth(owner.token));
+    expect(res.status).toBe(200);
+    const bucket = res.body.data.waitingOnInfo;
+    expect(bucket.total).toBe(1);
+    expect(bucket.items[0]).toMatchObject({ id: p.id, blockedReason: 'no_email', stepTitle: 'QP email' });
+    // …and nowhere else: firstOutreachAt is set, so not "awaiting first touch".
+    expect(res.body.data.awaitingFirstOutreach.items.map((x) => x.id)).not.toContain(p.id);
   });
 });
 

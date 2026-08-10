@@ -122,8 +122,8 @@ value STRING(160) NOT NULL;                  -- normalized phone/email
 reason STRING(32) NOT NULL;                  -- opt_out | dnc_listed | bounced | complaint
 source STRING(32); expiresAt DATE NULL; timestamps. UNIQUE (channel, value)
 ```
-Materialization gate: recipient in suppressions → step outcome `blocked` (skip + audit + owner
-notified). Applies to manual steps too. PDPC's B2B exclusion is purpose-based, not line-type-based;
+Materialization gate: recipient in suppressions → step outcome `blocked` (the run PARKS on the
+step, audited — §15; no auto-skip). Applies to manual steps too. PDPC's B2B exclusion is purpose-based, not line-type-based;
 when `DNC_API_ENABLED` flips, call/whatsapp materialization runs `dncGate` and records
 result + checkedAt on the task snapshot. Until then: suppressions + honest badge.
 
@@ -153,7 +153,8 @@ require an assignee — see §7 for the Discover/pool implication.
 
 ### 5.2 Completion — the linearizable core
 Dedicated endpoint `POST /api/redeem-ops/cadence-tasks/:taskId/complete { disposition, alsoMarkLost? }`.
-One transaction, one lock order everywhere (**enrollment → partner → task**):
+One transaction, one lock order everywhere (**partner → enrollment → task** — as built; the P0
+hooks fire holding the partner lock, so every path takes it first):
 1. `SELECT enrollment FOR UPDATE`; require `state='active'` and `currentStepId == task.cadenceStepId`.
 2. `SELECT partner FOR UPDATE` (live check). 3. Complete task with a status predicate
    (`UPDATE … WHERE status IN ('open','in_progress')`); 0 rows → replay: return the recorded
@@ -353,3 +354,29 @@ Product call (Shawn, 2026-08-11) supersedes §14's blocked-step walk:
   "Skip this step…" for open steps a rep deems irrelevant; the enroll dialog warns "the
   cadence will wait at those steps" (the old copy promised auto-skipping); enroll/complete/
   skip responses carry the blocked step so toasts can name it.
+
+### 15.1 Adversarial-review hardening (same day, Fable 5 review — 3 agents, findings verified)
+
+- **Skip staleness guard**: `skip-step` accepts `expectedStepId` (the step the rep SAW; both UI
+  paths send it) and 409s "no longer the current step — refresh" on mismatch — without it a
+  stale queue row could silently skip (or even finish) the WRONG step. Mirrors §5.2's
+  completion guard.
+- **Parks keep the authored pacing**: `blockedDueAt` (migration 118) stores the parked step's
+  computed due time; automatic resumes (contact-info hook, reconciler) schedule the retried
+  step for `max(blockedDueAt, now)` instead of firing a +3d step three days early the moment
+  the record is fixed. The rep's explicit Resume/"Retry now" clears it — they asked for now.
+- **"Waiting on info" queue bucket**: a MID-cadence park has no open task and a set
+  `firstOutreachAt`, so it matched no MyQueue bucket and vanished from the docket until the
+  14-day stale sweep. `getMyQueue` now returns `waitingOnInfo` (my owned, non-snoozed partners
+  with a `missing_info` park + step + reason) and the docket renders it.
+- **Recipient resolver fix**: the phone fallback read `.mobile` off a contact matched by
+  `mobile || whatsapp` — a whatsapp-only second contact parked as `no_phone` forever, and the
+  banner's "add it and it continues" promise could never come true. Now reads both.
+- **Mobile levers**: the summary strip (the ONLY surface on phones) renders the park with its
+  own Add info / Skip step buttons — previously it named the park but offered no action, or
+  hid it entirely behind a manual task.
+- Ended enrollments clear park residue (`pausedReason`/`blockedReason`/`blockedDueAt`);
+  terminal rows never read as parked. The cadence editor's "How steps advance" help and the
+  §4.6 materialization-gate line teach the new semantics; the Outcome-menu skip item renders
+  only for owner-or-admin (assignee == owner for cadence tasks); park toasts promise
+  auto-resume only for fixable record gaps, and the re-park toast names the real blocker.

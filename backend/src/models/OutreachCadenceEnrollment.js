@@ -18,6 +18,7 @@ const OutreachCadenceEnrollment = sequelize.define('OutreachCadenceEnrollment', 
   pausedAt: { type: DataTypes.DATE, allowNull: true },
   pausedReason: { type: DataTypes.STRING(32), allowNull: true, comment: 'manual|snoozed|missing_info (NULL = legacy pause)' },
   blockedReason: { type: DataTypes.STRING(32), allowNull: true, comment: 'what parked a missing_info pause: no_phone|no_email|no_instagram_handle|no_active_location|suppressed|unresolved_template (NULL = not parked)' },
+  blockedDueAt: { type: DataTypes.DATE, allowNull: true, comment: 'the parked step’s authored due time — automatic resumes honor it; explicit Retry clears it' },
   endedAt: { type: DataTypes.DATE, allowNull: true },
 }, {
   tableName: 'outreach_cadence_enrollments',

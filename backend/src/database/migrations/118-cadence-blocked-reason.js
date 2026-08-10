@@ -16,10 +16,20 @@ export async function up(queryInterface) {
   await queryInterface.sequelize.query(
     'ALTER TABLE outreach_cadence_enrollments ADD COLUMN IF NOT EXISTS "blockedReason" VARCHAR(32)'
   );
+  // The step's authored due time, computed at park time. Automatic resumes
+  // (contact-info hook) schedule the retried step for max(this, now) so a
+  // fixed record does NOT fire the step days early; a rep's explicit
+  // Retry/Resume clears it first (they asked for NOW).
+  await queryInterface.sequelize.query(
+    'ALTER TABLE outreach_cadence_enrollments ADD COLUMN IF NOT EXISTS "blockedDueAt" TIMESTAMP WITH TIME ZONE'
+  );
 }
 
 export async function down(queryInterface) {
   await queryInterface.sequelize.query(
     'ALTER TABLE outreach_cadence_enrollments DROP COLUMN IF EXISTS "blockedReason"'
+  );
+  await queryInterface.sequelize.query(
+    'ALTER TABLE outreach_cadence_enrollments DROP COLUMN IF EXISTS "blockedDueAt"'
   );
 }
