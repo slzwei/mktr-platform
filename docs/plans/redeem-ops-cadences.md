@@ -173,8 +173,9 @@ One transaction, one lock order everywhere (**enrollment → partner → task**)
 ### 5.3 Materialization (used by enroll/advance/resume/reconcile)
 - **Channel prerequisites**: resolve recipient (call/whatsapp → contact mobile else org
   `primaryPhone`; email → contact email else `primaryEmail`; instagram_dm → handle; visit →
-  active location). Missing or suppressed → outcome `blocked`: skip via the step's `'*'` edge,
-  audit, notify owner. Snapshot resolved recipient + rendered script onto the task (allowlisted
+  active location). Missing or suppressed → outcome `blocked`: the enrollment PARKS on the
+  step, audited (§15 — no auto-skip; the rep fixes the record, skips explicitly, or stops).
+  Snapshot resolved recipient + rendered script onto the task (allowlisted
   plain-text merge engine; unresolved placeholder ⇒ blocked, never a template leaked to a card).
 - **Scheduling**: `dueAt = previous completion + delayDays`, clamped into the SGT `timeWindow`
   (new `sgtWindowClamp` helper — `sgtDayWindow` only yields day bounds). If the window already
@@ -325,3 +326,30 @@ Two product calls (Shawn, 2026-08-06) supersede parts of §5.3 and §13.5:
   enforced, skipped when the completion itself marks the business Lost). Manual activity
   logging still never moves stages. Rationale: the queue already treats a cadence touch as
   "first outreach done" — the kanban column disagreeing with it was operator-visible drift.
+
+## 15. Revision 2026-08-11 — no auto-skip, ever: park at the FIRST blocked step + manual skip
+
+Product call (Shawn, 2026-08-11) supersedes §14's blocked-step walk:
+
+- **A blocked step parks the run immediately** — `paused`/`missing_info`, parked ON the step,
+  with the exact blocker in the new `blockedReason` column (`no_phone` | `no_email` |
+  `no_instagram_handle` | `no_active_location` | `suppressed` | `unresolved_template`,
+  migration 118). §14's walk still skipped intermediate blocked steps silently whenever a
+  later step was reachable (the email step of `revival_60d` simply vanished for email-less
+  businesses). Now nothing advances without either the step's real outcome or an explicit
+  human skip. §14's machinery is unchanged — the `missing_info` pause, `onContactInfoAdded`
+  auto-resume, and reconciler exclusion now fire at the FIRST block instead of the walk's dead
+  end, and the auto-resume retries the SAME parked step (never past it).
+- **Manual skip** — `POST /partners/:id/cadence/skip-step` (`tasks.manage` route gate,
+  owner-or-admin row rule like every deal-working verb; optional `note` ≤200 chars, audited
+  as `cadence.step_skipped`). Cancels the step's open task if any, advances through the
+  step's `'*'`-or-sole edge on the next step's authored delay; skipping the last step ends
+  the enrollment `completed/finished`; a genuine branch (several specific edges, no `'*'`)
+  refuses with 409. Skipping logs NO outreach activity — it is not a touch, and
+  `firstOutreachAt` stays untouched.
+- **UI** — the parked banner is step-precise ("Waiting at step N · “title” — nothing has been
+  skipped") with reason-aware guidance, [Add contact info] only for fixable reasons,
+  [Skip this step], and Resume relabelled "Retry now"; the Outcome menu gains
+  "Skip this step…" for open steps a rep deems irrelevant; the enroll dialog warns "the
+  cadence will wait at those steps" (the old copy promised auto-skipping); enroll/complete/
+  skip responses carry the blocked step so toasts can name it.

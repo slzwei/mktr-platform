@@ -32,8 +32,9 @@ const SEEDS = [
     transitions: [
       { from: null, disposition: '*', to: 1, delayDays: 0, timeWindow: 'any' },
       { from: 1, disposition: 'no_answer', to: 2, delayDays: 0, timeWindow: 'any' },
-      // single-outcome steps use '*' so a BLOCKED step (no IG handle, no phone
-      // on record) skips forward instead of finishing the whole cadence
+      // single-outcome steps use '*' = any outcome advances. (A BLOCKED step
+      // no longer skips through these edges — the engine parks on the step
+      // for the rep to fix the record, skip explicitly, or stop.)
       { from: 2, disposition: '*', to: 3, delayDays: 2, timeWindow: 'off_peak' },
       { from: 3, disposition: 'no_answer', to: 4, delayDays: 2, timeWindow: 'any' },
       { from: 4, disposition: '*', to: 5, delayDays: 3, timeWindow: 'off_peak' },

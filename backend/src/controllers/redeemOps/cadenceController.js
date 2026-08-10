@@ -104,6 +104,19 @@ export const completeCadenceTask = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+const skipSchema = Joi.object({
+  // Optional "why" for the audit trail — the step itself names what was skipped.
+  note: Joi.string().trim().max(200).allow('', null),
+});
+
+export const skipStep = asyncHandler(async (req, res) => {
+  const body = validateBody(skipSchema, req.body || {});
+  const result = await cadenceService.skipCurrentStep(
+    req.params.partnerId, { note: body.note || null }, req.user, req.id
+  );
+  res.json({ success: true, data: result });
+});
+
 export const pause = asyncHandler(async (req, res) => {
   const enrollment = await cadenceService.pauseEnrollment(req.params.partnerId, req.user, req.id);
   res.json({ success: true, data: { enrollment } });

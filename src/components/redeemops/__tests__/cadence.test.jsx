@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   pauseCadence: vi.fn(),
   resumeCadence: vi.fn(),
   stopCadence: vi.fn(),
+  skipCadenceStep: vi.fn(),
   createCadence: vi.fn(),
   createCadenceVersion: vi.fn(),
   retireCadence: vi.fn(),
@@ -631,8 +632,83 @@ describe('enroll dialog reachability warnings', () => {
       />
     );
     await user.click(await screen.findByRole('button', { name: /start cadence/i }));
-    // IG-only: nothing reachable → hard warning; call-first: email step only → soft skip note
-    expect(await screen.findByText(/needs an instagram handle — enrolling pauses/i)).toBeInTheDocument();
-    expect(screen.getByText(/missing an email address — those steps will be skipped/i)).toBeInTheDocument();
+    // IG-only: nothing reachable → waits at step 1; call-first: the email
+    // step will make the cadence wait when it gets there (never auto-skip).
+    expect(await screen.findByText(/needs an instagram handle — enrolling waits at step 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/missing an email address — the cadence will wait at those steps/i)).toBeInTheDocument();
+  });
+});
+
+describe('park-at-first-block banner + manual skip', () => {
+  const parkedEnrollment = (blockedReason, currentStep) => ({
+    enrollment: {
+      id: 'e-9', state: 'paused', pausedReason: 'missing_info', blockedReason,
+      cadence: {
+        id: 'c-9', name: 'Revival', version: 1,
+        steps: [
+          { id: 's-1', stepOrder: 1, title: 'Check-in', channel: 'whatsapp' },
+          { id: 's-2', stepOrder: 2, title: 'Recap email', channel: 'email' },
+        ],
+      },
+      currentStep,
+    },
+    openTask: null,
+  });
+
+  it('names the exact blocked step and reason, and skips it after confirmation', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('no_email', { id: 's-2', stepOrder: 2, title: 'Recap email', channel: 'email' })
+    );
+    api.skipCadenceStep.mockResolvedValue({ finished: false, nextTask: null, pausedForInfo: null });
+    const onFixContactInfo = vi.fn();
+    const user = userEvent.setup();
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }}
+        onFixContactInfo={onFixContactInfo}
+      />
+    );
+    // The banner is step-precise and says the quiet part out loud.
+    await screen.findByText(/waiting at step 2 · “recap email” — nothing has been skipped/i);
+    expect(screen.getByText(/no email address on record/i)).toBeInTheDocument();
+    // Fixable reason → the Contacts deep-link survives.
+    await user.click(screen.getByRole('button', { name: /add contact info/i }));
+    expect(onFixContactInfo).toHaveBeenCalledWith('contacts');
+    // Retry rides the existing resume endpoint under a truthful label.
+    expect(screen.getByRole('button', { name: /retry now/i })).toBeInTheDocument();
+
+    // Skip = confirm dialog → dedicated endpoint (with the optional note).
+    await user.click(screen.getByRole('button', { name: /skip this step/i }));
+    await screen.findByText(/skipping moves straight on to the next step/i);
+    await user.type(screen.getByPlaceholderText(/why\?/i), 'no email for this biz');
+    await user.click(screen.getByRole('button', { name: /^skip step$/i }));
+    await waitFor(() =>
+      expect(api.skipCadenceStep).toHaveBeenCalledWith('p-1', { note: 'no email for this biz' }));
+  });
+
+  it('a do-not-contact park says so and offers no contact-info fix', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('suppressed', { id: 's-1', stepOrder: 1, title: 'Check-in', channel: 'whatsapp' })
+    );
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }}
+        onFixContactInfo={vi.fn()}
+      />
+    );
+    await screen.findByText(/do-not-contact list/i);
+    expect(screen.queryByRole('button', { name: /add contact info/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /skip this step/i })).toBeInTheDocument();
+  });
+
+  it('the Outcome menu carries "Skip this step…" for an irrelevant open step', async () => {
+    api.skipCadenceStep.mockResolvedValue({ finished: false, nextTask: { title: 'WA', dueAt: new Date().toISOString() } });
+    const user = userEvent.setup();
+    wrap(<CadenceOutcomeButton task={callTask} />);
+    await user.click(screen.getByRole('button', { name: /outcome/i }));
+    await user.click(await screen.findByText(/skip this step…/i));
+    await screen.findByText(/its open task is cancelled/i);
+    await user.click(screen.getByRole('button', { name: /^skip step$/i }));
+    await waitFor(() => expect(api.skipCadenceStep).toHaveBeenCalledWith('p-1', {}));
   });
 });
