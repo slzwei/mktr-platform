@@ -678,12 +678,51 @@ export function makeMetaConnectService(overrides = {}) {
     return { status: 'connected' };
   }
 
+  // ── abandoned-dialog sweep ───────────────────────────────────────────────
+  // The agent opened the Facebook dialog and never continued: the callback
+  // never fires, so nothing else ever moves the row out of awaiting_callback
+  // (the app offers Cancel, but the server must self-heal too — an agent who
+  // just backs out should find the clean pitch on a cold revisit, not a
+  // forever-pending connect). Terminal semantics mirror the expired-callback
+  // path (dialogFailurePatch): a reauth attempt restores `connected` with its
+  // assets intact; a fresh attempt becomes `disconnected` — the same state the
+  // app's Cancel produces. Grace runs PAST the nonce TTL so we only ever sweep
+  // rows whose callback would be refused as state_expired anyway; conditional
+  // UPDATEs keyed on status make a concurrent callback race a no-op in either
+  // order.
+  const ABANDON_GRACE_MS = 5 * 60 * 1000;
+  async function sweepAbandonedDialogs() {
+    const cutoff = new Date(Date.now() - ABANDON_GRACE_MS);
+    const wipe = { stateNonce: null, stateExpiresAt: null, oauthCodeEnc: null, secretKind: null };
+    const [restored] = await d.MetaAgentConnection.update(
+      { ...wipe, status: 'connected', statusDetail: 'state_expired' },
+      { where: { status: 'awaiting_callback', stateExpiresAt: { [Op.lt]: cutoff }, connectedAt: { [Op.ne]: null } } }
+    );
+    const [cleared] = await d.MetaAgentConnection.update(
+      {
+        ...wipe,
+        status: 'disconnected', statusDetail: 'abandoned',
+        disconnectReason: 'abandoned', disconnectedAt: new Date(),
+      },
+      { where: { status: 'awaiting_callback', stateExpiresAt: { [Op.lt]: cutoff }, connectedAt: null } }
+    );
+    if (restored + cleared > 0) {
+      d.logger.info('[MetaConnect] swept abandoned dialogs', { restored, cleared });
+    }
+    return { restored, cleared };
+  }
+
   let draining = false;
   async function drainMetaConnections({ batchSize = 5, maxBatches = 4 } = {}) {
     if (draining) return { drained: 0, note: 'already draining' };
     draining = true;
     let drained = 0;
     try {
+      // Piggyback the worker cadence (60s interval + every callback kick) —
+      // cheap conditional UPDATEs, and a sweep failure must never block claims.
+      await sweepAbandonedDialogs().catch((err) => {
+        d.logger.warn('[MetaConnect] abandon sweep failed', { error: err?.message });
+      });
       for (let i = 0; i < maxBatches; i += 1) {
         const rows = await claimDue(batchSize);
         if (rows.length === 0) break;
@@ -973,7 +1012,7 @@ export function makeMetaConnectService(overrides = {}) {
     startConnect, handleOAuthCallback, drainMetaConnections, processConnection,
     selectPage, getConnectionStatus, disconnect, disconnectForUsers,
     handleDeauthorize, handleDataDeletion, probeConnectionsHealth,
-    ensureMetaAgentQr, formNameFor,
+    ensureMetaAgentQr, formNameFor, sweepAbandonedDialogs,
   };
 }
 

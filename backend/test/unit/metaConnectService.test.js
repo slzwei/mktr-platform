@@ -482,6 +482,60 @@ describe('metaConnectService (unit)', () => {
     });
   });
 
+  describe('sweepAbandonedDialogs (abandoned "Finish in your browser")', () => {
+    it('fresh abandons → disconnected/abandoned; reauth abandons → connected restored; both wipe dialog secrets', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      const r = await svc.sweepAbandonedDialogs();
+      expect(r).toEqual({ restored: 1, cleared: 1 });
+
+      const calls = deps.MetaAgentConnection.update.mock.calls;
+      expect(calls).toHaveLength(2);
+
+      // Reauth pass: previously-connected rows RESTORE connected (assets stay wired).
+      const [restorePatch, restoreOpts] = calls[0];
+      expect(restorePatch).toEqual(expect.objectContaining({
+        status: 'connected', statusDetail: 'state_expired',
+        stateNonce: null, stateExpiresAt: null, oauthCodeEnc: null, secretKind: null,
+      }));
+      expect(restoreOpts.where.status).toBe('awaiting_callback');
+      expect(restoreOpts.where.connectedAt).not.toBeNull();
+
+      // Fresh pass: never-connected rows land on the SAME state the app's Cancel
+      // produces, so cold revisits render the pitch.
+      const [clearPatch, clearOpts] = calls[1];
+      expect(clearPatch).toEqual(expect.objectContaining({
+        status: 'disconnected', statusDetail: 'abandoned', disconnectReason: 'abandoned',
+        stateNonce: null, oauthCodeEnc: null, secretKind: null,
+      }));
+      expect(clearPatch.disconnectedAt).toBeInstanceOf(Date);
+      expect(clearOpts.where.status).toBe('awaiting_callback');
+      expect(clearOpts.where.connectedAt).toBeNull();
+
+      // Both passes only touch rows expired PAST the grace window — the cutoff
+      // sits before now (TTL already elapsed), so a live dialog is never swept.
+      for (const [, opts] of calls) {
+        // Op.lt is a Symbol key — read it via getOwnPropertySymbols.
+        const clause = opts.where.stateExpiresAt;
+        const cutoff = clause[Object.getOwnPropertySymbols(clause)[0]];
+        expect(cutoff).toBeInstanceOf(Date);
+        expect(cutoff.getTime()).toBeLessThan(Date.now());
+      }
+    });
+
+    it('runs on every drain and NEVER blocks claims when it fails', async () => {
+      const { deps } = makeDeps();
+      const svc = makeMetaConnectService(deps);
+      deps.MetaAgentConnection.update.mockRejectedValueOnce(new Error('db blip'));
+      const r = await svc.drainMetaConnections();
+      expect(r).toEqual({ drained: 0 });
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        '[MetaConnect] abandon sweep failed',
+        expect.objectContaining({ error: 'db blip' })
+      );
+    });
+  });
+
   describe('disconnect ordering (F11) + platform callbacks (F12)', () => {
     it('disconnect: local intake dies in one txn (token KEPT), then remote unsubscribe, then token wipe', async () => {
       const { deps } = makeDeps();
