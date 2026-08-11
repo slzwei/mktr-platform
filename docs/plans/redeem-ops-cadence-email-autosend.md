@@ -65,12 +65,36 @@ tenant. Consequences the design leans on:
 
 **Auth: Google service account with domain-wide delegation (DWD), impersonating
 `business@mktr.sg`.** Service account in the existing GCloud project "MKTR Platform" (the one
-holding OAuth client `917664265015-…`); DWD grant in admin.google.com for `gmail.send` +
-`gmail.readonly` + `gmail.settings.basic`. Key stored encrypted server-side via the
+holding OAuth client `917664265015-…`); ONE DWD grant in admin.google.com covering
+`gmail.send` + `gmail.readonly` + `gmail.settings.basic` +
+`admin.directory.user.readonly` (§2a). Key stored encrypted server-side via the
 `backend/src/utils/aiCredentialEncryption.js` pattern with its **own** env key
 (`OUTREACH_MAILBOX_ENCRYPTION_KEY` — never reuse `AI_SETTINGS_ENCRYPTION_KEY`; rotating one
 must not brick the other). Fallback documented but not built: OAuth connect flow à la the Meta
 "Connect Facebook" pattern (#435–#437), only if DWD is refused.
+
+### 2a. Workspace directory integration — a SHARED platform module (Shawn, 2026-08-11:
+"integrate it into the platform to list all the addresses from the mktr workspace, so a
+future purpose still works")
+
+- **`backend/src/services/google/workspaceService.js`** — a generic, redeemOps-agnostic
+  module: DWD JWT auth + Admin SDK **Directory API** reads. v1 surface: `listUsers()`
+  (every Workspace user with their `emails[]`/`aliases[]` — this is where
+  `business@mktr.sg`'s alternate addresses live), `listUserAliases(email)`, `listDomains()`
+  (proves mktr.sg + redeem.sg are both in the tenant), plus Gmail
+  `settings.sendAs.list` for send-as status. Outreach consumes it; anything later (staff
+  provisioning, address validation, another sending product) imports the same module and at
+  most adds a scope to the one DWD grant.
+- **Read-only on purpose**: no `users.aliases.insert` in v1 — creating aliases stays Shawn's
+  manual Admin-console step. A write scope is a much bigger blast radius; add it later only
+  with an explicit decision.
+- **Directory-call requirement**: Admin SDK impersonation subject must hold admin privileges —
+  `business@mktr.sg` is the tenant admin, so the same subject serves both Gmail and Directory
+  calls. (If that ever changes, the module takes a per-API subject.)
+- **Endpoint**: `GET /api/redeem-ops/outreach/workspace-addresses` (`settings.manage`) —
+  returns the live user/alias list for the Settings picker below. This permanently answers
+  "check all the email addresses": the platform lists them itself, no Admin-console
+  spelunking, no personal-mailbox connectors.
 
 **Onboarding a persona (runbook — §7's Settings card walks through this):**
 1. Shawn creates the alternate email on `business@mktr.sg` in Admin console (his existing
@@ -186,7 +210,11 @@ must not brick the other). Fallback documented but not built: OAuth connect flow
 - **Settings → Outreach personas** card (`settings.manage`): the persona list (address,
   display name, **assigned rep** — the who-is-who tying, one persona per rep, reassignable),
   send-as status, daily cap + sent-today, account health (last poll/send/error), **Send test
-  email** per persona. Onboarding checklist from §2 inline.
+  email** per persona. Onboarding checklist from §2 inline. **"Import from Workspace"** (§2a):
+  the picker shows the LIVE alias list from the Directory API — nobody types an address, so
+  typos are impossible; the health check also diffs configured personas against the live list
+  and flags drift both ways (persona whose alias vanished; alias with no persona yet — e.g.
+  it will show immediately whether david@/jacqueline@redeem.sg exist).
 - **Builder/editor**: Delivery toggle + Subject on email steps; validation (auto ⇒ subject
   required, subject merge-fields same allowlist as body); AI drafter (`cadenceAiService`) emits
   subjects for email steps (small prompt/schema addition; drafts stay Manual by default —
@@ -200,8 +228,10 @@ must not brick the other). Fallback documented but not built: OAuth connect flow
 
 ## 8. Phasing (each = one PR, tests, review, dark until the flag flips)
 
-- **A — Mailbox + transport** (migration, `outreachMailboxService`, DWD client, encryption,
-  Settings card, test-send). No engine changes. ~1 PR.
+- **A — Workspace module + personas + transport** (migration; the shared
+  `google/workspaceService` §2a with directory listing; `outreachMailboxService`; encryption;
+  Settings card with Import-from-Workspace + drift health; test-send). No engine changes.
+  ~1 PR.
 - **B — Outbox + sender + auto-complete** (materialization enqueue, worker, retries,
   failure→manual, cancellation coherence, builder Delivery/Subject, task surfaces). The big
   one. ~1–2 PRs.
@@ -229,9 +259,11 @@ must not brick the other). Fallback documented but not built: OAuth connect flow
    | David Kim (david@mktr.sg) | david@redeem.sg |
    | Jacqueline Teh (jacqueline@mktr.sg) | jacqueline@redeem.sg |
    Shawn confirmed emily/tyler/jeremy/dara aliases exist in Workspace; **david@redeem.sg +
-   jacqueline@redeem.sg to be confirmed/created** (his manual Admin-console step — the Phase-A
-   health card flags any alias that isn't sendable yet). Default From display name = the rep's
-   full CRM name (e.g. `"Emily Wong" <emily@redeem.sg>`), editable per persona.
+   jacqueline@redeem.sg to be confirmed/created** — the §2a Import-from-Workspace picker shows
+   this definitively the moment Phase A connects (creation itself stays his manual
+   Admin-console step; the platform is read-only on the directory). Default From display
+   name = the rep's full CRM name (e.g. `"Emily Wong" <emily@redeem.sg>`), editable per
+   persona.
 3. Daily cap comfort level for warm-up (default 30/day per persona)?
 4. Who owns unmatched inbox mail — leave-in-Gmail with the health-card count (default), or
    forward to someone?
