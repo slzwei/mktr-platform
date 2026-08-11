@@ -8,7 +8,7 @@ import { logger } from '../../utils/logger.js';
 import { makeSecretBox } from '../../utils/secretBox.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makePartnerService } from './partnerService.js';
-import { makeWorkspaceClient, parseServiceAccountKey, WORKSPACE_SCOPES } from '../google/workspaceService.js';
+import { makeWorkspaceClient, parseServiceAccountKey, encodeMimeHeader, WORKSPACE_SCOPES } from '../google/workspaceService.js';
 
 /**
  * The inbox loop — Phase C (docs/plans/redeem-ops-cadence-email-autosend.md §5).
@@ -123,7 +123,7 @@ export function makeOutreachInboxService(overrides = {}) {
     const rfc822 = [
       `From: "Redeem outreach" <${headerSafe(account.accountEmail)}>`,
       `To: <${headerSafe(rep.email)}>`,
-      `Subject: Reply from ${headerSafe(partner.tradingName || partner.legalName || 'a prospect')} — answer them soon`,
+      `Subject: ${encodeMimeHeader(`Reply from ${headerSafe(partner.tradingName || partner.legalName || 'a prospect')} — answer them soon`)}`,
       'Content-Type: text/plain; charset=utf-8',
       '',
       `They replied on the ${persona?.address || 'outreach'} thread (${headerSafe(subject)}):`,

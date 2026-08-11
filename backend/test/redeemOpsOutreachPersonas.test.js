@@ -15,6 +15,7 @@ import { jest } from '@jest/globals';
 import { getApp, closeDb, createTestUser } from './helpers.js';
 import { OutreachAccount, OutreachPersona, RedeemOpsAuditEvent } from '../src/models/index.js';
 import { makeOutreachPersonaService } from '../src/services/redeemOps/outreachPersonaService.js';
+import { encodeMimeHeader } from '../src/services/google/workspaceService.js';
 import { makeSecretBox } from '../src/utils/secretBox.js';
 
 let app;
@@ -219,7 +220,19 @@ describe('test send (and the plan-F4 Message-ID probe)', () => {
     const rfc = google.sendRaw.mock.calls[0][0];
     expect(rfc).toContain('From: "Emily" <emily@redeem.sg>');
     expect(rfc).toContain('To: <business@mktr.sg>'); // never a prospect
+    // The em-dash subject must ride as an RFC-2047 encoded word — raw UTF-8
+    // in a header renders as mojibake (seen live: "Ã¢Â€Â"").
+    expect(rfc).toMatch(/Subject: =\?UTF-8\?B\?/);
+    expect(rfc).not.toMatch(/Subject: [^\r\n]*—/);
     expect(result.mintedPreserved).toBe(true); // fixture echoes the minted id
+
+    // The encoder itself: ASCII untouched; non-ASCII decodes back losslessly.
+    expect(encodeMimeHeader('Plain subject')).toBe('Plain subject');
+    const fancy = 'Idea for Café 北京 — trial 😀';
+    const decoded = encodeMimeHeader(fancy).split(' ')
+      .map((w) => Buffer.from(w.replace(/^=\?UTF-8\?B\?/, '').replace(/\?=$/, ''), 'base64').toString('utf8'))
+      .join('');
+    expect(decoded).toBe(fancy);
 
     const audit = await RedeemOpsAuditEvent.findOne({
       where: { action: 'outreach.test_send', entityId: emily.id },
