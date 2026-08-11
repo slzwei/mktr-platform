@@ -455,6 +455,39 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/resume`);
     return res.data?.enrollment;
   },
+  // ── Outreach personas (email auto-send Phase A; flag REDEEM_OPS_EMAIL_AUTOSEND_ENABLED) ──
+  async getOutreachAccount() {
+    const res = await apiClient.get('/redeem-ops/outreach/account');
+    return res.data;
+  },
+  async setupOutreachAccount(body) {
+    const res = await apiClient.put('/redeem-ops/outreach/account', body);
+    return res.data;
+  },
+  async refreshOutreachHealth() {
+    const res = await apiClient.post('/redeem-ops/outreach/account/health');
+    return res.data?.health;
+  },
+  async listWorkspaceAddresses() {
+    const res = await apiClient.get('/redeem-ops/outreach/workspace-addresses');
+    return res.data;
+  },
+  async listOutreachPersonas() {
+    const res = await apiClient.get('/redeem-ops/outreach/personas');
+    return res.data?.personas || [];
+  },
+  async importOutreachPersonas(addresses) {
+    const res = await apiClient.post('/redeem-ops/outreach/personas/import', { addresses });
+    return res.data;
+  },
+  async updateOutreachPersona(personaId, body) {
+    const res = await apiClient.patch(`/redeem-ops/outreach/personas/${personaId}`, body);
+    return res.data?.persona;
+  },
+  async testSendOutreachPersona(personaId) {
+    const res = await apiClient.post(`/redeem-ops/outreach/personas/${personaId}/test-send`);
+    return res.data;
+  },
   async skipCadenceStep(partnerId, body = {}) {
     const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/skip-step`, body);
     return res.data;
