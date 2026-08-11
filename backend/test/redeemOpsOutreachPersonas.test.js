@@ -32,7 +32,10 @@ const google = {
   aliases: ['emily@redeem.sg', 'jeremy@redeem.sg', 'emily@mktr.sg.test-google-a.com'],
   sendAs: [
     { sendAsEmail: 'business@mktr.sg', isPrimary: true, verificationStatus: 'accepted' },
-    { sendAsEmail: 'emily@redeem.sg', verificationStatus: 'accepted' },
+    // Same-account aliases come back with NO verificationStatus — Gmail never
+    // required verification for them. Note the capitalized local part too:
+    // matching must be case-insensitive (real tenant data does this).
+    { sendAsEmail: 'Emily@redeem.sg' },
     { sendAsEmail: 'jeremy@redeem.sg', verificationStatus: 'pending' },
   ],
   users: [
