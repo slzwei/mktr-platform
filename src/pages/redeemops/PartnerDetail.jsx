@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import Phone from 'lucide-react/icons/phone';
+import Trash2 from 'lucide-react/icons/trash-2';
 import Globe from 'lucide-react/icons/globe';
 import Instagram from 'lucide-react/icons/instagram';
 import MessageCircle from 'lucide-react/icons/message-circle';
@@ -124,7 +125,7 @@ function fieldDiffs(before = {}, after = {}) {
   return diffs;
 }
 
-function TimelineEntry({ entry }) {
+function TimelineEntry({ entry, onDeleteLog }) {
   const d = new Date(entry.at);
   const at = `${d.toLocaleDateString('en-SG', {
     day: 'numeric', month: 'short',
@@ -220,7 +221,19 @@ function TimelineEntry({ entry }) {
         <Icon className="w-4 h-4" />
       </span>
       <div className="min-w-0">
-        <p className="text-sm font-bold m-0">{title}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-bold m-0">{title}</p>
+          {entry.kind === 'activity' && onDeleteLog && (
+            <button
+              type="button"
+              aria-label="Delete log entry"
+              className="shrink-0 -mt-0.5 p-1 rounded border-0 bg-transparent cursor-pointer"
+              onClick={() => onDeleteLog(entry.data)}
+            >
+              <Trash2 className="w-3.5 h-3.5" style={{ color: 'var(--ro-text-3)' }} aria-hidden="true" />
+            </button>
+          )}
+        </div>
         {body}
         <p className="text-xs m-0 mt-1" style={{ color: 'var(--ro-text-3)' }}>{meta}</p>
       </div>
@@ -457,6 +470,20 @@ export default function PartnerDetail() {
     notes: p.notes || '',
   });
   const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // Timeline log deletion (admin tier): soft-voids the activity server-side —
+  // it vanishes from the timeline but stays in the audit record. Reason required.
+  const [voidTarget, setVoidTarget] = useState(null);
+  const [voidReason, setVoidReason] = useState('');
+  const voidMutation = useMutation({
+    mutationFn: () => redeemOpsApi.voidPartnerActivity(voidTarget.id, voidReason.trim()),
+    onSuccess: () => {
+      setVoidTarget(null);
+      toast.success('Log entry deleted');
+      invalidate();
+    },
+    onError: (err) => toast.error('Could not delete the log entry', { description: err.message }),
+  });
 
   // Two-step delete: plain first; a 409 with `forceable` escalates the dialog
   // into force mode (type-the-name confirm) showing exactly what cascades.
@@ -742,7 +769,13 @@ export default function PartnerDetail() {
                 </p>
               )}
               {(timelineQuery.data || []).map((entry, i) => (
-                <TimelineEntry key={`${entry.kind}-${entry.data.id || i}`} entry={entry} />
+                <TimelineEntry
+                  key={`${entry.kind}-${entry.data.id || i}`}
+                  entry={entry}
+                  onDeleteLog={hasCapability(user, 'partners.delete')
+                    ? (a) => { setVoidTarget(a); setVoidReason(''); }
+                    : undefined}
+                />
               ))}
             </div>
           </TabsContent>
@@ -974,6 +1007,38 @@ export default function PartnerDetail() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!voidTarget} onOpenChange={(o) => !o && setVoidTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this log entry?</DialogTitle>
+            <DialogDescription>
+              It disappears from the timeline (a record is kept internally for audit).
+              A short reason is required.
+            </DialogDescription>
+          </DialogHeader>
+          {voidTarget?.summary && (
+            <p className="text-[13px] m-0 line-clamp-2" style={{ color: 'var(--ro-text-2)' }}>
+              “{voidTarget.summary}”
+            </p>
+          )}
+          <Input
+            value={voidReason}
+            placeholder="Why? e.g. logged on the wrong business"
+            onChange={(e) => setVoidReason(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVoidTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!voidReason.trim() || voidMutation.isPending}
+              onClick={() => voidMutation.mutate()}
+            >
+              {voidMutation.isPending ? 'Deleting…' : 'Delete entry'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
