@@ -488,6 +488,18 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/outreach/personas/${personaId}/test-send`);
     return res.data;
   },
+  async approveOutreachEmail(emailId) {
+    const res = await apiClient.post(`/redeem-ops/outreach/emails/${emailId}/approve`);
+    return res.data?.email;
+  },
+  async sendNowOutreachEmail(emailId) {
+    const res = await apiClient.post(`/redeem-ops/outreach/emails/${emailId}/send-now`);
+    return res.data?.email;
+  },
+  async convertOutreachEmailToManual(emailId) {
+    const res = await apiClient.post(`/redeem-ops/outreach/emails/${emailId}/convert-manual`);
+    return res.data?.email;
+  },
   async skipCadenceStep(partnerId, body = {}) {
     const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/skip-step`, body);
     return res.data;

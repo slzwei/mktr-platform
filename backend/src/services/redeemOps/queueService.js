@@ -1,7 +1,7 @@
 import { Op, QueryTypes } from 'sequelize';
 import {
   OutreachTask, OutreachActivity, PartnerOrganisation, PartnerContact, User, sequelize,
-  OutreachCadenceStep, OutreachCadence,
+  OutreachCadenceStep, OutreachCadence, OutreachEmail, OutreachPersona,
 } from '../../models/index.js';
 import { sgtDayWindow } from '../../utils/sgtTime.js';
 
@@ -15,7 +15,7 @@ const BUCKET_LIMIT = 10;
 export function makeQueueService(overrides = {}) {
   const d = {
     OutreachTask, OutreachActivity, PartnerOrganisation, PartnerContact, User, sequelize,
-    OutreachCadenceStep, OutreachCadence, ...overrides,
+    OutreachCadenceStep, OutreachCadence, OutreachEmail, OutreachPersona, ...overrides,
   };
 
   async function getMyQueue(user) {
@@ -25,8 +25,13 @@ export function makeQueueService(overrides = {}) {
       { model: d.PartnerContact, as: 'contact', attributes: ['id', 'name'] },
       {
         model: d.OutreachCadenceStep, as: 'cadenceStep', required: false,
-        attributes: ['id', 'stepOrder', 'channel', 'title'],
+        attributes: ['id', 'stepOrder', 'channel', 'title', 'mode'],
         include: [{ model: d.OutreachCadence, as: 'cadence', attributes: ['id', 'key', 'name', 'version'] }],
+      },
+      {
+        model: d.OutreachEmail, as: 'outboxEmails', required: false,
+        attributes: ['id', 'status', 'holdReason', 'nextAttemptAt', 'toAddress', 'lastError'],
+        where: { status: { [Op.in]: ['queued', 'needs_approval', 'sending', 'failed'] } },
       },
     ];
     const openTasks = { assigneeUserId: user.id, status: { [Op.in]: ['open', 'in_progress'] } };
@@ -67,6 +72,7 @@ export function makeQueueService(overrides = {}) {
       stalePartners, staleCount,
       recentReplies,
       waitingOnInfo, waitingOnInfoCountRows,
+      scheduledSends, scheduledSendsCount,
     ] = await Promise.all([
       d.OutreachTask.findAll({ where: { ...openTasks, dueAt: { [Op.lt]: start } }, include: taskInclude, order: [['dueAt', 'ASC']], limit: BUCKET_LIMIT }),
       d.OutreachTask.count({ where: { ...openTasks, dueAt: { [Op.lt]: start } } }),
@@ -120,6 +126,29 @@ export function makeQueueService(overrides = {}) {
         `SELECT COUNT(*)::int AS n ${waitingOnInfoWhere}`,
         { replacements: { userId: user.id }, type: QueryTypes.SELECT }
       ),
+      // Every machine-send the rep owns (plan P11: the 3-day/10-row upcoming
+      // bucket hides them; this group is dedicated and carries a total).
+      d.OutreachEmail.findAll({
+        where: { status: { [Op.in]: ['queued', 'needs_approval'] } },
+        include: [
+          {
+            model: d.OutreachTask, as: 'task', required: true,
+            attributes: ['id', 'title', 'dueAt'],
+            where: { assigneeUserId: user.id, status: { [Op.in]: ['open', 'in_progress'] } },
+            include: [{ model: d.PartnerOrganisation, as: 'partner', attributes: PARTNER_LITE }],
+          },
+          { model: d.OutreachPersona, as: 'persona', attributes: ['address', 'displayName'] },
+        ],
+        order: [['nextAttemptAt', 'ASC']],
+        limit: 25,
+      }),
+      d.OutreachEmail.count({
+        where: { status: { [Op.in]: ['queued', 'needs_approval'] } },
+        include: [{
+          model: d.OutreachTask, as: 'task', required: true, attributes: [],
+          where: { assigneeUserId: user.id, status: { [Op.in]: ['open', 'in_progress'] } },
+        }],
+      }),
     ]);
 
     return {
@@ -130,6 +159,7 @@ export function makeQueueService(overrides = {}) {
       stalePartners: { items: stalePartners, total: staleCount },
       recentReplies: { items: recentReplies },
       waitingOnInfo: { items: waitingOnInfo, total: waitingOnInfoCountRows[0]?.n || 0 },
+      scheduledSends: { items: scheduledSends, total: scheduledSendsCount },
     };
   }
 

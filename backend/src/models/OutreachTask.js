@@ -25,7 +25,8 @@ const OutreachTask = sequelize.define('OutreachTask', {
   // both null; a cadence task is a normal task plus where it came from.
   cadenceEnrollmentId: { type: DataTypes.UUID, allowNull: true, references: { model: 'outreach_cadence_enrollments', key: 'id' } },
   cadenceStepId: { type: DataTypes.UUID, allowNull: true, references: { model: 'outreach_cadence_steps', key: 'id' } },
-  snapshotRecipient: { type: DataTypes.STRING(160), allowNull: true, comment: 'resolved phone/email/handle/address at materialization' }
+  snapshotRecipient: { type: DataTypes.STRING(160), allowNull: true, comment: 'resolved phone/email/handle/address at materialization' },
+  emailSubject: { type: DataTypes.STRING(220), allowNull: true, comment: 'rendered subject for email steps — the EDITABLE source the auto-sender reads at send time' }
 }, {
   tableName: 'outreach_tasks',
   indexes: [

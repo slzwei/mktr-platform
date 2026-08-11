@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import { sgtDayWindow } from '../../utils/sgtTime.js';
 import {
   OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize,
-  OutreachCadenceStep, OutreachCadence,
+  OutreachCadenceStep, OutreachCadence, OutreachEmail,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
@@ -30,7 +30,7 @@ export { sgDateKey, sgtDayWindow } from '../../utils/sgtTime.js';
 export function makeTaskService(overrides = {}) {
   const d = {
     OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize, logger,
-    OutreachCadenceStep, OutreachCadence, ...overrides,
+    OutreachCadenceStep, OutreachCadence, OutreachEmail, ...overrides,
   };
 
   const isManager = (user) =>
@@ -121,8 +121,15 @@ export function makeTaskService(overrides = {}) {
         { model: d.PartnerContact, as: 'contact', attributes: ['id', 'name'] },
         {
           model: d.OutreachCadenceStep, as: 'cadenceStep', required: false,
-          attributes: ['id', 'stepOrder', 'channel', 'title'],
+          attributes: ['id', 'stepOrder', 'channel', 'title', 'mode'],
           include: [{ model: d.OutreachCadence, as: 'cadence', attributes: ['id', 'key', 'name', 'version'] }],
+        },
+        // The live machine-send state for auto steps (scheduled/held/failed) —
+        // sent/cancelled rows stay out of the payload.
+        {
+          model: d.OutreachEmail, as: 'outboxEmails', required: false,
+          attributes: ['id', 'status', 'holdReason', 'nextAttemptAt', 'toAddress', 'lastError'],
+          where: { status: { [Op.in]: ['queued', 'needs_approval', 'sending', 'failed'] } },
         },
       ],
       order: [['dueAt', 'ASC']],
@@ -153,7 +160,10 @@ export function makeTaskService(overrides = {}) {
     // status/schedule/assignee changes must go through the cadence engine —
     // the generic PATCH may only touch cosmetic fields.
     if (task.cadenceEnrollmentId) {
-      const CADENCE_EDITABLE = ['description', 'priority'];
+      // emailSubject joins the allowlist (Phase B): the auto-sender reads
+      // body+subject FROM THE TASK at send time, so editing here IS editing
+      // what sends. The sender 409s edits only while a row is mid-`sending`.
+      const CADENCE_EDITABLE = ['description', 'priority', 'emailSubject'];
       const blocked = Object.keys(body).filter((k) => body[k] !== undefined && !CADENCE_EDITABLE.includes(k));
       if (blocked.length > 0) {
         throw new AppError(
@@ -161,10 +171,21 @@ export function makeTaskService(overrides = {}) {
           409
         );
       }
+      // C3 edit-vs-claim guard: while the auto-sender holds the row
+      // (`sending`), an accepted edit could lose the race with the wire —
+      // refuse for the few seconds it takes rather than send stale text.
+      if ((body.description !== undefined || body.emailSubject !== undefined) && d.OutreachEmail) {
+        const inFlight = await d.OutreachEmail.count({
+          where: { taskId: task.id, status: 'sending' }, transaction: t,
+        });
+        if (inFlight > 0) {
+          throw new AppError('This email is sending right now — try again in a few seconds', 409);
+        }
+      }
     }
 
     const updates = {};
-    for (const f of ['title', 'description', 'dueAt', 'hasTime', 'priority', 'type', 'contactId']) {
+    for (const f of ['title', 'description', 'dueAt', 'hasTime', 'priority', 'type', 'contactId', 'emailSubject']) {
       if (body[f] !== undefined) updates[f] = body[f];
     }
     if (body.assigneeUserId !== undefined) {

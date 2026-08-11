@@ -18,6 +18,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { EMAIL_AUTOSEND_ENABLED } from '@/components/redeemops/OutreachPersonasCard';
 import { RoPageHeader } from '@/components/redeemops/ui';
 import {
   CHANNELS, WINDOWS, PRIORITIES, CONTINUE_OPTIONS, CHANNEL_LABEL,
@@ -122,6 +123,35 @@ function StepCard({ step, index, total, dayMark, onChange, onRemove, onMove }) {
             </Field>
           )}
         </div>
+
+        {step.channel === 'email' && (
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_200px]">
+            <Field label="Subject line">
+              <Input
+                value={step.subject || ''}
+                placeholder={'Bring new customers to {{partner_name}}'}
+                onChange={(e) => set({ subject: e.target.value })}
+              />
+            </Field>
+            {EMAIL_AUTOSEND_ENABLED && (
+              <Field label="Delivery">
+                <Select value={step.mode || 'manual'} onValueChange={(mode) => set({ mode })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manual task</SelectItem>
+                    <SelectItem value="auto">Auto-send</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+          </div>
+        )}
+        {EMAIL_AUTOSEND_ENABLED && step.mode === 'auto' && step.channel === 'email' && (
+          <p className="text-[12px] m-0" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
+            The CRM sends this email itself at the scheduled time, from the rep’s outreach
+            address. A subject is required; the first sends of a new version hold for approval.
+          </p>
+        )}
 
         <Field label="Script / notes (shown on the task)">
           <Textarea

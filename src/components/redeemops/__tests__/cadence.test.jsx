@@ -131,8 +131,8 @@ describe('toBuilderSteps (edit prefill)', () => {
     };
     const steps = toBuilderSteps(cadence);
     expect(steps).toEqual([
-      { channel: 'call', title: 'Intro call', script: 'hi', priority: 'high', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
-      { channel: 'whatsapp', title: 'WA intro', script: '', priority: 'medium', delayDays: 2, timeWindow: 'off_peak', continueOn: '*' },
+      { channel: 'call', title: 'Intro call', script: 'hi', priority: 'high', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer', mode: 'manual', subject: '' },
+      { channel: 'whatsapp', title: 'WA intro', script: '', priority: 'medium', delayDays: 2, timeWindow: 'off_peak', continueOn: '*', mode: 'manual', subject: '' },
     ]);
   });
 });

@@ -10,6 +10,7 @@ const OutreachCadenceStep = sequelize.define('OutreachCadenceStep', {
   mode: { type: DataTypes.STRING(12), allowNull: false, defaultValue: 'manual', comment: "'auto' reserved for P3 email" },
   title: { type: DataTypes.STRING(160), allowNull: false },
   scriptTemplate: { type: DataTypes.TEXT, allowNull: true },
+  subjectTemplate: { type: DataTypes.STRING(160), allowNull: true, comment: 'email steps only; REQUIRED when mode=auto' },
   priority: { type: DataTypes.STRING(12), allowNull: false, defaultValue: 'medium' },
 }, {
   tableName: 'outreach_cadence_steps',

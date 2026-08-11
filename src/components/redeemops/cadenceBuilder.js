@@ -41,6 +41,9 @@ export const CHANNEL_LABEL = Object.fromEntries(CHANNELS.map((c) => [c.value, c.
 export const emptyStep = (channel = 'call') => ({
   channel, title: '', script: '', priority: 'medium',
   delayDays: 0, timeWindow: 'any', continueOn: channel === 'call' ? 'no_answer' : '*',
+  // Email auto-send (Phase B): subject rides email steps; mode 'auto' means
+  // the CRM sends it itself at the scheduled time.
+  mode: 'manual', subject: '',
 });
 
 /**
@@ -68,6 +71,8 @@ export function toBuilderSteps(cadence) {
       delayDays: incoming?.delayDays ?? 0,
       timeWindow: incoming?.timeWindow || 'any',
       continueOn: outgoing?.disposition || '*',
+      mode: s.mode || 'manual',
+      subject: s.subjectTemplate || '',
     };
   });
 }
@@ -90,6 +95,8 @@ export function toPayload({ name, description, steps }) {
       channel: s.channel, title: s.title.trim(), script: s.script || null,
       priority: s.priority, delayDays: Number(s.delayDays) || 0,
       timeWindow: s.timeWindow, continueOn: s.continueOn,
+      mode: s.channel === 'email' ? (s.mode || 'manual') : 'manual',
+      subject: s.channel === 'email' ? ((s.subject || '').trim() || null) : null,
     })),
   };
 }

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import Zap from 'lucide-react/icons/zap';
 import Eye from 'lucide-react/icons/eye';
 import SkipForward from 'lucide-react/icons/skip-forward';
+import SendHorizontal from 'lucide-react/icons/send-horizontal';
 import Plus from 'lucide-react/icons/plus';
 import Check from 'lucide-react/icons/check';
 import Copy from 'lucide-react/icons/copy';
@@ -450,6 +451,76 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
   );
 }
 
+/**
+ * The machine-send state strip on a task row (Phase B): says plainly that the
+ * CRM will send this itself, with first-class Don't send / Approve levers.
+ * Renders nothing for tasks without a live outbox row.
+ */
+export function ScheduledSendStrip({ task }) {
+  const queryClient = useQueryClient();
+  const row = (task.outboxEmails || [])[0];
+  const partnerId = task.partnerOrganisationId || task.partner?.id;
+  const done = () => invalidateCadenceData(queryClient, partnerId);
+  const approveMutation = useMutation({
+    mutationFn: () => redeemOpsApi.approveOutreachEmail(row.id),
+    onSuccess: () => { toast.success('Approved — it sends at the scheduled time'); done(); },
+    onError: (err) => toast.error('Could not approve', { description: err.message }),
+  });
+  const dontSendMutation = useMutation({
+    mutationFn: () => redeemOpsApi.convertOutreachEmailToManual(row.id),
+    onSuccess: () => { toast.success('Won’t send — it’s a normal manual task now'); done(); },
+    onError: (err) => toast.error('Could not cancel the send', { description: err.message }),
+  });
+  const sendNowMutation = useMutation({
+    mutationFn: () => redeemOpsApi.sendNowOutreachEmail(row.id),
+    onSuccess: () => { toast.success('Sending — it goes out within a minute'); done(); },
+    onError: (err) => toast.error('Could not send now', { description: err.message }),
+  });
+  if (!row) return null;
+
+  const when = row.nextAttemptAt
+    ? new Date(row.nextAttemptAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : 'soon';
+
+  if (row.status === 'failed') {
+    return (
+      <p className="text-[12px] font-semibold mt-1.5 mb-0" style={{ color: 'var(--ro-tag-red-fg, #BD3A2E)' }}>
+        Auto-send failed — send it yourself and log the outcome.
+      </p>
+    );
+  }
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 rounded-[10px] px-2.5 py-1.5 mt-1.5"
+      style={{ background: 'var(--ro-tag-blue-bg, #E8F1FF)' }}
+    >
+      <SendHorizontal className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--ro-tag-blue-fg, #1B5FBE)' }} aria-hidden="true" />
+      <span className="text-[12px] font-semibold flex-1 min-w-0" style={{ color: 'var(--ro-tag-blue-fg, #1B5FBE)' }}>
+        {row.status === 'needs_approval'
+          ? `Held for your approval — would send ${when}`
+          : row.status === 'sending'
+            ? 'Sending right now…'
+            : `CRM sends this itself — ${when}`}
+      </span>
+      {row.status === 'needs_approval' && (
+        <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11.5px]" disabled={approveMutation.isPending} onClick={() => approveMutation.mutate()}>
+          Approve
+        </Button>
+      )}
+      {row.status === 'queued' && (
+        <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11.5px]" disabled={sendNowMutation.isPending} onClick={() => sendNowMutation.mutate()}>
+          Send now
+        </Button>
+      )}
+      {['queued', 'needs_approval'].includes(row.status) && (
+        <Button size="sm" variant="ghost" className="h-7 px-2.5 text-[11.5px]" disabled={dontSendMutation.isPending} onClick={() => dontSendMutation.mutate()}>
+          Don’t send
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /* 18px circle checkbox — one click completes a manual task (strike + fade
    while the mutation is in flight, the invalidate removes the row). */
 function CompleteCircle({ task, busy, onComplete }) {
@@ -578,6 +649,7 @@ function PartnerTaskRow({
             <span className="text-[11px] italic" style={{ color: 'var(--ro-text-3)' }}>paused</span>
           )}
         </div>
+        <ScheduledSendStrip task={task} />
         {task.description && <TaskScriptBox text={task.description} />}
       </div>
     </div>
@@ -1064,8 +1136,13 @@ export function CadencePanel({ partner, canManage = true, canRunCadence = canMan
                     )}
                   </p>
                   <p className="text-xs m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
-                    {c.steps?.length || 0} steps — {(c.steps || []).map((s) => CHANNEL_LABELS[s.channel] || s.channel).join(' → ')}
+                    {c.steps?.length || 0} steps — {(c.steps || []).map((s) => `${CHANNEL_LABELS[s.channel] || s.channel}${s.mode === 'auto' ? ' (auto)' : ''}`).join(' → ')}
                   </p>
+                  {(c.steps || []).some((s) => s.mode === 'auto') && (
+                    <p className="text-xs m-0 mt-1 font-medium" style={{ color: 'var(--ro-tag-blue-fg, #1B5FBE)' }}>
+                      Steps marked (auto) are SENT by the CRM itself at the scheduled time.
+                    </p>
+                  )}
                   {missing.length > 0 && (
                     <p className="text-xs m-0 mt-1 font-medium" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
                       {reachableSteps.length === 0

@@ -1,6 +1,7 @@
 import Joi from 'joi';
 import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
 import outreachPersonaService from '../../services/redeemOps/outreachPersonaService.js';
+import outreachSenderService from '../../services/redeemOps/outreachSenderService.js';
 
 /**
  * Outreach sending identities — Phase A (plan §7). Everything here is
@@ -71,4 +72,21 @@ export const updatePersona = asyncHandler(async (req, res) => {
 export const testSend = asyncHandler(async (req, res) => {
   const result = await outreachPersonaService.testSend(req.params.personaId, req.user, req.id);
   res.json({ success: true, data: result });
+});
+
+// ── Scheduled-email operations (Phase B; owner-or-admin row rules in the service) ──
+
+export const approveEmail = asyncHandler(async (req, res) => {
+  const email = await outreachSenderService.approve(req.params.emailId, req.user, req.id);
+  res.json({ success: true, data: { email } });
+});
+
+export const sendNowEmail = asyncHandler(async (req, res) => {
+  const email = await outreachSenderService.sendNow(req.params.emailId, req.user, req.id);
+  res.json({ success: true, data: { email } });
+});
+
+export const convertEmailToManual = asyncHandler(async (req, res) => {
+  const email = await outreachSenderService.convertToManual(req.params.emailId, req.user, req.id);
+  res.json({ success: true, data: { email } });
 });

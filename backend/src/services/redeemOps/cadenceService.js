@@ -1,7 +1,8 @@
 import { Op, QueryTypes } from 'sequelize';
 import {
   OutreachCadence, OutreachCadenceStep, OutreachCadenceTransition, OutreachCadenceEnrollment,
-  OutreachSuppression, OutreachTask, PartnerOrganisation, PartnerContact, PartnerLocation,
+  OutreachSuppression, OutreachTask, OutreachEmail, OutreachPersona,
+  PartnerOrganisation, PartnerContact, PartnerLocation,
   User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
@@ -95,6 +96,30 @@ function activityForDisposition(channel, disposition) {
   }
 }
 
+/**
+ * Data-lint for unattended sends (plan P4b): obviously-bad merges hold for
+ * approval regardless of the ramp counter. Conservative on purpose — a false
+ * hold costs one tap; a false pass costs a prospect (the "Hi Test," clause).
+ * Digits are suspicious in CONTACT names only — plenty of legit businesses
+ * carry them ("7-Eleven").
+ */
+export function autoSendLint({ partnerName = '', contactName = '', recipient = '', subject = '', body = '' }) {
+  const junkWords = ['test', 'asdf', 'qwerty', 'unknown', 'na', 'n/a', 'abc'];
+  const junkName = (raw, { digitsAreBad }) => {
+    const v = String(raw).trim();
+    if (!v) return false;
+    if (v.length === 1) return true;
+    if (digitsAreBad && /\d/.test(v)) return true;
+    return junkWords.includes(v.toLowerCase());
+  };
+  if (junkName(contactName, { digitsAreBad: true })) return 'lint_contact_name';
+  if (junkName(partnerName, { digitsAreBad: false })) return 'lint_partner_name';
+  if (/\b(hi|dear|hello)\s+there\b/i.test(`${subject} ${body}`)) return 'lint_fallback_greeting';
+  const domain = String(recipient).split('@')[1] || '';
+  if (/^(mailinator\.com|example\.(com|org|net)|test\.com|yopmail\.com)$/i.test(domain)) return 'lint_test_domain';
+  return null;
+}
+
 const CHANNEL_TASK_TYPE = {
   call: 'call', whatsapp: 'follow_up', email: 'follow_up',
   instagram_dm: 'follow_up', visit: 'other', custom: 'other',
@@ -103,12 +128,16 @@ const CHANNEL_TASK_TYPE = {
 export function makeCadenceService(overrides = {}) {
   const d = {
     OutreachCadence, OutreachCadenceStep, OutreachCadenceTransition, OutreachCadenceEnrollment,
-    OutreachSuppression, OutreachTask, PartnerOrganisation, PartnerContact, PartnerLocation,
+    OutreachSuppression, OutreachTask, OutreachEmail, OutreachPersona,
+    PartnerOrganisation, PartnerContact, PartnerLocation,
     User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     tasks: makeTaskService(),
     partners: makePartnerService(),
     enrollmentCap: parseInt(process.env.REDEEM_OPS_CADENCE_CAP, 10) || 60,
+    // Approval ramp (plan P4): the first N auto-sends of each cadence VERSION
+    // hold for one-tap approval before the version runs unattended.
+    approvalRampN: parseInt(process.env.REDEEM_OPS_AUTOSEND_APPROVAL_RAMP, 10) || 10,
     now: () => new Date(),
     ...overrides,
   };
@@ -187,8 +216,24 @@ export function makeCadenceService(overrides = {}) {
           throw new AppError(`Step ${i + 1}: '${continueOn}' cannot advance a ${channel} step`, 400);
         }
       }
+      // Auto-send (Phase B): email-only, and an auto step must carry a subject
+      // — there is nothing to put on the wire without one. Authoring auto
+      // steps is itself flag-gated so the whole feature stays truly dark:
+      // no auto step can exist → nothing ever enqueues.
+      const mode = s.mode === 'auto' ? 'auto' : 'manual';
+      if (mode === 'auto'
+        && String(process.env.REDEEM_OPS_EMAIL_AUTOSEND_ENABLED || 'false').toLowerCase() !== 'true') {
+        throw new AppError(`Step ${i + 1}: email auto-send is not enabled on this environment`, 400);
+      }
+      if (mode === 'auto' && channel !== 'email') {
+        throw new AppError(`Step ${i + 1}: only email steps can auto-send`, 400);
+      }
+      const subject = s.subject ? String(s.subject).trim().slice(0, 160) : null;
+      if (mode === 'auto' && !subject) {
+        throw new AppError(`Step ${i + 1}: auto-send needs a subject line`, 400);
+      }
       return {
-        channel, title, continueOn, delayDays, timeWindow, priority,
+        channel, title, continueOn, delayDays, timeWindow, priority, mode, subject,
         script: s.script ? String(s.script).slice(0, 5000) : null,
       };
     });
@@ -204,6 +249,7 @@ export function makeCadenceService(overrides = {}) {
       created.push(await d.OutreachCadenceStep.create({
         cadenceId: cadence.id, stepOrder: i + 1, channel: steps[i].channel,
         title: steps[i].title, scriptTemplate: steps[i].script, priority: steps[i].priority,
+        mode: steps[i].mode || 'manual', subjectTemplate: steps[i].subject || null,
       }, { transaction: t }));
     }
     await d.OutreachCadenceTransition.create({
@@ -423,24 +469,41 @@ export function makeCadenceService(overrides = {}) {
       ? await d.PartnerContact.findByPk(resolved.contactId, { attributes: ['id', 'name'], transaction: t })
       : null;
     // {{rep_name}} = whoever works the task, and the assignee is always the
-    // partner owner — fetched only when the template asks for it.
-    const owner = /{{\s*rep_name\s*}}/i.test(step.scriptTemplate || '')
+    // partner owner — fetched only when a template asks for it.
+    const wantsRep = /{{\s*rep_name\s*}}/i.test(`${step.scriptTemplate || ''} ${step.subjectTemplate || ''}`);
+    const owner = wantsRep
       ? await d.User.findByPk(partner.ownerUserId, { attributes: ['firstName', 'fullName'], transaction: t })
       : null;
-    const rendered = renderTemplate(step.scriptTemplate, {
+    const ctx = {
       partner_name: partnerDisplayName(partner, 'there'),
       contact_name: primaryContact?.name || 'there',
       category: partner.category || '',
       recipient: resolved.recipient || '',
       rep_name: owner?.firstName || owner?.fullName || 'the Redeem team',
-    });
+    };
+    const rendered = renderTemplate(step.scriptTemplate, ctx);
     if (!rendered.ok) return { blocked: true, reason: 'unresolved_template' };
+    // Email subjects render (and block) by the same rules as bodies — a
+    // half-merged subject must never reach the wire.
+    let renderedSubject = { text: null, ok: true };
+    if (step.channel === 'email' && step.subjectTemplate) {
+      renderedSubject = renderTemplate(step.subjectTemplate, ctx);
+      if (!renderedSubject.ok) return { blocked: true, reason: 'unresolved_template' };
+    }
 
     // A resume of a park carries the step's ORIGINAL due time (dueAtOverride)
     // so a fixed record never fires the step days ahead of its authored delay.
-    const dueAt = timing.dueAtOverride && new Date(timing.dueAtOverride).getTime() > d.now().getTime()
+    let dueAt = timing.dueAtOverride && new Date(timing.dueAtOverride).getTime() > d.now().getTime()
       ? new Date(timing.dueAtOverride)
       : sgtWindowClamp(d.now(), timing.delayDays || 0, timing.timeWindow || 'any', d.now());
+    // Plan P2 — no insta-send on record fixes: an AUTOMATIC resume into an
+    // auto step schedules no sooner than an hour out; the rep's explicit
+    // actions (enroll, complete, skip, Retry-now) keep the computed time.
+    const isAutoEmail = step.mode === 'auto' && step.channel === 'email';
+    if (isAutoEmail && (timing.fromAutoResume || !actorUser)) {
+      const floor = new Date(d.now().getTime() + 60 * 60 * 1000);
+      if (dueAt.getTime() < floor.getTime()) dueAt = floor;
+    }
     // System contexts (sweep resume, reconciler) have no acting user — the
     // partner owner stands in: they're the assignee anyway, so the row rules
     // in createTaskTx pass without a manager check.
@@ -461,8 +524,56 @@ export function makeCadenceService(overrides = {}) {
       cadenceEnrollmentId: enrollment.id,
       cadenceStepId: step.id,
       snapshotRecipient: resolved.recipient || null,
+      emailSubject: renderedSubject.text || null,
     }, { transaction: t });
+    if (isAutoEmail) {
+      await enqueueAutoEmailTx(enrollment, partner, task, resolved, primaryContact, dueAt, t);
+    }
     return { task };
+  }
+
+  /**
+   * Queue the machine send for an auto email step — same transaction as the
+   * task, so a task without its outbox row (or vice versa) cannot exist.
+   * Ordering rules (plan §1/§4): a partner-level opt-out means the step simply
+   * behaves manual (no row — deliberate, not an error); a missing persona is
+   * an ERROR state and leaves a cancelled row so the UI can badge it loudly;
+   * the first `approvalRampN` sends of a cadence version — and anything the
+   * data-lint dislikes — hold as needs_approval for a human tap.
+   */
+  async function enqueueAutoEmailTx(enrollment, partner, task, resolved, primaryContact, dueAt, t) {
+    if (partner.autoEmailOptOut) return;
+    const persona = await d.OutreachPersona.findOne({
+      where: { assignedUserId: partner.ownerUserId, isActive: true }, transaction: t,
+    });
+    if (!persona) {
+      await d.OutreachEmail.create({
+        taskId: task.id, cadenceEnrollmentId: enrollment.id, partnerOrganisationId: partner.id,
+        contactId: resolved.contactId || null, toAddress: resolved.recipient,
+        status: 'cancelled', lastError: 'no_sending_persona',
+      }, { transaction: t });
+      return;
+    }
+    const cadence = await d.OutreachCadence.findByPk(enrollment.cadenceId, {
+      attributes: ['id', 'autoSendApprovals'], transaction: t,
+    });
+    const lint = autoSendLint({
+      partnerName: partnerDisplayName(partner, ''),
+      contactName: primaryContact?.name || '',
+      recipient: resolved.recipient,
+      subject: task.emailSubject || '',
+      body: task.description || '',
+    });
+    const hold = lint || ((cadence?.autoSendApprovals ?? 0) < d.approvalRampN ? 'ramp' : null);
+    await d.OutreachEmail.create({
+      taskId: task.id, cadenceEnrollmentId: enrollment.id, partnerOrganisationId: partner.id,
+      contactId: resolved.contactId || null, personaId: persona.id, accountId: persona.accountId,
+      toAddress: resolved.recipient,
+      status: hold ? 'needs_approval' : 'queued',
+      holdReason: hold,
+      // ±10 min jitter so sends don't all fire robotically at :00.
+      nextAttemptAt: new Date(dueAt.getTime() + Math.floor(Math.random() * 600_000)),
+    }, { transaction: t });
   }
 
   /**
@@ -525,6 +636,19 @@ export function makeCadenceService(overrides = {}) {
 
   // ── Enrollment lifecycle ──────────────────────────────────────────────────
 
+  /**
+   * Kill queued machine-sends when a human or hook supersedes them — "the
+   * cancel is the correctness statement; send-time revalidation is only the
+   * backstop" (plan §4). Rows already CLAIMED (`sending`) are past the point
+   * of no return; the orphaned-send fallback records those honestly.
+   */
+  async function cancelQueuedEmailsTx(where, reason, t) {
+    await d.OutreachEmail.update(
+      { status: 'cancelled', lastError: reason },
+      { where: { ...where, status: { [Op.in]: ['queued', 'needs_approval'] } }, transaction: t }
+    );
+  }
+
   async function endEnrollmentTx(enrollment, { state, exitReason }, actorUser, t) {
     await d.OutreachTask.update(
       { status: 'cancelled' },
@@ -533,6 +657,7 @@ export function makeCadenceService(overrides = {}) {
         transaction: t,
       }
     );
+    await cancelQueuedEmailsTx({ cadenceEnrollmentId: enrollment.id }, 'enrollment_ended', t);
     // Park/pause residue is meaningless on a terminal row — clear it so
     // "blockedReason non-null" always means "parked right now".
     await enrollment.update({
@@ -619,7 +744,7 @@ export function makeCadenceService(overrides = {}) {
 
   // ── Completion — the linearizable core (§5.2) ─────────────────────────────
 
-  async function completeCadenceTask(taskId, { disposition, alsoMarkLost = false, lostReason = null }, user, requestId = null) {
+  async function completeCadenceTask(taskId, { disposition, alsoMarkLost = false, lostReason = null, autoSentAs = null }, user, requestId = null) {
     return d.sequelize.transaction(async (t) => {
       // Non-locking probe for ids only. GLOBAL lock order is partner →
       // enrollment → task: the P0 hooks fire inside transactions that already
@@ -665,7 +790,11 @@ export function makeCadenceService(overrides = {}) {
         throw new AppError('Unknown lost reason', 400);
       }
 
-      // 1. Complete the task (direct — the generic PATCH path refuses cadence tasks).
+      // 1. Complete the task (direct — the generic PATCH path refuses cadence
+      //    tasks) and kill any still-queued machine send for it: the rep who
+      //    sent it themselves must not be followed by the robot (plan C1b).
+      //    The auto-sender's OWN row is `sending` by now — untouched here.
+      await cancelQueuedEmailsTx({ taskId: task.id }, 'superseded_by_completion', t);
       await task.update({ status: 'completed', completedAt: d.now(), completedBy: user.id }, { transaction: t });
 
       // 2. Log the honest activity. Suppressed hooks: the engine handles its own
@@ -674,7 +803,7 @@ export function makeCadenceService(overrides = {}) {
       await d.partners.logActivityTx(partner.id, {
         type: mapped.type,
         direction: mapped.direction,
-        summary: `${step.title} — ${DISPOSITION_LABELS[disposition] || disposition}`,
+        summary: `${step.title} — ${DISPOSITION_LABELS[disposition] || disposition}${autoSentAs ? ` (auto-sent as ${autoSentAs})` : ''}`,
         contactId: task.contactId || null,
       }, user, t, { suppressCadenceHooks: true, requestId });
 
@@ -752,6 +881,7 @@ export function makeCadenceService(overrides = {}) {
         { status: 'cancelled' },
         { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }
       );
+      await cancelQueuedEmailsTx({ cadenceEnrollmentId: enrollment.id }, 'paused', t);
       await enrollment.update({ state: 'paused', pausedAt: d.now(), pausedReason: 'manual' }, { transaction: t });
       await d.tasks.recomputeNextTaskAt(partnerId, t);
       await d.audit.recordAuditEvent({
@@ -762,14 +892,18 @@ export function makeCadenceService(overrides = {}) {
     });
   }
 
-  async function resumeEnrollmentTx(enrollment, partner, actorUser, t) {
+  async function resumeEnrollmentTx(enrollment, partner, actorUser, t, { explicit = false } = {}) {
     // A parked step resumes on its AUTHORED due time, not "now" — the
     // contact-info hook must not fire a +3d step three days early just
     // because the email was added quickly. (The rep's explicit Retry/Resume
     // clears blockedDueAt first — see resumeEnrollment.)
+    // `fromAutoResume` additionally floors AUTO email steps ≥1h out (plan
+    // P2): adding a phone-book field is never a send button, even though the
+    // hook carries the editing rep as actor. Only the explicit Resume/Retry
+    // keeps "now".
     const timing = enrollment.blockedDueAt
-      ? { dueAtOverride: enrollment.blockedDueAt }
-      : { delayDays: 0, timeWindow: 'any' };
+      ? { dueAtOverride: enrollment.blockedDueAt, fromAutoResume: !explicit }
+      : { delayDays: 0, timeWindow: 'any', fromAutoResume: !explicit };
     await enrollment.update({ state: 'active', pausedAt: null, pausedReason: null }, { transaction: t });
     const step = await d.OutreachCadenceStep.findByPk(enrollment.currentStepId, { transaction: t });
     if (!step) {
@@ -794,7 +928,7 @@ export function makeCadenceService(overrides = {}) {
       if (enrollment.blockedDueAt) {
         await enrollment.update({ blockedDueAt: null }, { transaction: t });
       }
-      return resumeEnrollmentTx(enrollment, partner, user, t);
+      return resumeEnrollmentTx(enrollment, partner, user, t, { explicit: true });
     });
   }
 
@@ -837,6 +971,7 @@ export function makeCadenceService(overrides = {}) {
         { status: 'cancelled' },
         { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }
       );
+      await cancelQueuedEmailsTx({ cadenceEnrollmentId: enrollment.id }, 'step_skipped', t);
 
       // The step's continue edge: its '*' edge, or its sole outgoing edge
       // (builder cadences compile exactly one per step). A genuine branch
@@ -952,6 +1087,7 @@ export function makeCadenceService(overrides = {}) {
           { status: 'cancelled' },
           { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }
         );
+        await cancelQueuedEmailsTx({ cadenceEnrollmentId: enrollment.id }, 'snoozed', t);
         await enrollment.update({ state: 'paused', pausedAt: d.now(), pausedReason: 'snoozed' }, { transaction: t });
         await d.tasks.recomputeNextTaskAt(partner.id, t);
       },
@@ -994,6 +1130,10 @@ export function makeCadenceService(overrides = {}) {
           { assigneeUserId: toUserId },
           { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }
         );
+        // The queued send was rendered in the OLD owner's voice and persona —
+        // drop it to manual for the new owner to review (plan P17: the safer
+        // of the two options; re-rendering mid-hook risks a wrong-voice send).
+        await cancelQueuedEmailsTx({ cadenceEnrollmentId: enrollment.id }, 'reassigned_review', t);
       },
       // BEFORE task repointing (P0 ordering) — the duplicate's cadence dies with it.
       onMergeDuplicate: ({ duplicate, user, transaction }) =>
@@ -1087,6 +1227,8 @@ export function makeCadenceService(overrides = {}) {
     enrollPartner, completeCadenceTask,
     pauseEnrollment, resumeEnrollment, stopEnrollment, skipCurrentStep,
     getPartnerCadence, hookHandlers, reconcile,
+    // exported for the auto-sender (send-time revalidation, plan §4)
+    resolveRecipientTx, isSuppressedTx,
     // exported for tests
     sgtWindowClamp,
   };

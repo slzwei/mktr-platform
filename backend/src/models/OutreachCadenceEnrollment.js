@@ -19,6 +19,8 @@ const OutreachCadenceEnrollment = sequelize.define('OutreachCadenceEnrollment', 
   pausedReason: { type: DataTypes.STRING(32), allowNull: true, comment: 'manual|snoozed|missing_info (NULL = legacy pause)' },
   blockedReason: { type: DataTypes.STRING(32), allowNull: true, comment: 'what parked a missing_info pause: no_phone|no_email|no_instagram_handle|no_active_location|suppressed|unresolved_template (NULL = not parked)' },
   blockedDueAt: { type: DataTypes.DATE, allowNull: true, comment: 'the parked step’s authored due time — automatic resumes honor it; explicit Retry clears it' },
+  gmailThreadId: { type: DataTypes.STRING(32), allowNull: true, comment: 'first auto-sent email’s thread — follow-ups join it, replies match it' },
+  gmailThreadSubject: { type: DataTypes.STRING(220), allowNull: true, comment: 'first email’s rendered subject — threaded follow-ups reuse it (Gmail threads require a matching subject)' },
   endedAt: { type: DataTypes.DATE, allowNull: true },
 }, {
   tableName: 'outreach_cadence_enrollments',
