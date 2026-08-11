@@ -50,6 +50,16 @@ export function makeOutreachPersonaService(overrides = {}) {
     return d.makeClient({ credentials, subject: account.accountEmail, scopes: ACCOUNT_SCOPES });
   }
 
+  /**
+   * The account's sendable alias set: editable alternates + domain-alias
+   * twins, minus Google's `*.test-google-a.com` noise (every tenant carries
+   * those; nobody sends as them).
+   */
+  async function usableAliases(client, accountEmail) {
+    const all = await client.listUserAliases(accountEmail);
+    return all.filter((a) => !a.toLowerCase().endsWith('.test-google-a.com'));
+  }
+
   async function decryptedClient(account) {
     if (!account?.encryptedCredentials) {
       throw new AppError('Connect the Workspace account first — paste the service-account key in Settings.', 409);
@@ -120,7 +130,7 @@ export function makeOutreachPersonaService(overrides = {}) {
     try {
       profile = await client.getProfile();
       sendAs = await client.listSendAs();
-      aliases = await client.listUserAliases(account.accountEmail);
+      aliases = await usableAliases(client, account.accountEmail);
       await account.update({ lastHealthCheckAt: d.now(), lastError: null });
     } catch (err) {
       await account.update({ lastHealthCheckAt: d.now(), lastError: String(err.message).slice(0, 500) });
@@ -178,7 +188,7 @@ export function makeOutreachPersonaService(overrides = {}) {
 
     const [users, accountAliases] = await Promise.all([
       client.listUsers(),
-      client.listUserAliases(account.accountEmail),
+      usableAliases(client, account.accountEmail),
     ]);
     const aliasSet = new Set(accountAliases.map((a) => a.toLowerCase()));
     const existing = await d.OutreachPersona.findAll({ attributes: ['address'] });
@@ -216,7 +226,7 @@ export function makeOutreachPersonaService(overrides = {}) {
     const account = await d.OutreachAccount.scope('withCredentials').findOne({ order: [['createdAt', 'ASC']] });
     if (!account) throw new AppError('No Workspace account configured yet', 404);
     const client = await decryptedClient(account);
-    const aliasSet = new Set((await client.listUserAliases(account.accountEmail)).map((a) => a.toLowerCase()));
+    const aliasSet = new Set((await usableAliases(client, account.accountEmail)).map((a) => a.toLowerCase()));
 
     const wanted = [...new Set((addresses || []).map((a) => String(a).trim().toLowerCase()).filter(Boolean))];
     if (wanted.length === 0) throw new AppError('Pick at least one address to import', 400);

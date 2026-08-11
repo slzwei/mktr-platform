@@ -119,10 +119,16 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
       } while (pageToken);
       return users;
     },
-    /** The aliases OF ONE user — the plan-F2 parentage source of truth. */
+    /**
+     * The aliases OF ONE user — the plan-F2 parentage source of truth.
+     * Reads the USER resource, not the aliases collection: domain-alias
+     * twins (redeem.sg as a user-alias domain of mktr.sg) live only in
+     * `nonEditableAliases[]` and never appear in aliases.list — they are
+     * real, deliver to this user, and must count as the user's own.
+     */
     async listUserAliases(email) {
-      const body = await api(`https://admin.googleapis.com/admin/directory/v1/users/${encodeURIComponent(email)}/aliases`);
-      return (body.aliases || []).map((a) => a.alias);
+      const user = await api(`https://admin.googleapis.com/admin/directory/v1/users/${encodeURIComponent(email)}?projection=full`);
+      return [...new Set([...(user.aliases || []), ...(user.nonEditableAliases || [])])];
     },
 
     // ── Gmail (impersonated subject's mailbox) ───────────────────────────

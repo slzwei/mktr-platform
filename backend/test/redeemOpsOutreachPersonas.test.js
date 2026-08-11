@@ -28,7 +28,8 @@ const KEY_JSON = JSON.stringify({
 
 /** Mutable Google fixture each test can shape. */
 const google = {
-  aliases: ['emily@redeem.sg', 'jeremy@redeem.sg'],
+  // Includes a Google test-domain twin — the picker must never offer it.
+  aliases: ['emily@redeem.sg', 'jeremy@redeem.sg', 'emily@mktr.sg.test-google-a.com'],
   sendAs: [
     { sendAsEmail: 'business@mktr.sg', isPrimary: true, verificationStatus: 'accepted' },
     { sendAsEmail: 'emily@redeem.sg', verificationStatus: 'accepted' },
