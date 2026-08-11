@@ -82,6 +82,26 @@ describe('OutreachPersonasCard', () => {
     }));
   });
 
+  it('uploading the downloaded .json key file fills the form without any copy-paste', async () => {
+    api.getOutreachAccount.mockResolvedValue({ configured: false });
+    api.setupOutreachAccount.mockResolvedValue({ health: { aliasCount: 4 } });
+    const user = userEvent.setup();
+    wrap(<OutreachPersonasCard />);
+
+    await user.click(await screen.findByRole('button', { name: /connect account/i }));
+    const keyContents = '{"type":"service_account","client_email":"sa@x.iam.gserviceaccount.com"}';
+    await user.upload(
+      screen.getByLabelText(/service account key file/i),
+      new File([keyContents], 'mktr-platform-abc123.json', { type: 'application/json' })
+    );
+    await screen.findByText(/mktr-platform-abc123\.json loaded/);
+    await user.click(screen.getByRole('button', { name: /connect & check/i }));
+    await waitFor(() => expect(api.setupOutreachAccount).toHaveBeenCalledWith({
+      accountEmail: 'business@mktr.sg',
+      serviceAccountJson: keyContents,
+    }));
+  });
+
   it('renders persona rows with status and reassigns via the rep select (server enforces 1:1)', async () => {
     api.getOutreachAccount.mockResolvedValue(configuredAccount);
     api.listOutreachPersonas.mockResolvedValue([
