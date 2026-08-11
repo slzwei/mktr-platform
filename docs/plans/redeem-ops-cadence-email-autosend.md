@@ -212,13 +212,26 @@ must not brick the other). Fallback documented but not built: OAuth connect flow
 
 ## 9. Open questions for Shawn (needed before Phase A)
 
-1. ~~Persona vs rep voice~~ **RESOLVED 2026-08-11**: the identity follows the persona account —
-   Emily's deals send as `"Emily" <emily@redeem.sg>`, From name/address AND body signature
-   (`{{rep_name}}` in auto emails = persona display name). Personas are alternate emails under
-   `business@mktr.sg`; Shawn creates them manually (emily/tyler/jeremy/dara exist today).
-2. **The who-is-who mapping** (Shawn offered to supply it): which CRM rep does each of
-   emily/tyler/jeremy/dara belong to? Needed to seed the §2 step-3 assignment — thereafter the
-   Settings card manages it self-serve.
+1. ~~Persona vs rep voice~~ **RESOLVED, then SIMPLIFIED 2026-08-11**: the "personas" are the
+   REPS THEMSELVES — every team member sends as their own first name on redeem.sg ("all
+   @redeem.sg", roster screenshots), no matter which address they log in with (most log in
+   @mktr.sg; Tyler already logs in as tyler@redeem.sg). So From, body signature and the human
+   on the follow-up call are the same person — `{{rep_name}}` needs no special auto-send
+   handling at all. Aliases hang under `business@mktr.sg` (Shawn creates them manually).
+2. ~~Who-is-who mapping~~ **RESOLVED 2026-08-11** — seed from the team roster, matched by
+   first name, assignment stays editable in Settings:
+   | CRM user | Sends as |
+   |---|---|
+   | Emily Wong (emily@mktr.sg) | emily@redeem.sg |
+   | Jeremy Ho Wei Kang (jeremy@mktr.sg) | jeremy@redeem.sg |
+   | Dara Tia (dara@mktr.sg) | dara@redeem.sg |
+   | Tyler Lim Yang Zhe (tyler@redeem.sg) | tyler@redeem.sg |
+   | David Kim (david@mktr.sg) | david@redeem.sg |
+   | Jacqueline Teh (jacqueline@mktr.sg) | jacqueline@redeem.sg |
+   Shawn confirmed emily/tyler/jeremy/dara aliases exist in Workspace; **david@redeem.sg +
+   jacqueline@redeem.sg to be confirmed/created** (his manual Admin-console step — the Phase-A
+   health card flags any alias that isn't sendable yet). Default From display name = the rep's
+   full CRM name (e.g. `"Emily Wong" <emily@redeem.sg>`), editable per persona.
 3. Daily cap comfort level for warm-up (default 30/day per persona)?
 4. Who owns unmatched inbox mail — leave-in-Gmail with the health-card count (default), or
    forward to someone?
