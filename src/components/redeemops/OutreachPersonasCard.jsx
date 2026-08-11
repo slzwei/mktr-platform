@@ -123,7 +123,11 @@ export default function OutreachPersonasCard() {
 
   const account = accountQuery.data;
   const personas = personasQuery.data || [];
-  const team = teamQuery.data || [];
+  // Actives first; deactivated staff stay visible (an existing assignment
+  // must render honestly) but can't receive a NEW sending identity.
+  const team = [...(teamQuery.data || [])].sort(
+    (a, b) => (a.isActive === false ? 1 : 0) - (b.isActive === false ? 1 : 0)
+  );
   const takenUserIds = new Set(personas.map((p) => p.assignedUserId).filter(Boolean));
 
   const personaStatus = (p) => {
@@ -218,8 +222,13 @@ export default function OutreachPersonasCard() {
                       >
                         <option value="">Unassigned</option>
                         {team.map((u) => (
-                          <option key={u.id} value={u.id} disabled={takenUserIds.has(u.id) && p.assignedUserId !== u.id}>
-                            {u.fullName || u.email}
+                          <option
+                            key={u.id}
+                            value={u.id}
+                            disabled={p.assignedUserId !== u.id
+                              && (takenUserIds.has(u.id) || u.isActive === false)}
+                          >
+                            {u.isActive === false ? 'DEACTIVATED — ' : ''}{u.fullName || u.email}
                           </option>
                         ))}
                       </select>

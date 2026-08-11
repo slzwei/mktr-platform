@@ -60,8 +60,9 @@ const emily = {
 beforeEach(() => {
   vi.clearAllMocks();
   api.getTeam.mockResolvedValue([
-    { id: 'u-emily', fullName: 'Emily Wong' },
-    { id: 'u-jeremy', fullName: 'Jeremy Ho Wei Kang' },
+    { id: 'u-emily', fullName: 'Emily Wong', isActive: true },
+    { id: 'u-jeremy', fullName: 'Jeremy Ho Wei Kang', isActive: true },
+    { id: 'u-gone', fullName: 'Departed Rep', isActive: false },
   ]);
   api.listOutreachPersonas.mockResolvedValue([]);
 });
@@ -119,7 +120,12 @@ describe('OutreachPersonasCard', () => {
     await user.selectOptions(screen.getByLabelText('Rep for jeremy@redeem.sg'), 'u-jeremy');
     await waitFor(() => expect(api.updateOutreachPersona).toHaveBeenCalledWith('op-2', { assignedUserId: 'u-jeremy' }));
     // Emily already holds u-emily — that option is disabled for Jeremy's row.
-    expect(screen.getByLabelText('Rep for jeremy@redeem.sg').querySelector('option[value="u-emily"]').disabled).toBe(true);
+    const jeremySelect = screen.getByLabelText('Rep for jeremy@redeem.sg');
+    expect(jeremySelect.querySelector('option[value="u-emily"]').disabled).toBe(true);
+    // Deactivated staff are labelled and can't receive a NEW identity.
+    const gone = jeremySelect.querySelector('option[value="u-gone"]');
+    expect(gone.textContent).toBe('DEACTIVATED — Departed Rep');
+    expect(gone.disabled).toBe(true);
   });
 
   it('import dialog lists ONLY the account aliases, disables taken ones, and imports the picked set', async () => {

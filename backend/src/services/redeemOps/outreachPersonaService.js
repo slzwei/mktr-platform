@@ -279,6 +279,9 @@ export function makeOutreachPersonaService(overrides = {}) {
         } else {
           const rep = await d.User.findByPk(body.assignedUserId, { transaction: t });
           if (!rep) throw new AppError('Rep not found', 404);
+          if (rep.isActive === false) {
+            throw new AppError(`${rep.fullName || 'That rep'} is deactivated — reactivate them first or pick someone else`, 409);
+          }
           const clash = await d.OutreachPersona.findOne({
             where: { assignedUserId: rep.id }, transaction: t,
           });
