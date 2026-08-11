@@ -883,7 +883,8 @@ describe('ScheduledSendStrip — one-click send on manual email steps', () => {
     api.sendTaskOutreachEmail.mockResolvedValue({ id: 'e1', status: 'queued' });
     const task = {
       id: 't-manual-1', cadenceEnrollmentId: 'en1', partnerOrganisationId: 'p1',
-      cadenceStep: { channel: 'email' }, title: 'Email the offer', emailSubject: null,
+      cadenceStep: { channel: 'email' }, title: 'Email the offer',
+      emailSubject: 'Bringing new customers to Owner Biz',
       snapshotRecipient: 'owner@biz.sg', outboxEmails: [],
     };
     wrap(<ScheduledSendStrip task={task} canManage />);
@@ -892,11 +893,26 @@ describe('ScheduledSendStrip — one-click send on manual email steps', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/send this email now\?/i)).toBeInTheDocument();
     expect(within(dialog).getByText(/owner@biz\.sg/)).toBeInTheDocument();
-    // subject preview falls back to the task title when no subject was authored
-    expect(within(dialog).getByText('Email the offer')).toBeInTheDocument();
+    // the REAL subject shows — never the task title
+    expect(within(dialog).getByText('Bringing new customers to Owner Biz')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Email the offer')).not.toBeInTheDocument();
 
     await userEvent.click(within(dialog).getByRole('button', { name: /send email/i }));
     await waitFor(() => expect(api.sendTaskOutreachEmail).toHaveBeenCalledWith('t-manual-1'));
+  });
+
+  it('a task with no subject shows the gap and disables the confirm', async () => {
+    const task = {
+      id: 't-nosubj', cadenceEnrollmentId: 'en1', partnerOrganisationId: 'p1',
+      cadenceStep: { channel: 'email' }, title: 'Email the offer', emailSubject: null,
+      snapshotRecipient: 'owner@biz.sg', outboxEmails: [],
+    };
+    wrap(<ScheduledSendStrip task={task} canManage />);
+    await userEvent.click(screen.getByRole('button', { name: /send email/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/no subject set/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /send email/i })).toBeDisabled();
+    expect(api.sendTaskOutreachEmail).not.toHaveBeenCalled();
   });
 
   it('renders nothing for non-email steps, non-cadence tasks, or viewers without manage rights', () => {

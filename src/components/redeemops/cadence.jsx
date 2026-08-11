@@ -465,6 +465,7 @@ const CANCELLED_SEND_COPY = {
   reassigned_review: 'This business changed owner — the drafted send was cancelled for your review.',
   autosend_disabled: 'Auto-send was switched off — send it yourself and log the outcome.',
   reply_in_thread: 'They replied in this thread — read it before doing anything else.',
+  no_subject: 'No subject line — add one in the message box, then send again.',
 };
 
 export function ScheduledSendStrip({ task, canManage = true }) {
@@ -521,11 +522,16 @@ export function ScheduledSendStrip({ task, canManage = true }) {
               </DialogDescription>
             </DialogHeader>
             <p className="text-sm mb-0" style={{ color: 'var(--ro-text-2)' }}>
-              Subject: <span className="font-semibold">{task.emailSubject || task.title}</span>
+              Subject: <span className="font-semibold">
+                {task.emailSubject || '(no subject set — edit the message first)'}
+              </span>
             </p>
             <DialogFooter>
               <Button variant="outline" onClick={() => setConfirmSend(false)}>Back</Button>
-              <Button disabled={sendEmailMutation.isPending} onClick={() => sendEmailMutation.mutate()}>
+              <Button
+                disabled={sendEmailMutation.isPending || !task.emailSubject}
+                onClick={() => sendEmailMutation.mutate()}
+              >
                 {sendEmailMutation.isPending ? 'Sending…' : 'Send email'}
               </Button>
             </DialogFooter>
@@ -622,7 +628,9 @@ function TaskScriptBox({ task, canManage = false }) {
   const [draft, setDraft] = useState('');
   const [subjectDraft, setSubjectDraft] = useState('');
   const clampable = text.length > SCRIPT_CLAMP_CHARS || text.split('\n').length > 3;
-  const hasSubject = task.emailSubject != null && task.cadenceStep?.channel === 'email';
+  // Email steps ALWAYS show/edit the subject — legacy tasks may still carry
+  // null (pre-backfill), and the send button refuses until one is set.
+  const hasSubject = task.cadenceStep?.channel === 'email';
 
   const saveMutation = useMutation({
     mutationFn: () => redeemOpsApi.updateTask(task.id, {
@@ -686,7 +694,7 @@ function TaskScriptBox({ task, canManage = false }) {
     <div className="mt-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--ro-subtle)' }}>
       {hasSubject && (
         <p className="text-xs font-semibold m-0 mb-1" style={{ color: 'var(--ro-text-2)' }}>
-          Subject: {task.emailSubject}
+          Subject: {task.emailSubject || <em>(not set — edit to add one)</em>}
         </p>
       )}
       <p
