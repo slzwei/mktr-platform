@@ -191,6 +191,12 @@ function defineAssociations() {
   AgentGroupMember.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'group' });
   AgentGroupMember.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'SET NULL' });
 
+  // Outreach sending identities (cadence email auto-send Phase A). Personas
+  // die with their account; rep deletion only unassigns (SET NULL).
+  models.OutreachPersona.belongsTo(models.OutreachAccount, { foreignKey: 'accountId', as: 'account', onDelete: 'CASCADE' });
+  models.OutreachAccount.hasMany(models.OutreachPersona, { foreignKey: 'accountId', as: 'personas' });
+  models.OutreachPersona.belongsTo(User, { foreignKey: 'assignedUserId', as: 'assignedUser', onDelete: 'SET NULL' });
+
   // Redeem Ops associations (docs/redeem-ops/ERD.md). Append-only history/audit
   // rows must survive actor deletion: SET NULL, never cascade from users.
   const {
@@ -393,7 +399,8 @@ export const {
   SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient,
   WaMessageStatus, WaMessageSend, ConsumerObservation, ConsumerProfile, EnrichmentJob,
   EnrichmentScoringConfig, EnrichmentSweepRun,
-  MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection
+  MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection,
+  OutreachAccount, OutreachPersona
 } = models;
 
 export { sequelize };

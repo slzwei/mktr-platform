@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
 import CadenceStudio from '@/components/redeemops/CadenceStudio';
+import OutreachPersonasCard, { EMAIL_AUTOSEND_ENABLED } from '@/components/redeemops/OutreachPersonasCard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -280,6 +281,8 @@ export default function SettingsPage() {
       </Card>
 
       <CadenceStudio />
+
+      {EMAIL_AUTOSEND_ENABLED && <OutreachPersonasCard />}
 
       <Dialog open={!!renameTarget} onOpenChange={(open) => { if (!open) setRenameTarget(null); }}>
         <DialogContent className="max-w-sm">
