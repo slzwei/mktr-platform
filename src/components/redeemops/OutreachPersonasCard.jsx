@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
@@ -29,7 +29,24 @@ export default function OutreachPersonasCard() {
   const [importOpen, setImportOpen] = useState(false);
   const [accountEmail, setAccountEmail] = useState('business@mktr.sg');
   const [keyJson, setKeyJson] = useState('');
+  const [keyFileName, setKeyFileName] = useState('');
   const [picked, setPicked] = useState({});
+  const fileInputRef = useRef(null);
+
+  // The key arrives as a DOWNLOADED .json file — read it directly instead of
+  // making the admin open it and copy-paste (Shawn, 2026-08-11).
+  const onKeyFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setKeyJson(String(reader.result || ''));
+      setKeyFileName(file.name);
+    };
+    reader.onerror = () => toast.error('Could not read the file — paste the JSON instead');
+    reader.readAsText(file);
+    e.target.value = ''; // same file can be re-picked after a failed attempt
+  };
 
   const accountQuery = useQuery({ queryKey: ACCOUNT_KEY, queryFn: () => redeemOpsApi.getOutreachAccount() });
   const personasQuery = useQuery({ queryKey: PERSONAS_KEY, queryFn: () => redeemOpsApi.listOutreachPersonas() });
@@ -240,12 +257,30 @@ export default function OutreachPersonasCard() {
             placeholder="business@mktr.sg"
             aria-label="Account email"
           />
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              aria-label="Service account key file"
+              onChange={onKeyFile}
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+              Upload key file (.json)
+            </Button>
+            {keyFileName && (
+              <span className="text-xs font-medium truncate" style={{ color: 'var(--ro-text-2)' }}>
+                ✓ {keyFileName} loaded
+              </span>
+            )}
+          </div>
           <textarea
             value={keyJson}
-            onChange={(e) => setKeyJson(e.target.value)}
-            placeholder='{"type": "service_account", "client_email": …}'
+            onChange={(e) => { setKeyJson(e.target.value); setKeyFileName(''); }}
+            placeholder='…or paste the JSON here: {"type": "service_account", …}'
             aria-label="Service account key JSON"
-            rows={6}
+            rows={keyFileName ? 3 : 6}
             className="w-full rounded-md border border-border bg-white p-2 font-mono text-xs"
           />
           <DialogFooter>
