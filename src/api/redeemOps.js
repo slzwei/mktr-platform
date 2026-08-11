@@ -455,6 +455,10 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/resume`);
     return res.data?.enrollment;
   },
+  async skipCadenceStep(partnerId, body = {}) {
+    const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/skip-step`, body);
+    return res.data;
+  },
   async stopCadence(partnerId) {
     const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/stop`);
     return res.data?.enrollment;

@@ -53,6 +53,9 @@ router.post('/partners/:partnerId/cadence/enroll', requireRedeemOps('tasks.manag
 router.post('/partners/:partnerId/cadence/pause', requireRedeemOps('tasks.manage'), ctrl.pause);
 router.post('/partners/:partnerId/cadence/resume', requireRedeemOps('tasks.manage'), ctrl.resume);
 router.post('/partners/:partnerId/cadence/stop', requireRedeemOps('tasks.manage'), ctrl.stop);
+// Explicit step skip — the only way past a step without its outcome (the
+// engine never auto-skips). Owner-or-admin row rules live in the service.
+router.post('/partners/:partnerId/cadence/skip-step', requireRedeemOps('tasks.manage'), ctrl.skipStep);
 
 // The disposition endpoint — the ONLY way to complete a cadence task (§5.2).
 router.post('/cadence-tasks/:taskId/complete', requireRedeemOps('tasks.manage'), ctrl.completeCadenceTask);

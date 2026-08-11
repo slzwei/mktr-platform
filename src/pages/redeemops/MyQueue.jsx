@@ -5,7 +5,7 @@ import { redeemOpsApi } from '@/api/redeemOps';
 import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { RoStatTile, RoEmpty, prettyEnum } from '@/components/redeemops/ui';
-import { CadenceChip, CadenceOutcomeButton } from '@/components/redeemops/cadence';
+import { CadenceChip, CadenceOutcomeButton, blockedReasonLabel } from '@/components/redeemops/cadence';
 
 function partnerName(p) {
   return p?.tradingName || p?.brandName || p?.legalName || 'Business';
@@ -69,9 +69,14 @@ export default function MyQueue() {
   const replies = q.recentReplies.items;
   const upcoming = q.upcomingTasks.items;
   const stale = q.stalePartners.items;
+  // Cadences parked on a step they can't prepare — without this bucket a
+  // mid-cadence park has no task and vanishes from the docket entirely.
+  const waiting = q.waitingOnInfo?.items || [];
 
-  const todoToday = (q.overdueTasks.total || 0) + (q.dueTodayTasks.total || 0) + (q.awaitingFirstOutreach.total || 0);
-  const empty = overdue.length + dueToday.length + awaiting.length + stale.length + replies.length + upcoming.length === 0;
+  const todoToday = (q.overdueTasks.total || 0) + (q.dueTodayTasks.total || 0)
+    + (q.awaitingFirstOutreach.total || 0) + (q.waitingOnInfo?.total || 0);
+  const empty = overdue.length + dueToday.length + awaiting.length + stale.length
+    + replies.length + upcoming.length + waiting.length === 0;
 
   // Cadence tasks complete through a disposition, never a bare "Done" —
   // the outcome drives what the engine schedules next.
@@ -185,6 +190,24 @@ export default function MyQueue() {
                     when={p.atRiskFlag ? 'At risk' : 'Today'}
                     whenColor="var(--ro-tag-yellow-fg)"
                     action={openButton(p.id)}
+                  />
+                ))}
+              </>
+            )}
+
+            {waiting.length > 0 && (
+              <>
+                <GroupLabel color="var(--ro-tag-yellow-fg)">Cadence waiting on you</GroupLabel>
+                {waiting.map((w) => (
+                  <DocketRow
+                    key={w.id}
+                    title={`Unblock the cadence — ${w.partnerName}`}
+                    sub={`Step ${w.stepOrder ?? '?'}${w.stepTitle ? ` · ${w.stepTitle}` : ''} · ${blockedReasonLabel(w.blockedReason)} — add it or skip the step`}
+                    when={w.pausedAt
+                      ? `${Math.max(1, Math.round((Date.now() - new Date(w.pausedAt)) / 86400000))}d`
+                      : 'Now'}
+                    whenColor="var(--ro-tag-yellow-fg)"
+                    action={openButton(w.id)}
                   />
                 ))}
               </>

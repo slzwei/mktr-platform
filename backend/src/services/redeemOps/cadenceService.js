@@ -21,8 +21,10 @@ import {
  * Cadence engine (docs/plans/redeem-ops-cadences.md §5) — the generator the
  * outreach layer was missing: reps decide what to say, the engine decides when
  * and what's next. Advance is SYNCHRONOUS inside completeCadenceTask's
- * transaction (lock order enrollment → partner → task); the reconcile tick only
- * repairs faults. Exits ride the P0 hook registry, registered from bootstrap.
+ * transaction (GLOBAL lock order partner → enrollment → task — the P0 hooks
+ * fire inside transactions that already hold the partner lock, so every path
+ * takes it first); the reconcile tick only repairs faults. Exits ride the P0
+ * hook registry, registered from bootstrap.
  */
 
 const WINDOW_START_SGT = { any: 10, morning: 9.5, afternoon: 15, off_peak: 15 };
@@ -354,8 +356,12 @@ export function makeCadenceService(overrides = {}) {
     });
     const primary = contacts[0] || null;
     if (channel === 'call' || channel === 'whatsapp') {
+      // The fallback contact may carry only a whatsapp number — read both
+      // fields off it (a `.mobile`-only read parked whatsapp-only records as
+      // no_phone forever, un-fixable by the "add it and it resumes" loop).
+      const fallback = contacts.find((c) => c.mobile || c.whatsapp);
       const phone = primary?.whatsapp || primary?.mobile
-        || contacts.find((c) => c.mobile || c.whatsapp)?.mobile
+        || fallback?.mobile || fallback?.whatsapp
         || partner.primaryPhone;
       return phone ? { recipient: String(phone), ok: true, contactId: primary?.id || null } : { ok: false, reason: 'no_phone' };
     }
@@ -430,7 +436,11 @@ export function makeCadenceService(overrides = {}) {
     });
     if (!rendered.ok) return { blocked: true, reason: 'unresolved_template' };
 
-    const dueAt = sgtWindowClamp(d.now(), timing.delayDays, timing.timeWindow, d.now());
+    // A resume of a park carries the step's ORIGINAL due time (dueAtOverride)
+    // so a fixed record never fires the step days ahead of its authored delay.
+    const dueAt = timing.dueAtOverride && new Date(timing.dueAtOverride).getTime() > d.now().getTime()
+      ? new Date(timing.dueAtOverride)
+      : sgtWindowClamp(d.now(), timing.delayDays || 0, timing.timeWindow || 'any', d.now());
     // System contexts (sweep resume, reconciler) have no acting user — the
     // partner owner stands in: they're the assignee anyway, so the row rules
     // in createTaskTx pass without a manager check.
@@ -456,78 +466,61 @@ export function makeCadenceService(overrides = {}) {
   }
 
   /**
-   * The edge a BLOCKED (unreachable-channel) step skips forward through: its
-   * explicit '*' edge, or its SOLE outgoing edge — builder cadences compile
-   * exactly one outgoing edge per step, and for single-outcome channels an
-   * explicit 'sent' is semantically identical to '*', so authoring "Sent"
-   * instead of "Any outcome" must not turn skip-unreachable into
-   * end-the-whole-cadence. Only a genuine branch (several specific edges,
-   * no '*') refuses to skip.
+   * Park the enrollment ON the step that can't go out. No skipping, no
+   * chain-walk (product call 2026-08-11): a step the record can't serve is a
+   * decision for the rep — fix the record (the contact-info hook resumes it
+   * at THIS step), skip the step explicitly, or stop the cadence. The old
+   * walk silently skipped steps the rep never saw, and the UI read the walk's
+   * dead-end as a pause "because nothing was reachable" when in fact
+   * reachable steps had been burned through on the way.
    */
-  async function resolveSkipEdgeTx(cadenceId, fromStepId, t) {
-    const edges = await d.OutreachCadenceTransition.findAll({
-      where: { cadenceId, fromStepId }, transaction: t,
-    });
-    return edges.find((e) => e.disposition === CADENCE_WILDCARD_DISPOSITION)
-      || (edges.length === 1 ? edges[0] : null);
-  }
-
-  /**
-   * Park the enrollment because every remaining step is unreachable. The old
-   * behavior ended it as 'completed' — which the UI reads as success — while
-   * the rep could have FIXED the blockers (add an email, a handle, an outlet).
-   * Paused on the walk's entry step, it resumes through the contact-info hook
-   * or a manual Resume once the record is filled in.
-   */
-  async function pauseForInfoTx(enrollment, partner, entryStep, blocked, actorUser, t) {
+  async function pauseForInfoTx(enrollment, partner, step, blockedEntry, timing, actorUser, t) {
+    // Remember when the step SHOULD have gone out, so an automatic resume
+    // (contact-info hook) keeps the authored pacing instead of firing the
+    // step days early the moment the record is fixed. A re-park during such
+    // a resume carries the override through unchanged.
+    const intendedDueAt = timing.dueAtOverride
+      ? new Date(timing.dueAtOverride)
+      : sgtWindowClamp(d.now(), timing.delayDays || 0, timing.timeWindow || 'any', d.now());
     await enrollment.update({
-      state: 'paused', pausedAt: d.now(), pausedReason: 'missing_info', currentStepId: entryStep.id,
+      state: 'paused', pausedAt: d.now(), pausedReason: 'missing_info',
+      currentStepId: step.id, blockedReason: blockedEntry.reason, blockedDueAt: intendedDueAt,
     }, { transaction: t });
     await d.tasks.recomputeNextTaskAt(partner.id, t);
     await d.audit.recordAuditEvent({
       actorUser, actorType: actorUser ? 'staff' : 'system', action: 'cadence.paused_missing_info',
       entityType: 'outreach_cadence_enrollment', entityId: enrollment.id,
-      after: { blocked }, transaction: t,
+      after: { blocked: [blockedEntry] }, transaction: t,
     });
   }
 
   /**
-   * Land the enrollment on `step` (materialize its task), chaining through
-   * blocked steps via their skip edges; pauses for missing contact info if the
-   * chain runs out (§5.3).
+   * Land the enrollment on `step`: materialize its task, or — when the step
+   * can't go out (no recipient on record, suppressed, unresolved template) —
+   * pause the enrollment ON that step (§5.3). The engine never advances past
+   * a step by itself; only a rep's explicit skip does.
    */
   async function placeAtStepTx(enrollment, partner, step, timing, actorUser, t) {
-    let cur = step;
-    let curTiming = timing;
-    let guard = 0;
-    const blocked = [];
-    while (cur) {
-      const mat = await tryMaterializeTx(enrollment, partner, cur, curTiming, actorUser, t);
-      if (!mat.blocked) {
-        await enrollment.update({ currentStepId: cur.id }, { transaction: t });
-        return { task: mat.task, step: cur };
-      }
-      await d.audit.recordAuditEvent({
-        actorUser, actorType: actorUser ? 'staff' : 'system', action: 'cadence.step_blocked',
-        entityType: 'outreach_cadence_enrollment', entityId: enrollment.id,
-        after: { stepId: cur.id, stepTitle: cur.title, reason: mat.reason }, transaction: t,
-      });
-      if (mat.reason === 'partner_unowned') {
-        await endEnrollmentTx(enrollment, { state: 'exited', exitReason: 'released' }, actorUser, t);
-        return { finished: true, reason: mat.reason };
-      }
-      blocked.push({ stepId: cur.id, stepTitle: cur.title, channel: cur.channel, reason: mat.reason });
-      const edge = await resolveSkipEdgeTx(enrollment.cadenceId, cur.id, t);
-      if (!edge || !edge.toStepId) {
-        await pauseForInfoTx(enrollment, partner, step, blocked, actorUser, t);
-        return { pausedForInfo: true, blocked };
-      }
-      cur = await d.OutreachCadenceStep.findByPk(edge.toStepId, { transaction: t });
-      curTiming = { delayDays: edge.delayDays, timeWindow: edge.timeWindow };
-      guard += 1;
-      if (guard > 30) throw new AppError('Cadence step chain exceeded limit', 500);
+    const mat = await tryMaterializeTx(enrollment, partner, step, timing, actorUser, t);
+    if (!mat.blocked) {
+      await enrollment.update(
+        { currentStepId: step.id, blockedReason: null, blockedDueAt: null },
+        { transaction: t }
+      );
+      return { task: mat.task, step };
     }
-    return { finished: true };
+    await d.audit.recordAuditEvent({
+      actorUser, actorType: actorUser ? 'staff' : 'system', action: 'cadence.step_blocked',
+      entityType: 'outreach_cadence_enrollment', entityId: enrollment.id,
+      after: { stepId: step.id, stepTitle: step.title, reason: mat.reason }, transaction: t,
+    });
+    if (mat.reason === 'partner_unowned') {
+      await endEnrollmentTx(enrollment, { state: 'exited', exitReason: 'released' }, actorUser, t);
+      return { finished: true, reason: mat.reason };
+    }
+    const blockedEntry = { stepId: step.id, stepTitle: step.title, channel: step.channel, reason: mat.reason };
+    await pauseForInfoTx(enrollment, partner, step, blockedEntry, timing, actorUser, t);
+    return { pausedForInfo: true, blocked: [blockedEntry] };
   }
 
   // ── Enrollment lifecycle ──────────────────────────────────────────────────
@@ -540,7 +533,12 @@ export function makeCadenceService(overrides = {}) {
         transaction: t,
       }
     );
-    await enrollment.update({ state, exitReason, endedAt: d.now() }, { transaction: t });
+    // Park/pause residue is meaningless on a terminal row — clear it so
+    // "blockedReason non-null" always means "parked right now".
+    await enrollment.update({
+      state, exitReason, endedAt: d.now(),
+      pausedReason: null, blockedReason: null, blockedDueAt: null,
+    }, { transaction: t });
     await d.tasks.recomputeNextTaskAt(enrollment.partnerOrganisationId, t);
     await d.audit.recordAuditEvent({
       actorUser, actorType: actorUser ? 'staff' : 'system', action: 'cadence.ended',
@@ -588,7 +586,7 @@ export function makeCadenceService(overrides = {}) {
       });
       if (liveCount >= d.enrollmentCap && !(overrideCapacity && isManager(user))) {
         throw new AppError(
-          `Cap reached: ${liveCount} businesses already in cadences for this owner (max ${d.enrollmentCap}). Finish or stop some first.`,
+          `Cap reached: ${liveCount} businesses already in cadences for this owner (max ${d.enrollmentCap}). Finish or stop some first — runs waiting on info count too.`,
           409
         );
       }
@@ -765,12 +763,19 @@ export function makeCadenceService(overrides = {}) {
   }
 
   async function resumeEnrollmentTx(enrollment, partner, actorUser, t) {
+    // A parked step resumes on its AUTHORED due time, not "now" — the
+    // contact-info hook must not fire a +3d step three days early just
+    // because the email was added quickly. (The rep's explicit Retry/Resume
+    // clears blockedDueAt first — see resumeEnrollment.)
+    const timing = enrollment.blockedDueAt
+      ? { dueAtOverride: enrollment.blockedDueAt }
+      : { delayDays: 0, timeWindow: 'any' };
     await enrollment.update({ state: 'active', pausedAt: null, pausedReason: null }, { transaction: t });
     const step = await d.OutreachCadenceStep.findByPk(enrollment.currentStepId, { transaction: t });
     if (!step) {
       return endEnrollmentTx(enrollment, { state: 'completed', exitReason: 'finished' }, actorUser, t);
     }
-    const placed = await placeAtStepTx(enrollment, partner, step, { delayDays: 0, timeWindow: 'any' }, actorUser, t);
+    const placed = await placeAtStepTx(enrollment, partner, step, timing, actorUser, t);
     // A resume that immediately re-parks (still nothing reachable) is not a
     // resume — the paused_missing_info audit row already tells that story.
     if (!placed.pausedForInfo) {
@@ -783,13 +788,115 @@ export function makeCadenceService(overrides = {}) {
   }
 
   async function resumeEnrollment(partnerId, user, requestId = null) {
-    return withOwnedLiveEnrollment(partnerId, user, ['paused'], (enrollment, partner, t) =>
-      resumeEnrollmentTx(enrollment, partner, user, t));
+    return withOwnedLiveEnrollment(partnerId, user, ['paused'], async (enrollment, partner, t) => {
+      // Explicit human Resume/Retry means NOW — drop the parked step's
+      // authored timing (automatic resumes honor it instead).
+      if (enrollment.blockedDueAt) {
+        await enrollment.update({ blockedDueAt: null }, { transaction: t });
+      }
+      return resumeEnrollmentTx(enrollment, partner, user, t);
+    });
   }
 
   async function stopEnrollment(partnerId, user, requestId = null) {
     return withOwnedLiveEnrollment(partnerId, user, ['active', 'paused'], (enrollment, partner, t) =>
       endEnrollmentTx(enrollment, { state: 'exited', exitReason: 'manual_stop' }, user, t));
+  }
+
+  /**
+   * Manual "Skip this step" — the ONLY way a cadence moves past a step
+   * without its outcome (product call 2026-08-11). For steps that don't
+   * apply to this business (no email to send to, a channel the owner never
+   * answers): cancels the step's open task if any, releases a missing-info
+   * park, and advances through the step's continue edge on the next step's
+   * authored delay — exactly as if the step had been completed. Skipping the
+   * last step finishes the cadence. Owner-or-admin, like every other verb
+   * that works the deal.
+   */
+  async function skipCurrentStep(partnerId, { note = null, expectedStepId = null } = {}, user, requestId = null) {
+    return withOwnedLiveEnrollment(partnerId, user, ['active', 'paused'], async (enrollment, partner, t) => {
+      if (enrollment.state === 'paused' && enrollment.pausedReason !== 'missing_info') {
+        throw new AppError('This cadence is paused — resume it before skipping a step', 409);
+      }
+      // The staleness guard the completion endpoint has (§5.2): the rep must
+      // skip the step they SAW. A colleague's completion (or their own other
+      // tab) may have advanced the cadence since — skipping whatever is
+      // current now would silently pass a step nobody decided about.
+      if (expectedStepId && expectedStepId !== enrollment.currentStepId) {
+        throw new AppError('This step is no longer the cadence’s current step — refresh', 409);
+      }
+      const step = await d.OutreachCadenceStep.findByPk(enrollment.currentStepId, { transaction: t });
+      if (!step) {
+        // Defensive: a live enrollment always carries a current step; a
+        // missing row means a mangled definition — finish, same as resume.
+        await endEnrollmentTx(enrollment, { state: 'completed', exitReason: 'finished' }, user, t);
+        return { enrollment, skipped: null, nextTask: null, pausedForInfo: null, finished: true };
+      }
+
+      const [cancelled] = await d.OutreachTask.update(
+        { status: 'cancelled' },
+        { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }
+      );
+
+      // The step's continue edge: its '*' edge, or its sole outgoing edge
+      // (builder cadences compile exactly one per step). A genuine branch
+      // (several specific edges, no '*') has no single "next" — refuse
+      // rather than guess the disposition the rep didn't log.
+      const edges = await d.OutreachCadenceTransition.findAll({
+        where: { cadenceId: enrollment.cadenceId, fromStepId: step.id }, transaction: t,
+      });
+      const edge = edges.find((e) => e.disposition === CADENCE_WILDCARD_DISPOSITION)
+        || (edges.length === 1 ? edges[0] : null);
+      if (!edge && edges.length > 0) {
+        // Parked branch steps have no open task, so "log an outcome" is not
+        // an option there — say what actually is.
+        throw new AppError(
+          cancelled > 0
+            ? 'This step branches on its outcome — log an outcome instead of skipping'
+            : 'This step branches on its outcome and cannot be skipped — add the missing info or stop the cadence',
+          409
+        );
+      }
+
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'cadence.step_skipped', entityType: 'outreach_cadence_enrollment',
+        entityId: enrollment.id,
+        after: {
+          stepId: step.id, stepTitle: step.title, stepOrder: step.stepOrder, channel: step.channel,
+          hadOpenTask: cancelled > 0, wasBlocked: enrollment.blockedReason || null,
+          ...(note ? { note: String(note).slice(0, 200) } : {}),
+        },
+        requestId, transaction: t,
+      });
+
+      const skipped = { stepId: step.id, stepTitle: step.title, stepOrder: step.stepOrder };
+      if (!edge || !edge.toStepId) {
+        await endEnrollmentTx(enrollment, { state: 'completed', exitReason: 'finished' }, user, t);
+        return { enrollment, skipped, nextTask: null, pausedForInfo: null, finished: true };
+      }
+
+      // Un-park before placing — the next step may park again on ITS blocker.
+      if (enrollment.state === 'paused') {
+        await enrollment.update(
+          { state: 'active', pausedAt: null, pausedReason: null, blockedReason: null, blockedDueAt: null },
+          { transaction: t }
+        );
+      }
+      const nextStep = await d.OutreachCadenceStep.findByPk(edge.toStepId, { transaction: t });
+      const placed = await placeAtStepTx(
+        enrollment, partner, nextStep,
+        { delayDays: edge.delayDays, timeWindow: edge.timeWindow }, user, t
+      );
+      // Every placement outcome recomputed nextTaskAt on its own path; the
+      // cancel above is folded in by whichever ran. Nothing further owed.
+      return {
+        enrollment,
+        skipped,
+        nextTask: placed.task || null,
+        pausedForInfo: placed.pausedForInfo ? { blocked: placed.blocked } : null,
+        finished: !!placed.finished,
+      };
+    });
   }
 
   // ── Read model for the UI card ────────────────────────────────────────────
@@ -978,7 +1085,7 @@ export function makeCadenceService(overrides = {}) {
   return {
     listCadences, createCadence, createCadenceVersion, retireCadence, publishCadence,
     enrollPartner, completeCadenceTask,
-    pauseEnrollment, resumeEnrollment, stopEnrollment,
+    pauseEnrollment, resumeEnrollment, stopEnrollment, skipCurrentStep,
     getPartnerCadence, hookHandlers, reconcile,
     // exported for tests
     sgtWindowClamp,

@@ -45,6 +45,20 @@ export function makeQueueService(overrides = {}) {
       },
     };
 
+    // Cadences parked on a step they can't prepare (no email/phone/handle/
+    // outlet on record, DNC, bad template — §15). A mid-cadence park has no
+    // open task and a set firstOutreachAt, so WITHOUT this bucket it matches
+    // nothing above and silently vanishes from the docket for up to 14 days
+    // (until the stale sweep). Snoozed partners stay out — that deferral is
+    // deliberate and the unsnooze wake re-surfaces them.
+    const waitingOnInfoWhere = `
+         FROM outreach_cadence_enrollments e
+         JOIN partner_organisations p ON p.id = e."partnerOrganisationId"
+        WHERE p."ownerUserId" = :userId
+          AND p."archivedAt" IS NULL AND p."mergedIntoId" IS NULL
+          AND p.availability = 'owned'
+          AND e.state = 'paused' AND e."pausedReason" = 'missing_info'`;
+
     const [
       overdueTasks, overdueCount,
       dueTodayTasks, dueTodayCount,
@@ -52,6 +66,7 @@ export function makeQueueService(overrides = {}) {
       awaitingFirstOutreach, awaitingCount,
       stalePartners, staleCount,
       recentReplies,
+      waitingOnInfo, waitingOnInfoCountRows,
     ] = await Promise.all([
       d.OutreachTask.findAll({ where: { ...openTasks, dueAt: { [Op.lt]: start } }, include: taskInclude, order: [['dueAt', 'ASC']], limit: BUCKET_LIMIT }),
       d.OutreachTask.count({ where: { ...openTasks, dueAt: { [Op.lt]: start } } }),
@@ -87,6 +102,24 @@ export function makeQueueService(overrides = {}) {
           LIMIT ${BUCKET_LIMIT}`,
         { replacements: { userId: user.id }, type: QueryTypes.SELECT }
       ),
+      d.sequelize.query(
+        `SELECT p.id, COALESCE(p."tradingName", p."brandName", p."legalName") AS "partnerName",
+                e."blockedReason", e."pausedAt", s.title AS "stepTitle", s."stepOrder"
+           FROM outreach_cadence_enrollments e
+           JOIN partner_organisations p ON p.id = e."partnerOrganisationId"
+           LEFT JOIN outreach_cadence_steps s ON s.id = e."currentStepId"
+          WHERE p."ownerUserId" = :userId
+            AND p."archivedAt" IS NULL AND p."mergedIntoId" IS NULL
+            AND p.availability = 'owned'
+            AND e.state = 'paused' AND e."pausedReason" = 'missing_info'
+          ORDER BY e."pausedAt" ASC
+          LIMIT ${BUCKET_LIMIT}`,
+        { replacements: { userId: user.id }, type: QueryTypes.SELECT }
+      ),
+      d.sequelize.query(
+        `SELECT COUNT(*)::int AS n ${waitingOnInfoWhere}`,
+        { replacements: { userId: user.id }, type: QueryTypes.SELECT }
+      ),
     ]);
 
     return {
@@ -96,6 +129,7 @@ export function makeQueueService(overrides = {}) {
       awaitingFirstOutreach: { items: awaitingFirstOutreach, total: awaitingCount },
       stalePartners: { items: stalePartners, total: staleCount },
       recentReplies: { items: recentReplies },
+      waitingOnInfo: { items: waitingOnInfo, total: waitingOnInfoCountRows[0]?.n || 0 },
     };
   }
 

@@ -387,11 +387,11 @@ export default function CadenceEditorPage() {
             <p className="text-[12.5px] m-0 leading-relaxed" style={{ color: 'var(--ro-text-2)' }}>
               A step only reaches the next one on its “continue when” outcome. Replies and
               “not interested” end the cadence immediately; moving the business to Meeting or
-              beyond, snoozing, or releasing it stops the schedule automatically. Steps that can’t
-              reach anyone (no phone or handle on record) are skipped — and if none of the
-              remaining steps can reach the business, the cadence pauses until contact info is
-              added, then continues on its own. Completing a step also moves a New business to
-              Contacted.
+              beyond, snoozing, or releasing it stops the schedule automatically. A step that
+              can’t reach the business (no phone, email or handle on record) is never skipped —
+              the cadence waits at that step until the rep adds the missing info (it then
+              continues on its own), skips the step explicitly, or stops the run. Completing a
+              step also moves a New business to Contacted.
             </p>
           </div>
         </div>

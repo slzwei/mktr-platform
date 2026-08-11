@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   pauseCadence: vi.fn(),
   resumeCadence: vi.fn(),
   stopCadence: vi.fn(),
+  skipCadenceStep: vi.fn(),
   createCadence: vi.fn(),
   createCadenceVersion: vi.fn(),
   retireCadence: vi.fn(),
@@ -41,7 +42,10 @@ const toastMock = vi.hoisted(() => {
 });
 vi.mock('sonner', () => ({ toast: toastMock }));
 
-import { CadenceOutcomeButton, CadenceChip, CadencePanel, unreachableChannels, needsSentence } from '../cadence';
+import {
+  CadenceOutcomeButton, CadenceChip, CadencePanel,
+  unreachableChannels, needsSentence, blockedStepToast, blockedReasonLabel,
+} from '../cadence';
 import { toBuilderSteps } from '../cadenceBuilder';
 import CadenceEditorPage from '@/pages/redeemops/CadenceEditorPage';
 import { useAuthStore } from '@/stores/authStore';
@@ -59,6 +63,7 @@ const callTask = {
   id: 'task-1',
   title: 'Intro call',
   partnerOrganisationId: 'p-1',
+  assigneeUserId: 'u-1',
   description: 'Hi there, calling from Redeem…',
   snapshotRecipient: '+6581234567',
   cadenceStep: { id: 's-1', stepOrder: 1, channel: 'call', title: 'Intro call', cadence: { key: 'fnb_call_first', name: 'F&B call-first', version: 1 } },
@@ -631,8 +636,199 @@ describe('enroll dialog reachability warnings', () => {
       />
     );
     await user.click(await screen.findByRole('button', { name: /start cadence/i }));
-    // IG-only: nothing reachable → hard warning; call-first: email step only → soft skip note
-    expect(await screen.findByText(/needs an instagram handle — enrolling pauses/i)).toBeInTheDocument();
-    expect(screen.getByText(/missing an email address — those steps will be skipped/i)).toBeInTheDocument();
+    // IG-only: nothing reachable → waits at step 1; call-first: the email
+    // step will make the cadence wait when it gets there (never auto-skip).
+    expect(await screen.findByText(/needs an instagram handle — enrolling waits at step 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/missing an email address — the cadence will wait at those steps/i)).toBeInTheDocument();
+  });
+});
+
+describe('park-at-first-block banner + manual skip', () => {
+  const parkedEnrollment = (blockedReason, currentStep) => ({
+    enrollment: {
+      id: 'e-9', state: 'paused', pausedReason: 'missing_info', blockedReason,
+      cadence: {
+        id: 'c-9', name: 'Revival', version: 1,
+        steps: [
+          { id: 's-1', stepOrder: 1, title: 'Check-in', channel: 'whatsapp' },
+          { id: 's-2', stepOrder: 2, title: 'Recap email', channel: 'email' },
+        ],
+      },
+      currentStep,
+    },
+    openTask: null,
+  });
+
+  it('names the exact blocked step and reason, and skips it after confirmation', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('no_email', { id: 's-2', stepOrder: 2, title: 'Recap email', channel: 'email' })
+    );
+    api.skipCadenceStep.mockResolvedValue({ finished: false, nextTask: null, pausedForInfo: null });
+    const onFixContactInfo = vi.fn();
+    const user = userEvent.setup();
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }}
+        onFixContactInfo={onFixContactInfo}
+      />
+    );
+    // The banner is step-precise and says the quiet part out loud.
+    await screen.findByText(/waiting at step 2 · “recap email” — nothing has been skipped/i);
+    expect(screen.getByText(/no email address on record/i)).toBeInTheDocument();
+    // Fixable reason → the Contacts deep-link survives.
+    await user.click(screen.getByRole('button', { name: /add contact info/i }));
+    expect(onFixContactInfo).toHaveBeenCalledWith('contacts');
+    // Retry rides the existing resume endpoint under a truthful label.
+    expect(screen.getByRole('button', { name: /retry now/i })).toBeInTheDocument();
+
+    // Skip = confirm dialog → dedicated endpoint, carrying the step the rep
+    // SAW so the server can 409 a stale skip.
+    await user.click(screen.getByRole('button', { name: /skip this step/i }));
+    await screen.findByText(/skipping moves straight on to the next step/i);
+    await user.type(screen.getByPlaceholderText(/why\?/i), 'no email for this biz');
+    await user.click(screen.getByRole('button', { name: /^skip step$/i }));
+    await waitFor(() =>
+      expect(api.skipCadenceStep).toHaveBeenCalledWith('p-1', {
+        note: 'no email for this biz', expectedStepId: 's-2',
+      }));
+  });
+
+  it('a do-not-contact park says so and offers no contact-info fix', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('suppressed', { id: 's-1', stepOrder: 1, title: 'Check-in', channel: 'whatsapp' })
+    );
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }}
+        onFixContactInfo={vi.fn()}
+      />
+    );
+    await screen.findByText(/do-not-contact list/i);
+    expect(screen.queryByRole('button', { name: /add contact info/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /skip this step/i })).toBeInTheDocument();
+  });
+
+  it('the Outcome menu carries "Skip this step…" for the OWNER of the business', async () => {
+    // Cadence tasks are always assigned to the owner — the menu mirrors the
+    // server's owner-or-admin rule via the assignee.
+    useAuthStore.setState({ user: { id: 'u-1', role: 'user', redeemOpsRole: 'outreach_exec' } });
+    api.skipCadenceStep.mockResolvedValue({ finished: false, nextTask: { title: 'WA', dueAt: new Date().toISOString() } });
+    const user = userEvent.setup();
+    wrap(<CadenceOutcomeButton task={callTask} />);
+    await user.click(screen.getByRole('button', { name: /outcome/i }));
+    await user.click(await screen.findByText(/skip this step…/i));
+    await screen.findByText(/its open task is cancelled/i);
+    await user.click(screen.getByRole('button', { name: /^skip step$/i }));
+    await waitFor(() => expect(api.skipCadenceStep).toHaveBeenCalledWith('p-1', { expectedStepId: 's-1' }));
+  });
+
+  it("the Outcome menu hides Skip on a colleague's task (server would 403)", async () => {
+    useAuthStore.setState({ user: { id: 'u-2', role: 'user', redeemOpsRole: 'bdm' } });
+    const user = userEvent.setup();
+    wrap(<CadenceOutcomeButton task={callTask} />);
+    await user.click(screen.getByRole('button', { name: /outcome/i }));
+    expect(await screen.findByText('No answer')).toBeInTheDocument();
+    expect(screen.queryByText(/skip this step…/i)).not.toBeInTheDocument();
+  });
+
+  it('a completion that parks the next step warns with the real blocker', async () => {
+    useAuthStore.setState({ user: { id: 'u-1', role: 'user', redeemOpsRole: 'outreach_exec' } });
+    api.completeCadenceTask.mockResolvedValue({
+      nextTask: null,
+      cadencePaused: { blocked: [{ stepTitle: 'Recap email', channel: 'email', reason: 'no_email' }] },
+    });
+    const user = userEvent.setup();
+    wrap(<CadenceOutcomeButton task={callTask} />);
+    await user.click(screen.getByRole('button', { name: /outcome/i }));
+    await user.click(await screen.findByText('No answer'));
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled());
+    const [msg, opts] = toastMock.warning.mock.calls.at(-1);
+    expect(msg).toMatch(/nothing skipped/i);
+    expect(opts.description).toMatch(/needs an email address on record/);
+  });
+
+  it('a skip that lands on another park warns with that blocker — no false "add it" promise', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('no_email', { id: 's-2', stepOrder: 2, title: 'Recap email', channel: 'email' })
+    );
+    api.skipCadenceStep.mockResolvedValue({
+      finished: false, nextTask: null,
+      pausedForInfo: { blocked: [{ stepTitle: 'Check-in', channel: 'whatsapp', reason: 'suppressed' }] },
+    });
+    const user = userEvent.setup();
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+    await user.click(await screen.findByRole('button', { name: /skip this step/i }));
+    await user.click(await screen.findByRole('button', { name: /^skip step$/i }));
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled());
+    const [, opts] = toastMock.warning.mock.calls.at(-1);
+    expect(opts.description).toMatch(/do-not-contact/);
+    expect(opts.description).not.toMatch(/add it/i);
+  });
+
+  it('a viewer without cadence rights sees the park but no Skip button', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('no_email', { id: 's-2', stepOrder: 2, title: 'Recap email', channel: 'email' })
+    );
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'someone-else', pipelineStage: 'NEW' }}
+        canManage
+        canRunCadence={false}
+      />
+    );
+    await screen.findByText(/waiting at step 2/i);
+    expect(screen.queryByRole('button', { name: /skip this step/i })).not.toBeInTheDocument();
+  });
+
+  it('the mobile strip carries the park levers (the card is hidden on phones)', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('no_email', { id: 's-2', stepOrder: 2, title: 'Recap email', channel: 'email' })
+    );
+    const onFixContactInfo = vi.fn();
+    const user = userEvent.setup();
+    wrap(
+      <CadencePanel
+        partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }}
+        variant="summary"
+        onFixContactInfo={onFixContactInfo}
+      />
+    );
+    await screen.findByText(/cadence waiting at step 2/i);
+    await user.click(screen.getByRole('button', { name: /add info/i }));
+    expect(onFixContactInfo).toHaveBeenCalledWith('contacts');
+    await user.click(screen.getByRole('button', { name: /skip step/i }));
+    await screen.findByText(/skipping moves straight on/i);
+  });
+
+  it('a Retry that re-parks names the real blocker instead of blaming contact info', async () => {
+    api.getPartnerCadence.mockResolvedValue(
+      parkedEnrollment('suppressed', { id: 's-1', stepOrder: 1, title: 'Check-in', channel: 'whatsapp' })
+    );
+    api.resumeCadence.mockResolvedValue({ state: 'paused', pausedReason: 'missing_info', blockedReason: 'suppressed' });
+    const user = userEvent.setup();
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+    await user.click(await screen.findByRole('button', { name: /retry now/i }));
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalledWith(expect.stringMatching(/do-not-contact/)));
+  });
+});
+
+describe('blocked-reason copy helpers', () => {
+  it('blockedStepToast promises auto-resume only for fixable record gaps', () => {
+    expect(blockedStepToast({ stepTitle: 'Email', reason: 'no_email' })).toMatch(/Add it and the cadence continues/);
+    expect(blockedStepToast({ stepTitle: 'Email', reason: 'no_email' }, 'starts')).toMatch(/cadence starts on its own/);
+    expect(blockedStepToast({ stepTitle: 'WA', reason: 'suppressed' })).toMatch(/do-not-contact/);
+    expect(blockedStepToast({ stepTitle: 'WA', reason: 'suppressed' })).not.toMatch(/Add it/);
+    expect(blockedStepToast({ stepTitle: 'X', reason: 'unresolved_template' })).toMatch(/fix the cadence and re-enroll/);
+    expect(blockedStepToast({ stepTitle: 'Y', reason: 'martian' })).toMatch(/skip that step or stop/i);
+    expect(blockedStepToast(null)).toMatch(/a step is blocked/i);
+  });
+
+  it('blockedReasonLabel gives short list-row labels for every reason', () => {
+    expect(blockedReasonLabel('no_email')).toBe('no email address on record');
+    expect(blockedReasonLabel('no_phone')).toBe('no phone number on record');
+    expect(blockedReasonLabel('no_instagram_handle')).toBe('no Instagram handle on record');
+    expect(blockedReasonLabel('no_active_location')).toBe('no outlet address on record');
+    expect(blockedReasonLabel('suppressed')).toMatch(/do-not-contact/);
+    expect(blockedReasonLabel('unknown_thing')).toBe('needs attention');
   });
 });
