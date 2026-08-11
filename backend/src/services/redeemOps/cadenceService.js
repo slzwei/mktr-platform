@@ -524,7 +524,9 @@ export function makeCadenceService(overrides = {}) {
       cadenceEnrollmentId: enrollment.id,
       cadenceStepId: step.id,
       snapshotRecipient: resolved.recipient || null,
-      emailSubject: renderedSubject.text || null,
+      // Merge expansion is unbounded even though the template is ≤160 —
+      // clamp to the column or a long partner name 500s the whole enroll tx.
+      emailSubject: renderedSubject.text ? renderedSubject.text.slice(0, 220) : null,
     }, { transaction: t });
     if (isAutoEmail) {
       await enqueueAutoEmailTx(enrollment, partner, task, resolved, primaryContact, dueAt, t);

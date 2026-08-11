@@ -340,6 +340,35 @@ describe('the sender', () => {
     expect(new Date(row.nextAttemptAt).getTime()).toBeGreaterThan(minDue);
   });
 
+  test('"Don\'t send" refuses once the worker holds the row — no false "won\'t send" acknowledgement (C-2)', async () => {
+    const cadence = await autoCadence({ ramped: true });
+    const p = await ownedPartner('RaceCancelCafe');
+    await partnerSvc.addContact(p.id, { name: 'Ivan', email: 'ivan@racecancel.sg' }, exec.user);
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
+    const row = await liveRow(firstTask.id);
+    await row.update({ status: 'sending' }); // the worker claimed it mid-click
+    const res = await request(app)
+      .post(`/api/redeem-ops/outreach/emails/${row.id}/convert-manual`)
+      .set(auth(exec.token));
+    expect(res.status).toBe(409);
+    expect((await OutreachEmail.findByPk(row.id)).status).toBe('sending'); // untouched
+  });
+
+  test('Send now marks the row window-override and due immediately (P15)', async () => {
+    const cadence = await autoCadence({ ramped: true });
+    const p = await ownedPartner('SendNowCafe');
+    await partnerSvc.addContact(p.id, { name: 'Yusof', email: 'yusof@sendnow.sg' }, exec.user);
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
+    const row = await liveRow(firstTask.id);
+    const res = await request(app)
+      .post(`/api/redeem-ops/outreach/emails/${row.id}/send-now`)
+      .set(auth(exec.token));
+    expect(res.status).toBe(200);
+    const fresh = await OutreachEmail.findByPk(row.id);
+    expect(fresh.windowOverride).toBe(true);
+    expect(new Date(fresh.nextAttemptAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
   test('"Don\'t send" converts the machine send to a plain manual task via the route', async () => {
     const cadence = await autoCadence({ ramped: true });
     const p = await ownedPartner('DontSendCafe');

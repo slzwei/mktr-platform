@@ -124,12 +124,24 @@ export function makeTaskService(overrides = {}) {
           attributes: ['id', 'stepOrder', 'channel', 'title', 'mode'],
           include: [{ model: d.OutreachCadence, as: 'cadence', attributes: ['id', 'key', 'name', 'version'] }],
         },
-        // The live machine-send state for auto steps (scheduled/held/failed) —
-        // sent/cancelled rows stay out of the payload.
+        // The machine-send state for auto steps: live rows, plus SYSTEM
+        // cancellations that need a human's eyes (M-2 — "recipient changed",
+        // "no sending persona"… must badge, not vanish). Rep-initiated
+        // cancels and sent rows stay out.
         {
           model: d.OutreachEmail, as: 'outboxEmails', required: false,
           attributes: ['id', 'status', 'holdReason', 'nextAttemptAt', 'toAddress', 'lastError'],
-          where: { status: { [Op.in]: ['queued', 'needs_approval', 'sending', 'failed'] } },
+          where: {
+            [Op.or]: [
+              { status: { [Op.in]: ['queued', 'needs_approval', 'sending', 'failed'] } },
+              {
+                status: 'cancelled',
+                lastError: {
+                  [Op.in]: ['no_sending_persona', 'recipient_changed', 'no_email', 'reassigned_review', 'autosend_disabled', 'reply_in_thread'],
+                },
+              },
+            ],
+          },
         },
       ],
       order: [['dueAt', 'ASC']],
@@ -174,12 +186,20 @@ export function makeTaskService(overrides = {}) {
       // C3 edit-vs-claim guard: while the auto-sender holds the row
       // (`sending`), an accepted edit could lose the race with the wire —
       // refuse for the few seconds it takes rather than send stale text.
-      if ((body.description !== undefined || body.emailSubject !== undefined) && d.OutreachEmail) {
-        const inFlight = await d.OutreachEmail.count({
-          where: { taskId: task.id, status: 'sending' }, transaction: t,
-        });
-        if (inFlight > 0) {
+      // FOR UPDATE on the live row closes the residual ms-window: a claim
+      // landing mid-PATCH now SKIP-LOCKs past this row until we commit.
+      if (body.description !== undefined || body.emailSubject !== undefined) {
+        const [inFlight] = await d.sequelize.query(
+          `SELECT status FROM outreach_emails
+            WHERE "taskId" = :tid AND status IN ('queued', 'needs_approval', 'sending')
+            FOR UPDATE`,
+          { replacements: { tid: task.id }, transaction: t }
+        );
+        if (inFlight.some((r) => r.status === 'sending')) {
           throw new AppError('This email is sending right now — try again in a few seconds', 409);
+        }
+        if (body.emailSubject !== undefined && String(body.emailSubject || '').length > 220) {
+          throw new AppError('Subject must be 220 characters or fewer', 400);
         }
       }
     }

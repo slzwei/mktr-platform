@@ -355,15 +355,13 @@ export async function bootstrapDatabase() {
           setInterval(runCadenceReconcileSafe, 30 * 60 * 1000); // every 30 min
           logger.info('[RedeemOps] cadence hooks registered + reconcile scheduled (30m interval)');
 
-          // Email auto-send worker (Phase B). With the flag ON, the sender
-          // ticks every 60s — and still refuses to send until the Phase-C
-          // reply loop stamps a fresh lastSuccessfulPollAt (plan P1). With
-          // the flag OFF, a reaper converts any leftover queued sends into
-          // visible manual work instead of letting cards lie "scheduled".
-          const { makeOutreachSenderService } = await import('../services/redeemOps/outreachSenderService.js');
-          const sender = makeOutreachSenderService();
+          // Email auto-send worker (Phase B). The sender ticks every 60s —
+          // and still refuses to send until the Phase-C reply loop stamps a
+          // fresh lastSuccessfulPollAt (plan P1).
           const autosendOn = String(process.env.REDEEM_OPS_EMAIL_AUTOSEND_ENABLED || 'false').toLowerCase() === 'true';
           if (autosendOn) {
+            const { makeOutreachSenderService } = await import('../services/redeemOps/outreachSenderService.js');
+            const sender = makeOutreachSenderService();
             const safeTick = async () => {
               try { await sender.tick(); } catch (err) {
                 logger.warn({ error: err?.message }, '[RedeemOps] auto-send tick failed (non-fatal)');
@@ -372,15 +370,28 @@ export async function bootstrapDatabase() {
             setTimeout(safeTick, 90_000);
             setInterval(safeTick, 60_000);
             logger.info('[RedeemOps] email auto-send worker scheduled (60s interval)');
-          } else {
-            const safeReap = async () => {
-              try { await sender.reapDisabled(); } catch (err) {
-                logger.warn({ error: err?.message }, '[RedeemOps] auto-send reaper failed (non-fatal)');
-              }
-            };
-            setTimeout(safeReap, 60_000);
-            setInterval(safeReap, 60 * 60 * 1000);
           }
+        });
+      } else if (String(process.env.REDEEM_OPS_EMAIL_AUTOSEND_ENABLED || 'false').toLowerCase() === 'true') {
+        // Flag combo trap (plan m9): auto-send on but the cadence engine off
+        // means no worker ever runs — say so at boot instead of dying quiet.
+        logger.warn('[RedeemOps] REDEEM_OPS_EMAIL_AUTOSEND_ENABLED is true but REDEEM_OPS_CADENCES_ENABLED is false — the auto-send worker will NOT run');
+      }
+
+      // Flag-off reaper (plan P6) — OUTSIDE the cadences gate on purpose:
+      // leftover queued sends from a previously-on flag must convert to
+      // visible manual work in every flag combination.
+      if (String(process.env.REDEEM_OPS_EMAIL_AUTOSEND_ENABLED || 'false').toLowerCase() !== 'true') {
+        await safeRun('Redeem Ops auto-send reaper', async () => {
+          const { makeOutreachSenderService } = await import('../services/redeemOps/outreachSenderService.js');
+          const sender = makeOutreachSenderService();
+          const safeReap = async () => {
+            try { await sender.reapDisabled(); } catch (err) {
+              logger.warn({ error: err?.message }, '[RedeemOps] auto-send reaper failed (non-fatal)');
+            }
+          };
+          setTimeout(safeReap, 60_000);
+          setInterval(safeReap, 60 * 60 * 1000);
         });
       }
 

@@ -61,6 +61,7 @@ export async function up(queryInterface, Sequelize) {
       approvedBy: { type: Sequelize.UUID, allowNull: true },
       approvedAt: { type: Sequelize.DATE, allowNull: true },
       holdReason: { type: Sequelize.STRING(64), allowNull: true },
+      windowOverride: { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false },
       wireMessageId: { type: Sequelize.STRING(320), allowNull: true },
       gmailMessageId: { type: Sequelize.STRING(32), allowNull: true },
       gmailThreadId: { type: Sequelize.STRING(32), allowNull: true },

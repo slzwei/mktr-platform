@@ -31,7 +31,17 @@ export function makeQueueService(overrides = {}) {
       {
         model: d.OutreachEmail, as: 'outboxEmails', required: false,
         attributes: ['id', 'status', 'holdReason', 'nextAttemptAt', 'toAddress', 'lastError'],
-        where: { status: { [Op.in]: ['queued', 'needs_approval', 'sending', 'failed'] } },
+        where: {
+          [Op.or]: [
+            { status: { [Op.in]: ['queued', 'needs_approval', 'sending', 'failed'] } },
+            {
+              status: 'cancelled',
+              lastError: {
+                [Op.in]: ['no_sending_persona', 'recipient_changed', 'no_email', 'reassigned_review', 'autosend_disabled', 'reply_in_thread'],
+              },
+            },
+          ],
+        },
       },
     ];
     const openTasks = { assigneeUserId: user.id, status: { [Op.in]: ['open', 'in_progress'] } };

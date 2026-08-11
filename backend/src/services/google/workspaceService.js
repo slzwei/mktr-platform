@@ -70,6 +70,7 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         assertion,
       }),
+      signal: AbortSignal.timeout(15_000),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -83,6 +84,8 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
 
   async function api(url, { method = 'GET', json } = {}) {
     const token = await accessToken();
+    // Bounded per-call time is what makes the sender's stale-`sending`
+    // reclaim threshold sound — an unbounded hang past it risks a re-send.
     const res = await fetchImpl(url, {
       method,
       headers: {
@@ -90,6 +93,7 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
         ...(json ? { 'Content-Type': 'application/json' } : {}),
       },
       ...(json ? { body: JSON.stringify(json) } : {}),
+      signal: AbortSignal.timeout(15_000),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {

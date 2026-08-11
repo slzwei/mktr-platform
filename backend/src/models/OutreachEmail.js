@@ -24,6 +24,7 @@ const OutreachEmail = sequelize.define('OutreachEmail', {
   approvedBy: { type: DataTypes.UUID, allowNull: true },
   approvedAt: { type: DataTypes.DATE, allowNull: true },
   holdReason: { type: DataTypes.STRING(64), allowNull: true, comment: 'why needs_approval: ramp|lint_<rule>' },
+  windowOverride: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, comment: 'rep-initiated Send now may cross the SGT send window' },
   wireMessageId: { type: DataTypes.STRING(320), allowNull: true },
   gmailMessageId: { type: DataTypes.STRING(32), allowNull: true },
   gmailThreadId: { type: DataTypes.STRING(32), allowNull: true },

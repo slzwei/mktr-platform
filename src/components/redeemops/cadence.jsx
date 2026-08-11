@@ -6,6 +6,7 @@ import Zap from 'lucide-react/icons/zap';
 import Eye from 'lucide-react/icons/eye';
 import SkipForward from 'lucide-react/icons/skip-forward';
 import SendHorizontal from 'lucide-react/icons/send-horizontal';
+import Pencil from 'lucide-react/icons/pencil';
 import Plus from 'lucide-react/icons/plus';
 import Check from 'lucide-react/icons/check';
 import Copy from 'lucide-react/icons/copy';
@@ -456,9 +457,21 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
  * CRM will send this itself, with first-class Don't send / Approve levers.
  * Renders nothing for tasks without a live outbox row.
  */
-export function ScheduledSendStrip({ task }) {
+const CANCELLED_SEND_COPY = {
+  no_sending_persona: 'No sending persona assigned to you — assign one in Settings, or send manually.',
+  recipient_changed: 'The email address changed after this was scheduled — review and send manually.',
+  no_email: 'The email address was removed — fix the record or send another way.',
+  reassigned_review: 'This business changed owner — the drafted send was cancelled for your review.',
+  autosend_disabled: 'Auto-send was switched off — send it yourself and log the outcome.',
+  reply_in_thread: 'They replied in this thread — read it before doing anything else.',
+};
+
+export function ScheduledSendStrip({ task, canManage = true }) {
   const queryClient = useQueryClient();
-  const row = (task.outboxEmails || [])[0];
+  const rows = task.outboxEmails || [];
+  // A live row outranks a system-cancelled one (a task can carry both after
+  // a cancel + re-materialization on a later enrollment step).
+  const row = rows.find((r) => ['queued', 'needs_approval', 'sending', 'failed'].includes(r.status)) || rows[0];
   const partnerId = task.partnerOrganisationId || task.partner?.id;
   const done = () => invalidateCadenceData(queryClient, partnerId);
   const approveMutation = useMutation({
@@ -489,6 +502,14 @@ export function ScheduledSendStrip({ task }) {
       </p>
     );
   }
+  if (row.status === 'cancelled') {
+    // System cancellations that need a human's eyes (M-2) — never invisible.
+    return (
+      <p className="text-[12px] font-semibold mt-1.5 mb-0" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
+        Auto-send cancelled: {CANCELLED_SEND_COPY[row.lastError] || 'review this step before sending.'}
+      </p>
+    );
+  }
   return (
     <div
       className="flex flex-wrap items-center gap-2 rounded-[10px] px-2.5 py-1.5 mt-1.5"
@@ -502,17 +523,17 @@ export function ScheduledSendStrip({ task }) {
             ? 'Sending right now…'
             : `CRM sends this itself — ${when}`}
       </span>
-      {row.status === 'needs_approval' && (
+      {canManage && row.status === 'needs_approval' && (
         <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11.5px]" disabled={approveMutation.isPending} onClick={() => approveMutation.mutate()}>
           Approve
         </Button>
       )}
-      {row.status === 'queued' && (
+      {canManage && row.status === 'queued' && (
         <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11.5px]" disabled={sendNowMutation.isPending} onClick={() => sendNowMutation.mutate()}>
           Send now
         </Button>
       )}
-      {['queued', 'needs_approval'].includes(row.status) && (
+      {canManage && ['queued', 'needs_approval'].includes(row.status) && (
         <Button size="sm" variant="ghost" className="h-7 px-2.5 text-[11.5px]" disabled={dontSendMutation.isPending} onClick={() => dontSendMutation.mutate()}>
           Don’t send
         </Button>
@@ -544,14 +565,86 @@ function CompleteCircle({ task, busy, onComplete }) {
 
 /* Inline template message under a task row (design: the copyable script box —
    the rep reads/copies the DM text without opening anything). Long scripts
-   clamp to three lines behind a Show more toggle. */
+   clamp to three lines behind a Show more toggle. Editable in place: the task
+   description IS the message (and for auto-send emails, the edit is exactly
+   what sends — single source of truth). */
 const SCRIPT_CLAMP_CHARS = 140;
 
-function TaskScriptBox({ text }) {
+function TaskScriptBox({ task, canManage = false }) {
+  const queryClient = useQueryClient();
+  const text = task.description || '';
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [subjectDraft, setSubjectDraft] = useState('');
   const clampable = text.length > SCRIPT_CLAMP_CHARS || text.split('\n').length > 3;
+  const hasSubject = task.emailSubject != null && task.cadenceStep?.channel === 'email';
+
+  const saveMutation = useMutation({
+    mutationFn: () => redeemOpsApi.updateTask(task.id, {
+      description: draft.trim(),
+      ...(hasSubject ? { emailSubject: subjectDraft.trim() } : {}),
+    }),
+    onSuccess: () => {
+      setEditing(false);
+      toast.success('Message updated — this is exactly what goes out');
+      invalidateCadenceData(queryClient, task.partnerOrganisationId || task.partner?.id);
+    },
+    // The one 409 here is "sending right now" — surfacing it verbatim is the point.
+    onError: (err) => toast.error('Could not save the message', { description: err.message }),
+  });
+
+  const startEdit = () => {
+    setDraft(text);
+    setSubjectDraft(task.emailSubject || '');
+    setEditing(true);
+  };
+
+  if (editing) {
+    return (
+      <div className="mt-2 rounded-[10px] px-3 py-2 space-y-2" style={{ background: 'var(--ro-subtle)' }}>
+        {hasSubject && (
+          <Input
+            value={subjectDraft}
+            maxLength={200}
+            aria-label="Email subject"
+            placeholder="Subject"
+            className="bg-white"
+            onChange={(e) => setSubjectDraft(e.target.value)}
+          />
+        )}
+        <textarea
+          value={draft}
+          aria-label="Message"
+          rows={Math.min(12, Math.max(4, draft.split('\n').length + 1))}
+          className="w-full rounded-md border border-border bg-white p-2 text-xs leading-relaxed"
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <div className="flex items-center justify-end gap-1.5">
+          <Button size="sm" variant="ghost" className="h-[26px] px-2.5 text-[11.5px]" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="h-[26px] px-2.5 text-[11.5px]"
+            disabled={saveMutation.isPending || !draft.trim()
+              || (draft === text && (!hasSubject || subjectDraft === (task.emailSubject || '')))}
+            onClick={() => saveMutation.mutate()}
+          >
+            {saveMutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--ro-subtle)' }}>
+      {hasSubject && (
+        <p className="text-xs font-semibold m-0 mb-1" style={{ color: 'var(--ro-text-2)' }}>
+          Subject: {task.emailSubject}
+        </p>
+      )}
       <p
         className={`text-xs leading-relaxed m-0 whitespace-pre-wrap ${clampable && !expanded ? 'line-clamp-3' : ''}`}
         style={{ color: 'var(--ro-text-2)' }}
@@ -568,14 +661,26 @@ function TaskScriptBox({ text }) {
             {expanded ? 'Show less' : 'Show more'}
           </button>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          className="ml-auto h-[26px] px-2.5 text-[11.5px] font-medium"
-          onClick={() => copyTaskMessage(text)}
-        >
-          <Copy className="w-3 h-3 mr-1" aria-hidden="true" /> Copy message
-        </Button>
+        <span className="ml-auto flex gap-1.5">
+          {canManage && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-[26px] px-2.5 text-[11.5px] font-medium"
+              onClick={startEdit}
+            >
+              <Pencil className="w-3 h-3 mr-1" aria-hidden="true" /> Edit
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-[26px] px-2.5 text-[11.5px] font-medium"
+            onClick={() => copyTaskMessage(text)}
+          >
+            <Copy className="w-3 h-3 mr-1" aria-hidden="true" /> Copy message
+          </Button>
+        </span>
       </div>
     </div>
   );
@@ -649,8 +754,8 @@ function PartnerTaskRow({
             <span className="text-[11px] italic" style={{ color: 'var(--ro-text-3)' }}>paused</span>
           )}
         </div>
-        <ScheduledSendStrip task={task} />
-        {task.description && <TaskScriptBox text={task.description} />}
+        <ScheduledSendStrip task={task} canManage={canManage} />
+        {task.description && <TaskScriptBox task={task} canManage={canManage} />}
       </div>
     </div>
   );

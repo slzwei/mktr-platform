@@ -152,29 +152,41 @@ export function makeOutreachSenderService(overrides = {}) {
     const suppressed = await d.sequelize.transaction((t) => d.cadences.isSuppressedTx('email', row.toAddress, t));
     if (suppressed) return { fail: 'suppressed' };
 
-    // Send-window sanity: outside 07:00–21:00 SGT reschedule, don't cancel.
+    // Send-window sanity: outside 07:00–21:00 SGT reschedule, don't cancel —
+    // unless the rep explicitly hit Send now (plan P15: deliberate override).
     const hour = sgtHour(at);
-    if (hour < 7 || hour >= 21) return { reschedule: nextSgtMorning(at) };
+    if ((hour < 7 || hour >= 21) && !row.windowOverride) return { reschedule: nextSgtMorning(at) };
+
+    // The reply-loop gate re-checked against THIS ROW's own account (M-1):
+    // the day a second account row exists (plan F2, Tyler), its rows must not
+    // ride the first account's poll freshness.
+    if (!replyLoopHealthy(account, at)) return { reschedule: new Date(at.getTime() + 5 * 60_000) };
 
     return { task, enrollment, partner, persona, account };
   }
+
+  // Every header value is CR/LF-stripped — service-level partner writers
+  // (CSV import, Discovery) bypass the API's Joi email format, so header
+  // hygiene cannot be delegated upstream (m-9).
+  const headerSafe = (v) => String(v).replace(/[\r\n]+/g, ' ');
 
   function buildRfc822({ persona, row, task, enrollment, references }) {
     const threaded = Boolean(enrollment.gmailThreadId);
     const baseSubject = threaded
       ? (enrollment.gmailThreadSubject || task.emailSubject || task.title)
       : (task.emailSubject || task.title);
-    const subject = threaded && !/^re:/i.test(baseSubject) ? `Re: ${baseSubject}` : baseSubject;
+    const subject = headerSafe(threaded && !/^re:/i.test(baseSubject) ? `Re: ${baseSubject}` : baseSubject)
+      .slice(0, 220);
     const body = `${task.description || ''}\n\n--\n${FOOTER}\n`;
     const headers = [
-      `From: "${String(persona.displayName).replace(/"/g, '')}" <${persona.address}>`,
-      `To: <${row.toAddress}>`,
-      `Subject: ${subject.replace(/[\r\n]+/g, ' ')}`,
+      `From: "${headerSafe(persona.displayName).replace(/"/g, '')}" <${headerSafe(persona.address)}>`,
+      `To: <${headerSafe(row.toAddress)}>`,
+      `Subject: ${subject}`,
       'Content-Type: text/plain; charset=utf-8',
     ];
     if (threaded && references) {
-      headers.push(`In-Reply-To: ${references}`);
-      headers.push(`References: ${references}`);
+      headers.push(`In-Reply-To: ${headerSafe(references)}`);
+      headers.push(`References: ${headerSafe(references)}`);
     }
     return { rfc822: `${headers.join('\r\n')}\r\n\r\n${body}`, subject, body };
   }
@@ -191,10 +203,19 @@ export function makeOutreachSenderService(overrides = {}) {
     const client = await clientFor(account);
 
     // Threaded sends abort if the prospect already spoke and the poll hasn't
-    // caught up (P8): any thread message NOT labelled SENT is inbound.
+    // caught up (P8): any thread message NOT labelled SENT is inbound. A
+    // failed thread fetch RESCHEDULES — the guard must fail closed (m-4).
     let references = null;
     if (enrollment.gmailThreadId) {
-      const thread = await client.getThread(enrollment.gmailThreadId).catch(() => null);
+      let thread;
+      try {
+        thread = await client.getThread(enrollment.gmailThreadId);
+      } catch {
+        return row.update({
+          status: 'queued', nextAttemptAt: new Date(at.getTime() + 5 * 60_000),
+          attempts: row.attempts - 1, lastError: 'thread_check_unavailable',
+        });
+      }
       const foreign = thread?.messages?.some((m) => !(m.labelIds || []).includes('SENT'));
       if (foreign) return cancelRow(row, 'reply_in_thread');
       const lastSent = await d.OutreachEmail.findOne({
@@ -224,21 +245,47 @@ export function makeOutreachSenderService(overrides = {}) {
       return handleSendFailure(row, persona, err);
     }
 
-    // ── The email is REAL from here. Record first, then complete. ──────────
+    // ── The email is REAL from here (C-1): NOTHING below may route the row
+    // back to `queued` — a post-send hiccup must degrade to a stranded
+    // `sending` row (the reclaim probe finds the wire message), never to a
+    // retry that mails the prospect twice. ──────────────────────────────────
+    await finalizeSentRow({ row, task, enrollment, partner, persona, client, sent, subject, body });
+    return { sent: true };
+  }
+
+  /**
+   * Everything after a 2xx wire send — each step individually contained.
+   * Also the M-3 recovery path: reclaimStranded calls this when the crash
+   * probe finds the message actually left, so the task completes (or records
+   * an orphan) instead of staying open for a manual duplicate.
+   */
+  async function finalizeSentRow({ row, task, enrollment, partner, persona, client, sent, subject, body }) {
     let wireMessageId = null;
     try {
       const meta = await client.getMessageHeaders(sent.id, ['Message-ID']);
       wireMessageId = meta?.payload?.headers?.find((h) => h.name?.toLowerCase() === 'message-id')?.value || null;
     } catch { /* non-fatal — References falls back to skipping */ }
 
-    await row.update({
-      status: 'sent', sentAt: d.now(), gmailMessageId: sent.id, gmailThreadId: sent.threadId,
-      wireMessageId, sentSubject: subject, sentBody: body, lastError: null,
-    });
-    if (!enrollment.gmailThreadId) {
-      await enrollment.update({ gmailThreadId: sent.threadId, gmailThreadSubject: subject });
+    try {
+      await row.update({
+        status: 'sent', sentAt: d.now(), gmailMessageId: sent.id, gmailThreadId: sent.threadId || null,
+        wireMessageId, sentSubject: (subject || '').slice(0, 220), sentBody: body || null, lastError: null,
+      });
+    } catch (err) {
+      // Leave the row `sending` — the stale reclaim + wire probe recover it.
+      d.logger.error({ outboxId: row.id, err: err?.message }, '[autosend] post-send record write failed — leaving row for reclaim');
+      return;
     }
-    await d.OutreachPersona.update({ consecutiveFailures: 0 }, { where: { id: persona.id } });
+    try {
+      if (enrollment && !enrollment.gmailThreadId && sent.threadId) {
+        await enrollment.update({ gmailThreadId: sent.threadId, gmailThreadSubject: (subject || '').slice(0, 220) });
+      }
+      if (persona?.id) {
+        await d.OutreachPersona.update({ consecutiveFailures: 0 }, { where: { id: persona.id } });
+      }
+    } catch (err) {
+      d.logger.warn({ outboxId: row.id, err: err?.message }, '[autosend] post-send bookkeeping failed (non-fatal)');
+    }
 
     try {
       await d.cadences.completeCadenceTask(
@@ -252,21 +299,28 @@ export function makeOutreachSenderService(overrides = {}) {
       // The send happened — record it honestly instead of losing it.
       d.logger.warn({ outboxId: row.id, err: err?.message }, '[autosend] completion raced — recording orphaned send');
       try {
+        // Actor = the partner's CURRENT owner (m-7: an owner change mid-send
+        // would fail the stale assignee's row rules and lose the timeline entry).
+        const freshPartner = await d.PartnerOrganisation.findByPk(partner.id);
         await d.partners.logActivity(partner.id, {
           type: 'email_sent', direction: 'outbound',
           summary: `${task.title} — sent (auto-sent as ${persona.address}; recorded after a race)`,
           contactId: task.contactId || null,
-        }, { id: task.assigneeUserId });
+        }, { id: freshPartner?.ownerUserId || task.assigneeUserId });
       } catch (logErr) {
         d.logger.error({ outboxId: row.id, err: logErr?.message }, '[autosend] orphaned-send activity failed');
       }
-      await d.audit.recordAuditEvent({
-        actorUser: null, actorType: 'system', action: 'cadence.email_sent_orphaned',
-        entityType: 'outreach_email', entityId: row.id,
-        after: { taskId: task.id, gmailId: sent.id, personaAddress: persona.address },
-      });
+      try {
+        await d.audit.recordAuditEvent({
+          actorUser: null, actorType: 'system', action: 'cadence.email_sent_orphaned',
+          entityType: 'outreach_email', entityId: row.id,
+          after: { taskId: task.id, gmailId: sent.id, personaAddress: persona.address },
+          requestId: `autosend:${row.id}`,
+        });
+      } catch (auditErr) {
+        d.logger.error({ outboxId: row.id, err: auditErr?.message }, '[autosend] orphaned-send audit failed');
+      }
     }
-    return { sent: true };
   }
 
   async function handleSendFailure(row, persona, err) {
@@ -304,27 +358,43 @@ export function makeOutreachSenderService(overrides = {}) {
     });
     for (const row of stranded) {
       // Dedupe WITHOUT trusting minted Message-IDs (F4): did anything leave
-      // this mailbox for this recipient since the row was enqueued?
-      let alreadySent = false;
+      // this mailbox for this recipient (narrowed by subject) since enqueue?
+      let hits = [];
+      let persona = null;
+      let client = null;
+      const task = await d.OutreachTask.findByPk(row.taskId);
       try {
-        const persona = row.personaId ? await d.OutreachPersona.findByPk(row.personaId) : null;
+        persona = row.personaId ? await d.OutreachPersona.findByPk(row.personaId) : null;
         const account = persona ? await d.OutreachAccount.findByPk(persona.accountId) : null;
         if (account) {
-          const client = await clientFor(account);
+          client = await clientFor(account);
           const afterEpoch = Math.floor(new Date(row.createdAt).getTime() / 1000);
-          const hits = await client.listMessages(`in:sent to:${row.toAddress} after:${afterEpoch}`);
-          alreadySent = hits.length > 0;
+          const subjectWord = String(row.sentSubject || task?.emailSubject || '')
+            .split(/\s+/).filter((w) => /^[\w-]{3,}$/.test(w)).slice(0, 3).join(' ');
+          const q = `in:sent to:${row.toAddress} after:${afterEpoch}${subjectWord ? ` subject:(${subjectWord})` : ''}`;
+          hits = await client.listMessages(q);
         }
       } catch (err) {
         d.logger.warn({ outboxId: row.id, err: err?.message }, '[autosend] stranded-row dedupe probe failed');
         continue; // leave for the next pass rather than risk a double-send
       }
-      if (alreadySent) {
-        await row.update({ status: 'sent', sentAt: row.updatedAt, lastError: 'recovered_after_crash' });
+      if (hits.length > 0 && client && task) {
+        // The wire message exists — FINISH the job (M-3): flipping the row
+        // alone leaves an open task beside a sent email, which a rep then
+        // sends again by hand.
+        const enrollment = await d.OutreachCadenceEnrollment.findByPk(row.cadenceEnrollmentId);
+        const partner = await d.PartnerOrganisation.findByPk(row.partnerOrganisationId);
+        await finalizeSentRow({
+          row, task, enrollment, partner, persona, client,
+          sent: { id: hits[0].id, threadId: hits[0].threadId || null },
+          subject: row.sentSubject || task.emailSubject || task.title || '',
+          body: row.sentBody || task.description || null,
+        });
+        await row.update({ lastError: 'recovered_after_crash' }).catch(() => {});
       } else if (row.attempts >= MAX_ATTEMPTS) {
         await row.update({ status: 'failed', lastError: 'crashed_mid_send' });
       } else {
-        await row.update({ status: 'queued', nextAttemptAt: d.now() });
+        await row.update({ status: 'queued', nextAttemptAt: d.now(), lastError: null });
       }
     }
     return stranded.length;
@@ -344,29 +414,39 @@ export function makeOutreachSenderService(overrides = {}) {
   }
 
   /** One worker pass. Returns counts for logs/tests. */
+  let ticking = false;
   async function tick() {
-    const at = d.now();
-    const account = await d.OutreachAccount.findOne({ where: { isActive: true }, order: [['createdAt', 'ASC']] });
-    if (!account) return { skipped: 'no_account' };
-    if (!replyLoopHealthy(account, at)) {
-      // P1 — never send reply-blind. Loud once per tick, not per row.
-      d.logger.warn({ lastPoll: account.lastSuccessfulPollAt }, '[autosend] reply loop dark/stale — refusing to send');
-      return { skipped: 'reply_loop_dark' };
+    if (ticking) return { skipped: 'tick_in_progress' };
+    ticking = true;
+    try {
+      const at = d.now();
+      // Reclaim runs even while the reply loop is dark — a crashed `sending`
+      // row must not stay frozen (409-blocking edits) until the loop recovers.
+      await reclaimStranded();
+      const account = await d.OutreachAccount.findOne({ where: { isActive: true }, order: [['createdAt', 'ASC']] });
+      if (!account) return { skipped: 'no_account' };
+      if (!replyLoopHealthy(account, at)) {
+        // P1 — never send reply-blind. Loud once per tick, not per row.
+        // (Revalidate re-checks per row against ITS OWN account.)
+        d.logger.warn({ lastPoll: account.lastSuccessfulPollAt }, '[autosend] reply loop dark/stale — refusing to send');
+        return { skipped: 'reply_loop_dark' };
+      }
+      const claimed = await claimDue();
+      let sent = 0;
+      let notSent = 0;
+      for (const row of claimed) {
+        const outcome = await processRow(row).catch(async (err) => {
+          d.logger.error({ outboxId: row.id, err: err?.message }, '[autosend] row processing crashed');
+          await handleSendFailure(row, { id: row.personaId }, err);
+          return {};
+        });
+        if (outcome?.sent) sent += 1; else notSent += 1;
+      }
+      if (claimed.length > 0) d.logger.info({ claimed: claimed.length, sent, notSent }, '[autosend] tick done');
+      return { claimed: claimed.length, sent, notSent };
+    } finally {
+      ticking = false;
     }
-    await reclaimStranded();
-    const claimed = await claimDue();
-    let sent = 0;
-    let cancelled = 0;
-    for (const row of claimed) {
-      const outcome = await processRow(row).catch(async (err) => {
-        d.logger.error({ outboxId: row.id, err: err?.message }, '[autosend] row processing crashed');
-        await handleSendFailure(row, { id: row.personaId }, err);
-        return {};
-      });
-      if (outcome?.sent) sent += 1; else cancelled += 1;
-    }
-    if (claimed.length > 0) d.logger.info({ claimed: claimed.length, sent }, '[autosend] tick done');
-    return { claimed: claimed.length, sent, cancelled };
   }
 
   // ── Rep-facing operations (routes) ────────────────────────────────────────
@@ -408,8 +488,10 @@ export function makeOutreachSenderService(overrides = {}) {
       throw new AppError('This email already left the queue', 409);
     }
     if (row.status === 'needs_approval') await approve(emailId, user, requestId);
+    // windowOverride: rep-initiated Send now may cross the SGT window (P15) —
+    // clicking at 21:30 means 21:30, not a silent 9am reschedule.
     await d.OutreachEmail.update(
-      { nextAttemptAt: d.now() },
+      { nextAttemptAt: d.now(), windowOverride: true },
       { where: { id: emailId, status: 'queued' } }
     );
     await d.audit.recordAuditEvent({
@@ -424,15 +506,22 @@ export function makeOutreachSenderService(overrides = {}) {
   /** "Don't send" — the step stays a manual task; only the machine send dies. */
   async function convertToManual(emailId, user, requestId = null) {
     const { row } = await rowForAction(emailId, user);
-    if (!['queued', 'needs_approval'].includes(row.status)) {
-      throw new AppError('This email already left the queue', 409);
+    // CONDITIONAL cancel (C-2): a blind instance-update could acknowledge
+    // "Won't send" while the worker's claim already committed — the exact
+    // silent-action class this feature bans. 0 rows = the send left the
+    // queue between the read and this write; say so.
+    const [n] = await d.OutreachEmail.update(
+      { status: 'cancelled', lastError: 'converted_to_manual' },
+      { where: { id: row.id, status: { [Op.in]: ['queued', 'needs_approval'] } } }
+    );
+    if (n === 0) {
+      throw new AppError('Too late — this email is already sending. Check the task in a minute.', 409);
     }
-    await row.update({ status: 'cancelled', lastError: 'converted_to_manual' });
     await d.audit.recordAuditEvent({
       actorUser: user, action: 'outreach.email_converted_manual', entityType: 'outreach_email',
       entityId: row.id, requestId,
     });
-    return row;
+    return d.OutreachEmail.findByPk(row.id);
   }
 
   return {
