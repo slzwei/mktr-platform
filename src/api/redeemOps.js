@@ -194,6 +194,10 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/activities/${activityId}/void`, { reason });
     return res.data?.activity;
   },
+  async hidePartnerTimelineEntry(partnerId, body) {
+    const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/timeline/hide`, body);
+    return res.data;
+  },
   async logActivity(id, body) {
     const res = await apiClient.post(`/redeem-ops/partners/${id}/activities`, body);
     return res.data?.activity;

@@ -55,6 +55,9 @@ router.get('/partners/:id/timeline', requireRedeemOps('partners.view'), ctrl.get
 router.post('/partners/:id/activities', requireRedeemOps('activities.log'), ctrl.logActivity);
 router.patch('/activities/:activityId', requireRedeemOps('activities.edit'), ctrl.editActivity);
 router.post('/activities/:activityId/void', requireRedeemOps('activities.edit'), ctrl.voidActivity);
+// Hiding stage/assignment/audit/task entries is custodial work — same tier
+// as deleting the business itself.
+router.post('/partners/:id/timeline/hide', requireRedeemOps('partners.delete'), ctrl.hideTimelineEntry);
 
 // Contacts
 router.post('/partners/:id/contacts', requireRedeemOps('contacts.manage'), ctrl.addContact);

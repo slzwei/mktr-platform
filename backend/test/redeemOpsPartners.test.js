@@ -853,3 +853,52 @@ describe('list carries who ADDED the row, not just who owns it', () => {
     expect(row.creator.id).toBe(execB.user.id);
   });
 });
+
+describe('timeline entry deletion (admin display-level hide, migration 124)', () => {
+  test('admin hides stage/assignment/audit entries; sources survive; bdm refused; cross-partner 404', async () => {
+    const psvc = makePartnerService();
+    const { partner } = await psvc.createPartner(
+      { tradingName: `HideCo ${Date.now()}`, primaryPhone: `+65899${Math.floor(10000 + Math.random() * 89999)}` },
+      admin.user
+    );
+    const stageEv = await PartnerStageEvent.create({
+      partnerOrganisationId: partner.id, fromStage: 'NEW', toStage: 'CONTACTED', actorUserId: admin.user.id,
+    });
+    const auditRow = await RedeemOpsAuditEvent.findOne({
+      where: { entityType: 'partner_organisation', entityId: String(partner.id), action: 'partner.created' },
+    });
+
+    // bdm is NOT custodial tier — the route refuses before any lookup
+    const forbidden = await request(app)
+      .post(`/api/redeem-ops/partners/${partner.id}/timeline/hide`)
+      .set(auth(bdm.token)).send({ kind: 'stage', refKey: stageEv.id, reason: 'x' });
+    expect(forbidden.status).toBe(403);
+
+    const ok = await request(app)
+      .post(`/api/redeem-ops/partners/${partner.id}/timeline/hide`)
+      .set(auth(admin.token)).send({ kind: 'stage', refKey: stageEv.id, reason: 'test noise' });
+    expect(ok.status).toBe(200);
+    await psvc.hideTimelineEntry(partner.id, { kind: 'audit', refKey: auditRow.id, reason: 'noise' }, admin.user);
+
+    const { entries } = await psvc.getTimeline(partner.id);
+    expect(entries.some((e) => e.kind === 'stage' && e.data.id === stageEv.id)).toBe(false);
+    expect(entries.some((e) => e.kind === 'audit' && e.data.id === auditRow.id)).toBe(false);
+    // display-level ONLY: the source rows are untouched
+    expect(await PartnerStageEvent.findByPk(stageEv.id)).not.toBeNull();
+    expect(await RedeemOpsAuditEvent.findByPk(auditRow.id)).not.toBeNull();
+
+    // re-hiding is idempotent, not a unique-constraint crash
+    await psvc.hideTimelineEntry(partner.id, { kind: 'audit', refKey: auditRow.id, reason: 'again' }, admin.user);
+
+    // another business's entry cannot be blind-hidden through this partner
+    const { partner: other } = await psvc.createPartner(
+      { tradingName: `OtherCo ${Date.now()}`, primaryPhone: `+65898${Math.floor(10000 + Math.random() * 89999)}` },
+      admin.user
+    );
+    const otherEv = await PartnerStageEvent.create({
+      partnerOrganisationId: other.id, fromStage: 'NEW', toStage: 'CONTACTED', actorUserId: admin.user.id,
+    });
+    await expect(psvc.hideTimelineEntry(partner.id, { kind: 'stage', refKey: otherEv.id, reason: 'x' }, admin.user))
+      .rejects.toMatchObject({ statusCode: 404 });
+  });
+});

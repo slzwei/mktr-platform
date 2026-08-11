@@ -508,6 +508,19 @@ describe('one-click send on MANUAL email steps', () => {
     expect(google.sendRaw.mock.calls.some((c) => c[0].includes('nosubjectcafe'))).toBe(false);
   });
 
+  test('the Task-created timeline entry hides via the task refKey path', async () => {
+    const cadence = await manualCadence();
+    const p = await ownedPartner('HideTaskCafe');
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
+    await partnerSvc.hideTimelineEntry(
+      p.id, { kind: 'task', refKey: `${firstTask.id}:created`, reason: 'noise' }, admin.user
+    );
+    const { entries } = await partnerSvc.getTimeline(p.id);
+    expect(entries.some((e) => e.kind === 'task' && e.data.task.id === firstTask.id && e.data.event === 'created')).toBe(false);
+    await expect(partnerSvc.hideTimelineEntry(p.id, { kind: 'task', refKey: 'garbage', reason: 'x' }, admin.user))
+      .rejects.toMatchObject({ statusCode: 400 });
+  });
+
   test('deleting a business cascades its cadence enrollment, tasks, and outbox rows', async () => {
     // Guards the FK-cascade invariant — a future migration flipping one of
     // these to RESTRICT would break the admin Delete-business flow with a 500.
