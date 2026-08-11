@@ -176,6 +176,12 @@ describe('persona mapping (who-is-who)', () => {
     await expect(svc.updatePersona(jeremy.id, { assignedUserId: exec.user.id }, admin.user))
       .rejects.toMatchObject({ statusCode: 409 });
 
+    // a deactivated rep cannot receive a sending identity
+    const departed = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
+    await departed.user.update({ isActive: false });
+    await expect(svc.updatePersona(jeremy.id, { assignedUserId: departed.user.id }, admin.user))
+      .rejects.toMatchObject({ statusCode: 409 });
+
     // cap bounds enforced
     await expect(svc.updatePersona(emily.id, { dailySendCap: 0 }, admin.user))
       .rejects.toMatchObject({ statusCode: 400 });
