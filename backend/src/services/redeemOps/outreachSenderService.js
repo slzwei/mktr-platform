@@ -194,6 +194,16 @@ export function makeOutreachSenderService(overrides = {}) {
   async function processRow(row) {
     const at = d.now();
     const checked = await revalidate(row, at);
+    if (checked.fail === 'no_email') {
+      // The address vanished since enqueue — cancel AND park the enrollment
+      // (plan P5): the contact-info hook then rescues it like any other park,
+      // instead of an active enrollment pointing at a dead address forever.
+      await cancelRow(row, 'no_email');
+      await d.cadences.parkActiveEnrollment(row.cadenceEnrollmentId, 'no_email').catch((err) => {
+        d.logger.warn({ outboxId: row.id, err: err?.message }, '[autosend] no_email park failed (task stays manual)');
+      });
+      return {};
+    }
     if (checked.fail) return cancelRow(row, checked.fail);
     if (checked.reschedule) {
       return row.update({ status: 'queued', nextAttemptAt: checked.reschedule, attempts: row.attempts - 1 });

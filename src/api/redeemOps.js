@@ -500,6 +500,10 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/outreach/emails/${emailId}/convert-manual`);
     return res.data?.email;
   },
+  async recordOutreachOptOut(email) {
+    const res = await apiClient.post('/redeem-ops/outreach/opt-out', { email });
+    return res.data?.suppression;
+  },
   async skipCadenceStep(partnerId, body = {}) {
     const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/skip-step`, body);
     return res.data;

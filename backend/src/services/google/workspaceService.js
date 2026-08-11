@@ -157,6 +157,33 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
       const body = await api(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(subject)}/messages?maxResults=${maxResults}&q=${encodeURIComponent(q)}`);
       return body.messages || [];
     },
+    /**
+     * INBOX history since a cursor (the documented incremental-sync pattern).
+     * Throws err.status=404 when the cursor expired — callers MUST full-sync
+     * re-baseline then (Google's stated contract, plan F8).
+     */
+    async listInboxHistory(startHistoryId) {
+      const out = [];
+      let pageToken = '';
+      let latestHistoryId = startHistoryId;
+      do {
+        const body = await api(
+          `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(subject)}/history?startHistoryId=${encodeURIComponent(startHistoryId)}&historyTypes=messageAdded&labelId=INBOX${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`
+        );
+        for (const h of body.history || []) {
+          for (const added of h.messagesAdded || []) {
+            if (added.message) out.push(added.message);
+          }
+        }
+        latestHistoryId = body.historyId || latestHistoryId;
+        pageToken = body.nextPageToken || '';
+      } while (pageToken);
+      return { messages: out, historyId: latestHistoryId };
+    },
+    /** One message, full payload (text extraction is the caller's job). */
+    async getMessage(id, { format = 'full' } = {}) {
+      return api(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(subject)}/messages/${encodeURIComponent(id)}?format=${format}`);
+    },
     /** Metadata of one message — used to learn the REAL wire Message-ID (plan F4). */
     async getMessageHeaders(id, headerNames = ['Message-ID']) {
       const qs = headerNames.map((h) => `metadataHeaders=${encodeURIComponent(h)}`).join('&');

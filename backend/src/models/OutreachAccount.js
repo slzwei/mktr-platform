@@ -19,6 +19,7 @@ const OutreachAccount = sequelize.define('OutreachAccount', {
   historyCursor: { type: DataTypes.STRING(32), allowNull: true, comment: 'Gmail historyId cursor for the Phase-C reply poll' },
   lastSuccessfulPollAt: { type: DataTypes.DATE, allowNull: true, comment: 'Phase-B sender refuses to send when this is stale' },
   lastHealthCheckAt: { type: DataTypes.DATE, allowNull: true },
+  unmatchedInboxCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, comment: 'persona-addressed inbox mail the reply-matcher could not tie to a tracked thread' },
   lastError: { type: DataTypes.TEXT, allowNull: true },
   isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   createdBy: { type: DataTypes.UUID, allowNull: true, references: { model: 'users', key: 'id' } },

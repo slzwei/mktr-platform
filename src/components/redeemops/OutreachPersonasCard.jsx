@@ -145,6 +145,14 @@ export default function OutreachPersonasCard() {
               {account.lastError
                 ? <RoTag tone="lost" size="sm">health error</RoTag>
                 : account.lastHealthCheckAt && <RoTag tone="open" size="sm">healthy</RoTag>}
+              {account.lastSuccessfulPollAt && (
+                <RoTag tone="open" size="sm">
+                  inbox watched · {new Date(account.lastSuccessfulPollAt).toLocaleTimeString()}
+                </RoTag>
+              )}
+              {(account.unmatchedInboxCount || 0) > 0 && (
+                <RoTag tone="paused" size="sm">{account.unmatchedInboxCount} unmatched replies in Gmail</RoTag>
+              )}
               <span className="text-xs" style={{ color: 'var(--ro-text-3)' }}>
                 {account.lastHealthCheckAt
                   ? `checked ${new Date(account.lastHealthCheckAt).toLocaleString()}`
