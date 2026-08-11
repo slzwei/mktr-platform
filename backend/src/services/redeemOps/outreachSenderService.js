@@ -199,7 +199,10 @@ export function makeOutreachSenderService(overrides = {}) {
       // (plan P5): the contact-info hook then rescues it like any other park,
       // instead of an active enrollment pointing at a dead address forever.
       await cancelRow(row, 'no_email');
-      await d.cadences.parkActiveEnrollment(row.cadenceEnrollmentId, 'no_email').catch((err) => {
+      const parkTask = await d.OutreachTask.findByPk(row.taskId, { attributes: ['cadenceStepId'] });
+      await d.cadences.parkActiveEnrollment(row.cadenceEnrollmentId, 'no_email', {
+        expectedStepId: parkTask?.cadenceStepId || null,
+      }).catch((err) => {
         d.logger.warn({ outboxId: row.id, err: err?.message }, '[autosend] no_email park failed (task stays manual)');
       });
       return {};

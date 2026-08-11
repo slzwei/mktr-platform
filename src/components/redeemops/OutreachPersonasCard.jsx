@@ -151,7 +151,7 @@ export default function OutreachPersonasCard() {
                 </RoTag>
               )}
               {(account.unmatchedInboxCount || 0) > 0 && (
-                <RoTag tone="paused" size="sm">{account.unmatchedInboxCount} unmatched replies in Gmail</RoTag>
+                <RoTag tone="paused" size="sm">{account.unmatchedInboxCount} unmatched replies since setup · check Gmail</RoTag>
               )}
               <span className="text-xs" style={{ color: 'var(--ro-text-3)' }}>
                 {account.lastHealthCheckAt

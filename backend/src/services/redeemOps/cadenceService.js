@@ -1043,7 +1043,7 @@ export function makeCadenceService(overrides = {}) {
    * contact-info hook can rescue it exactly like a materialization-time park.
    * Global lock order held: partner → enrollment → task.
    */
-  async function parkActiveEnrollment(enrollmentId, reason) {
+  async function parkActiveEnrollment(enrollmentId, reason, { expectedStepId = null } = {}) {
     return d.sequelize.transaction(async (t) => {
       const probe = await d.OutreachCadenceEnrollment.findByPk(enrollmentId, {
         attributes: ['id', 'partnerOrganisationId'], transaction: t,
@@ -1056,8 +1056,18 @@ export function makeCadenceService(overrides = {}) {
         transaction: t, lock: t.LOCK.UPDATE,
       });
       if (!partner || partner.mergedIntoId || !enrollment || enrollment.state !== 'active') return null;
+      // Staleness guard (same class as skip's): a concurrent completion may
+      // have advanced the enrollment — never park a step the caller didn't see.
+      if (expectedStepId && enrollment.currentStepId !== expectedStepId) return null;
       const step = await d.OutreachCadenceStep.findByPk(enrollment.currentStepId, { transaction: t });
       if (!step) return null;
+      // Un-park race: a contact-add can land between the caller's check and
+      // this lock — its hook saw an ACTIVE enrollment and no-op'd, so if the
+      // recipient resolves NOW, parking would strand a fixed record. Skip the
+      // park; the step degrades to a manual task (the caller cancelled the
+      // machine send already).
+      const nowResolved = await resolveRecipientTx(partner, step.channel, t);
+      if (nowResolved.ok) return null;
       await d.OutreachTask.update(
         { status: 'cancelled' },
         { where: { cadenceEnrollmentId: enrollment.id, status: { [Op.in]: ['open', 'in_progress'] } }, transaction: t }

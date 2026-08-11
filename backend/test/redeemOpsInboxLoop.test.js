@@ -40,6 +40,7 @@ const google = {
   history: { messages: [], historyId: '2000' },
   historyError: null,
   messagesById: {},
+  failFetchOnce: null, // message id whose fetch throws 500 exactly once
   profileHistoryId: '1000',
   sendRaw: jest.fn(async () => ({ id: 'fwd-1', threadId: 'fwd-th-1' })),
 };
@@ -49,7 +50,15 @@ const mockClient = () => ({
     if (google.historyError) { const e = new Error('history 404'); e.status = google.historyError; throw e; }
     return google.history;
   },
-  getMessage: async (id) => google.messagesById[id] || null,
+  getMessage: async (id) => {
+    if (google.failFetchOnce === id) {
+      google.failFetchOnce = null;
+      const e = new Error('gmail 500');
+      e.status = 500;
+      throw e;
+    }
+    return google.messagesById[id] || null;
+  },
   sendRaw: google.sendRaw,
   getMessageHeaders: async () => ({ payload: { headers: [{ name: 'Message-ID', value: '<w@x>' }] } }),
   getThread: async () => ({ messages: [{ id: 'm', labelIds: ['SENT'] }] }),
@@ -92,6 +101,7 @@ beforeEach(async () => {
   google.history = { messages: [], historyId: '2000' };
   google.historyError = null;
   google.messagesById = {};
+  google.failFetchOnce = null;
   await OutreachAccount.update(
     { historyCursor: '1500', lastSuccessfulPollAt: null, unmatchedInboxCount: 0 },
     { where: { id: account.id } }
@@ -213,11 +223,39 @@ describe('replies on tracked threads', () => {
     });
     await inbox.poll();
     await OutreachAccount.update({ historyCursor: '1500' }, { where: { id: account.id } });
-    await inbox.poll(); // replay — findOrCreate must not violate the unique index
+    await inbox.poll(); // replay — the per-message idempotency key eats it
 
     const rows = await OutreachSuppression.findAll({ where: { value: 'unsubcafe@biz.sg' } });
     expect(rows).toHaveLength(1);
     expect(rows[0].reason).toBe('opt_out');
+    // …and the replay produced NO duplicate activity or forward (F2).
+    const acts = await OutreachActivity.findAll({
+      where: { partnerOrganisationId: p.id, type: 'email_reply' },
+    });
+    expect(acts).toHaveLength(1);
+    expect(google.sendRaw).toHaveBeenCalledTimes(1);
+  });
+
+  test('a transient fetch failure aborts the PASS — cursor and stamp do not advance past a lost reply (F1)', async () => {
+    const p = await ownedPartner('TransientCafe');
+    await trackedSend(p, { threadId: 'th-transient-1' });
+    google.history = { messages: [{ id: 'in-t1' }, { id: 'in-t2' }], historyId: '2600' };
+    google.messagesById['in-t1'] = inboundMsg('in-t1', { threadId: 'th-transient-1', from: 'Owner <o@transient.sg>' });
+    google.messagesById['in-t2'] = inboundMsg('in-t2', { threadId: 'th-none-9', from: 'X <x@y.sg>', to: 'business@mktr.sg' });
+    google.failFetchOnce = 'in-t1';
+
+    await inbox.poll(); // first pass fails on in-t1 → nothing stamps
+    let a = await OutreachAccount.findByPk(account.id);
+    expect(a.lastSuccessfulPollAt).toBeNull();
+    expect(a.historyCursor).toBe('1500'); // unchanged
+
+    await inbox.poll(); // retry pass: fetch works now — both processed
+    a = await OutreachAccount.findByPk(account.id);
+    expect(a.lastSuccessfulPollAt).toBeTruthy();
+    const acts = await OutreachActivity.findAll({
+      where: { partnerOrganisationId: p.id, type: 'email_reply' },
+    });
+    expect(acts).toHaveLength(1); // the reply survived the hiccup, exactly once
   });
 
   test('a reply to a MERGED partner lands on the survivor', async () => {
@@ -252,6 +290,19 @@ describe('bounces and unmatched mail', () => {
     const sup = await OutreachSuppression.findOne({ where: { value: row.toAddress.toLowerCase() } });
     expect(sup.reason).toBe('bounced');
     expect((await OutreachEmail.findByPk(row.id)).status).toBe('failed');
+  });
+
+  test('a Gmail DELAY notice never suppresses — the address is still being retried (F3)', async () => {
+    const p = await ownedPartner('DelayCafe');
+    const { row } = await trackedSend(p, { threadId: 'th-delay-1' });
+    google.history = { messages: [{ id: 'in-d1' }], historyId: '2700' };
+    google.messagesById['in-d1'] = inboundMsg('in-d1', {
+      threadId: 'th-delay-1', from: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>',
+      subject: 'Delivery Status Notification (Delay)', text: 'Delivery incomplete. Gmail will keep trying.',
+    });
+    await inbox.poll();
+    expect(await OutreachSuppression.findOne({ where: { value: row.toAddress.toLowerCase() } })).toBeNull();
+    expect((await OutreachEmail.findByPk(row.id)).status).toBe('sent'); // untouched
   });
 
   test('human mail TO a persona with no tracked thread bumps the unmatched counter; ordinary business@ mail is ignored', async () => {
