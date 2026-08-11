@@ -41,5 +41,8 @@ router.post('/outreach/personas/:personaId/test-send', requireRedeemOps('setting
 router.post('/outreach/emails/:emailId/approve', requireRedeemOps('tasks.manage'), ctrl.approveEmail);
 router.post('/outreach/emails/:emailId/send-now', requireRedeemOps('tasks.manage'), ctrl.sendNowEmail);
 router.post('/outreach/emails/:emailId/convert-manual', requireRedeemOps('tasks.manage'), ctrl.convertEmailToManual);
+// Manual opt-out (Phase C) — any rep who works tasks may record a "stop
+// emailing us" the keyword matcher missed. Audited.
+router.post('/outreach/opt-out', requireRedeemOps('tasks.manage'), ctrl.recordOptOut);
 
 export default router;

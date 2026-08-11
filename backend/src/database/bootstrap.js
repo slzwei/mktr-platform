@@ -361,15 +361,26 @@ export async function bootstrapDatabase() {
           const autosendOn = String(process.env.REDEEM_OPS_EMAIL_AUTOSEND_ENABLED || 'false').toLowerCase() === 'true';
           if (autosendOn) {
             const { makeOutreachSenderService } = await import('../services/redeemOps/outreachSenderService.js');
+            const { makeOutreachInboxService } = await import('../services/redeemOps/outreachInboxService.js');
             const sender = makeOutreachSenderService();
+            const inbox = makeOutreachInboxService();
             const safeTick = async () => {
               try { await sender.tick(); } catch (err) {
                 logger.warn({ error: err?.message }, '[RedeemOps] auto-send tick failed (non-fatal)');
               }
             };
+            // The inbox poll is what UNLOCKS the sender (P1) — it stamps
+            // lastSuccessfulPollAt on every clean pass. Poll first, tick after.
+            const safePoll = async () => {
+              try { await inbox.poll(); } catch (err) {
+                logger.warn({ error: err?.message }, '[RedeemOps] inbox poll failed (non-fatal, sender stays gated)');
+              }
+            };
+            setTimeout(safePoll, 45_000);
+            setInterval(safePoll, 2 * 60_000);
             setTimeout(safeTick, 90_000);
             setInterval(safeTick, 60_000);
-            logger.info('[RedeemOps] email auto-send worker scheduled (60s interval)');
+            logger.info('[RedeemOps] email auto-send worker (60s) + inbox poll (2m) scheduled');
           }
         });
       } else if (String(process.env.REDEEM_OPS_EMAIL_AUTOSEND_ENABLED || 'false').toLowerCase() === 'true') {

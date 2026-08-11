@@ -90,3 +90,14 @@ export const convertEmailToManual = asyncHandler(async (req, res) => {
   const email = await outreachSenderService.convertToManual(req.params.emailId, req.user, req.id);
   res.json({ success: true, data: { email } });
 });
+
+const optOutSchema = Joi.object({ email: Joi.string().email().required() });
+
+// The Replied-card classification (plan P18): a "please stop" phrased outside
+// the keyword list still ends up on the suppression list, by a human tap.
+export const recordOptOut = asyncHandler(async (req, res) => {
+  const body = validateBody(optOutSchema, req.body || {});
+  const { default: outreachInboxService } = await import('../../services/redeemOps/outreachInboxService.js');
+  const suppression = await outreachInboxService.optOutAddress(body.email, req.user, req.id);
+  res.status(201).json({ success: true, data: { suppression } });
+});
