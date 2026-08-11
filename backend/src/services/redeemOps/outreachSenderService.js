@@ -134,6 +134,10 @@ export function makeOutreachSenderService(overrides = {}) {
     const enrollment = await d.OutreachCadenceEnrollment.findByPk(row.cadenceEnrollmentId);
     if (!enrollment || enrollment.state !== 'active') return { fail: 'enrollment_not_active' };
     if (enrollment.currentStepId !== task.cadenceStepId) return { fail: 'not_current_step' };
+    // A fresh (non-threaded) send needs a real subject — the task TITLE is a
+    // rep instruction, never wire content. Threaded follow-ups reuse the
+    // thread's subject, so a blank here is fine there.
+    if (!enrollment.gmailThreadId && !String(task.emailSubject || '').trim()) return { fail: 'no_subject' };
     const partner = await d.PartnerOrganisation.findByPk(row.partnerOrganisationId);
     if (!partner || partner.mergedIntoId || partner.archivedAt) return { fail: 'partner_gone' };
     if (partner.autoEmailOptOut) return { fail: 'partner_opted_out' };
@@ -174,9 +178,12 @@ export function makeOutreachSenderService(overrides = {}) {
 
   function buildRfc822({ persona, row, task, enrollment, references }) {
     const threaded = Boolean(enrollment.gmailThreadId);
+    // Fresh sends use ONLY the authored subject (revalidate guarantees it);
+    // threaded replies stay on the thread's subject. task.title is a rep
+    // instruction and must never reach the wire.
     const baseSubject = threaded
       ? (enrollment.gmailThreadSubject || task.emailSubject || task.title)
-      : (task.emailSubject || task.title);
+      : task.emailSubject;
     const subject = headerSafe(threaded && !/^re:/i.test(baseSubject) ? `Re: ${baseSubject}` : baseSubject)
       .slice(0, 220);
     const body = `${task.description || ''}\n\n--\n${FOOTER}\n`;
@@ -575,6 +582,9 @@ export function makeOutreachSenderService(overrides = {}) {
     // The send goes out as the TASK ASSIGNEE's persona (the conversation
     // owner), matching what send-time revalidation enforces — not as whoever
     // clicked (an admin can trigger it, the identity stays the rep's).
+    if (!enrollment.gmailThreadId && !String(task.emailSubject || '').trim()) {
+      throw new AppError('This email has no subject line yet — add one in the message box first', 409);
+    }
     if (!task.assigneeUserId) throw new AppError('This task has no assignee to send as', 409);
     const persona = await d.OutreachPersona.findOne({
       where: { assignedUserId: task.assigneeUserId, isActive: true },

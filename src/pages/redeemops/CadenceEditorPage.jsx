@@ -149,7 +149,8 @@ function StepCard({ step, index, total, dayMark, onChange, onRemove, onMove }) {
         {EMAIL_AUTOSEND_ENABLED && step.mode === 'auto' && step.channel === 'email' && (
           <p className="text-[12px] m-0" style={{ color: 'var(--ro-tag-yellow-fg, #8F6400)' }}>
             The CRM sends this email itself at the scheduled time, from the rep’s outreach
-            address. A subject is required; the first sends of a new version hold for approval.
+            address. A blank subject falls back to “Bringing new customers to {'{{partner_name}}'}”;
+            the first sends of a new version hold for approval.
           </p>
         )}
 

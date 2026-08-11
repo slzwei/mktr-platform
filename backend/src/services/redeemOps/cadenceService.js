@@ -103,6 +103,11 @@ function activityForDisposition(channel, disposition) {
  * Digits are suspicious in CONTACT names only — plenty of legit businesses
  * carry them ("7-Eleven").
  */
+
+/** What an email step's subject falls back to when the author leaves it blank
+ *  (and what migration 123 backfilled onto pre-existing steps/tasks). */
+export const DEFAULT_EMAIL_SUBJECT = 'Bringing new customers to {{partner_name}}';
+
 export function autoSendLint({ partnerName = '', contactName = '', recipient = '', subject = '', body = '' }) {
   const junkWords = ['test', 'asdf', 'qwerty', 'unknown', 'na', 'n/a', 'abc'];
   const junkName = (raw, { digitsAreBad }) => {
@@ -228,10 +233,11 @@ export function makeCadenceService(overrides = {}) {
       if (mode === 'auto' && channel !== 'email') {
         throw new AppError(`Step ${i + 1}: only email steps can auto-send`, 400);
       }
-      const subject = s.subject ? String(s.subject).trim().slice(0, 160) : null;
-      if (mode === 'auto' && !subject) {
-        throw new AppError(`Step ${i + 1}: auto-send needs a subject line`, 400);
-      }
+      // Every email step carries a REAL subject: a blank one falls back to
+      // the house default template. Task titles ("Email the partnership
+      // idea") must never become wire subjects — seen live 2026-08-11.
+      const subject = String(s.subject ?? '').trim().slice(0, 160)
+        || (channel === 'email' ? DEFAULT_EMAIL_SUBJECT : null);
       return {
         channel, title, continueOn, delayDays, timeWindow, priority, mode, subject,
         script: s.script ? String(s.script).slice(0, 5000) : null,

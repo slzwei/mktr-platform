@@ -18,8 +18,8 @@ import { jest } from '@jest/globals';
 import { getApp, closeDb, createTestUser } from './helpers.js';
 import {
   OutreachAccount, OutreachPersona, OutreachEmail, OutreachTask,
-  OutreachCadence, OutreachCadenceEnrollment, OutreachActivity,
-  PartnerOrganisation, sequelize,
+  OutreachCadence, OutreachCadenceEnrollment, OutreachCadenceStep,
+  OutreachActivity, PartnerOrganisation, sequelize,
 } from '../src/models/index.js';
 import { makeCadenceService, autoSendLint } from '../src/services/redeemOps/cadenceService.js';
 import { makeOutreachSenderService } from '../src/services/redeemOps/outreachSenderService.js';
@@ -135,7 +135,11 @@ describe('authoring gate & lint helper', () => {
     } finally {
       process.env.REDEEM_OPS_EMAIL_AUTOSEND_ENABLED = before;
     }
-    await expect(svc.createCadence(def({ subject: null }), admin.user)).rejects.toMatchObject({ statusCode: 400 });
+    // A blank subject no longer refuses — it lands the house default, so the
+    // wire never carries a task title.
+    const defaulted = await svc.createCadence(def({ subject: null, name: `Gate default ${Date.now()}` }), admin.user);
+    const step = await OutreachCadenceStep.findOne({ where: { cadenceId: defaulted.id } });
+    expect(step.subjectTemplate).toBe('Bringing new customers to {{partner_name}}');
     await expect(svc.createCadence(def({ channel: 'call', subject: 'S' }), admin.user)).rejects.toMatchObject({ statusCode: 400 });
   });
 
@@ -402,6 +406,10 @@ describe('one-click send on MANUAL email steps', () => {
     const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
     expect(await liveRow(firstTask.id)).toBeNull(); // manual step — nothing enqueued
 
+    // Materialization rendered the DEFAULT subject (the step was authored
+    // without one) — the task title never reaches the wire.
+    expect(firstTask.emailSubject).toBe('Bringing new customers to ManualSendCafe');
+
     let row = await sender.sendTaskEmail(firstTask.id, exec.user);
     expect(row.status).toBe('queued');
     expect(row.holdReason).toBeNull(); // human reviewed it — no ramp
@@ -422,7 +430,8 @@ describe('one-click send on MANUAL email steps', () => {
     const rfc = google.sendRaw.mock.calls.map((c) => c[0]).find((r) => r.includes('To: <nora@manualsend.sg>'));
     expect(rfc).toBeTruthy();
     expect(rfc).toContain('From: "Emily Wong" <emily@redeem.sg>');
-    expect(rfc).toContain('Subject: Manual intro'); // title fallback — no authored subject
+    expect(rfc).toContain('Subject: Bringing new customers to ManualSendCafe');
+    expect(rfc).not.toContain('Subject: Manual intro'); // the task title is NOT a subject
     expect((await OutreachTask.findByPk(firstTask.id)).status).toBe('completed');
     const acts = await OutreachActivity.findAll({ where: { partnerOrganisationId: p.id } });
     expect(acts.some((a) => a.type === 'email_sent' && /auto-sent as emily@redeem\.sg/.test(a.summary))).toBe(true);
@@ -447,6 +456,31 @@ describe('one-click send on MANUAL email steps', () => {
       .set(auth(exec.token));
     expect(dup.status).toBe(409);
     expect(await OutreachEmail.count({ where: { taskId: firstTask.id } })).toBe(1);
+  });
+
+  test('a blanked subject blocks sending: the button 409s, and the worker cancels a queued row', async () => {
+    const cadence = await manualCadence();
+    const p = await ownedPartner('NoSubjectCafe');
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
+
+    await OutreachTask.update({ emailSubject: '' }, { where: { id: firstTask.id } });
+    await expect(sender.sendTaskEmail(firstTask.id, exec.user))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/subject/i) });
+
+    // Queue a valid send while the loop is dark (holds the row), then blank
+    // the subject before the worker claims it — send-time revalidation must
+    // cancel, never fall back to the task title.
+    await OutreachTask.update({ emailSubject: 'Real subject' }, { where: { id: firstTask.id } });
+    await OutreachAccount.update({ lastSuccessfulPollAt: null }, { where: { id: account.id } });
+    await sender.sendTaskEmail(firstTask.id, exec.user);
+    await OutreachTask.update({ emailSubject: '' }, { where: { id: firstTask.id } });
+    await OutreachAccount.update({ lastSuccessfulPollAt: new Date() }, { where: { id: account.id } });
+    await sender.tick();
+    const row = await liveRow(firstTask.id);
+    expect(row.status).toBe('cancelled');
+    expect(row.lastError).toBe('no_subject');
+    // Ticks may flush other tests' stale rows — assert OUR address never sent.
+    expect(google.sendRaw.mock.calls.some((c) => c[0].includes('nosubjectcafe'))).toBe(false);
   });
 
   test('refuses non-email steps, opted-out partners, and assignees with no persona — creating nothing', async () => {
