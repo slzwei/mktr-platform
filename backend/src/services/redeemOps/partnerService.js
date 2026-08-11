@@ -223,6 +223,9 @@ export function makePartnerService(overrides = {}) {
     'source', 'tags', 'notes',
     // Marketplace public profile (067) — echoed on public /offers pages.
     'publicBlurb', 'partnerSince',
+    // Auto-send opt-out (120): machine-timed email never fires here; auto
+    // steps behave as manual tasks. Owner-or-admin like every detail edit.
+    'autoEmailOptOut',
   ];
 
   async function updatePartner(id, body, user, requestId = null) {

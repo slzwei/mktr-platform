@@ -72,11 +72,14 @@ export default function MyQueue() {
   // Cadences parked on a step they can't prepare — without this bucket a
   // mid-cadence park has no task and vanishes from the docket entirely.
   const waiting = q.waitingOnInfo?.items || [];
+  // Machine sends the rep owns (Phase B): EVERY queued/held auto-email, with
+  // a total — the 3-day upcoming bucket would hide anything further out.
+  const scheduled = q.scheduledSends?.items || [];
 
   const todoToday = (q.overdueTasks.total || 0) + (q.dueTodayTasks.total || 0)
     + (q.awaitingFirstOutreach.total || 0) + (q.waitingOnInfo?.total || 0);
   const empty = overdue.length + dueToday.length + awaiting.length + stale.length
-    + replies.length + upcoming.length + waiting.length === 0;
+    + replies.length + upcoming.length + waiting.length + scheduled.length === 0;
 
   // Cadence tasks complete through a disposition, never a bare "Done" —
   // the outcome drives what the engine schedules next.
@@ -208,6 +211,26 @@ export default function MyQueue() {
                       : 'Now'}
                     whenColor="var(--ro-tag-yellow-fg)"
                     action={openButton(w.id)}
+                  />
+                ))}
+              </>
+            )}
+
+            {scheduled.length > 0 && (
+              <>
+                <GroupLabel color="var(--ro-tag-blue-fg)">
+                  Scheduled sends — the CRM sends these itself{(q.scheduledSends?.total || 0) > scheduled.length ? ` (${q.scheduledSends.total} total)` : ''}
+                </GroupLabel>
+                {scheduled.map((e) => (
+                  <DocketRow
+                    key={e.id}
+                    title={`${e.task?.title || 'Scheduled email'} — ${partnerName(e.task?.partner)}`}
+                    sub={`${e.status === 'needs_approval' ? 'HELD FOR YOUR APPROVAL · ' : ''}as ${e.persona?.address || 'outreach'} · → ${e.toAddress}`}
+                    when={e.nextAttemptAt
+                      ? new Date(e.nextAttemptAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                      : 'soon'}
+                    whenColor="var(--ro-tag-blue-fg)"
+                    action={openButton(e.task?.partner?.id)}
                   />
                 ))}
               </>

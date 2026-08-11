@@ -35,4 +35,11 @@ router.post('/outreach/personas/import', requireRedeemOps('settings.manage'), ct
 router.patch('/outreach/personas/:personaId', requireRedeemOps('settings.manage'), ctrl.updatePersona);
 router.post('/outreach/personas/:personaId/test-send', requireRedeemOps('settings.manage'), ctrl.testSend);
 
+// Scheduled-email operations — rep verbs (owner-or-admin enforced per row in
+// the service, mirroring pause/skip): approve a held send, fire one now,
+// or convert it back to a plain manual task ("Don't send").
+router.post('/outreach/emails/:emailId/approve', requireRedeemOps('tasks.manage'), ctrl.approveEmail);
+router.post('/outreach/emails/:emailId/send-now', requireRedeemOps('tasks.manage'), ctrl.sendNowEmail);
+router.post('/outreach/emails/:emailId/convert-manual', requireRedeemOps('tasks.manage'), ctrl.convertEmailToManual);
+
 export default router;

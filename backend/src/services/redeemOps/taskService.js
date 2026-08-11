@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import { sgtDayWindow } from '../../utils/sgtTime.js';
 import {
   OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize,
-  OutreachCadenceStep, OutreachCadence,
+  OutreachCadenceStep, OutreachCadence, OutreachEmail,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
@@ -30,7 +30,7 @@ export { sgDateKey, sgtDayWindow } from '../../utils/sgtTime.js';
 export function makeTaskService(overrides = {}) {
   const d = {
     OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize, logger,
-    OutreachCadenceStep, OutreachCadence, ...overrides,
+    OutreachCadenceStep, OutreachCadence, OutreachEmail, ...overrides,
   };
 
   const isManager = (user) =>
@@ -121,8 +121,27 @@ export function makeTaskService(overrides = {}) {
         { model: d.PartnerContact, as: 'contact', attributes: ['id', 'name'] },
         {
           model: d.OutreachCadenceStep, as: 'cadenceStep', required: false,
-          attributes: ['id', 'stepOrder', 'channel', 'title'],
+          attributes: ['id', 'stepOrder', 'channel', 'title', 'mode'],
           include: [{ model: d.OutreachCadence, as: 'cadence', attributes: ['id', 'key', 'name', 'version'] }],
+        },
+        // The machine-send state for auto steps: live rows, plus SYSTEM
+        // cancellations that need a human's eyes (M-2 — "recipient changed",
+        // "no sending persona"… must badge, not vanish). Rep-initiated
+        // cancels and sent rows stay out.
+        {
+          model: d.OutreachEmail, as: 'outboxEmails', required: false,
+          attributes: ['id', 'status', 'holdReason', 'nextAttemptAt', 'toAddress', 'lastError'],
+          where: {
+            [Op.or]: [
+              { status: { [Op.in]: ['queued', 'needs_approval', 'sending', 'failed'] } },
+              {
+                status: 'cancelled',
+                lastError: {
+                  [Op.in]: ['no_sending_persona', 'recipient_changed', 'no_email', 'reassigned_review', 'autosend_disabled', 'reply_in_thread'],
+                },
+              },
+            ],
+          },
         },
       ],
       order: [['dueAt', 'ASC']],
@@ -153,7 +172,10 @@ export function makeTaskService(overrides = {}) {
     // status/schedule/assignee changes must go through the cadence engine —
     // the generic PATCH may only touch cosmetic fields.
     if (task.cadenceEnrollmentId) {
-      const CADENCE_EDITABLE = ['description', 'priority'];
+      // emailSubject joins the allowlist (Phase B): the auto-sender reads
+      // body+subject FROM THE TASK at send time, so editing here IS editing
+      // what sends. The sender 409s edits only while a row is mid-`sending`.
+      const CADENCE_EDITABLE = ['description', 'priority', 'emailSubject'];
       const blocked = Object.keys(body).filter((k) => body[k] !== undefined && !CADENCE_EDITABLE.includes(k));
       if (blocked.length > 0) {
         throw new AppError(
@@ -161,10 +183,29 @@ export function makeTaskService(overrides = {}) {
           409
         );
       }
+      // C3 edit-vs-claim guard: while the auto-sender holds the row
+      // (`sending`), an accepted edit could lose the race with the wire —
+      // refuse for the few seconds it takes rather than send stale text.
+      // FOR UPDATE on the live row closes the residual ms-window: a claim
+      // landing mid-PATCH now SKIP-LOCKs past this row until we commit.
+      if (body.description !== undefined || body.emailSubject !== undefined) {
+        const [inFlight] = await d.sequelize.query(
+          `SELECT status FROM outreach_emails
+            WHERE "taskId" = :tid AND status IN ('queued', 'needs_approval', 'sending')
+            FOR UPDATE`,
+          { replacements: { tid: task.id }, transaction: t }
+        );
+        if (inFlight.some((r) => r.status === 'sending')) {
+          throw new AppError('This email is sending right now — try again in a few seconds', 409);
+        }
+        if (body.emailSubject !== undefined && String(body.emailSubject || '').length > 220) {
+          throw new AppError('Subject must be 220 characters or fewer', 400);
+        }
+      }
     }
 
     const updates = {};
-    for (const f of ['title', 'description', 'dueAt', 'hasTime', 'priority', 'type', 'contactId']) {
+    for (const f of ['title', 'description', 'dueAt', 'hasTime', 'priority', 'type', 'contactId', 'emailSubject']) {
       if (body[f] !== undefined) updates[f] = body[f];
     }
     if (body.assigneeUserId !== undefined) {

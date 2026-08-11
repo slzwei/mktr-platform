@@ -61,6 +61,7 @@ const PartnerOrganisation = sequelize.define('PartnerOrganisation', {
   nextTaskAt: { type: DataTypes.DATE, allowNull: true, comment: 'Denormalized from open tasks (Phase 3)' },
   atRiskFlag: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, comment: 'Claimed >48h, no first outreach (sweep-set)' },
   staleFlag: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, comment: 'No meaningful activity >14d (sweep-set)' },
+  autoEmailOptOut: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false, comment: 'machine-timed email never fires for this business; auto steps materialize as manual tasks' },
 
   mergedIntoId: { type: DataTypes.UUID, allowNull: true, references: { model: 'partner_organisations', key: 'id' }, comment: 'Set on merge; row retained, hidden from lists' },
   archivedAt: { type: DataTypes.DATE, allowNull: true },

@@ -131,8 +131,8 @@ describe('toBuilderSteps (edit prefill)', () => {
     };
     const steps = toBuilderSteps(cadence);
     expect(steps).toEqual([
-      { channel: 'call', title: 'Intro call', script: 'hi', priority: 'high', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
-      { channel: 'whatsapp', title: 'WA intro', script: '', priority: 'medium', delayDays: 2, timeWindow: 'off_peak', continueOn: '*' },
+      { channel: 'call', title: 'Intro call', script: 'hi', priority: 'high', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer', mode: 'manual', subject: '' },
+      { channel: 'whatsapp', title: 'WA intro', script: '', priority: 'medium', delayDays: 2, timeWindow: 'off_peak', continueOn: '*', mode: 'manual', subject: '' },
     ]);
   });
 });
@@ -809,6 +809,49 @@ describe('park-at-first-block banner + manual skip', () => {
     wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
     await user.click(await screen.findByRole('button', { name: /retry now/i }));
     await waitFor(() => expect(toastMock.warning).toHaveBeenCalledWith(expect.stringMatching(/do-not-contact/)));
+  });
+});
+
+describe('inline message editing (the script box)', () => {
+  it('Edit flips the box to a textarea and saves description + subject through the task PATCH', async () => {
+    api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
+    api.listTasks.mockResolvedValue({
+      tasks: [{
+        id: 'task-9', title: 'Send intro DM', status: 'open',
+        partnerOrganisationId: 'p-1', assigneeUserId: 'u-1',
+        description: 'Hi there, I’m David from Redeem.',
+        emailSubject: 'Free trial classes for {{partner_name}}',
+        dueAt: new Date().toISOString(),
+        cadenceStep: { id: 's-9', stepOrder: 1, channel: 'email', title: 'Send intro DM', cadence: { name: 'Music school' } },
+      }],
+    });
+    api.updateTask.mockResolvedValue({});
+    const user = userEvent.setup();
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }));
+    const body = screen.getByLabelText('Message');
+    await user.clear(body);
+    await user.type(body, 'Hi Sarah, quick idea for your school.');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('task-9', {
+      description: 'Hi Sarah, quick idea for your school.',
+      emailSubject: 'Free trial classes for {{partner_name}}',
+    }));
+  });
+
+  it('a viewer without task rights gets Copy but no Edit', async () => {
+    api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
+    api.listTasks.mockResolvedValue({
+      tasks: [{
+        id: 'task-9', title: 'Send intro DM', status: 'open', partnerOrganisationId: 'p-1',
+        description: 'Hello', dueAt: new Date().toISOString(),
+        cadenceStep: { id: 's-9', stepOrder: 1, channel: 'instagram_dm', title: 'Send intro DM', cadence: { name: 'Music school' } },
+      }],
+    });
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-x', pipelineStage: 'NEW' }} canManage={false} />);
+    expect(await screen.findByRole('button', { name: /copy message/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
   });
 });
 

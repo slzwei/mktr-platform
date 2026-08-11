@@ -70,6 +70,7 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         assertion,
       }),
+      signal: AbortSignal.timeout(15_000),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -83,6 +84,8 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
 
   async function api(url, { method = 'GET', json } = {}) {
     const token = await accessToken();
+    // Bounded per-call time is what makes the sender's stale-`sending`
+    // reclaim threshold sound — an unbounded hang past it risks a re-send.
     const res = await fetchImpl(url, {
       method,
       headers: {
@@ -90,6 +93,7 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
         ...(json ? { 'Content-Type': 'application/json' } : {}),
       },
       ...(json ? { body: JSON.stringify(json) } : {}),
+      signal: AbortSignal.timeout(15_000),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -130,12 +134,28 @@ export function makeWorkspaceClient({ credentials, subject, scopes, fetchImpl = 
       const body = await api(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(subject)}/settings/sendAs`);
       return body.sendAs || [];
     },
-    /** Raw RFC-2822 send. Returns Gmail's { id, threadId, labelIds }. */
-    async sendRaw(rfc822) {
+    /**
+     * Raw RFC-2822 send. Passing threadId is REQUIRED to append to an
+     * existing thread (Gmail needs threadId + RFC headers + matching subject
+     * — all three). Returns Gmail's { id, threadId, labelIds }.
+     */
+    async sendRaw(rfc822, { threadId = null } = {}) {
       return api(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(subject)}/messages/send`, {
         method: 'POST',
-        json: { raw: Buffer.from(rfc822, 'utf8').toString('base64url') },
+        json: {
+          raw: Buffer.from(rfc822, 'utf8').toString('base64url'),
+          ...(threadId ? { threadId } : {}),
+        },
       });
+    },
+    /** Thread metadata — the pre-send "did they already reply?" check. */
+    async getThread(threadId) {
+      return api(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(subject)}/threads/${encodeURIComponent(threadId)}?format=minimal`);
+    },
+    /** Search the mailbox (Gmail q syntax) — crash-window send dedupe. */
+    async listMessages(q, { maxResults = 5 } = {}) {
+      const body = await api(`https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(subject)}/messages?maxResults=${maxResults}&q=${encodeURIComponent(q)}`);
+      return body.messages || [];
     },
     /** Metadata of one message — used to learn the REAL wire Message-ID (plan F4). */
     async getMessageHeaders(id, headerNames = ['Message-ID']) {

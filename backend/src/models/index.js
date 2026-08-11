@@ -196,6 +196,9 @@ function defineAssociations() {
   models.OutreachPersona.belongsTo(models.OutreachAccount, { foreignKey: 'accountId', as: 'account', onDelete: 'CASCADE' });
   models.OutreachAccount.hasMany(models.OutreachPersona, { foreignKey: 'accountId', as: 'personas' });
   models.OutreachPersona.belongsTo(User, { foreignKey: 'assignedUserId', as: 'assignedUser', onDelete: 'SET NULL' });
+  models.OutreachEmail.belongsTo(models.OutreachTask, { foreignKey: 'taskId', as: 'task', onDelete: 'CASCADE' });
+  models.OutreachEmail.belongsTo(models.OutreachPersona, { foreignKey: 'personaId', as: 'persona', onDelete: 'SET NULL' });
+  models.OutreachTask.hasMany(models.OutreachEmail, { foreignKey: 'taskId', as: 'outboxEmails' });
 
   // Redeem Ops associations (docs/redeem-ops/ERD.md). Append-only history/audit
   // rows must survive actor deletion: SET NULL, never cascade from users.
@@ -400,7 +403,7 @@ export const {
   WaMessageStatus, WaMessageSend, ConsumerObservation, ConsumerProfile, EnrichmentJob,
   EnrichmentScoringConfig, EnrichmentSweepRun,
   MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection,
-  OutreachAccount, OutreachPersona
+  OutreachAccount, OutreachPersona, OutreachEmail
 } = models;
 
 export { sequelize };

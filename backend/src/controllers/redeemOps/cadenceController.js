@@ -39,6 +39,10 @@ const stepSchema = Joi.object({
   channel: Joi.string().valid('call', 'whatsapp', 'email', 'instagram_dm', 'visit', 'custom').required(),
   title: Joi.string().max(160).required(),
   script: Joi.string().max(5000).allow('', null),
+  // Auto-send (Phase B): email steps may carry a subject and a delivery mode;
+  // the service enforces auto⇒email-only, auto⇒subject, and the env flag.
+  subject: Joi.string().max(160).allow('', null),
+  mode: Joi.string().valid('manual', 'auto'),
   priority: Joi.string().valid('low', 'medium', 'high'),
   delayDays: Joi.number().integer().min(0).max(60).required(),
   timeWindow: Joi.string().valid('any', 'morning', 'afternoon', 'off_peak'),
