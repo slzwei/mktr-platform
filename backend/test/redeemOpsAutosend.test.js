@@ -508,6 +508,22 @@ describe('one-click send on MANUAL email steps', () => {
     expect(google.sendRaw.mock.calls.some((c) => c[0].includes('nosubjectcafe'))).toBe(false);
   });
 
+  test('deleting a business cascades its cadence enrollment, tasks, and outbox rows', async () => {
+    // Guards the FK-cascade invariant — a future migration flipping one of
+    // these to RESTRICT would break the admin Delete-business flow with a 500.
+    await OutreachAccount.update({ lastSuccessfulPollAt: null }, { where: { id: account.id } });
+    const cadence = await manualCadence();
+    const p = await ownedPartner('DoomedCafe');
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
+    await sender.sendTaskEmail(firstTask.id, exec.user); // queued row (loop dark)
+
+    await partnerSvc.deletePartner(p.id, admin.user);
+    expect(await PartnerOrganisation.findByPk(p.id)).toBeNull();
+    expect(await OutreachCadenceEnrollment.count({ where: { partnerOrganisationId: p.id } })).toBe(0);
+    expect(await OutreachTask.count({ where: { partnerOrganisationId: p.id } })).toBe(0);
+    expect(await OutreachEmail.count({ where: { partnerOrganisationId: p.id } })).toBe(0);
+  });
+
   test('refuses non-email steps, opted-out partners, and assignees with no persona — creating nothing', async () => {
     const callCadence = await manualCadence([{ channel: 'call', title: 'Call them', delayDays: 0, timeWindow: 'any' }]);
     const p1 = await ownedPartner('ManualCallCafe');
