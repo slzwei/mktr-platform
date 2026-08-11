@@ -147,7 +147,11 @@ export function makeOutreachPersonaService(overrides = {}) {
       await p.update({
         isAccountAlias: aliasSet.has(addr),
         sendAsRegistered: Boolean(s),
-        sendAsVerified: Boolean(s && (s.verificationStatus === 'accepted' || s.isPrimary)),
+        // Same-account aliases never REQUIRED verification, so Gmail returns
+        // their sendAs entries with NO verificationStatus at all — absence
+        // means "none needed", not "pending". Only an explicit 'pending'
+        // (a genuine external verification in flight) blocks sending.
+        sendAsVerified: Boolean(s && (s.isPrimary || s.verificationStatus !== 'pending')),
       });
     }
 
