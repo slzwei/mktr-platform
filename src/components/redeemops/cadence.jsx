@@ -25,6 +25,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { RoTag } from '@/components/redeemops/ui';
+import { EMAIL_AUTOSEND_ENABLED } from '@/components/redeemops/OutreachPersonasCard';
 
 export const CADENCES_ENABLED = import.meta.env.VITE_REDEEM_OPS_CADENCES_ENABLED === 'true';
 
@@ -489,7 +490,50 @@ export function ScheduledSendStrip({ task, canManage = true }) {
     onSuccess: () => { toast.success('Sending — it goes out within a minute'); done(); },
     onError: (err) => toast.error('Could not send now', { description: err.message }),
   });
-  if (!row) return null;
+  const [confirmSend, setConfirmSend] = useState(false);
+  const sendEmailMutation = useMutation({
+    mutationFn: () => redeemOpsApi.sendTaskOutreachEmail(task.id),
+    onSuccess: () => { setConfirmSend(false); toast.success('Sending — it goes out within a minute'); done(); },
+    onError: (err) => { setConfirmSend(false); toast.error('Could not send', { description: err.message }); },
+  });
+  if (!row) {
+    // Manual email steps still get a one-click CRM send: it queues directly
+    // (the rep reviewed this exact message — no ramp hold) and rides the same
+    // worker guards. Sends as the task owner's outreach persona.
+    if (!EMAIL_AUTOSEND_ENABLED || !canManage || !task.cadenceEnrollmentId || task.cadenceStep?.channel !== 'email') {
+      return null;
+    }
+    return (
+      <>
+        <div className="mt-1.5">
+          <Button size="sm" variant="outline" className="h-7 px-2.5 text-[11.5px]" onClick={() => setConfirmSend(true)}>
+            <SendHorizontal className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Send email
+          </Button>
+        </div>
+        <Dialog open={confirmSend} onOpenChange={setConfirmSend}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Send this email now?</DialogTitle>
+              <DialogDescription>
+                Sends the message on this task from the task owner’s outreach address to the
+                business email on file{task.snapshotRecipient ? ` (${task.snapshotRecipient})` : ''},
+                and completes the task once it’s out.
+              </DialogDescription>
+            </DialogHeader>
+            <p className="text-sm mb-0" style={{ color: 'var(--ro-text-2)' }}>
+              Subject: <span className="font-semibold">{task.emailSubject || task.title}</span>
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmSend(false)}>Back</Button>
+              <Button disabled={sendEmailMutation.isPending} onClick={() => sendEmailMutation.mutate()}>
+                {sendEmailMutation.isPending ? 'Sending…' : 'Send email'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
 
   const when = row.nextAttemptAt
     ? new Date(row.nextAttemptAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })

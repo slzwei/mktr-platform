@@ -24,6 +24,25 @@ export const WORKSPACE_SCOPES = {
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const TOKEN_TTL_SLACK_MS = 60_000;
 
+/**
+ * RFC 2047 encoded-word for header values: ASCII passes through untouched;
+ * anything else (em-dashes, accented or CJK business names) becomes
+ * =?UTF-8?B?…?= words — raw UTF-8 bytes in a header render as mojibake
+ * ("Ã¢Â€Â"") in every client. Chunked at codepoint boundaries so each word
+ * decodes independently and emoji never split.
+ */
+export function encodeMimeHeader(value) {
+  const v = String(value ?? '');
+  if (/^[\x20-\x7E]*$/.test(v)) return v;
+  const codepoints = Array.from(v);
+  const words = [];
+  for (let i = 0; i < codepoints.length; i += 16) {
+    const chunk = codepoints.slice(i, i + 16).join('');
+    words.push(`=?UTF-8?B?${Buffer.from(chunk, 'utf8').toString('base64')}?=`);
+  }
+  return words.join(' ');
+}
+
 /** Parse + sanity-check a pasted service-account JSON key. Throws plain Error. */
 export function parseServiceAccountKey(raw) {
   let parsed;

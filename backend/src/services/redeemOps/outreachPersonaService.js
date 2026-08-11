@@ -4,7 +4,7 @@ import { logger } from '../../utils/logger.js';
 import { makeSecretBox } from '../../utils/secretBox.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import {
-  makeWorkspaceClient, parseServiceAccountKey, WORKSPACE_SCOPES,
+  makeWorkspaceClient, parseServiceAccountKey, encodeMimeHeader, WORKSPACE_SCOPES,
 } from '../google/workspaceService.js';
 
 /**
@@ -339,9 +339,9 @@ export function makeOutreachPersonaService(overrides = {}) {
 
     const minted = `<outreach-test-${persona.id}-${Date.now()}@mktr.sg>`;
     const rfc822 = [
-      `From: "${persona.displayName.replace(/"/g, '')}" <${persona.address}>`,
+      `From: "${encodeMimeHeader(persona.displayName.replace(/"/g, ''))}" <${persona.address}>`,
       `To: <${account.accountEmail}>`,
-      `Subject: Redeem Ops test send — ${persona.address}`,
+      `Subject: ${encodeMimeHeader(`Redeem Ops test send — ${persona.address}`)}`,
       `Message-ID: ${minted}`,
       'Content-Type: text/plain; charset=utf-8',
       '',

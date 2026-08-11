@@ -1,7 +1,8 @@
 import { Op } from 'sequelize';
 import {
   OutreachEmail, OutreachAccount, OutreachPersona, OutreachTask,
-  OutreachCadence, OutreachCadenceEnrollment, PartnerOrganisation, sequelize,
+  OutreachCadence, OutreachCadenceEnrollment, OutreachCadenceStep,
+  PartnerOrganisation, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
@@ -10,7 +11,7 @@ import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeCadenceService } from './cadenceService.js';
 import { makePartnerService } from './partnerService.js';
 import { canActOnPartnerRow } from './permissions.js';
-import { makeWorkspaceClient, parseServiceAccountKey, WORKSPACE_SCOPES } from '../google/workspaceService.js';
+import { makeWorkspaceClient, parseServiceAccountKey, encodeMimeHeader, WORKSPACE_SCOPES } from '../google/workspaceService.js';
 
 /**
  * The auto-send worker — Phase B (docs/plans/redeem-ops-cadence-email-autosend.md §4).
@@ -58,7 +59,8 @@ function nextSgtMorning(at) {
 export function makeOutreachSenderService(overrides = {}) {
   const d = {
     OutreachEmail, OutreachAccount, OutreachPersona, OutreachTask,
-    OutreachCadence, OutreachCadenceEnrollment, PartnerOrganisation, sequelize, logger,
+    OutreachCadence, OutreachCadenceEnrollment, OutreachCadenceStep,
+    PartnerOrganisation, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     cadences: makeCadenceService(),
     partners: makePartnerService(),
@@ -178,10 +180,12 @@ export function makeOutreachSenderService(overrides = {}) {
     const subject = headerSafe(threaded && !/^re:/i.test(baseSubject) ? `Re: ${baseSubject}` : baseSubject)
       .slice(0, 220);
     const body = `${task.description || ''}\n\n--\n${FOOTER}\n`;
+    // Non-ASCII header values (em-dashes, accented/CJK business names) MUST
+    // be RFC-2047 encoded — raw UTF-8 in a header renders as mojibake.
     const headers = [
-      `From: "${headerSafe(persona.displayName).replace(/"/g, '')}" <${headerSafe(persona.address)}>`,
+      `From: "${encodeMimeHeader(headerSafe(persona.displayName).replace(/"/g, ''))}" <${headerSafe(persona.address)}>`,
       `To: <${headerSafe(row.toAddress)}>`,
-      `Subject: ${subject}`,
+      `Subject: ${encodeMimeHeader(subject)}`,
       'Content-Type: text/plain; charset=utf-8',
     ];
     if (threaded && references) {
@@ -537,9 +541,86 @@ export function makeOutreachSenderService(overrides = {}) {
     return d.OutreachEmail.findByPk(row.id);
   }
 
+  /**
+   * One-click CRM send for a MANUAL email cadence step (a task with no outbox
+   * row — cadences authored before auto-send, or steps left on Manual). The
+   * rep is looking at the exact rendered message, so it queues directly with
+   * no ramp/lint hold — the enqueue twin of Send now. Every send-time guard
+   * (revalidation, caps, suppression, reply-loop freshness) still runs in the
+   * worker; this only creates the row.
+   */
+  async function sendTaskEmail(taskId, user, requestId = null) {
+    const task = await d.OutreachTask.findByPk(taskId);
+    if (!task || !task.cadenceEnrollmentId) throw new AppError('Cadence task not found', 404);
+    if (!['open', 'in_progress'].includes(task.status)) throw new AppError('This task is already closed', 409);
+    const step = task.cadenceStepId ? await d.OutreachCadenceStep.findByPk(task.cadenceStepId) : null;
+    if (!step || step.channel !== 'email') throw new AppError('Only email steps can be sent by the CRM', 409);
+    const enrollment = await d.OutreachCadenceEnrollment.findByPk(task.cadenceEnrollmentId);
+    if (!enrollment || enrollment.state !== 'active' || enrollment.currentStepId !== task.cadenceStepId) {
+      throw new AppError('This step is no longer the active cadence step', 409);
+    }
+    const partner = await d.PartnerOrganisation.findByPk(task.partnerOrganisationId);
+    if (!partner || partner.mergedIntoId || partner.archivedAt) throw new AppError('Business not found', 404);
+    if (!canActOnPartnerRow(user, partner)) {
+      throw new AppError('You can only send on businesses you own', 403);
+    }
+    if (partner.autoEmailOptOut) {
+      throw new AppError('This business is set to manual sending only — copy the message and send it yourself', 409);
+    }
+    const live = await d.OutreachEmail.findOne({
+      where: { taskId: task.id, status: { [Op.in]: ['queued', 'needs_approval', 'sending'] } },
+    });
+    if (live) throw new AppError('A send is already scheduled for this task — use its buttons', 409);
+
+    // The send goes out as the TASK ASSIGNEE's persona (the conversation
+    // owner), matching what send-time revalidation enforces — not as whoever
+    // clicked (an admin can trigger it, the identity stays the rep's).
+    if (!task.assigneeUserId) throw new AppError('This task has no assignee to send as', 409);
+    const persona = await d.OutreachPersona.findOne({
+      where: { assignedUserId: task.assigneeUserId, isActive: true },
+    });
+    if (!persona) {
+      throw new AppError('No sending identity is mapped to the task owner yet — assign one in Settings → Email outreach', 409);
+    }
+    if (!persona.sendAsVerified) {
+      throw new AppError(`${persona.address} is not verified to send yet — run the health check in Settings`, 409);
+    }
+    const account = await d.OutreachAccount.findByPk(persona.accountId);
+    if (!account?.isActive) throw new AppError('The outreach mailbox is not connected', 409);
+
+    const resolved = await d.sequelize.transaction((t) => d.cadences.resolveRecipientTx(partner, 'email', t));
+    if (!resolved.ok) throw new AppError('This business has no email address on file — add one first', 409);
+    const suppressed = await d.sequelize.transaction((t) => d.cadences.isSuppressedTx('email', resolved.recipient, t));
+    if (suppressed) throw new AppError('This address unsubscribed or bounced — sending is blocked', 409);
+
+    let row;
+    try {
+      row = await d.OutreachEmail.create({
+        taskId: task.id, cadenceEnrollmentId: enrollment.id, partnerOrganisationId: partner.id,
+        contactId: resolved.contactId || null, personaId: persona.id, accountId: persona.accountId,
+        toAddress: resolved.recipient,
+        // Deliberate human click: sends immediately, may cross the SGT window.
+        status: 'queued', windowOverride: true, nextAttemptAt: d.now(),
+      });
+    } catch (err) {
+      if (err?.name === 'SequelizeUniqueConstraintError') {
+        throw new AppError('A send is already scheduled for this task — use its buttons', 409);
+      }
+      throw err;
+    }
+    await d.audit.recordAuditEvent({
+      actorUser: user, action: 'outreach.email_manual_send_queued', entityType: 'outreach_email',
+      entityId: row.id,
+      after: { taskId: task.id, toAddress: resolved.recipient, personaAddress: persona.address },
+      requestId,
+    });
+    tick().catch(() => {});
+    return row;
+  }
+
   return {
     tick, reclaimStranded, reapDisabled,
-    approve, sendNow, convertToManual,
+    approve, sendNow, convertToManual, sendTaskEmail,
     // exported for tests
     replyLoopHealthy, buildRfc822, nextSgtMorning,
   };

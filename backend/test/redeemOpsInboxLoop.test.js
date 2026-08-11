@@ -207,10 +207,17 @@ describe('replies on tracked threads', () => {
     expect(e.exitReason).toBe('replied');
     const acts = await OutreachActivity.findAll({ where: { partnerOrganisationId: p.id } });
     expect(acts.some((a) => a.type === 'email_reply' && a.direction === 'inbound')).toBe(true);
-    // forward to the rep's real login mailbox
+    // forward to the rep's real login mailbox — subject rides RFC-2047
+    // encoded (it carries an em-dash); decode before asserting.
     const fwd = google.sendRaw.mock.calls.at(-1)[0];
     expect(fwd).toContain(`To: <${exec.user.email}>`);
-    expect(fwd).toContain('Reply from ReplyCafe');
+    const subjectLine = fwd.split('\r\n').find((l) => l.startsWith('Subject: '));
+    const decodedSubject = subjectLine.replace('Subject: ', '').split(' ')
+      .map((w) => (w.startsWith('=?UTF-8?B?')
+        ? Buffer.from(w.replace(/^=\?UTF-8\?B\?/, '').replace(/\?=$/, ''), 'base64').toString('utf8')
+        : w))
+      .join('');
+    expect(decodedSubject).toContain('Reply from ReplyCafe');
     expect(fwd).toContain('Sounds interesting');
   });
 

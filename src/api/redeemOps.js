@@ -500,6 +500,10 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/outreach/emails/${emailId}/convert-manual`);
     return res.data?.email;
   },
+  async sendTaskOutreachEmail(taskId) {
+    const res = await apiClient.post(`/redeem-ops/outreach/tasks/${taskId}/send-email`);
+    return res.data?.email;
+  },
   async recordOutreachOptOut(email) {
     const res = await apiClient.post('/redeem-ops/outreach/opt-out', { email });
     return res.data?.suppression;
