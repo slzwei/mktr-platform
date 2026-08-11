@@ -4,7 +4,7 @@ import {
   PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
   PartnerOnboardingItem, RewardOffer, Activation,
   RewardEntitlement, Redemption, RewardInventoryEvent, RedemptionEvent, Draw,
-  RedeemOpsAuditEvent, User, sequelize,
+  RedeemOpsAuditEvent, TimelineHiddenEntry, User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/appError.js';
 import { logger } from '../../utils/logger.js';
@@ -41,7 +41,7 @@ export function makePartnerService(overrides = {}) {
     PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
     PartnerOnboardingItem, RewardOffer, Activation,
     RewardEntitlement, Redemption, RewardInventoryEvent, RedemptionEvent, Draw,
-    RedeemOpsAuditEvent, User, sequelize, logger,
+    RedeemOpsAuditEvent, TimelineHiddenEntry, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
     categories: makeCategoryService(),
@@ -590,15 +590,75 @@ export function makePartnerService(overrides = {}) {
       }
     }
 
+    // Admin-hidden entries (migration 124): display-level delete — the source
+    // rows stay (they back stageSince, cadence provenance, and the audit
+    // trail); one marker hides one rendered entry.
+    const hiddenRows = await d.TimelineHiddenEntry.findAll({
+      where: { partnerOrganisationId: id }, attributes: ['kind', 'refKey'], raw: true,
+    });
+    const hidden = new Set(hiddenRows.map((h) => `${h.kind}:${h.refKey}`));
+
     const entries = [
       ...activities.map((a) => ({ kind: 'activity', at: a.occurredAt, data: a })),
       ...stageEvents.map((e) => ({ kind: 'stage', at: e.createdAt, data: e })),
       ...assignmentEvents.map((e) => ({ kind: 'assignment', at: e.createdAt, data: e })),
       ...auditEvents.map((e) => ({ kind: 'audit', at: e.createdAt, data: e })),
       ...taskEntries,
-    ].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, limit);
+    ].filter((entry) => !hidden.has(
+      entry.kind === 'task'
+        ? `task:${entry.data.task.id}:${entry.data.event}`
+        : `${entry.kind}:${entry.data.id}`
+    )).sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, limit);
 
     return { entries };
+  }
+
+  const TIMELINE_HIDEABLE_KINDS = ['stage', 'assignment', 'audit', 'task'];
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /**
+   * Hide one timeline entry (admin tier — routed behind partners.delete).
+   * Activities void on their own table; every other kind gets a marker here.
+   * The refKey is verified to belong to THIS partner — no blind cross-partner
+   * hides — and the hide itself is audited with the required reason.
+   */
+  async function hideTimelineEntry(id, { kind, refKey, reason } = {}, user, requestId = null) {
+    if (!TIMELINE_HIDEABLE_KINDS.includes(kind)) throw new AppError('This entry type cannot be deleted', 400);
+    const why = String(reason ?? '').trim();
+    if (!why) throw new AppError('A reason is required', 400);
+    const ref = String(refKey ?? '');
+    await getLivePartner(id, { attributes: ['id', 'mergedIntoId'] });
+
+    let found = null;
+    if (kind === 'task') {
+      const [taskId, event] = ref.split(':');
+      if (!UUID_RE.test(taskId || '') || !['created', 'completed', 'cancelled'].includes(event)) {
+        throw new AppError('Bad entry reference', 400);
+      }
+      found = await d.OutreachTask.findOne({ where: { id: taskId, partnerOrganisationId: id } });
+    } else {
+      if (!UUID_RE.test(ref)) throw new AppError('Bad entry reference', 400);
+      if (kind === 'stage') {
+        found = await d.PartnerStageEvent.findOne({ where: { id: ref, partnerOrganisationId: id } });
+      } else if (kind === 'assignment') {
+        found = await d.PartnerAssignmentEvent.findOne({ where: { id: ref, partnerOrganisationId: id } });
+      } else {
+        found = await d.RedeemOpsAuditEvent.findOne({
+          where: { id: ref, entityType: 'partner_organisation', entityId: String(id) },
+        });
+      }
+    }
+    if (!found) throw new AppError('Entry not found on this business', 404);
+
+    const [row] = await d.TimelineHiddenEntry.findOrCreate({
+      where: { kind, refKey: ref },
+      defaults: { partnerOrganisationId: id, kind, refKey: ref, reason: why, hiddenBy: user.id },
+    });
+    await d.audit.recordAuditEvent({
+      actorUser: user, action: 'partner.timeline_entry_hidden', entityType: 'partner_organisation',
+      entityId: id, after: { kind, refKey: ref }, reason: why, requestId,
+    });
+    return row;
   }
 
   async function logActivityTx(id, body, user, t, { requestId = null, suppressCadenceHooks = false } = {}) {
@@ -1064,7 +1124,7 @@ export function makePartnerService(overrides = {}) {
   return {
     listPartners, getPartner, createPartner, updatePartner, changeStage, changeStageBulk, undoStageChange,
     snoozePartner, unsnoozePartner,
-    importPartners, getTimeline, logActivity, editActivity, voidActivity,
+    importPartners, getTimeline, logActivity, editActivity, voidActivity, hideTimelineEntry,
     addContact, updateContact, archiveContact, addLocation, updateLocation,
     mergePartners, deletePartner, canActOnRow,
     // P0 caller-transaction primitives (cadence engine + composed flows)

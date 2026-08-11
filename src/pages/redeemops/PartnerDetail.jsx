@@ -223,12 +223,12 @@ function TimelineEntry({ entry, onDeleteLog }) {
       <div className="min-w-0">
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-bold m-0">{title}</p>
-          {entry.kind === 'activity' && onDeleteLog && (
+          {onDeleteLog && (
             <button
               type="button"
               aria-label="Delete log entry"
               className="shrink-0 -mt-0.5 p-1 rounded border-0 bg-transparent cursor-pointer"
-              onClick={() => onDeleteLog(entry.data)}
+              onClick={() => onDeleteLog(entry)}
             >
               <Trash2 className="w-3.5 h-3.5" style={{ color: 'var(--ro-text-3)' }} aria-hidden="true" />
             </button>
@@ -471,12 +471,18 @@ export default function PartnerDetail() {
   });
   const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }));
 
-  // Timeline log deletion (admin tier): soft-voids the activity server-side —
-  // it vanishes from the timeline but stays in the audit record. Reason required.
-  const [voidTarget, setVoidTarget] = useState(null);
+  // Timeline entry deletion (admin tier): activities soft-void on their own
+  // table; every other kind (stage, claim, task, audit) gets a display-level
+  // hide marker — the source record stays for audit/machinery. Reason required.
+  const [voidTarget, setVoidTarget] = useState(null); // the full timeline entry
   const [voidReason, setVoidReason] = useState('');
   const voidMutation = useMutation({
-    mutationFn: () => redeemOpsApi.voidPartnerActivity(voidTarget.id, voidReason.trim()),
+    mutationFn: () => {
+      const e = voidTarget;
+      if (e.kind === 'activity') return redeemOpsApi.voidPartnerActivity(e.data.id, voidReason.trim());
+      const refKey = e.kind === 'task' ? `${e.data.task.id}:${e.data.event}` : e.data.id;
+      return redeemOpsApi.hidePartnerTimelineEntry(id, { kind: e.kind, refKey, reason: voidReason.trim() });
+    },
     onSuccess: () => {
       setVoidTarget(null);
       toast.success('Log entry deleted');
@@ -773,7 +779,7 @@ export default function PartnerDetail() {
                   key={`${entry.kind}-${entry.data.id || i}`}
                   entry={entry}
                   onDeleteLog={hasCapability(user, 'partners.delete')
-                    ? (a) => { setVoidTarget(a); setVoidReason(''); }
+                    ? (e) => { setVoidTarget(e); setVoidReason(''); }
                     : undefined}
                 />
               ))}
@@ -1019,9 +1025,9 @@ export default function PartnerDetail() {
               A short reason is required.
             </DialogDescription>
           </DialogHeader>
-          {voidTarget?.summary && (
+          {voidTarget?.kind === 'activity' && voidTarget.data?.summary && (
             <p className="text-[13px] m-0 line-clamp-2" style={{ color: 'var(--ro-text-2)' }}>
-              “{voidTarget.summary}”
+              “{voidTarget.data.summary}”
             </p>
           )}
           <Input

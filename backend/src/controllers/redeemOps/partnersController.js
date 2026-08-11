@@ -284,6 +284,21 @@ export const voidActivity = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Activity voided' });
 });
 
+const hideTimelineSchema = Joi.object({
+  kind: Joi.string().valid('stage', 'assignment', 'audit', 'task').required(),
+  refKey: Joi.string().max(100).required(),
+  reason: Joi.string().trim().min(1).max(500).required(),
+});
+
+// Display-level delete for non-activity timeline entries (admin tier) —
+// the source rows stay; a marker hides the rendered entry. Audited.
+export const hideTimelineEntry = asyncHandler(async (req, res) => {
+  const { error, value } = hideTimelineSchema.validate(req.body || {}, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((x) => x.message).join(', '), 400);
+  await partnerService.hideTimelineEntry(req.params.id, value, req.user, req.id);
+  res.json({ success: true, message: 'Timeline entry deleted' });
+});
+
 const contactSchema = Joi.object({
   name: Joi.string().max(120).required(),
   roleTitle: Joi.string().max(80).allow('', null),

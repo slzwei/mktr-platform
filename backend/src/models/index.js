@@ -403,7 +403,7 @@ export const {
   WaMessageStatus, WaMessageSend, ConsumerObservation, ConsumerProfile, EnrichmentJob,
   EnrichmentScoringConfig, EnrichmentSweepRun,
   MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection,
-  OutreachAccount, OutreachPersona, OutreachEmail
+  OutreachAccount, OutreachPersona, OutreachEmail, TimelineHiddenEntry
 } = models;
 
 export { sequelize };
