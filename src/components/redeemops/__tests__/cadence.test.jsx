@@ -5,7 +5,7 @@
  * 3. not_interested confirms first and can mark the business Lost in the same call.
  * redeemOpsApi is fully mocked — no network.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 vi.hoisted(() => {
   vi.stubEnv('VITE_REDEEM_OPS_CADENCES_ENABLED', 'true');
+  vi.stubEnv('VITE_REDEEM_OPS_EMAIL_AUTOSEND_ENABLED', 'true');
 });
 
 const api = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ const api = vi.hoisted(() => ({
   suggestCadence: vi.fn(),
   listTasks: vi.fn(),
   updateTask: vi.fn(),
+  sendTaskOutreachEmail: vi.fn(),
 }));
 vi.mock('@/api/redeemOps', () => ({ redeemOpsApi: api }));
 
@@ -43,7 +45,7 @@ const toastMock = vi.hoisted(() => {
 vi.mock('sonner', () => ({ toast: toastMock }));
 
 import {
-  CadenceOutcomeButton, CadenceChip, CadencePanel,
+  CadenceOutcomeButton, CadenceChip, CadencePanel, ScheduledSendStrip,
   unreachableChannels, needsSentence, blockedStepToast, blockedReasonLabel,
 } from '../cadence';
 import { toBuilderSteps } from '../cadenceBuilder';
@@ -873,5 +875,44 @@ describe('blocked-reason copy helpers', () => {
     expect(blockedReasonLabel('no_active_location')).toBe('no outlet address on record');
     expect(blockedReasonLabel('suppressed')).toMatch(/do-not-contact/);
     expect(blockedReasonLabel('unknown_thing')).toBe('needs attention');
+  });
+});
+
+describe('ScheduledSendStrip — one-click send on manual email steps', () => {
+  it('offers Send email on a rowless email cadence task, confirms, and hits the endpoint', async () => {
+    api.sendTaskOutreachEmail.mockResolvedValue({ id: 'e1', status: 'queued' });
+    const task = {
+      id: 't-manual-1', cadenceEnrollmentId: 'en1', partnerOrganisationId: 'p1',
+      cadenceStep: { channel: 'email' }, title: 'Email the offer', emailSubject: null,
+      snapshotRecipient: 'owner@biz.sg', outboxEmails: [],
+    };
+    wrap(<ScheduledSendStrip task={task} canManage />);
+    await userEvent.click(screen.getByRole('button', { name: /send email/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/send this email now\?/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/owner@biz\.sg/)).toBeInTheDocument();
+    // subject preview falls back to the task title when no subject was authored
+    expect(within(dialog).getByText('Email the offer')).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /send email/i }));
+    await waitFor(() => expect(api.sendTaskOutreachEmail).toHaveBeenCalledWith('t-manual-1'));
+  });
+
+  it('renders nothing for non-email steps, non-cadence tasks, or viewers without manage rights', () => {
+    const emailTask = {
+      id: 't2', cadenceEnrollmentId: 'en1', partnerOrganisationId: 'p1',
+      cadenceStep: { channel: 'email' }, title: 'T', outboxEmails: [],
+    };
+    const { container: c1 } = wrap(
+      <ScheduledSendStrip task={{ ...emailTask, cadenceStep: { channel: 'call' } }} canManage />
+    );
+    expect(c1.querySelector('button')).toBeNull();
+    const { container: c2 } = wrap(
+      <ScheduledSendStrip task={{ ...emailTask, cadenceEnrollmentId: null }} canManage />
+    );
+    expect(c2.querySelector('button')).toBeNull();
+    const { container: c3 } = wrap(<ScheduledSendStrip task={emailTask} canManage={false} />);
+    expect(c3.querySelector('button')).toBeNull();
   });
 });

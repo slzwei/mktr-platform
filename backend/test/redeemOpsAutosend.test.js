@@ -382,3 +382,95 @@ describe('the sender', () => {
     expect((await OutreachTask.findByPk(firstTask.id)).status).toBe('open');
   });
 });
+
+describe('one-click send on MANUAL email steps', () => {
+  async function manualCadence(steps) {
+    cadenceSeq += 1;
+    return svc.createCadence({
+      name: `Manual Mail ${cadenceSeq}`,
+      steps: steps || [{
+        channel: 'email', title: `Manual intro ${cadenceSeq}`,
+        script: 'Hi {{contact_name}}, note for {{partner_name}}.', delayDays: 0, timeWindow: 'any',
+      }],
+    }, admin.user);
+  }
+
+  test('queues a window-override row with no ramp hold; the worker sends and completes it', async () => {
+    const cadence = await manualCadence();
+    const p = await ownedPartner('ManualSendCafe');
+    await partnerSvc.addContact(p.id, { name: 'Nora', email: 'nora@manualsend.sg' }, exec.user);
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
+    expect(await liveRow(firstTask.id)).toBeNull(); // manual step — nothing enqueued
+
+    let row = await sender.sendTaskEmail(firstTask.id, exec.user);
+    expect(row.status).toBe('queued');
+    expect(row.holdReason).toBeNull(); // human reviewed it — no ramp
+    expect(row.windowOverride).toBe(true);
+    expect(row.toAddress).toBe('nora@manualsend.sg');
+
+    // The service fires a best-effort tick itself; settle to a terminal state
+    // regardless of which pass wins the claim.
+    const until = Date.now() + 4000;
+    row = await OutreachEmail.findByPk(row.id);
+    while (row.status !== 'sent' && Date.now() < until) {
+      await sender.tick();
+      row = await OutreachEmail.findByPk(row.id);
+      if (row.status !== 'sent') await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(row.status).toBe('sent');
+    // Ticks may also flush stale queued rows from earlier tests — find OUR wire message.
+    const rfc = google.sendRaw.mock.calls.map((c) => c[0]).find((r) => r.includes('To: <nora@manualsend.sg>'));
+    expect(rfc).toBeTruthy();
+    expect(rfc).toContain('From: "Emily Wong" <emily@redeem.sg>');
+    expect(rfc).toContain('Subject: Manual intro'); // title fallback — no authored subject
+    expect((await OutreachTask.findByPk(firstTask.id)).status).toBe('completed');
+    const acts = await OutreachActivity.findAll({ where: { partnerOrganisationId: p.id } });
+    expect(acts.some((a) => a.type === 'email_sent' && /auto-sent as emily@redeem\.sg/.test(a.summary))).toBe(true);
+  });
+
+  test('route: creating the row does not need reply-loop health (sending does); a second click 409s', async () => {
+    // Loop dark → the inline tick refuses to SEND, so the row deterministically
+    // stays queued — proving creation and dispatch are separate gates.
+    await OutreachAccount.update({ lastSuccessfulPollAt: null }, { where: { id: account.id } });
+    const cadence = await manualCadence();
+    const p = await ownedPartner('ManualDupCafe');
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceId: cadence.id }, exec.user);
+
+    const res = await request(app)
+      .post(`/api/redeem-ops/outreach/tasks/${firstTask.id}/send-email`)
+      .set(auth(exec.token));
+    expect(res.status).toBe(201);
+    expect(res.body.data.email.status).toBe('queued');
+
+    const dup = await request(app)
+      .post(`/api/redeem-ops/outreach/tasks/${firstTask.id}/send-email`)
+      .set(auth(exec.token));
+    expect(dup.status).toBe(409);
+    expect(await OutreachEmail.count({ where: { taskId: firstTask.id } })).toBe(1);
+  });
+
+  test('refuses non-email steps, opted-out partners, and assignees with no persona — creating nothing', async () => {
+    const callCadence = await manualCadence([{ channel: 'call', title: 'Call them', delayDays: 0, timeWindow: 'any' }]);
+    const p1 = await ownedPartner('ManualCallCafe');
+    const r1 = await svc.enrollPartner(p1.id, { cadenceId: callCadence.id }, exec.user);
+    await expect(sender.sendTaskEmail(r1.firstTask.id, exec.user))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/email steps/i) });
+
+    const emailCadence = await manualCadence();
+    const p2 = await ownedPartner('ManualOptOutCafe', { autoEmailOptOut: true });
+    const r2 = await svc.enrollPartner(p2.id, { cadenceId: emailCadence.id }, exec.user);
+    await expect(sender.sendTaskEmail(r2.firstTask.id, exec.user))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/manual sending only/i) });
+
+    await OutreachPersona.update({ isActive: false }, { where: { id: persona.id } });
+    try {
+      const p3 = await ownedPartner('ManualNoPersonaCafe');
+      const r3 = await svc.enrollPartner(p3.id, { cadenceId: emailCadence.id }, exec.user);
+      await expect(sender.sendTaskEmail(r3.firstTask.id, exec.user))
+        .rejects.toMatchObject({ statusCode: 409, message: expect.stringMatching(/sending identity/i) });
+      expect(await liveRow(r3.firstTask.id)).toBeNull();
+    } finally {
+      await OutreachPersona.update({ isActive: true }, { where: { id: persona.id } });
+    }
+  });
+});

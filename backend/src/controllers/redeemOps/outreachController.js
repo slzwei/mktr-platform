@@ -91,6 +91,13 @@ export const convertEmailToManual = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { email } });
 });
 
+// One-click send for a manual email cadence step — creates the outbox row
+// (queued, no ramp hold) and lets the worker's guards take it from there.
+export const sendTaskEmail = asyncHandler(async (req, res) => {
+  const email = await outreachSenderService.sendTaskEmail(req.params.taskId, req.user, req.id);
+  res.status(201).json({ success: true, data: { email } });
+});
+
 const optOutSchema = Joi.object({ email: Joi.string().email().required() });
 
 // The Replied-card classification (plan P18): a "please stop" phrased outside
