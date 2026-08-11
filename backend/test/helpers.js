@@ -307,9 +307,14 @@ export async function createTestLeadPackageAssignment(agentId, packageId, overri
  * with a category must seed it first. Idempotent (case-insensitive).
  */
 export async function seedRedeemOpsCategory(name, overrides = {}) {
-  const [category] = await RedeemOpsCategory.findOrCreate({
+  // Migration 122 pre-seeds a real taxonomy, so a fixture naming a seeded
+  // category ('Cafe', 'Nail Salon', …) FINDS a row instead of creating one —
+  // apply the fixture's field values on found rows too, or tests silently
+  // run against the seed's values (CI-only failure, 2026-08-11).
+  const [category, created] = await RedeemOpsCategory.findOrCreate({
     where: { name },
     defaults: { name, isActive: true, ...overrides },
   });
+  if (!created) await category.update({ isActive: true, ...overrides });
   return category;
 }
