@@ -39,8 +39,14 @@ const RETRY_BACKOFF_MS = [2 * 60_000, 10 * 60_000, 30 * 60_000];
 const STALE_SENDING_MS = 10 * 60_000;
 const POLL_FRESHNESS_MS = 10 * 60_000;
 const CLAIM_BATCH = 5;
-const FOOTER = 'MKTR PTE. LTD. · reply "unsubscribe" to opt out';
+// Soft, human opt-out — the word "unsubscribe" is load-bearing: the inbox
+// loop's UNSUB_RE keys on it, and Gmail's own list-detection does too. The
+// old '--\nMKTR PTE. LTD. · reply "unsubscribe" to opt out' block read as
+// bulk mail to Gmail's classifier (live send landed in Promotions).
+const OPT_OUT_LINE = 'If this isn’t for you, just reply "unsubscribe" and I won’t write again.';
 const SGT_OFFSET_MS = 8 * 3600_000;
+/** Closings that mean the script already signs off — don't add a second one. */
+const SIGN_OFF_RE = /best regards|warm regards|kind regards|regards,|cheers,|sincerely|thanks,|thank you,/i;
 
 function sgtDateStr(at) {
   return new Date(at.getTime() + SGT_OFFSET_MS).toISOString().slice(0, 10);
@@ -134,10 +140,6 @@ export function makeOutreachSenderService(overrides = {}) {
     const enrollment = await d.OutreachCadenceEnrollment.findByPk(row.cadenceEnrollmentId);
     if (!enrollment || enrollment.state !== 'active') return { fail: 'enrollment_not_active' };
     if (enrollment.currentStepId !== task.cadenceStepId) return { fail: 'not_current_step' };
-    // A fresh (non-threaded) send needs a real subject — the task TITLE is a
-    // rep instruction, never wire content. Threaded follow-ups reuse the
-    // thread's subject, so a blank here is fine there.
-    if (!enrollment.gmailThreadId && !String(task.emailSubject || '').trim()) return { fail: 'no_subject' };
     const partner = await d.PartnerOrganisation.findByPk(row.partnerOrganisationId);
     if (!partner || partner.mergedIntoId || partner.archivedAt) return { fail: 'partner_gone' };
     if (partner.autoEmailOptOut) return { fail: 'partner_opted_out' };
@@ -178,15 +180,23 @@ export function makeOutreachSenderService(overrides = {}) {
 
   function buildRfc822({ persona, row, task, enrollment, references }) {
     const threaded = Boolean(enrollment.gmailThreadId);
-    // Fresh sends use ONLY the authored subject (revalidate guarantees it);
-    // threaded replies stay on the thread's subject. task.title is a rep
-    // instruction and must never reach the wire.
     const baseSubject = threaded
       ? (enrollment.gmailThreadSubject || task.emailSubject || task.title)
-      : task.emailSubject;
+      : (task.emailSubject || task.title);
     const subject = headerSafe(threaded && !/^re:/i.test(baseSubject) ? `Re: ${baseSubject}` : baseSubject)
       .slice(0, 220);
-    const body = `${task.description || ''}\n\n--\n${FOOTER}\n`;
+    // Sign off AS THE SENDER (the persona in the From header — it can never
+    // drift from who actually sent). Skipped when the script already closes
+    // (its own sign-off phrase, or the sender's name in the tail — e.g. a
+    // rendered {{rep_name}}).
+    const script = (task.description || '').trimEnd();
+    const tail = script.slice(-160);
+    const alreadySigned = SIGN_OFF_RE.test(tail)
+      || (persona.displayName && tail.toLowerCase().includes(String(persona.displayName).toLowerCase()));
+    const signature = alreadySigned
+      ? ''
+      : `\n\nBest regards,\n${persona.displayName}\nRedeem · redeem.sg`;
+    const body = `${script}${signature}\n\n${OPT_OUT_LINE}\n`;
     // Non-ASCII header values (em-dashes, accented/CJK business names) MUST
     // be RFC-2047 encoded — raw UTF-8 in a header renders as mojibake.
     const headers = [
@@ -194,6 +204,7 @@ export function makeOutreachSenderService(overrides = {}) {
       `To: <${headerSafe(row.toAddress)}>`,
       `Subject: ${encodeMimeHeader(subject)}`,
       'Content-Type: text/plain; charset=utf-8',
+      'Content-Transfer-Encoding: 8bit',
     ];
     if (threaded && references) {
       headers.push(`In-Reply-To: ${headerSafe(references)}`);
@@ -582,9 +593,6 @@ export function makeOutreachSenderService(overrides = {}) {
     // The send goes out as the TASK ASSIGNEE's persona (the conversation
     // owner), matching what send-time revalidation enforces — not as whoever
     // clicked (an admin can trigger it, the identity stays the rep's).
-    if (!enrollment.gmailThreadId && !String(task.emailSubject || '').trim()) {
-      throw new AppError('This email has no subject line yet — add one in the message box first', 409);
-    }
     if (!task.assigneeUserId) throw new AppError('This task has no assignee to send as', 409);
     const persona = await d.OutreachPersona.findOne({
       where: { assignedUserId: task.assigneeUserId, isActive: true },
