@@ -9,7 +9,8 @@ import { composeValueLine, ageLabelOf, fmtDateLong, categoryLabel, isDrawCampaig
 import { shouldTrack, initPixel, ensureFbp, trackEvent, captureFbcFromUrl, captureUtmsFromUrl } from '@/lib/metaPixel';
 import { shouldTrackTikTok, initTikTokPixel, trackTikTokViewContent, captureTtclidFromUrl } from '@/lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
-import { resolveMetaPixelId, resolveTikTokPixelId } from '@/lib/pixelIds';
+import { resolveMetaPixelId, resolveTikTokPixelId, resolveGoogleAdsConversionId } from '@/lib/pixelIds';
+import { shouldTrackGoogle, initGoogleAds } from '@/lib/googleAds';
 
 /**
  * Offer detail (/offers/:slug) — the FIRST public content surface for
@@ -77,6 +78,15 @@ export default function MarketplaceOffer() {
           vc.eventId
         );
         markVcFired(campaign.id, 'tiktok');
+      }
+    }
+    // Google: gtag('config') emits its own page_view, so configuring here is the
+    // view event — no separate ViewContent call, same once-per-session guard.
+    const googleId = resolveGoogleAdsConversionId(campaign);
+    if (!vc.firedGoogle && shouldTrackGoogle({ ...trackCtx, conversionId: googleId })) {
+      if (googleId) {
+        initGoogleAds(googleId);
+        markVcFired(campaign.id, 'google');
       }
     }
   }, [campaign]);

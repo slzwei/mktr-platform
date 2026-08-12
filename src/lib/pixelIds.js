@@ -26,10 +26,30 @@ export function resolveTikTokPixelId(campaign) {
   return campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID || '';
 }
 
-/** Both ids for a campaign: `{ metaPixelId, tiktokPixelId }`. */
+/**
+ * Google's account-level conversion id (`AW-XXXXXXXXX`). The per-campaign
+ * override is read the same way as the other two platforms even though no
+ * `googleAdsConversionId` column exists yet — a campaign simply never carries
+ * one today, and adding the column later needs no change here.
+ */
+export function resolveGoogleAdsConversionId(campaign) {
+  return campaign?.googleAdsConversionId || import.meta.env.VITE_GOOGLE_ADS_CONVERSION_ID || '';
+}
+
+/**
+ * The conversion ACTION label that pairs with the id above (see googleAds.js —
+ * `send_to` needs both halves). Account-level like the id; a campaign override
+ * would let one campaign report into its own conversion action.
+ */
+export function resolveGoogleAdsLeadLabel(campaign) {
+  return campaign?.googleAdsLeadLabel || import.meta.env.VITE_GOOGLE_ADS_LEAD_LABEL || '';
+}
+
+/** Every platform id for a campaign. */
 export function resolvePixelIds(campaign) {
   return {
     metaPixelId: resolveMetaPixelId(campaign),
     tiktokPixelId: resolveTikTokPixelId(campaign),
+    googleAdsConversionId: resolveGoogleAdsConversionId(campaign),
   };
 }

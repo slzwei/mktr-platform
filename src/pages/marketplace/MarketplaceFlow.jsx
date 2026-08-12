@@ -16,7 +16,11 @@ import {
   shouldTrack, generateEventId, captureFbcFromUrl, captureUtmsFromUrl,
   readFbc, readFbp, readUtms, ensureFbp, initPixel, trackEvent, trackLead,
 } from '@/lib/metaPixel';
-import { resolveMetaPixelId, resolveTikTokPixelId } from '@/lib/pixelIds';
+import {
+  resolveMetaPixelId, resolveTikTokPixelId,
+  resolveGoogleAdsConversionId, resolveGoogleAdsLeadLabel,
+} from '@/lib/pixelIds';
+import { shouldTrackGoogle, initGoogleAds, trackGoogleLead } from '@/lib/googleAds';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 import {
   shouldTrackTikTok, captureTtclidFromUrl, readTtclid, readTtp,
@@ -174,6 +178,16 @@ export default function MarketplaceFlow() {
         initTikTokPixel(ttPixelId);
         trackTikTokViewContent({ content_name: listingTitleOf(campaign), content_type: 'marketplace' }, vc.eventId);
         markVcFired(campaign.id, 'tiktok');
+      }
+    }
+    // Google has no explicit ViewContent — gtag('config') emits its own
+    // page_view — so configuring the id here IS this network's view event, and
+    // it takes the same once-per-session guard as the other two.
+    const googleId = resolveGoogleAdsConversionId(campaign);
+    if (!vc.firedGoogle && shouldTrackGoogle({ ...trackCtx, conversionId: googleId })) {
+      if (googleId) {
+        initGoogleAds(googleId);
+        markVcFired(campaign.id, 'google');
       }
     }
   }, [campaign]);
@@ -390,6 +404,18 @@ export default function MarketplaceFlow() {
         }
         if (shouldTrackTikTok({ ...trackCtx, pixelId: resolveTikTokPixelId(campaign) })) {
           trackTikTokLead({ content_name: listingTitleOf(campaign) }, leadEventIdRef.current);
+        }
+        const googleId = resolveGoogleAdsConversionId(campaign);
+        if (shouldTrackGoogle({ ...trackCtx, conversionId: googleId })) {
+          // init before firing, not just in the view effect: a full document load
+          // straight onto /flow with firedGoogle already set (offer page earlier in
+          // the same tab) skips that effect, and a conversion sent to an
+          // unconfigured id is dropped. initGoogleAds is idempotent, so this is
+          // free when the view effect already ran.
+          initGoogleAds(googleId);
+          trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
+            transactionId: leadEventIdRef.current,
+          });
         }
         if (isDraw) trackCustom('draw_entry_confirmed');
         setResult({
