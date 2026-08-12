@@ -51,6 +51,21 @@
         }(window, document, 'ttq');
       })();
     </script>
+
+    <!-- Google Ads gtag base stub (gated on VITE_GOOGLE_ADS_CONVERSION_ID).
+         Defines dataLayer + the gtag queue but does NOT inject gtag.js and does
+         NOT call gtag('config') — React (googleAds.initGoogleAds) does both, and
+         only on the live public campaign surfaces, so the SDK never loads on
+         admin/preview pages (same contract as the ttq stub above). -->
+    <script>
+      (function () {
+        var CONVERSION_ID = '%VITE_GOOGLE_ADS_CONVERSION_ID%';
+        if (!CONVERSION_ID || CONVERSION_ID.charAt(0) === '%') return;
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () { window.dataLayer.push(arguments); };
+        window.gtag('js', new Date());
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

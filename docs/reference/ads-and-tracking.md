@@ -1,4 +1,4 @@
-# Ads & Tracking Reference (Meta + TikTok)
+# Ads & Tracking Reference (Meta + TikTok + Google)
 
 > Extracted from `CLAUDE.md` 2026-07-15 to keep per-session context lean. This is
 > lookup material — read it when doing ads / pixel / CAPI / audience work.
@@ -113,3 +113,51 @@ The TikTok counterpart of the Meta funnel — a browser **Pixel** (`ttq`) plus a
 **Live status (verified 2026-06-17):** browser Pixel live on **redeem.sg** and **mktr.sg** (both static sites bake `VITE_TIKTOK_PIXEL_ID`); backend Events API firing `Lead` + `CompleteRegistration` successfully — `tiktok.lead.sent` appears continuously in `mktr-backend-jo6r` Render logs (2026-06-04 → 2026-06-16). Note: `.env.example` ships `TIKTOK_EVENTS_API_ENABLED=false` + blank ids — that is the example default, NOT prod state; check the live deploy/logs.
 
 **TODO:** add TikTok's **domain verification** for `redeem.sg` in TikTok Events Manager (the Meta `facebook-domain-verification` TXT is already present; TikTok needs its own record). Not required for the Events API to fire, but it improves pixel attribution / event match quality.
+
+## Google Ads — browser tag only (no server-side yet)
+
+The third network, added 2026-08-12 for the SG new-advertiser promo (spend S$600
+in 60 days → S$600 credit) pointed at the Tokyo Getaway draw via **Demand Gen**.
+Browser `gtag.js` conversion tag ONLY — deliberately the "just enough" tier:
+no Enhanced Conversions for Leads, no offline conversion import, and **no
+gclid/gbraid/wbraid capture** (gtag.js persists click ids itself in its `_gcl_aw`
+first-party cookie, and Google rejects offline conversions for clicks >90 days
+old, so there is no click history worth banking before the upload exists). The
+upgrade path hangs off the existing `POST /api/integrations/lyfe/lead-outcome`
+reverse path, exactly like Meta's `ConfirmedResident`/`ClosedWon`.
+
+### Tracking code
+
+- `index.html` — dataLayer/`gtag` queue stub, gated on `VITE_GOOGLE_ADS_CONVERSION_ID`
+  (defines the queue only; does NOT inject gtag.js and does NOT call `config` —
+  same `charAt(0)==='%'` unset-guard as the other two stubs).
+- `src/lib/googleAds.js` — `initGoogleAds` (lazily injects gtag.js + `config`s the
+  id, only after `shouldTrackGoogle` passes, so the SDK never loads on
+  admin/preview surfaces); `trackGoogleConversion`/`trackGoogleLead`. Google
+  quirks encoded there: conversions are addressed as `send_to:
+  "{AW-id}/{label}"` (BOTH halves required — a missing label is silently
+  discarded by Google, so the lib refuses to emit instead); `gtag('config')`
+  emits its own page_view, so config IS the view event (no separate ViewContent;
+  it rides the shared `vc:{campaignId}` session guard as `firedGoogle`); dedup is
+  `transaction_id`, fed the SAME stable event id Meta/TikTok use.
+- Suppression via shared `src/lib/pixelSuppression.js`, resolution via
+  `src/lib/pixelIds.js` (`resolveGoogleAdsConversionId` / `resolveGoogleAdsLeadLabel`
+  read a per-campaign override first — no DB column exists yet, so env-only today).
+- Wired on the three public surfaces alongside Meta/TikTok: `MarketplaceOffer`
+  (config = view), `MarketplaceFlow` + `LeadCapture` (config + Lead conversion at
+  successful `/prospects` submit; no value/currency — same rationale as the Meta
+  `value: 0` desync note in `LeadCapture.jsx`).
+
+### Google env vars
+
+(public — embedded in page source; there is no secret half until a server-side
+integration exists)
+
+| Var | Component | Value / Notes |
+|---|---|---|
+| `VITE_GOOGLE_ADS_CONVERSION_ID` | Frontend build (both static sites) | `AW-XXXXXXXXX` from the conversion action's tag-setup screen. Unset ⇒ whole tag is dark. |
+| `VITE_GOOGLE_ADS_LEAD_LABEL` | Frontend build (both static sites) | Conversion-action label (the part after `/` in `send_to`). Unset ⇒ view tracking only, Lead conversions refuse to emit. |
+| `VITE_GOOGLE_ADS_DEV_MODE` | Dev/staging only | Google has no test-event-code; any non-empty value lets dev builds fire. Empty in production. |
+
+**Status:** shipped dark — the account (and therefore both values) doesn't exist
+yet; set both on `redeem-frontend` + `mktr-platform` in Render when it does.

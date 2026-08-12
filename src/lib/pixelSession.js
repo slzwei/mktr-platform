@@ -47,25 +47,35 @@ function writeState(campaignId, state) {
 
 /** Get (or mint) the campaign's ViewContent state for this session. */
 export function getOrCreateVcState(campaignId) {
-  if (!campaignId) return { eventId: generateEventId(), firedMeta: false, firedTiktok: false };
+  if (!campaignId) {
+    return { eventId: generateEventId(), firedMeta: false, firedTiktok: false, firedGoogle: false };
+  }
   const existing = readState(campaignId);
   if (existing) {
     return {
       eventId: existing.eventId,
       firedMeta: existing.firedMeta === true,
       firedTiktok: existing.firedTiktok === true,
+      firedGoogle: existing.firedGoogle === true,
     };
   }
-  const fresh = { eventId: generateEventId(), firedMeta: false, firedTiktok: false };
+  const fresh = { eventId: generateEventId(), firedMeta: false, firedTiktok: false, firedGoogle: false };
   writeState(campaignId, fresh);
   return fresh;
 }
 
-/** Record that a platform's ViewContent fired for this campaign this session. */
+/**
+ * Record that a platform's ViewContent fired for this campaign this session.
+ *
+ * Google has no explicit ViewContent call — `gtag('config')` emits its own
+ * page_view — so 'google' marks that the id has been CONFIGURED, which is the
+ * same once-per-session guarantee expressed in that network's terms.
+ */
 export function markVcFired(campaignId, platform) {
   if (!campaignId) return;
   const state = getOrCreateVcState(campaignId);
   if (platform === 'meta') state.firedMeta = true;
   if (platform === 'tiktok') state.firedTiktok = true;
+  if (platform === 'google') state.firedGoogle = true;
   writeState(campaignId, state);
 }

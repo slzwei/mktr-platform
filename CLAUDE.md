@@ -104,6 +104,7 @@ so the schema tests run against is prod's BY CONSTRUCTION. Consequences:
 
 - **Meta**: browser Pixel (`src/lib/metaPixel.js`) + fire-and-forget CAPI (`backend/src/services/metaCapiService.js`), gated by `shouldFireCapi` (skips Retell + Meta-Lead-Ads origins). Ad account `act_2170132703771607`, pixel `1402034528611431`.
 - **TikTok**: mirror of Meta — Pixel (`src/lib/tiktokPixel.js`) + Events API (`backend/src/services/tiktokEventsService.js`). Pixel `D8GJ6T3C77UDLID6746G`. Live in prod.
+- **Google Ads**: browser gtag tag only (`src/lib/googleAds.js`), same shared suppression gate + event ids; conversions need BOTH `VITE_GOOGLE_ADS_CONVERSION_ID` and `VITE_GOOGLE_ADS_LEAD_LABEL` (unset = dark). No click-id capture / server-side by design — deferred until the channel proves.
 - **Down-funnel**: agent-confirmed SC/PR fires `ConfirmedResident`/`ClosedWon` back from Lyfe → `POST /api/integrations/lyfe/lead-outcome`.
 - **Lead quality**: per-campaign `design_config.sgPrOnly` gate (client-side, self-declared) + Meta customer-list exclusion sync (`redeemedAudienceService`).
 

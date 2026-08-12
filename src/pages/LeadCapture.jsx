@@ -41,7 +41,11 @@ import {
   trackTikTokLead,
 } from '../lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '../lib/pixelSession';
-import { resolveMetaPixelId, resolveTikTokPixelId } from '../lib/pixelIds';
+import {
+  resolveMetaPixelId, resolveTikTokPixelId,
+  resolveGoogleAdsConversionId, resolveGoogleAdsLeadLabel,
+} from '../lib/pixelIds';
+import { shouldTrackGoogle, initGoogleAds, trackGoogleLead } from '../lib/googleAds';
 import { trackFunnelEvent } from '../lib/pixelCustom';
 
 export default function LeadCapture() {
@@ -143,6 +147,17 @@ export default function LeadCapture() {
         );
         ttViewContentFiredRef.current = true;
         markVcFired(campaign.id, 'tiktok');
+      }
+    }
+
+    // Google: gtag('config') emits its own page_view, so configuring the id here
+    // IS this network's view event. No local fired-ref — initGoogleAds is
+    // idempotent per id on its own, unlike initPixel + a separate trackEvent.
+    const googleId = resolveGoogleAdsConversionId(campaign);
+    if (!vc.firedGoogle && shouldTrackGoogle({ ...trackCtx, conversionId: googleId })) {
+      if (googleId) {
+        initGoogleAds(googleId);
+        markVcFired(campaign.id, 'google');
       }
     }
   }, [campaign, location.pathname, location.search]);
@@ -404,6 +419,15 @@ export default function LeadCapture() {
               leadEventIdRef.current
             );
           }
+        }
+        // Same no-value rule as Meta above: Google would otherwise record every
+        // lead at a fixed price and skew Smart Bidding the same way.
+        const googleId = resolveGoogleAdsConversionId(campaign);
+        if (shouldTrackGoogle({ ...trackCtx, conversionId: googleId })) {
+          initGoogleAds(googleId);
+          trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
+            transactionId: leadEventIdRef.current,
+          });
         }
         setSubmitted(true);
         setShareOpen(true);
