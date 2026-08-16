@@ -11,7 +11,12 @@
  *   node scripts/run-lucky-draw.js reviews --draw <id>
  *   node scripts/run-lucky-draw.js review  --draw <id> --entitlement <id> --approve|--reject [--reason "…"] --as …
  *   node scripts/run-lucky-draw.js seal    --draw <id>                --as …
- *   node scripts/run-lucky-draw.js draw    --draw <id> [--witness <email|userId>] [--reason unclaimed|…] --as …
+ *   node scripts/run-lucky-draw.js ceremony --draw <id> --witness <email|userId> [--allow-partial-award] --as …
+ *   node scripts/run-lucky-draw.js draw    --draw <id> [--witness <email|userId>] [--reason unclaimed|…] [--unit <n>] --as …
+ *
+ * `ceremony` is the INITIAL pick and awards every prize unit in one witnessed
+ * transaction — use it for any draw, single- or multi-winner. `draw` is the
+ * per-unit REDRAW: pass --unit <n> to replace the winner of that prize unit.
  *   node scripts/run-lucky-draw.js outcome --attempt <id> --outcome claimed|unclaimed|unreachable|ineligible|declined --as …
  *   node scripts/run-lucky-draw.js publish --draw <id>                --as …
  *   node scripts/run-lucky-draw.js verify  --draw <id>
@@ -99,6 +104,32 @@ async function main() {
       out(await svc.sealDraw(flags.draw, user));
       break;
     }
+    /**
+     * THE CEREMONY — every prize unit picked in one witnessed transaction.
+     * This is the command for a multi-winner draw's initial pick; `draw` remains
+     * the per-unit REDRAW. Refuses to award fewer winners than the terms promise
+     * unless --allow-partial-award makes that an explicit, recorded decision.
+     */
+    case 'ceremony': {
+      const user = await resolveUser(flags.as);
+      if (!flags.witness) {
+        throw new Error('--witness <email|userId> is required for the ceremony (the public promise is a witnessed pick)');
+      }
+      const witness = await resolveUser(flags.witness);
+      const result = await svc.runInitialDraw(
+        flags.draw,
+        { witnessUserId: witness.id, allowPartialAward: Boolean(flags['allow-partial-award']) },
+        user
+      );
+      out({
+        drawId: result.drawId,
+        winnersCount: result.winnersCount,
+        awarded: result.awarded,
+        // masked: displayName + phoneLast4 (+ prospectId for the admin lookup)
+        picks: result.picks,
+      });
+      break;
+    }
     case 'draw': {
       const user = await resolveUser(flags.as);
       // The witness is the point of "witnessed by MKTR staff" — it must be a
@@ -109,11 +140,16 @@ async function main() {
       const witness = await resolveUser(flags.witness);
       const result = await svc.runDrawAttempt(
         flags.draw,
-        { witnessUserId: witness.id, reason: flags.reason || 'initial' },
+        {
+          witnessUserId: witness.id,
+          reason: flags.reason || 'initial',
+          prizeUnitIndex: Number(flags.unit ?? 0),
+        },
         user
       );
       out({
         attemptNo: result.attempt.attemptNo,
+        prizeUnitIndex: result.attempt.prizeUnitIndex,
         seed: result.attempt.seed,
         totalChances: result.attempt.totalChances,
         claimDeadline: result.attempt.claimDeadline,

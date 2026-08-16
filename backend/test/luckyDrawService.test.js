@@ -85,7 +85,14 @@ function buildDeps({ draw = null, prospects = [], entries = [], attempts = [], r
   };
 
   const DrawAttempt = {
-    findAll: jest.fn().mockImplementation(async () => state.attempts.map((a) => ({ ...a }))),
+    // Honours the scalar `where` keys the service actually uses (drawId,
+    // outcome). A findAll mock that ignored `where` would hand the terminal-state
+    // logic every attempt regardless of outcome and quietly pass a broken engine.
+    findAll: jest.fn().mockImplementation(async ({ where = {} } = {}) => state.attempts
+      .filter((a) => Object.entries(where).every(([k, v]) => (
+        typeof v === 'string' || typeof v === 'number' ? a[k] === v : true
+      )))
+      .map((a) => ({ ...a }))),
     findByPk: jest.fn().mockImplementation(async (id) => {
       const row = state.attempts.find((a) => a.id === id);
       return row ? { ...row } : null;
@@ -195,7 +202,10 @@ describe('createDraw', () => {
     await expect(svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN)).rejects.toMatchObject({ statusCode: 422 });
   });
 
-  it('422s (DRAW_MULTI_PRIZE_UNSUPPORTED) when structured prizes total more than one unit', async () => {
+  // Phase 3: the multi-prize gate is GONE. A structured multi-prize config now
+  // mints a draw that snapshots what it awards — Σqty prize units, the prize
+  // list verbatim, and the v2 selection algorithm.
+  it('snapshots prizes + winnersCount when structured prizes total more than one unit', async () => {
     const { deps } = buildDeps();
     deps.Campaign.findByPk.mockResolvedValue({
       id: CAMPAIGN_ID,
@@ -203,15 +213,53 @@ describe('createDraw', () => {
         luckyDraw: {
           enabled: true,
           closesAt: '2026-08-31',
+          activationId: 'act-1',
           prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }],
         },
+      },
+    });
+    deps.Activation.findByPk.mockResolvedValue({ id: 'act-1', campaignId: CAMPAIGN_ID, unlockPolicy: 'agent_unlock' });
+    const svc = makeLuckyDrawService(deps);
+    await svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN);
+
+    expect(deps.Draw.create).toHaveBeenCalledWith(expect.objectContaining({
+      winnersCount: 4,
+      algorithmVersion: 2,
+      prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }],
+    }));
+  });
+
+  // The one promise the engine still refuses: N winners with no prize rows to
+  // expand, which would advertise more winners than the ceremony can award.
+  it('422s (DRAW_UNSTRUCTURED_MULTI_WINNER) for a legacy winners:N config with no prizes[]', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: {
+        luckyDraw: { enabled: true, closesAt: '2026-08-31', prize: 'A pile of things', winners: 5 },
       },
     });
     const svc = makeLuckyDrawService(deps);
     await expect(svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN)).rejects.toMatchObject({
       statusCode: 422,
-      data: { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' },
+      data: { code: 'DRAW_UNSTRUCTURED_MULTI_WINNER' },
     });
+  });
+
+  it('a legacy single-prize config snapshots NULL prizes and exactly one unit', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: { luckyDraw: { enabled: true, closesAt: '2026-08-31', activationId: 'act-1', prize: 'One iPhone' } },
+    });
+    deps.Activation.findByPk.mockResolvedValue({ id: 'act-1', campaignId: CAMPAIGN_ID, unlockPolicy: 'agent_unlock' });
+    const svc = makeLuckyDrawService(deps);
+    await svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN);
+
+    expect(deps.Draw.create).toHaveBeenCalledWith(expect.objectContaining({
+      prizes: null,
+      winnersCount: 1,
+    }));
   });
 
   it('a single structured prize (one row, qty 1) still creates the draw — stamp-absent resolves the active rail (F3)', async () => {
@@ -775,5 +823,223 @@ describe('seed commit-reveal', () => {
     expect(report.ok).toBe(true);
     expect(report.checks.find((c) => c.check === 'seedCommitment').note)
       .toMatch(/sealed before commit-reveal/i);
+  });
+});
+
+// ── The ceremony: N winners in one witnessed transaction (Phase 3) ──────────
+
+/** A sealed multi-winner draw: `winnersCount` units, v2 selection. */
+function sealedMultiScenario({ entries, winnersCount, prizes = null, attempts = [] }) {
+  return buildDeps({
+    draw: {
+      ...openDraw,
+      status: attempts.length > 0 ? 'drawn' : 'sealed',
+      poolHash: computePoolHash(entries),
+      sealedSeed: 'a'.repeat(64),
+      seedCommitment: sha('a'.repeat(64)),
+      winnersCount,
+      algorithmVersion: 2,
+      prizes: prizes || [{ qty: winnersCount, name: 'AirPods Pro 3' }],
+    },
+    entries,
+    attempts,
+  });
+}
+
+describe('runInitialDraw — the multi-winner ceremony', () => {
+  const fiveEntries = [
+    entryRow('e1', 'p1', '+6591111111', 1),
+    entryRow('e2', 'p2', '+6592222222', 10, 'agent_scan'),
+    entryRow('e3', 'p3', '+6593333333', 1),
+    entryRow('e4', 'p4', '+6594444444', 1),
+    entryRow('e5', 'p5', '+6595555555', 1),
+  ];
+
+  it('awards every prize unit to a DISTINCT entrant in one transaction', async () => {
+    const { deps, state } = sealedMultiScenario({ entries: fiveEntries, winnersCount: 5 });
+    const svc = makeLuckyDrawService(deps);
+    const result = await svc.runInitialDraw(DRAW_ID, { witnessUserId: 'w-1' }, ADMIN);
+
+    expect(result.awarded).toBe(5);
+    expect(state.attempts).toHaveLength(5);
+    // One prize per person — the T&C promise, enforced by a GLOBAL exclusion set.
+    expect(new Set(state.attempts.map((a) => a.pickedEntryId)).size).toBe(5);
+    // One attempt per unit, units 0..4, attemptNo 1..5.
+    expect(state.attempts.map((a) => a.prizeUnitIndex).sort()).toEqual([0, 1, 2, 3, 4]);
+    expect(state.attempts.map((a) => a.attemptNo).sort()).toEqual([1, 2, 3, 4, 5]);
+    expect(state.draw.status).toBe('drawn');
+    expect(state.attempts.every((a) => a.outcome === 'pending')).toBe(true);
+  });
+
+  it('carries the prize name for each unit from the draw SNAPSHOT', async () => {
+    const prizes = [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 2, name: '$100 Voucher' }];
+    const { deps } = sealedMultiScenario({ entries: fiveEntries, winnersCount: 3, prizes });
+    const svc = makeLuckyDrawService(deps);
+    const { picks } = await svc.runInitialDraw(DRAW_ID, {}, ADMIN);
+    expect(picks.map((p) => p.prize)).toEqual(['iPhone 17 Pro', '$100 Voucher', '$100 Voucher']);
+  });
+
+  it('REFUSES to award fewer winners than promised (blocker #7)', async () => {
+    const { deps, state } = sealedMultiScenario({ entries: fiveEntries.slice(0, 3), winnersCount: 5 });
+    const svc = makeLuckyDrawService(deps);
+    await expect(svc.runInitialDraw(DRAW_ID, {}, ADMIN)).rejects.toMatchObject({
+      statusCode: 409,
+      data: { code: 'DRAW_INSUFFICIENT_ENTRIES', winnersCount: 5, eligible: 3 },
+    });
+    // Nothing partially written, draw untouched.
+    expect(state.attempts).toHaveLength(0);
+    expect(state.draw.status).toBe('sealed');
+  });
+
+  it('awards short ONLY on an explicit, recorded decision', async () => {
+    const { deps } = sealedMultiScenario({ entries: fiveEntries.slice(0, 3), winnersCount: 5 });
+    const svc = makeLuckyDrawService(deps);
+    const result = await svc.runInitialDraw(DRAW_ID, { allowPartialAward: true }, ADMIN);
+    expect(result.awarded).toBe(3);
+    expect(result.winnersCount).toBe(5);
+  });
+
+  it('excludes erased entrants (prospectId NULL) from the pool', async () => {
+    const withErased = [...fiveEntries.slice(0, 4), { ...fiveEntries[4], prospectId: null }];
+    const { deps, state } = sealedMultiScenario({ entries: withErased, winnersCount: 4 });
+    const svc = makeLuckyDrawService(deps);
+    await svc.runInitialDraw(DRAW_ID, {}, ADMIN);
+    expect(state.attempts.some((a) => a.pickedEntryId === 'e5')).toBe(false);
+  });
+
+  it('refuses to run twice', async () => {
+    const { deps } = sealedMultiScenario({ entries: fiveEntries, winnersCount: 2 });
+    const svc = makeLuckyDrawService(deps);
+    await svc.runInitialDraw(DRAW_ID, {}, ADMIN);
+    await expect(svc.runInitialDraw(DRAW_ID, {}, ADMIN)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('a legacy single-winner draw still awards exactly one', async () => {
+    const { deps, state } = sealedMultiScenario({ entries: fiveEntries, winnersCount: 1, prizes: null });
+    const svc = makeLuckyDrawService(deps);
+    const result = await svc.runInitialDraw(DRAW_ID, {}, ADMIN);
+    expect(result.awarded).toBe(1);
+    expect(state.attempts[0].prizeUnitIndex).toBe(0);
+  });
+});
+
+describe('per-unit lifecycle', () => {
+  const entries = [
+    entryRow('e1', 'p1', '+6591111111', 1),
+    entryRow('e2', 'p2', '+6592222222', 1),
+    entryRow('e3', 'p3', '+6593333333', 1),
+    entryRow('e4', 'p4', '+6594444444', 1),
+  ];
+
+  /** Run a 3-unit ceremony and return the service + state. */
+  async function ceremony() {
+    const { deps, state } = sealedMultiScenario({ entries, winnersCount: 3 });
+    const svc = makeLuckyDrawService(deps);
+    await svc.runInitialDraw(DRAW_ID, {}, ADMIN);
+    return { svc, state };
+  }
+
+  it('a claim on ONE unit does not end the draw', async () => {
+    const { svc, state } = await ceremony();
+    await svc.recordAttemptOutcome(state.attempts[0].id, { outcome: 'claimed' }, ADMIN);
+    expect(state.draw.status).toBe('drawn');
+  });
+
+  it('the draw becomes claimed only when EVERY unit is claimed', async () => {
+    const { svc, state } = await ceremony();
+    await svc.recordAttemptOutcome(state.attempts[0].id, { outcome: 'claimed' }, ADMIN);
+    await svc.recordAttemptOutcome(state.attempts[1].id, { outcome: 'claimed' }, ADMIN);
+    expect(state.draw.status).toBe('drawn');
+    await svc.recordAttemptOutcome(state.attempts[2].id, { outcome: 'claimed' }, ADMIN);
+    expect(state.draw.status).toBe('claimed');
+  });
+
+  it('a pending attempt on one unit does not block a redraw on another', async () => {
+    const { svc, state } = await ceremony();
+    // Unit 1 fails; unit 0 and 2 are still pending.
+    await svc.recordAttemptOutcome(state.attempts[1].id, { outcome: 'declined' }, ADMIN);
+    const { attempt } = await svc.runDrawAttempt(
+      DRAW_ID, { reason: 'declined', prizeUnitIndex: 1 }, ADMIN
+    );
+    expect(attempt.prizeUnitIndex).toBe(1);
+    // The replacement is someone who has not already won.
+    const live = state.attempts.filter((a) => ['pending', 'claimed'].includes(a.outcome));
+    expect(new Set(live.map((a) => a.pickedEntryId)).size).toBe(live.length);
+  });
+
+  it('refuses a redraw while THAT unit is still pending', async () => {
+    const { svc } = await ceremony();
+    await expect(
+      svc.runDrawAttempt(DRAW_ID, { reason: 'declined', prizeUnitIndex: 0 }, ADMIN)
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('refuses a redraw on a unit that is already claimed', async () => {
+    const { svc, state } = await ceremony();
+    await svc.recordAttemptOutcome(state.attempts[0].id, { outcome: 'claimed' }, ADMIN);
+    await expect(
+      svc.runDrawAttempt(DRAW_ID, { reason: 'declined', prizeUnitIndex: 0 }, ADMIN)
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('requires the redraw reason to match THAT unit’s last outcome', async () => {
+    const { svc, state } = await ceremony();
+    await svc.recordAttemptOutcome(state.attempts[1].id, { outcome: 'declined' }, ADMIN);
+    await expect(
+      svc.runDrawAttempt(DRAW_ID, { reason: 'unreachable', prizeUnitIndex: 1 }, ADMIN)
+    ).rejects.toMatchObject({ statusCode: 422 });
+  });
+
+  it('rejects a unit index outside the draw', async () => {
+    const { svc } = await ceremony();
+    await expect(
+      svc.runDrawAttempt(DRAW_ID, { reason: 'initial', prizeUnitIndex: 9 }, ADMIN)
+    ).rejects.toMatchObject({ statusCode: 422 });
+  });
+
+  it('verifyDraw replays every unit and reports the structural checks', async () => {
+    const { svc } = await ceremony();
+    const report = await svc.verifyDraw(DRAW_ID);
+    expect(report.ok).toBe(true);
+    expect(report.checks.filter((c) => /\.pick$/.test(c.check))).toHaveLength(3);
+    expect(report.checks.find((c) => c.check === 'prizeUnitBounds')?.ok).toBe(true);
+    expect(report.checks.find((c) => c.check === 'oneClaimPerUnit')?.ok).toBe(true);
+    expect(report.checks.find((c) => c.check === 'onePrizePerEntry')?.ok).toBe(true);
+  });
+
+  /**
+   * Blocker #15 — the pick is BOUND to its prize unit: the unit index is part of
+   * the HMAC message, so re-deriving an award under a different unit lands on a
+   * different entrant and the replay fails.
+   *
+   * Detection is strong, not absolute, and the fixture is chosen to reflect that
+   * honestly: with N candidates left, a reassigned unit still has a ~1/N chance
+   * of coincidentally re-deriving the SAME entrant (on this 8-candidate pool,
+   * units 1, 2 and 4 all happen to yield w5). The unstorable-by-construction
+   * guarantees are the partial unique indexes; the verifier is a detector on
+   * top of them. Unit 0 re-derives to a different entrant here, so the check
+   * is deterministic.
+   */
+  it('verifyDraw FLAGS an attempt reassigned to a different prize unit', async () => {
+    const wide = Array.from({ length: 10 }, (_, i) => entryRow(`w${i}`, `pw${i}`, `+659${i}${i}${i}${i}${i}${i}${i}${i}`, 1));
+    const { deps, state } = sealedMultiScenario({ entries: wide, winnersCount: 3 });
+    const svc = makeLuckyDrawService(deps);
+    await svc.runInitialDraw(DRAW_ID, {}, ADMIN);
+    expect((await svc.verifyDraw(DRAW_ID)).ok).toBe(true);
+
+    state.attempts[2].prizeUnitIndex = 0; // tamper: move a pick to another unit
+    const report = await svc.verifyDraw(DRAW_ID);
+    expect(report.ok).toBe(false);
+    // It fails on the PICK replay (the unit is still structurally in range).
+    expect(report.checks.find((c) => c.check === 'attempt#3.pick')?.ok).toBe(false);
+  });
+
+  it('getDrawState rolls up one row per prize unit', async () => {
+    const { svc } = await ceremony();
+    const view = await svc.getDrawState(DRAW_ID);
+    expect(view.units).toHaveLength(3);
+    expect(view.units.map((u) => u.unitIndex)).toEqual([0, 1, 2]);
+    expect(view.units.every((u) => u.status === 'pending' && u.winner)).toBe(true);
+    expect(view.draw.winnersCount).toBe(3);
   });
 });

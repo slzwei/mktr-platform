@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { makeDrawStatusOps } from './luckyDrawStatusService.js';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import {
   Draw, DrawEntry, DrawAttempt, DrawBoostReview,
   Campaign, Prospect, Activation, RewardEntitlement, RedemptionEvent,
@@ -10,7 +10,12 @@ import {
 import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
-import { normalizeLuckyDraw, assertSingleWinnerDraw } from '../utils/luckyDraw.js';
+import {
+  normalizeLuckyDraw, assertPromiseIsDeliverable, expandPrizeUnits, totalPrizeQuantity,
+} from '../utils/luckyDraw.js';
+import {
+  pickWinnerFor, pickWinnerV1, CURRENT_ALGORITHM_VERSION, ALGORITHM_V1_LEGACY_MOD,
+} from '../utils/drawSelection.js';
 import { getSystemAgentId } from './systemAgent.js';
 
 /**
@@ -82,23 +87,42 @@ export function computeEligibleHash(eligibleEntries) {
 }
 
 /**
- * Deterministic weighted pick: entries ordered by id ASC, expanded by
- * `chances`; winner index = sha256(seed) as a 256-bit integer mod
- * totalChances. Modulo bias is ≤ totalChances/2^256 — immeasurably small for
- * any real pool — accepted in exchange for a pick anyone can re-derive with
- * one hash. Returns the winning entry.
+ * Legacy single-winner pick — `sha256(seed) mod totalChances`. Kept as a named
+ * export because existing tests and the verifier's v1 replay path call it
+ * directly; the implementation now lives in utils/drawSelection.js so the
+ * ceremony and the verifier can never drift apart.
+ *
+ * NEW draws do not come through here — they use the v2 domain-separated
+ * derivation (see selectForUnit below), because reusing one digest across N
+ * picks is provably biased.
  */
 export function pickWinner(seedHex, eligibleEntries) {
-  const total = eligibleEntries.reduce((n, e) => n + e.chances, 0);
-  if (total <= 0) throw new AppError('No eligible entries to draw from', 409);
-  const value = BigInt(`0x${sha256Hex(seedHex)}`) % BigInt(total);
-  let cumulative = 0n;
-  for (const entry of eligibleEntries) {
-    cumulative += BigInt(entry.chances);
-    if (value < cumulative) return entry;
-  }
-  // Unreachable: value < total by construction.
-  throw new AppError('Pick walked past the pool — invariant broken', 500);
+  const picked = pickWinnerV1(seedHex, eligibleEntries);
+  if (!picked) throw new AppError('No eligible entries to draw from', 409);
+  return picked;
+}
+
+/**
+ * The ONE selection entry point for both the ceremony and the verifier.
+ * Version-dispatched so a historical draw replays under the algorithm that
+ * actually ran it.
+ */
+function selectForUnit(draw, seedHex, eligible, { unitIndex, attemptNo }) {
+  const picked = pickWinnerFor(draw.algorithmVersion ?? ALGORITHM_V1_LEGACY_MOD, seedHex, eligible, {
+    drawId: String(draw.id), unitIndex, attemptNo,
+  });
+  if (!picked) throw new AppError('No eligible entries to draw from', 409);
+  return picked;
+}
+
+/**
+ * Which prize unit an attempt awards. Legacy attempts predate the column and a
+ * single-prize draw has exactly one unit, so absent/garbage reads as unit 0 —
+ * never NaN, which would silently match no unit and skip every per-unit guard.
+ */
+function unitOf(attempt) {
+  const n = Number(attempt?.prizeUnitIndex);
+  return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
 /** Entries ordered by id ASC — the ONE canonical order every hash/pick uses. */
@@ -169,10 +193,11 @@ export function makeLuckyDrawService(overrides = {}) {
     if (ld?.enabled !== true) {
       throw new AppError('Campaign has no enabled luckyDraw config (designer → luckyDraw)', 422);
     }
-    // Fail-closed until the multi-winner engine ships: this engine resolves
-    // exactly ONE claimed winner per draw (a claimed attempt is terminal), so
-    // a multi-prize config must not mint a record it cannot deliver.
-    assertSingleWinnerDraw(normalizeLuckyDraw(ld));
+    // Structured multi-prize draws are fully supported (Phase 3). What is still
+    // refused: an UNSTRUCTURED promise of several winners, which gives the
+    // engine no unit list to award from — see assertPromiseIsDeliverable.
+    const normalizedLd = normalizeLuckyDraw(ld);
+    assertPromiseIsDeliverable(normalizedLd);
     const closesAtMs = ld.closesAt ? sgtDayEndExclusiveMs(ld.closesAt) : null;
     if (closesAtMs === null) {
       throw new AppError('luckyDraw.closesAt (YYYY-MM-DD) is required to create a draw', 422);
@@ -221,6 +246,15 @@ export function makeLuckyDrawService(overrides = {}) {
       }
     }
 
+    // SNAPSHOT what this draw awards (Phase 3 §3.2). From here on the engine
+    // reads the draw row, never the campaign — editing prizes must not change
+    // an in-flight draw. Legacy/unstructured configs snapshot NULL + 1 unit,
+    // which is byte-identical to how every historical draw behaves.
+    const structuredPrizes = Array.isArray(normalizedLd?.prizes) && normalizedLd.prizes.length > 0
+      ? normalizedLd.prizes
+      : null;
+    const winnersCount = structuredPrizes ? totalPrizeQuantity(normalizedLd) : 1;
+
     try {
       const draw = await d.Draw.create({
         campaignId,
@@ -229,6 +263,9 @@ export function makeLuckyDrawService(overrides = {}) {
         closesAt: new Date(closesAtMs),
         boostClosesAt: boostClosesAtMs !== null ? new Date(boostClosesAtMs) : null,
         multiplier: ld.multiplier || 10,
+        prizes: structuredPrizes,
+        winnersCount,
+        algorithmVersion: CURRENT_ALGORITHM_VERSION,
         status: 'open',
         createdBy: user.id,
       });
@@ -460,78 +497,212 @@ export function makeLuckyDrawService(overrides = {}) {
     return { drawId: draw.id, entries: entries.length, boosted: boosted.length, totalChances, poolHash, seedCommitment };
   }
 
-  /**
-   * The witnessed pick. Eligible = entries minus ALL previously picked minus
-   * erased entrants (prospectId NULL). The seed is minted NOW (commit/reveal:
-   * poolHash predates it), recorded with totalChances + eligibleHash so the
-   * pick is re-derivable forever. Redraws pass `reason` = the prior attempt's
-   * failure mode and require that attempt to be closed out first.
-   */
-  async function runDrawAttempt(drawId, { witnessUserId = null, reason = 'initial' } = {}, user) {
-    if (!ATTEMPT_REASONS.has(reason)) {
-      throw new AppError(`reason must be one of: ${[...ATTEMPT_REASONS].join(', ')}`, 422);
-    }
-    const draw = await getDrawOr404(drawId);
-    if (!['sealed', 'drawn'].includes(draw.status)) {
-      throw new AppError(`Draw is ${draw.status}, expected sealed (or drawn, for a redraw)`, 409);
-    }
+  /** Prize name for a unit, from the draw's SNAPSHOT (never the campaign). */
+  function unitPrizeName(draw, unitIndex) {
+    const units = expandPrizeUnits(draw.prizes);
+    return units[unitIndex]?.name || null;
+  }
 
-    const priorAttempts = await d.DrawAttempt.findAll({
-      where: { drawId: draw.id },
-      order: [['attemptNo', 'ASC']],
-    });
-    const pending = priorAttempts.find((a) => a.outcome === 'pending');
-    if (pending) {
-      throw new AppError(`Attempt ${pending.attemptNo} is still pending — record its outcome before redrawing`, 409);
-    }
-    if (priorAttempts.some((a) => a.outcome === 'claimed')) {
-      throw new AppError('This draw already has a claimed winner', 409);
-    }
-    if (priorAttempts.length > 0) {
-      // The redraw reason IS the prior attempt's recorded outcome — the audit
-      // ledger must not be able to say "unclaimed" about a declined winner
-      // (Codex finding #10).
-      const prior = priorAttempts[priorAttempts.length - 1];
-      if (reason !== prior.outcome) {
-        throw new AppError(
-          `Redraw reason must match the prior attempt's outcome ('${prior.outcome}'), got '${reason}'`,
-          422
-        );
-      }
-    } else if (reason !== 'initial') {
-      throw new AppError("The first attempt's reason must be 'initial'", 422);
-    }
-
-    const pickedBefore = new Set(priorAttempts.map((a) => String(a.pickedEntryId)));
-    const allEntries = await d.DrawEntry.findAll({ where: { drawId: draw.id } });
-    const eligible = orderedEntries(allEntries).filter(
-      (e) => e.prospectId != null && !pickedBefore.has(String(e.id))
-    );
-    if (eligible.length === 0) throw new AppError('No eligible entries left to draw from', 409);
-
-    const totalChances = eligible.reduce((n, e) => n + e.chances, 0);
-    const eligibleHash = computeEligibleHash(eligible);
-    // REVEAL, don't re-mint (P2-8). A draw sealed before commit-reveal existed
-    // has no commitment; it keeps the legacy mint so historical draws stay
-    // drawable, and verifyDraw reports the gap rather than pretending.
+  /** The seed to draw with: REVEAL the sealed one, fail closed on mismatch. */
+  function revealSeed(draw) {
+    // A draw sealed before commit-reveal existed has no commitment; it keeps
+    // the legacy mint so historical draws stay drawable, and verifyDraw reports
+    // the gap rather than pretending.
     const seed = draw.sealedSeed || d.mintSeed();
     if (draw.seedCommitment && sha256Hex(seed) !== draw.seedCommitment) {
       // Fail CLOSED: a seed that doesn't match its commitment is the exact
       // substitution this mechanism exists to catch.
       throw new AppError('Sealed seed does not match its commitment — refusing to draw', 409);
     }
-    const picked = pickWinner(seed, eligible);
-    const drawnAt = d.now();
+    return seed;
+  }
 
-    let attempt;
-    await d.sequelize.transaction(async (t) => {
-      attempt = await d.DrawAttempt.create(
+  const publicPick = (entry) => ({
+    entryId: entry.id,
+    prospectId: entry.prospectId,
+    displayName: entry.displayName,
+    phoneLast4: entry.phoneLast4,
+    chances: entry.chances,
+    boostVia: entry.boostVia || null,
+  });
+
+  /**
+   * THE CEREMONY (Phase 3 §3.3) — all N winners picked in ONE witnessed
+   * transaction, sealed → drawn.
+   *
+   * This is not a convenience. The pinned T&C says "*N winners are drawn at
+   * random from all verified entries after the entry period closes, in a
+   * process witnessed by MKTR staff*". Picking units on separate days across
+   * separate ceremonies would contradict the document every entrant accepted.
+   *
+   * Two invariants the loop enforces:
+   *  - `pickedSoFar` is GLOBAL across units — "each verified mobile number can
+   *    win at most one prize" is in the T&C. The per-entry partial unique index
+   *    is the storage-level backstop for the same rule.
+   *  - The draw row is locked FOR UPDATE first, and every read happens inside
+   *    the transaction, so a concurrent erasure or redraw cannot interleave
+   *    (blocker #9/#10). A failure anywhere rolls the whole ceremony back.
+   *
+   * Blocker #7: the ceremony HARD-STOPS unless at least `winnersCount` eligible
+   * entries exist. The pinned terms promise N winners, not "up to N" — awarding
+   * 3 of 5 silently would contradict them. An operator who genuinely wants a
+   * short award must pass `allowPartialAward`, which is an explicit, logged
+   * decision rather than a silent degradation.
+   */
+  async function runInitialDraw(drawId, { witnessUserId = null, allowPartialAward = false } = {}, user) {
+    const drawnAt = d.now();
+    const result = await d.sequelize.transaction(async (t) => {
+      // Lock the draw row FIRST — one global lock order for every writer.
+      const draw = await d.Draw.findByPk(drawId, { transaction: t, lock: Transaction.LOCK.UPDATE });
+      if (!draw) throw new AppError('Draw not found', 404);
+      if (draw.status !== 'sealed') {
+        throw new AppError(`Draw is ${draw.status}, expected sealed`, 409);
+      }
+
+      const existing = await d.DrawAttempt.findAll({ where: { drawId: draw.id }, transaction: t });
+      if (existing.length > 0) {
+        throw new AppError('This draw has already been drawn — use a redraw for individual units', 409);
+      }
+
+      const winnersCount = Math.max(1, Number(draw.winnersCount) || 1);
+      const allEntries = await d.DrawEntry.findAll({ where: { drawId: draw.id }, transaction: t });
+      const available = orderedEntries(allEntries).filter((e) => e.prospectId != null);
+
+      if (available.length === 0) throw new AppError('No eligible entries to draw from', 409);
+      if (available.length < winnersCount && !allowPartialAward) {
+        const err = new AppError(
+          `This draw promises ${winnersCount} winners but only ${available.length} eligible entries remain. `
+          + 'The pinned terms promise a fixed number of winners, so the ceremony will not silently award fewer — '
+          + 're-run with allowPartialAward once the shortfall is an accepted, recorded decision.',
+          409
+        );
+        err.data = { code: 'DRAW_INSUFFICIENT_ENTRIES', winnersCount, eligible: available.length };
+        throw err;
+      }
+
+      const seed = revealSeed(draw);
+      const pickedSoFar = new Set();
+      const attempts = [];
+      const picks = [];
+
+      for (let unitIndex = 0; unitIndex < winnersCount; unitIndex += 1) {
+        const eligible = available.filter((e) => !pickedSoFar.has(String(e.id)));
+        if (eligible.length === 0) break; // only reachable under allowPartialAward
+        const attemptNo = attempts.length + 1;
+        const picked = selectForUnit(draw, seed, eligible, { unitIndex, attemptNo });
+        pickedSoFar.add(String(picked.id));
+
+        attempts.push(await d.DrawAttempt.create(
+          {
+            drawId: draw.id,
+            attemptNo,
+            prizeUnitIndex: unitIndex,
+            seed,
+            totalChances: eligible.reduce((n, e) => n + e.chances, 0),
+            eligibleHash: computeEligibleHash(eligible),
+            pickedEntryId: picked.id,
+            reason: 'initial',
+            drawnAt,
+            witnessedByUserId: witnessUserId,
+            claimDeadline: new Date(drawnAt.getTime() + CLAIM_WINDOW_DAYS * 24 * 3600 * 1000),
+            outcome: 'pending',
+          },
+          { transaction: t }
+        ));
+        picks.push({ unitIndex, prize: unitPrizeName(draw, unitIndex), ...publicPick(picked) });
+      }
+
+      await transition(draw.id, 'sealed', 'drawn', { witnessedByUserId: witnessUserId }, t);
+      return { drawId: draw.id, winnersCount, awarded: attempts.length, attempts, picks };
+    });
+
+    d.logger.info('lucky_draw.ceremony', {
+      drawId: result.drawId, winnersCount: result.winnersCount, awarded: result.awarded,
+      picks: result.picks.map((p) => ({ unit: p.unitIndex, entryId: p.entryId, phoneLast4: p.phoneLast4 })),
+    });
+    return result;
+  }
+
+  /**
+   * A single REDRAW for one prize unit. Every guard is scoped to the unit
+   * (Phase 3 §3.4) — a pending attempt on unit 2 must not block a redraw on
+   * unit 4 — with ONE deliberate exception: the exclusion set stays GLOBAL,
+   * because that is what enforces one-prize-per-person.
+   *
+   * The initial ceremony runs through runInitialDraw; this path exists for
+   * replacing a winner who lapsed, declined, was unreachable or ineligible.
+   */
+  async function runDrawAttempt(drawId, { witnessUserId = null, reason = 'initial', prizeUnitIndex = 0 } = {}, user) {
+    if (!ATTEMPT_REASONS.has(reason)) {
+      throw new AppError(`reason must be one of: ${[...ATTEMPT_REASONS].join(', ')}`, 422);
+    }
+    const unitIndex = Number(prizeUnitIndex);
+    if (!Number.isInteger(unitIndex) || unitIndex < 0) {
+      throw new AppError('prizeUnitIndex must be a non-negative integer', 422);
+    }
+
+    const drawnAt = d.now();
+    const outcome = await d.sequelize.transaction(async (t) => {
+      const draw = await d.Draw.findByPk(drawId, { transaction: t, lock: Transaction.LOCK.UPDATE });
+      if (!draw) throw new AppError('Draw not found', 404);
+      if (!['sealed', 'drawn'].includes(draw.status)) {
+        throw new AppError(`Draw is ${draw.status}, expected sealed (or drawn, for a redraw)`, 409);
+      }
+      const winnersCount = Math.max(1, Number(draw.winnersCount) || 1);
+      if (unitIndex >= winnersCount) {
+        throw new AppError(`prizeUnitIndex ${unitIndex} is outside this draw's ${winnersCount} prize unit(s)`, 422);
+      }
+
+      const allAttempts = await d.DrawAttempt.findAll({
+        where: { drawId: draw.id }, order: [['attemptNo', 'ASC']], transaction: t,
+      });
+      const unitAttempts = allAttempts.filter((a) => unitOf(a) === unitIndex);
+
+      const pending = unitAttempts.find((a) => a.outcome === 'pending');
+      if (pending) {
+        throw new AppError(
+          `Attempt ${pending.attemptNo} on prize unit ${unitIndex} is still pending — record its outcome before redrawing`,
+          409
+        );
+      }
+      if (unitAttempts.some((a) => a.outcome === 'claimed')) {
+        throw new AppError(`Prize unit ${unitIndex} already has a claimed winner`, 409);
+      }
+      if (unitAttempts.length > 0) {
+        // The redraw reason IS the prior attempt's recorded outcome, per unit —
+        // the audit ledger must not be able to say "unclaimed" about a declined
+        // winner (Codex finding #10).
+        const prior = unitAttempts[unitAttempts.length - 1];
+        if (reason !== prior.outcome) {
+          throw new AppError(
+            `Redraw reason must match the prior attempt's outcome ('${prior.outcome}'), got '${reason}'`,
+            422
+          );
+        }
+      } else if (reason !== 'initial') {
+        throw new AppError("The first attempt's reason must be 'initial'", 422);
+      }
+
+      // GLOBAL exclusion — every entry ever picked on this draw, any unit.
+      const pickedBefore = new Set(allAttempts.map((a) => String(a.pickedEntryId)));
+      const allEntries = await d.DrawEntry.findAll({ where: { drawId: draw.id }, transaction: t });
+      const eligible = orderedEntries(allEntries).filter(
+        (e) => e.prospectId != null && !pickedBefore.has(String(e.id))
+      );
+      if (eligible.length === 0) throw new AppError('No eligible entries left to draw from', 409);
+
+      const seed = revealSeed(draw);
+      const attemptNo = allAttempts.length + 1;
+      const picked = selectForUnit(draw, seed, eligible, { unitIndex, attemptNo });
+
+      const attempt = await d.DrawAttempt.create(
         {
           drawId: draw.id,
-          attemptNo: priorAttempts.length + 1,
+          attemptNo,
+          prizeUnitIndex: unitIndex,
           seed,
-          totalChances,
-          eligibleHash,
+          totalChances: eligible.reduce((n, e) => n + e.chances, 0),
+          eligibleHash: computeEligibleHash(eligible),
           pickedEntryId: picked.id,
           reason,
           drawnAt,
@@ -544,22 +715,17 @@ export function makeLuckyDrawService(overrides = {}) {
       if (draw.status === 'sealed') {
         await transition(draw.id, 'sealed', 'drawn', { witnessedByUserId: witnessUserId }, t);
       }
+      return { attempt, picked, prize: unitPrizeName(draw, unitIndex) };
     });
 
     d.logger.info('lucky_draw.drawn', {
-      drawId: draw.id, attemptNo: attempt.attemptNo, totalChances,
-      pickedEntryId: picked.id, displayName: picked.displayName, phoneLast4: picked.phoneLast4,
+      drawId, attemptNo: outcome.attempt.attemptNo, prizeUnitIndex: unitIndex,
+      pickedEntryId: outcome.picked.id, displayName: outcome.picked.displayName,
+      phoneLast4: outcome.picked.phoneLast4,
     });
     return {
-      attempt,
-      picked: {
-        entryId: picked.id,
-        prospectId: picked.prospectId,
-        displayName: picked.displayName,
-        phoneLast4: picked.phoneLast4,
-        chances: picked.chances,
-        boostVia: picked.boostVia || null,
-      },
+      attempt: outcome.attempt,
+      picked: { ...publicPick(outcome.picked), unitIndex, prize: outcome.prize },
     };
   }
 
@@ -590,6 +756,13 @@ export function makeLuckyDrawService(overrides = {}) {
     }
 
     await d.sequelize.transaction(async (t) => {
+      // Lock the DRAW row before touching the attempt — same global lock order
+      // as the ceremony. Without it, two concurrent final claims can each read
+      // "not all units claimed yet" and neither flips the draw terminal
+      // (write skew, blocker #9).
+      const draw = await d.Draw.findByPk(attempt.drawId, { transaction: t, lock: Transaction.LOCK.UPDATE });
+      if (!draw) throw new AppError('Draw not found', 404);
+
       const [count] = await d.DrawAttempt.update(
         {
           outcome,
@@ -600,10 +773,30 @@ export function makeLuckyDrawService(overrides = {}) {
       );
       if (count === 0) throw new AppError(`Attempt already has outcome '${attempt.outcome}'`, 409);
 
-      if (outcome === 'claimed') {
+      if (outcome !== 'claimed') return;
+
+      if (!['drawn', 'published'].includes(draw.status)) {
+        throw new AppError('Draw is no longer live (voided or reset?) — cannot record a claim', 409);
+      }
+
+      // A claim on ONE unit no longer ends the draw (Phase 3 §3.5). The draw is
+      // terminal only when every promised unit has been claimed, so `claimed`
+      // keeps its old meaning — the terminal-est state — and stays byte-identical
+      // for single-winner draws, where winnersCount is 1.
+      //
+      // A short-awarded draw (allowPartialAward) never reaches `claimed`, and
+      // that is deliberate: it did not fulfil the promise its terms published,
+      // and the lifecycle should show that rather than paper over it.
+      const claimedRows = await d.DrawAttempt.findAll({
+        where: { drawId: draw.id, outcome: 'claimed' },
+        transaction: t,
+      });
+      const claimedUnits = new Set(claimedRows.map(unitOf)).size;
+      const winnersCount = Math.max(1, Number(draw.winnersCount) || 1);
+      if (claimedUnits >= winnersCount) {
         const [drawCount] = await d.Draw.update(
           { status: 'claimed' },
-          { where: { id: attempt.drawId, status: { [Op.in]: ['drawn', 'published'] } }, transaction: t }
+          { where: { id: draw.id, status: { [Op.in]: ['drawn', 'published'] } }, transaction: t }
         );
         if (drawCount === 0) {
           throw new AppError('Draw is no longer live (voided or reset?) — cannot record a claim', 409);
@@ -686,6 +879,56 @@ export function makeLuckyDrawService(overrides = {}) {
       });
     }
 
+    // ---- Structural checks on the prize units (Phase 3) ----
+    const winnersCount = Math.max(1, Number(draw.winnersCount) || 1);
+    const outOfRange = attempts.filter((a) => unitOf(a) >= winnersCount);
+    if (outOfRange.length > 0) {
+      report.checks.push({
+        check: 'prizeUnitBounds', ok: false,
+        note: `attempt(s) ${outOfRange.map((a) => `#${a.attemptNo}`).join(', ')} award a unit outside [0, ${winnersCount})`,
+      });
+      report.ok = false;
+    } else {
+      report.checks.push({ check: 'prizeUnitBounds', ok: true, winnersCount });
+    }
+
+    // One claimed attempt per unit, and one live award per entry. The partial
+    // unique indexes make both unstorable — verifying them here catches a row
+    // written before those indexes existed, or by hand.
+    const claimedByUnit = new Map();
+    const liveByEntry = new Map();
+    for (const a of attempts) {
+      if (a.outcome === 'claimed') {
+        const unit = unitOf(a);
+        claimedByUnit.set(unit, (claimedByUnit.get(unit) || 0) + 1);
+      }
+      if (a.outcome === 'claimed' || a.outcome === 'pending') {
+        const key = String(a.pickedEntryId);
+        liveByEntry.set(key, (liveByEntry.get(key) || 0) + 1);
+      }
+    }
+    const doubleClaimed = [...claimedByUnit.entries()].filter(([, n]) => n > 1);
+    if (doubleClaimed.length > 0) {
+      report.checks.push({
+        check: 'oneClaimPerUnit', ok: false,
+        note: `unit(s) ${doubleClaimed.map(([u]) => u).join(', ')} have more than one claimed attempt`,
+      });
+      report.ok = false;
+    } else {
+      report.checks.push({ check: 'oneClaimPerUnit', ok: true });
+    }
+    const doubleAwarded = [...liveByEntry.entries()].filter(([, n]) => n > 1);
+    if (doubleAwarded.length > 0) {
+      report.checks.push({
+        check: 'onePrizePerEntry', ok: false,
+        note: `${doubleAwarded.length} entr(y/ies) hold more than one live award — one-prize-per-person is broken`,
+      });
+      report.ok = false;
+    } else {
+      report.checks.push({ check: 'onePrizePerEntry', ok: true });
+    }
+
+    // ---- Replay every pick ----
     const pickedBefore = new Set();
     for (const attempt of attempts) {
       if (draw.seedCommitment && sha256Hex(attempt.seed) !== draw.seedCommitment) {
@@ -708,9 +951,17 @@ export function makeLuckyDrawService(overrides = {}) {
         });
         report.ok = false;
       } else {
-        const picked = pickWinner(attempt.seed, eligible);
+        // Re-derive under the algorithm THIS draw ran, binding the pick to its
+        // unit and attempt number — so reassigning an attempt to a different
+        // prize unit no longer replays clean (blocker #15).
+        const picked = selectForUnit(draw, attempt.seed, eligible, {
+          unitIndex: unitOf(attempt),
+          attemptNo: attempt.attemptNo,
+        });
         const ok = String(picked.id) === String(attempt.pickedEntryId);
-        report.checks.push({ check: `attempt#${attempt.attemptNo}.pick`, ok });
+        report.checks.push({
+          check: `attempt#${attempt.attemptNo}.pick`, ok, prizeUnitIndex: unitOf(attempt),
+        });
         if (!ok) report.ok = false;
       }
       pickedBefore.add(String(attempt.pickedEntryId));
@@ -723,12 +974,38 @@ export function makeLuckyDrawService(overrides = {}) {
     const draw = await getDrawOr404(drawId);
     const entries = await d.DrawEntry.findAll({ where: { drawId: draw.id } });
     const attempts = await d.DrawAttempt.findAll({ where: { drawId: draw.id }, order: [['attemptNo', 'ASC']] });
+    const entryById = new Map(entries.map((e) => [String(e.id), e]));
+    const winnersCount = Math.max(1, Number(draw.winnersCount) || 1);
+    const units = expandPrizeUnits(draw.prizes);
+
+    // Per-unit rollup — what the CLI's `status` renders as N rows. The unit's
+    // state is the state of its LATEST attempt; a unit with no attempt yet is
+    // 'not_drawn' rather than silently absent.
+    const unitRollup = [];
+    for (let unitIndex = 0; unitIndex < winnersCount; unitIndex += 1) {
+      const mine = attempts.filter((a) => unitOf(a) === unitIndex);
+      const latest = mine[mine.length - 1] || null;
+      const winner = latest ? entryById.get(String(latest.pickedEntryId)) : null;
+      unitRollup.push({
+        unitIndex,
+        prize: units[unitIndex]?.name || null,
+        status: latest ? latest.outcome : 'not_drawn',
+        attempts: mine.length,
+        winner: winner
+          ? { entryId: winner.id, displayName: winner.displayName, phoneLast4: winner.phoneLast4 }
+          : null,
+        claimDeadline: latest?.claimDeadline || null,
+      });
+    }
+
     return {
       draw: {
         id: draw.id, campaignId: draw.campaignId, status: draw.status,
         closesAt: draw.closesAt, boostClosesAt: draw.boostClosesAt,
         multiplier: draw.multiplier, poolHash: draw.poolHash,
         activationId: draw.activationId, termsVersionId: draw.termsVersionId,
+        winnersCount, prizes: draw.prizes || null,
+        algorithmVersion: draw.algorithmVersion ?? ALGORITHM_V1_LEGACY_MOD,
       },
       entries: {
         count: entries.length,
@@ -736,8 +1013,11 @@ export function makeLuckyDrawService(overrides = {}) {
         boosted: entries.filter((e) => e.boostVia).length,
         erased: entries.filter((e) => e.prospectId == null).length,
       },
+      units: unitRollup,
       attempts: attempts.map((a) => ({
-        attemptNo: a.attemptNo, reason: a.reason, outcome: a.outcome,
+        attemptNo: a.attemptNo, prizeUnitIndex: unitOf(a),
+        prize: units[unitOf(a)]?.name || null,
+        reason: a.reason, outcome: a.outcome,
         drawnAt: a.drawnAt, claimDeadline: a.claimDeadline, claimedAt: a.claimedAt,
         pickedEntryId: a.pickedEntryId, seed: a.seed,
       })),
@@ -815,7 +1095,7 @@ export function makeLuckyDrawService(overrides = {}) {
 
   return {
     createDraw, freezeDraw, listPendingBoostReviews, reviewBoost, sealDraw,
-    runDrawAttempt, recordAttemptOutcome, markPublished, voidDraw,
+    runInitialDraw, runDrawAttempt, recordAttemptOutcome, markPublished, voidDraw,
     verifyDraw, getDrawState, getProspectDrawStatus,
     ensureDrawRecord, sweepDrawRecords,
   };

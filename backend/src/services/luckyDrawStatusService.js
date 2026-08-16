@@ -343,7 +343,14 @@ export function makeDrawStatusOps({ d, entryEligibility }) {
       // sealed | drawn | published | claimed — stored truth + redraw ledger.
       const attempts = data.attemptsByDraw.get(String(dr.id)) || [];
       const mine = attempts.filter((a) => String(a.pickedEntryId) === String(entry.id));
-      const anyClaimed = dr.status === 'claimed' || attempts.some((a) => a.outcome === 'claimed');
+      // Non-selection is FINAL only when the whole draw is finished — every
+      // promised prize unit claimed. On a multi-winner draw a single claim used
+      // to tell every other entrant "not selected, final" while four prizes were
+      // still being awarded and a redraw could still pick them.
+      const winnersCount = Math.max(1, Number(dr.winnersCount) || 1);
+      const claimedAttempts = attempts.filter((a) => a.outcome === 'claimed');
+      const claimedUnits = new Set(claimedAttempts.map((a) => Number(a.prizeUnitIndex) || 0)).size;
+      const anyClaimed = dr.status === 'claimed' || claimedUnits >= winnersCount;
       let outcome = null;
       if (mine.length > 0) {
         const last = mine[mine.length - 1];
@@ -360,11 +367,16 @@ export function makeDrawStatusOps({ d, entryEligibility }) {
           outcomeAt: last.outcome === 'pending' ? null : (last.claimedAt || last.updatedAt || null),
         };
       } else if (attempts.length > 0) {
-        const winner = attempts.find((a) => a.outcome === 'claimed') || null;
+        // Timestamp the LAST claim, not the first: on a multi-winner draw the
+        // entrant's non-selection only became final when the final prize went.
+        const lastClaimedAt = claimedAttempts
+          .map((a) => a.claimedAt)
+          .filter(Boolean)
+          .sort((x, y) => new Date(y).getTime() - new Date(x).getTime())[0] || null;
         outcome = {
           status: anyClaimed ? 'not_selected_final' : 'not_selected_yet',
-          // Final non-selection becomes TRUE when the eventual winner claims.
-          outcomeAt: anyClaimed ? (winner?.claimedAt || null) : null,
+          // Final non-selection becomes TRUE when the last prize is claimed.
+          outcomeAt: anyClaimed ? lastClaimedAt : null,
         };
       }
       out.set(pid, {

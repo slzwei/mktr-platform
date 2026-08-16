@@ -64,6 +64,26 @@ const Draw = sequelize.define('Draw', {
     comment: 'The seed committed at seal and REVEALED at draw; every attempt must hash to seedCommitment'
   },
   witnessedByUserId: { type: DataTypes.UUID, allowNull: true, references: { model: 'users', key: 'id' }, onDelete: 'SET NULL' },
+  // Multi-winner snapshot (Phase 3, migration 125). The engine's authority for
+  // WHAT this draw awards — deliberately a copy, never a live read of the
+  // campaign: editing prizes must not change an in-flight draw.
+  prizes: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Snapshot of luckyDraw.prizes at createDraw; NULL = legacy single-prize draw'
+  },
+  winnersCount: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    comment: 'Number of prize units this draw awards (Σqty at createDraw)'
+  },
+  algorithmVersion: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    comment: '1 = legacy sha256-mod single winner, 2 = domain-separated derivation (utils/drawSelection.js)'
+  },
   notes: { type: DataTypes.TEXT, allowNull: true },
   createdBy: { type: DataTypes.UUID, allowNull: false, references: { model: 'users', key: 'id' } }
 }, {

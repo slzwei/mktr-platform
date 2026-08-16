@@ -5,7 +5,7 @@ import OfferCard from './marketplace/OfferCard';
 import { fmtDateLong, isDrawCampaign, offerUnavailability } from './marketplace/content';
 import { listMarketplaceCampaigns } from '@/api/marketplace';
 import { listingTitleOf } from '@/lib/listingDerivation';
-import { WINNERS, statusLabel } from './redeemWinnersContent';
+import { WINNERS, statusLabel, winnersOf, drawStatusLabel } from './redeemWinnersContent';
 import './redeemWinners.css';
 
 /**
@@ -141,6 +141,89 @@ function NextDrawCard({ draws }) {
   );
 }
 
+/**
+ * The winners of one draw.
+ *
+ * A single-winner draw keeps the original Winner / Entry / Area strip. A draw
+ * that awarded several prizes renders as ONE grouped result — five AirPods
+ * winners are five rows of one event, never five cards that read like five
+ * unrelated draws.
+ */
+function WinnerPanel({ row }) {
+  const winners = winnersOf(row);
+  if (winners.length === 0) {
+    return (
+      <div className="rw-winner">
+        <div>
+          <div className="rw-winner-key">Winner</div>
+          <div className="rw-winner-name">Awaiting claim</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (winners.length === 1) {
+    const [w] = winners;
+    return (
+      <div className="rw-winner">
+        <div>
+          <div className="rw-winner-key">Winner</div>
+          <div className="rw-winner-name">{w.name || 'Awaiting claim'}</div>
+        </div>
+        {w.entry && (
+          <>
+            <div className="rw-winner-sep" />
+            <div>
+              <div className="rw-winner-key">Entry</div>
+              <div className="rw-winner-entry">{w.entry}</div>
+            </div>
+          </>
+        )}
+        {w.area && (
+          <>
+            <div className="rw-winner-sep" />
+            <div>
+              <div className="rw-winner-key">Area</div>
+              <div className="rw-winner-area">{w.area}</div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rw-winner rw-winner--many">
+      <div className="rw-winner-key">{winners.length} winners</div>
+      <ol className="rw-winner-list">
+        {winners.map((w, i) => (
+          <li className="rw-winner-row" key={`${w.entry || w.name}-${i}`}>
+            <span className="rw-winner-rank">{String(i + 1).padStart(2, '0')}</span>
+            <span className="rw-winner-who">{w.name || 'Awaiting claim'}</span>
+            {w.entry && <span className="rw-winner-entry">{w.entry}</span>}
+            {w.area && <span className="rw-winner-area">{w.area}</span>}
+            <span className="rw-winner-state">{statusLabel(w.status)}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** Who the ledger names: one masked identity, or a count for a grouped draw. */
+function ledgerWho(row) {
+  const winners = winnersOf(row);
+  if (winners.length > 1) return `${winners.length} winners`;
+  const [w] = winners;
+  return w ? [w.name, w.entry].filter(Boolean).join(' · ') : '';
+}
+
+function photoAlt(row) {
+  const winners = winnersOf(row);
+  if (winners.length > 1) return `${winners.length} winners — ${row.prize}`;
+  return `${winners[0]?.name || 'Winner'} — ${row.prize}`;
+}
+
 /** Photo when the winner gave written permission, else the striped arch panel. */
 function ResultPanel({ winner }) {
   const caption = winner.photo
@@ -148,7 +231,7 @@ function ResultPanel({ winner }) {
     : winner.archTag || 'result posted';
   return (
     <div className="rw-arch">
-      {winner.photo && <img src={winner.photo} alt={`${winner.name || 'Winner'} — ${winner.prize}`} />}
+      {winner.photo && <img src={winner.photo} alt={photoAlt(winner)} />}
       <span className="rm-arch-tag">{caption}</span>
     </div>
   );
@@ -230,35 +313,12 @@ export default function RedeemWinners() {
                   </p>
                 )}
 
-                <div className="rw-winner">
-                  <div>
-                    <div className="rw-winner-key">Winner</div>
-                    <div className="rw-winner-name">{latest.name || 'Awaiting claim'}</div>
-                  </div>
-                  {latest.entry && (
-                    <>
-                      <div className="rw-winner-sep" />
-                      <div>
-                        <div className="rw-winner-key">Entry</div>
-                        <div className="rw-winner-entry">{latest.entry}</div>
-                      </div>
-                    </>
-                  )}
-                  {latest.area && (
-                    <>
-                      <div className="rw-winner-sep" />
-                      <div>
-                        <div className="rw-winner-key">Area</div>
-                        <div className="rw-winner-area">{latest.area}</div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <WinnerPanel row={latest} />
 
                 <div className="rw-tags">
                   {latest.drawnOn && <span className="rw-tag">Drawn {latest.drawnOn}</span>}
                   <span className="rw-tag">Witnessed by MKTR staff</span>
-                  <span className="rw-tag rw-tag--status">{statusLabel(latest.status)}</span>
+                  <span className="rw-tag rw-tag--status">{drawStatusLabel(latest)}</span>
                 </div>
               </div>
 
@@ -276,9 +336,9 @@ export default function RedeemWinners() {
                     <div className="rw-lrow" key={`${w.draw}-${w.entry}`}>
                       <span className="rw-l-draw">{w.draw}</span>
                       <span className="rw-l-prize">{w.prize}</span>
-                      <span className="rw-l-who">{[w.name, w.entry].filter(Boolean).join(' · ')}</span>
+                      <span className="rw-l-who">{ledgerWho(w)}</span>
                       <span className="rw-l-drawn">{w.drawnOn}</span>
-                      <span className="rw-l-status">{statusLabel(w.status)}</span>
+                      <span className="rw-l-status">{drawStatusLabel(w)}</span>
                     </div>
                   ))}
                   <div className="rw-lfoot">

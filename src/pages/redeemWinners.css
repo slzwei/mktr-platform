@@ -47,6 +47,17 @@
 .rw-winner-name { font-family: var(--rm-serif); font-weight: 700; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; margin-top: 4px; }
 .rw-winner-entry { font-family: var(--rm-mono); font-size: 16px; line-height: 1.2; margin-top: 6px; font-variant-numeric: tabular-nums; }
 .rw-winner-area { font-size: 15px; font-weight: 600; line-height: 1.2; margin-top: 6px; }
+/* Grouped multi-winner draw — one result, N masked names. */
+.rw-winner--many { flex-direction: column; align-items: stretch; gap: 10px; }
+.rw-winner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rw-winner-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 12px; align-items: baseline; padding-bottom: 8px; border-bottom: 1px dotted var(--rm-line2); }
+.rw-winner-list .rw-winner-row:last-child { border-bottom: none; padding-bottom: 0; }
+.rw-winner-rank { font-family: var(--rm-mono); font-size: 10px; color: var(--rm-mut); letter-spacing: 0.08em; }
+.rw-winner-who { font-family: var(--rm-serif); font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+.rw-winner-row .rw-winner-entry { font-size: 13px; margin-top: 0; color: var(--rm-sub); }
+.rw-winner-row .rw-winner-area { font-size: 12.5px; font-weight: 500; margin-top: 0; color: var(--rm-mut); }
+.rw-winner-state { font-family: var(--rm-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--rm-pine); }
+
 .rw-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .rw-tag { font-family: var(--rm-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--rm-pine); background: var(--rm-card); border: 1px solid var(--rm-sage2); border-radius: 999px; padding: 6px 13px; }
 .rw-tag--status { color: #2a1608; background: var(--rm-apr); border-color: var(--rm-apr2); }
@@ -89,6 +100,8 @@
   .rw-boardhead { flex-direction: column; }
   .rw-boardnote { text-align: left; max-width: none; }
   .rw-lhead { display: none; }
+  .rw-winner-row { grid-template-columns: auto 1fr auto; row-gap: 2px; }
+  .rw-winner-row .rw-winner-area { grid-column: 2 / -1; }
   .rw-lrow { grid-template-columns: 1fr auto; gap: 5px 12px; padding: 15px 18px; }
   .rw-l-prize, .rw-l-who, .rw-l-drawn { grid-column: 1 / -1; }
   .rw-l-status { grid-row: 1; }

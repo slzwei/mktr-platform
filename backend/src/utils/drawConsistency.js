@@ -1,4 +1,5 @@
 import { sgtDayEndExclusiveMs, longDate } from './sgtTime.js';
+import { derivePrizeSummary } from './luckyDraw.js';
 
 /**
  * drawConsistency — the promise-vs-facts lint for lucky-draw campaigns
@@ -51,6 +52,21 @@ export function htmlToText(html) {
 const fold = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 const textIncludes = (hayText, needle) => fold(hayText).includes(fold(needle));
 
+// Generated draw terms spell counts as words with the digit in brackets —
+// "Five (5) × AirPods Pro 3" — while the config stores the integer. Accept
+// either form so a formatting choice never reads as a promise mismatch.
+const COUNT_WORDS = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen',
+  'eighteen', 'nineteen', 'twenty',
+];
+function mentionsCount(hayText, n) {
+  const text = fold(hayText);
+  if (new RegExp(`(^|[^0-9])${n}([^0-9]|$)`).test(text)) return true;
+  const word = COUNT_WORDS[n];
+  return Boolean(word) && new RegExp(`\\b${word}\\b`).test(text);
+}
+
 /**
  * Every "aged …" mention in normalized text. Shapes:
  *   "aged 25 to 65"  → { min: 25, max: 65 }
@@ -98,20 +114,55 @@ export function checkDrawConsistency({
   // ── Prize ──
   const prize = typeof ld.prize === 'string' ? ld.prize.trim() : '';
   if (prize) {
-    const structured = Array.isArray(ld.prizes) && ld.prizes[0]?.name ? String(ld.prizes[0].name).trim() : null;
-    if (structured && fold(structured) !== fold(prize)) {
+    const rows = Array.isArray(ld.prizes)
+      ? ld.prizes.filter((p) => p && typeof p.name === 'string' && p.name.trim())
+      : [];
+
+    // Internal consistency. `prize` is the DERIVED display summary of the whole
+    // prize list ("5× AirPods Pro 3", "iPhone + 3× Voucher"), so comparing it to
+    // prizes[0].name was wrong for every multi-unit config — it hard-failed
+    // exactly the campaigns Phase 3 exists to support. Compare like with like.
+    if (rows.length > 0 && fold(derivePrizeSummary(rows)) !== fold(prize)) {
       hard.push({
         code: 'DRAW_PRIZE_INTERNAL_MISMATCH',
-        message: `luckyDraw.prize ("${prize}") and prizes[0].name ("${structured}") disagree — the config contradicts itself.`,
+        message: `luckyDraw.prize ("${prize}") is not the summary of prizes[] ("${derivePrizeSummary(rows)}") — the config contradicts itself.`,
       });
     }
+
     // Scope to the labeled Prize clause when one exists: the July incident's
     // doc mentioned the RIGHT prize in its <h3> heading while the binding
     // "Prize:" clause named a different one — whole-document containment
     // would have blessed it. No labeled clause (operator-authored legal
     // text) → whole-doc containment, and a miss is SOFT, not a block.
     const clauseMatch = /prizes?\s*:\s*(.{1,500})/i.exec(terms);
-    if (clauseMatch) {
+    const haystack = clauseMatch ? clauseMatch[1] : terms;
+
+    if (rows.length > 0) {
+      // Structured: every prize NAME must be named in the clause, and every
+      // quantity must appear next to it. The generated terms write counts as
+      // words ("Five (5) × AirPods Pro 3"), so the summary string itself is
+      // never literally present — check the parts, not the rendering.
+      for (const row of rows) {
+        const name = String(row.name).trim();
+        if (!textIncludes(haystack, name)) {
+          const issue = {
+            code: clauseMatch ? 'DRAW_PRIZE_MISMATCH' : 'DRAW_TERMS_PRIZE_UNVERIFIED',
+            message: clauseMatch
+              ? `The T&Cs' Prize clause does not name the configured prize "${name}" — entrants would accept terms for a different prize (the July iPad-vs-iPhone incident). Regenerate the terms from the campaign facts.`
+              : `No "Prize:" clause found and the prize "${name}" appears nowhere in the T&Cs — cannot cross-check; review manually.`,
+          };
+          (clauseMatch ? hard : soft).push(issue);
+          continue;
+        }
+        const qty = Number.isInteger(row.qty) ? row.qty : 1;
+        if (qty > 1 && !mentionsCount(haystack, qty)) {
+          soft.push({
+            code: 'DRAW_PRIZE_QTY_UNVERIFIED',
+            message: `The T&Cs do not clearly state ${qty} × "${name}" — confirm the award count matches the config before launch.`,
+          });
+        }
+      }
+    } else if (clauseMatch) {
       if (!textIncludes(clauseMatch[1], prize)) {
         hard.push({
           code: 'DRAW_PRIZE_MISMATCH',

@@ -20,6 +20,14 @@ const DrawAttempt = sequelize.define('DrawAttempt', {
     references: { model: 'draws', key: 'id' }
   },
   attemptNo: { type: DataTypes.INTEGER, allowNull: false },
+  // Which prize unit this attempt awards (Phase 3, migration 125). Legacy rows
+  // default to 0 — a single-prize draw has exactly one unit.
+  prizeUnitIndex: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Which prize unit this attempt is awarding (0-based)'
+  },
   seed: { type: DataTypes.STRING(64), allowNull: false, comment: '32 random bytes hex, minted at the witnessed pick' },
   totalChances: { type: DataTypes.INTEGER, allowNull: false },
   eligibleHash: {
@@ -53,7 +61,21 @@ const DrawAttempt = sequelize.define('DrawAttempt', {
   tableName: 'draw_attempts',
   timestamps: true,
   indexes: [
-    { unique: true, fields: ['drawId', 'attemptNo'], name: 'uq_da_draw_attempt' }
+    { unique: true, fields: ['drawId', 'attemptNo'], name: 'uq_da_draw_attempt' },
+    // Per-unit invariants, mirrored from migration 125 so sync()-built schemas
+    // enforce them too (the prospects_campaign_id_phone lesson).
+    {
+      unique: true, fields: ['drawId', 'prizeUnitIndex'],
+      name: 'uq_da_one_pending_per_unit', where: { outcome: 'pending' }
+    },
+    {
+      unique: true, fields: ['drawId', 'prizeUnitIndex'],
+      name: 'uq_da_one_claimed_per_unit', where: { outcome: 'claimed' }
+    },
+    {
+      unique: true, fields: ['drawId', 'pickedEntryId'],
+      name: 'uq_da_one_live_award_per_entry', where: { outcome: ['pending', 'claimed'] }
+    }
   ]
 });
 
