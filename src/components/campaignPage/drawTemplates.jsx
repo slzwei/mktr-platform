@@ -374,13 +374,13 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
       </div>
     </div>;
     return (
-      <div style={{ minHeight: '100vh', background: PC.bg, display: 'flex', fontFamily: SANS, color: PC.ink }}>
+      <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: PC.bg, display: 'flex', fontFamily: SANS, color: PC.ink }}>
         {mediaLeft ? <>{heroPane}{formPane}</> : <>{formPane}{heroPane}</>}
       </div>
     );
   }
   return (
-    <div style={{ minHeight: '100vh', background: PC.bg, display: 'flex', flexDirection: 'column', fontFamily: SANS, color: PC.ink }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: PC.bg, display: 'flex', flexDirection: 'column', fontFamily: SANS, color: PC.ink }}>
       {hero}
       {formCard}
       {belowCard}
@@ -460,7 +460,7 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
   );
   if (!mobile) {
     return (
-      <div style={{ minHeight: '100vh', background: GZ.bg, padding: '36px 56px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 26, fontFamily: SANS, color: GZ.ink }}>
+      <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: GZ.bg, padding: '36px 56px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 26, fontFamily: SANS, color: GZ.ink }}>
         <GazetteMasthead content={content} kickerText={`OFFICIAL ENTRY FORM${s.kicker ? ` · ${s.kicker}` : ''}`} inkColor={GZ.ink} mutedColor={GZ.mut} />
         <div style={{ display: 'flex', gap: 56 }}>
           <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -479,7 +479,7 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
     );
   }
   return (
-    <div style={{ minHeight: '100vh', background: GZ.bg, display: 'flex', flexDirection: 'column', padding: '18px 20px 24px', boxSizing: 'border-box', fontFamily: SANS, color: GZ.ink }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: GZ.bg, display: 'flex', flexDirection: 'column', padding: '18px 20px 24px', boxSizing: 'border-box', fontFamily: SANS, color: GZ.ink }}>
       <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={GZ.ink} mutedColor={GZ.mut} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 20 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -518,7 +518,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
   );
   if (!mobile) {
     return (
-      <div style={{ minHeight: '100vh', background: NF_HERO, position: 'relative', display: 'flex', flexDirection: 'column', fontFamily: SANS }}>
+      <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: NF_HERO, position: 'relative', display: 'flex', flexDirection: 'column', fontFamily: SANS }}>
         <BackdropMedia t={t} media={content.media} />
         <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(20,22,31,.9) 34%, rgba(20,22,31,.35))' }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', padding: '26px 40px' }}>
@@ -547,8 +547,8 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
     );
   }
   return (
-    <div style={{ minHeight: '100vh', background: NF.bg, color: NF.ink, display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: SANS }}>
-      <div style={{ position: 'relative', minHeight: '100vh', background: NF_HERO, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: NF.bg, color: NF.ink, display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: SANS }}>
+      <div style={{ position: 'relative', minHeight: 'var(--cp-vh, 100vh)', background: NF_HERO, display: 'flex', flexDirection: 'column' }}>
         <BackdropMedia t={t} media={content.media} />
         <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: scrim }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px' }}>
@@ -707,7 +707,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
   );
   if (!mobile) {
     return (
-      <div style={{ minHeight: '100vh', background: ST.bg, padding: '34px 0', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, fontFamily: SANS, color: ST.ink }}>
+      <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: ST.bg, padding: '34px 0', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, fontFamily: SANS, color: ST.ink }}>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 20 }}>{content.wordmark}</div>
           <div data-se={s.draw ? 'content.drawCopy.freeEntryTag' : undefined} style={mono(11, { letterSpacing: 1.5, color: ST.mut })}>{s.draw ? s.freeEntryTag('FREE ENTRY') : 'FREE ENTRY'}</div>
@@ -752,7 +752,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
     </div>
   );
   return (
-    <div style={{ minHeight: '100vh', background: ST.bg, display: 'flex', flexDirection: 'column', padding: '18px 16px 26px', boxSizing: 'border-box', gap: 14, fontFamily: SANS, color: ST.ink }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: ST.bg, display: 'flex', flexDirection: 'column', padding: '18px 16px 26px', boxSizing: 'border-box', gap: 14, fontFamily: SANS, color: ST.ink }}>
       <StubHeader content={content} mutedColor={ST.mut} draw={s.draw} freeEntry={s.freeEntryTag('FREE ENTRY')} />
       {ticket}
       {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: ST.mut, textAlign: 'center' })}>{s.trustRow}</div>}
@@ -856,7 +856,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
   );
   if (!mobile) {
     return (
-      <div style={{ minHeight: '100vh', background: CL.bg, padding: '34px 56px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 24, fontFamily: SANS, color: CL.ink }}>
+      <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: CL.bg, padding: '34px 56px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 24, fontFamily: SANS, color: CL.ink }}>
         <ChecklistHeader content={content} s={s} mutedColor={CL.mut} />
         {showBand && (
           <div style={{ position: 'relative', height: 190, borderRadius: 14, overflow: 'hidden' }}>
@@ -897,7 +897,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
     );
   }
   return (
-    <div style={{ minHeight: '100vh', background: CL.bg, display: 'flex', flexDirection: 'column', padding: '18px 20px 26px', boxSizing: 'border-box', gap: 16, fontFamily: SANS, color: CL.ink }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: CL.bg, display: 'flex', flexDirection: 'column', padding: '18px 20px 26px', boxSizing: 'border-box', gap: 16, fontFamily: SANS, color: CL.ink }}>
       <ChecklistHeader content={content} s={s} mutedColor={CL.mut} />
       {showBand && (
         <div style={{ position: 'relative', height: 150, margin: '0 -20px', overflow: 'hidden' }}>
@@ -1087,7 +1087,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null, screeningCall
   return (
     <div
       data-draw-success={templateId}
-      style={{ minHeight: '100vh', background: chrome.pageBg, color: chrome.ink, fontFamily: SANS, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: 20 }}
+      style={{ minHeight: 'var(--cp-vh, 100vh)', background: chrome.pageBg, color: chrome.ink, fontFamily: SANS, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: 20 }}
     >
       <div style={{ width: '100%', maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
         {body}
@@ -1145,7 +1145,7 @@ export function DrawClosedPage({ templateId, t, content, luckyDraw, campaignName
     <div
       data-campaign-page-blocked="draw"
       data-draw-closed={templateId}
-      style={{ minHeight: '100vh', background: chrome.pageBg, color: chrome.ink, fontFamily: SANS, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: 20 }}
+      style={{ minHeight: 'var(--cp-vh, 100vh)', background: chrome.pageBg, color: chrome.ink, fontFamily: SANS, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', padding: 20 }}
     >
       <div style={{ width: '100%', maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
         {chrome.masthead && <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={pal.ink} mutedColor={pal.mut} />}
