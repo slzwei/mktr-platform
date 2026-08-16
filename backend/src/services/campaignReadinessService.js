@@ -46,7 +46,8 @@
  * @param {boolean} facts.drawCloseMismatch      LIVE record cutoff ≠ doc closesAt (instant-exact)
  * @param {string}  facts.docDrawClosesAt        display YMD (doc)
  * @param {string}  facts.drawRecordClosesAt     display YMD (record, SGT)
- * @param {number}  facts.drawTotalPrizes        Σqty of structured luckyDraw.prizes (0 = unstructured)
+ * @param {number}  facts.drawTotalPrizes        what the campaign publicly promises: max(Σqty, winners)
+ * @param {number}  facts.drawStructuredPrizes   Σqty of structured luckyDraw.prizes (0 = unstructured)
  * @returns {{ applicable: boolean, ready: boolean, issues: Array<{level,code,message}> }}
  */
 export function computeReadiness(facts) {
@@ -78,6 +79,7 @@ export function computeReadiness(facts) {
     docDrawClosesAt = null,
     drawRecordClosesAt = null,
     drawTotalPrizes = 0,
+    drawStructuredPrizes = 0,
     // Screening facts (PR-1, draw-launch-integrity §2.3) default SILENT — the
     // row only means anything when the feature is configured AND the campaign
     // opted in.
@@ -320,18 +322,18 @@ export function computeReadiness(facts) {
     });
   }
 
-  // CRITICAL — the draw engine resolves exactly one claimed winner today, so a
-  // multi-prize draw would collect entries under T&Cs the platform cannot
-  // honour. The service layer 422s activation regardless
-  // (DRAW_MULTI_PRIZE_UNSUPPORTED, non-forceable) — this row is the visible
-  // reason in the Launch tab. Phase 3 (multi-winner engine) removes both.
-  if (drawEnabled && drawTotalPrizes > 1) {
+  // CRITICAL — a draw promising several winners with no structured prizes[]
+  // gives the engine no unit list to award from, so the page would advertise
+  // more winners than the ceremony can produce. Structured multi-prize draws
+  // are fully supported since Phase 3 and raise nothing here.
+  if (drawEnabled && drawStructuredPrizes === 0 && drawTotalPrizes > 1) {
     issues.push({
       level: 'critical',
-      code: 'draw_multi_prize_unsupported',
-      message: `This draw lists ${drawTotalPrizes} prizes, but multi-winner draw execution isn't live yet — the campaign can be saved and reviewed as a draft, not activated.`,
+      code: 'draw_unstructured_multi_winner',
+      message: `This draw promises ${drawTotalPrizes} winners but lists no structured prizes — add a prize row per item so the engine knows what to award.`,
     });
   }
+
 
   // INFO — not yet live.
   if (!isActive) {
@@ -349,7 +351,7 @@ export function computeReadiness(facts) {
 // Model-free static imports — the pure export above must stay import-light
 // (utils only, no model graph).
 import { readLegacyViewSafe, getStoredLuckyDraw, getStoredTermsHtml } from '../utils/designConfigV2Clamp.js';
-import { normalizeLuckyDraw, promisedWinnerCount } from '../utils/luckyDraw.js';
+import { normalizeLuckyDraw, promisedWinnerCount, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { checkDrawConsistency, checkDrawRecordDrift } from '../utils/drawConsistency.js';
 
@@ -551,6 +553,7 @@ export async function loadCampaignReadiness(campaignId) {
     // The PROMISE, not just the structured rows (P2-9) — a legacy winners:N
     // config must raise the same critical a prizes[] one does.
     drawTotalPrizes: promisedWinnerCount(ld),
+    drawStructuredPrizes: totalPrizeQuantity(ld),
     screeningConfigured,
     screeningGateOn,
     railActive,

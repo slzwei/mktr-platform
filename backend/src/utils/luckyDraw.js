@@ -82,22 +82,56 @@ export function promisedWinnerCount(ld) {
   return Math.max(totalPrizeQuantity(ld), winners);
 }
 
+/** Hard ceiling on awardable units — mirrors normalizeLuckyDraw's winners clamp. */
+export const MAX_PRIZE_UNITS = 1000;
+
 /**
- * THE multi-prize fail-closed guard (P4-1): the draw engine resolves exactly
- * ONE claimed winner today, so a NORMALIZED draw that promises more than one
- * 422s with DRAW_MULTI_PRIZE_UNSUPPORTED. One code, one message core; call
- * sites append their own context via `suffix` (readiness keeps a prose copy
- * for tone — its lowercase issue code is a separate namespace).
- * Phase 3 (multi-winner engine) removes this.
+ * Expand `prizes` rows into the ordered list of awardable PRIZE UNITS, one per
+ * item (Phase 3 §3.1). Array order is award order — which is exactly what the
+ * pinned T&C promises ("each prize awarded its stated number of times before
+ * the draw moves to the next"), so this expansion IS the published contract.
+ *
+ *   [{qty:1,name:"iPhone"},{qty:3,name:"Voucher"}]
+ *     → [{index:0,name:"iPhone",rowIndex:0},
+ *        {index:1,name:"Voucher",rowIndex:1}, …, {index:3,…}]
+ *
+ * One source of truth for expansion, unit-testable without a database. Returns
+ * [] for legacy/unstructured configs — those draw a single unit via the
+ * winnersCount:1 default, never through here.
  */
-export function assertSingleWinnerDraw(ld, { suffix = '.' } = {}) {
-  const total = promisedWinnerCount(ld);
-  if (total > 1) {
+export function expandPrizeUnits(prizes) {
+  if (!Array.isArray(prizes)) return [];
+  const units = [];
+  prizes.forEach((row, rowIndex) => {
+    const qty = Number.isInteger(row?.qty) && row.qty >= 1 ? row.qty : 0;
+    const name = typeof row?.name === 'string' ? row.name : '';
+    if (!name || qty < 1) return;
+    for (let i = 0; i < qty && units.length < MAX_PRIZE_UNITS; i += 1) {
+      units.push({ index: units.length, name, rowIndex });
+    }
+  });
+  return units;
+}
+
+/**
+ * The one fail-closed promise guard left after Phase 3 (blocker #5).
+ *
+ * The multi-winner engine awards N units derived from `prizes[]`. A LEGACY
+ * config carrying `winners: 5` with NO `prizes[]` has no unit list to expand,
+ * so the engine would mint a single unit while publicLuckyDraw advertises five
+ * winners — the exact promise/delivery split the gates existed to prevent.
+ * Structured multi-prize draws are now fully supported and pass freely.
+ */
+export function assertPromiseIsDeliverable(ld, { suffix = '.' } = {}) {
+  const structured = totalPrizeQuantity(ld);
+  if (structured > 0) return; // expandable → the engine can deliver it
+  const winners = Number.isInteger(ld?.winners) && ld.winners > 0 ? ld.winners : 0;
+  if (winners > 1) {
     const err = new AppError(
-      `This draw promises ${total} prizes, but multi-winner draw execution isn't live yet${suffix}`,
+      `This draw promises ${winners} winners but lists no structured prizes, so the engine cannot tell what to award${suffix}`,
       422
     );
-    err.data = { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' };
+    err.data = { code: 'DRAW_UNSTRUCTURED_MULTI_WINNER' };
     throw err;
   }
 }

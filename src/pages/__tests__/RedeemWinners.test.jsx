@@ -177,3 +177,73 @@ describe('RedeemWinners — still-open grid', () => {
     expect(screen.getByText('No draw is open right now.')).toBeInTheDocument();
   });
 });
+
+describe('RedeemWinners — multi-winner draws (Phase 3)', () => {
+  const fiveWinnerDraw = {
+    draw: 'Draw 05',
+    prize: 'AirPods Pro 3',
+    prizeMeta: 'Five winners drawn from 2,140 verified entries',
+    drawnOn: '30 Sep 2026',
+    winners: [
+      { name: 'Sarah T.', entry: '9••• •312', area: 'Bedok', status: 'claimed' },
+      { name: 'Marcus L.', entry: '8••• •907', status: 'claimed' },
+      { name: 'Priya R.', entry: '9••• •620', status: 'claimed' },
+      { name: 'Wei Ming C.', entry: '9••• •144', status: 'claimed' },
+      { name: 'Aisha B.', entry: '8••• •455', status: 'pending' },
+    ],
+  };
+
+  it('renders ONE grouped result, not five orphan cards', async () => {
+    mockWinners.list = [fiveWinnerDraw];
+    await renderPage();
+
+    // One draw event, headlined by its count.
+    expect(screen.getByText('Latest result · Draw 05')).toBeInTheDocument();
+    expect(screen.getByText('5 winners')).toBeInTheDocument();
+    // Every winner is named on that single result.
+    for (const w of fiveWinnerDraw.winners) {
+      expect(screen.getByText(w.name)).toBeInTheDocument();
+      expect(screen.getByText(w.entry)).toBeInTheDocument();
+    }
+    // ...and none of them leaked into the "earlier draws" ledger.
+    expect(screen.queryByText('Earlier draws')).not.toBeInTheDocument();
+  });
+
+  it('stays Contacted while ANY winner has not claimed — matching the engine', async () => {
+    mockWinners.list = [fiveWinnerDraw];
+    const { container } = await renderPage();
+    expect(container.querySelector('.rw-tag--status')).toHaveTextContent('Contacted');
+  });
+
+  it('reads Claimed only once EVERY winner has claimed', async () => {
+    mockWinners.list = [{
+      ...fiveWinnerDraw,
+      winners: fiveWinnerDraw.winners.map((w) => ({ ...w, status: 'claimed' })),
+    }];
+    const { container } = await renderPage();
+    expect(container.querySelector('.rw-tag--status')).toHaveTextContent('Claimed');
+  });
+
+  it('summarises a grouped draw in the ledger by count, not by one name', async () => {
+    mockWinners.list = [winner(), fiveWinnerDraw];
+    await renderPage();
+    expect(screen.getByText('5 winners')).toBeInTheDocument();
+    // The masked identities stay on the draw's own result, not the ledger row.
+    expect(screen.queryByText('Sarah T. · 9••• •312')).not.toBeInTheDocument();
+  });
+
+  it('still renders a flat single-winner row unchanged', async () => {
+    mockWinners.list = [winner()];
+    await renderPage();
+    expect(screen.getByText('Sarah T.')).toBeInTheDocument();
+    expect(screen.getByText('9••• •312')).toBeInTheDocument();
+    expect(screen.getByText('Bedok')).toBeInTheDocument();
+    expect(screen.queryByText(/^\d+ winners$/)).not.toBeInTheDocument();
+  });
+
+  it('labels the photo for the group rather than one winner', async () => {
+    mockWinners.list = [{ ...fiveWinnerDraw, photo: '/winners/draw05.jpg' }];
+    const { container } = await renderPage();
+    expect(container.querySelector('.rw-arch img')).toHaveAttribute('alt', '5 winners — AirPods Pro 3');
+  });
+});

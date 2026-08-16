@@ -3,7 +3,7 @@ import { DrawTermsVersion, Draw } from '../models/index.js';
 import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
-import { normalizeLuckyDraw, assertSingleWinnerDraw } from '../utils/luckyDraw.js';
+import { normalizeLuckyDraw, assertPromiseIsDeliverable } from '../utils/luckyDraw.js';
 import { checkDrawConsistency } from '../utils/drawConsistency.js';
 import { getStoredTermsHtml, getStoredLuckyDraw } from '../utils/designConfigV2Clamp.js';
 
@@ -131,19 +131,21 @@ export const drawFactsOf = (doc) => {
 };
 
 /**
- * Fail-closed activation gate (docs/plans/lucky-draw-multi-prize-plan.md §3.5):
- * the draw engine resolves exactly ONE claimed winner per campaign
- * (luckyDrawService — a claimed attempt is terminal), so a campaign whose
- * structured prizes total more than one unit must not BE active: it would
- * collect entries under T&Cs the platform cannot honour. Enforced at the
- * service layer on every path that can leave a campaign active (create /
- * update / setCampaignLaunchState) plus createDraw — the launch `force` flag
- * only skips READINESS, never this. Phase 3 (multi-winner engine) removes it.
+ * Activation gate. Phase 3 shipped the multi-winner engine, so a STRUCTURED
+ * multi-prize campaign now activates freely — the engine expands `prizes[]`
+ * into that many prize units and awards each one.
+ *
+ * What still fails closed: an UNSTRUCTURED promise of several winners
+ * (`winners: 5` with no `prizes[]`). There is no unit list to expand, so the
+ * engine would award one prize while the public page advertises five — the
+ * promise/delivery split these gates exist to prevent. Enforced on every path
+ * that can leave a campaign active (create / update / setCampaignLaunchState)
+ * plus createDraw; the launch `force` flag only skips READINESS, never this.
  */
 export function assertDrawActivatable(designConfig) {
   const ld = normalizeLuckyDraw(getStoredLuckyDraw(designConfig));
   if (!ld || ld.enabled !== true) return;
-  assertSingleWinnerDraw(ld, { suffix: ' — the campaign can stay a draft (or paused) but cannot be active.' });
+  assertPromiseIsDeliverable(ld, { suffix: ' — the campaign can stay a draft (or paused) but cannot be active.' });
 }
 
 /**
