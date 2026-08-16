@@ -6,19 +6,26 @@
 // written permission (photoCaption should say so). Photos live in
 // public/winners/ (JPG/PNG, roughly square, ≥600px).
 //
-// Newest draw first — the top entry renders as the featured card. Example:
+// Newest draw first — the top entry renders as the featured result and the
+// rest fill the "Earlier draws" ledger. Example:
 //
 //   {
-//     draw: 'Drop 08',                    // which drop/campaign the draw belonged to
-//     prize: 'Cabin luggage',
-//     prizeMeta: 'Hardshell spinner · 1 of 300 entries drawn',
+//     draw: 'Draw 04',                    // which drop/campaign the draw belonged to
+//     prize: 'Family staycation for four',
+//     prizeMeta: 'Two nights, weekend stay · drawn from 1,240 verified entries',
 //     name: 'Sarah T.',                   // masked
 //     entry: '9••• •312',                 // masked mobile/entry number
 //     area: 'Bedok',                      // optional
 //     drawnOn: '20 Jul 2026',
 //     status: 'claimed',                  // 'claimed' | 'pending' (contacted, not yet collected)
-//     photo: '/winners/drop08-sarah.jpg', // optional — omit for initials avatar
-//     photoCaption: 'Sarah collects her luggage',
+//     archTag: 'prize: staycation',       // optional caption for the placeholder panel
+//     photo: '/winners/draw04-sarah.jpg', // optional — omit for the placeholder panel
+//     photoCaption: 'Sarah collects her staycation',
 //   },
 
 export const WINNERS = [];
+
+/** Board label for a winner's claim state. Unknown/missing → treated as drawn. */
+export function statusLabel(status) {
+  return status === 'pending' ? 'Contacted' : 'Claimed';
+}
