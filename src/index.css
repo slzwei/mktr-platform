@@ -124,3 +124,17 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── Visible-viewport height for full-page campaign surfaces ──────────────
+   `100vh` on mobile is the LARGE viewport: it measures the page as if the
+   browser's collapsing toolbar were hidden, so a `min-height:100vh` page is
+   taller than what the user can actually see. Scrolled to the bottom that
+   surplus reads as a band of empty background under the content — the "large
+   space at the bottom" on the post-submit screens.
+
+   `dvh` tracks the visible height instead. The `vh` declaration stays as the
+   fallback for browsers without `dvh` (pre-2022), and @supports upgrades it. */
+:root { --cp-vh: 100vh; }
+@supports (height: 100dvh) {
+  :root { --cp-vh: 100dvh; }
+}

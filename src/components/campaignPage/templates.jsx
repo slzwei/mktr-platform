@@ -132,7 +132,7 @@ function Editorial({ t, content, params, luckyDraw, funnel, formAnchorRef, scrol
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: 'var(--cp-vh, 100vh)',
         background: t.bg,
         backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined,
         padding: 'max(20px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom))',
@@ -206,7 +206,7 @@ function Poster({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollTo
   const heroBackdrop = t.dark ? t.card : '#17191E';
   const showCta = content.media.kind !== 'none' && !!content.heroCtaLabel;
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, fontFamily: SANS, color: t.ink }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: t.bg, fontFamily: SANS, color: t.ink }}>
       <div style={{ position: 'relative', height: mobile ? 430 : 480, background: heroBackdrop, overflow: 'hidden' }}>
         <MediaBlock t={t} media={content.media} radius={0} style={{ position: 'absolute', inset: 0, aspectRatio: 'auto', height: '100%' }} />
         <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: `linear-gradient(to top, ${fade} 4%, rgba(12,10,8,.28) 55%, rgba(12,10,8,.2))` }} />
@@ -283,7 +283,7 @@ function Split({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, r
     </div>
   );
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : mediaSide === 'left' ? '1fr 1.05fr' : '1.05fr 1fr', minHeight: '100vh', background: t.bg, fontFamily: SANS, color: t.ink }}>
+    <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : mediaSide === 'left' ? '1fr 1.05fr' : '1.05fr 1fr', minHeight: 'var(--cp-vh, 100vh)', background: t.bg, fontFamily: SANS, color: t.ink }}>
       {mediaSide === 'left' || mobile ? (
         <>
           {mediaPanel}
@@ -304,8 +304,8 @@ function Split({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, r
 function Spotlight({ t, content, luckyDraw, funnel, formAnchorRef, stage, referrerName }) {
   const pastQuiz = stage !== 'quiz';
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink, padding: '16px 16px 0', boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: 460, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100vh', boxSizing: 'border-box' }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink, padding: '16px 16px 0', boxSizing: 'border-box' }}>
+      <div style={{ maxWidth: 460, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16, minHeight: 'var(--cp-vh, 100vh)', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4 }}>
           <span data-se="content.wordmark" style={{ fontFamily: t.fontStack, fontSize: 17, fontWeight: 700 }}>{content.wordmark}</span>
           <DrawBadge t={t} luckyDraw={luckyDraw} inverted={false} />
@@ -343,7 +343,7 @@ function Spotlight({ t, content, luckyDraw, funnel, formAnchorRef, stage, referr
 
 function Express({ t, content, params, luckyDraw, funnel, formAnchorRef, referrerName }) {
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink, display: 'flex', flexDirection: 'column', justifyContent: 'safe center', padding: 16, boxSizing: 'border-box' }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink, display: 'flex', flexDirection: 'column', justifyContent: 'safe center', padding: 16, boxSizing: 'border-box' }}>
       <div style={{ maxWidth: 430, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div data-se="content.wordmark" style={{ textAlign: 'center', fontFamily: t.fontStack, fontSize: 18, fontWeight: 700 }}>{content.wordmark}</div>
         <DrawBadge t={t} luckyDraw={luckyDraw} />
@@ -364,7 +364,7 @@ function Journey({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollT
   const alternate = params.sectionRhythm !== 'stacked';
   const showSticky = params.stickyCta !== false && stage !== 'outcome';
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink }}>
+    <div style={{ minHeight: 'var(--cp-vh, 100vh)', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink }}>
       <div style={{ maxWidth: 600, margin: '0 auto', padding: mobile ? 16 : 26, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div data-se="content.wordmark" style={{ textAlign: 'center', fontFamily: t.fontStack, fontSize: 20, fontWeight: 700, paddingTop: 6 }}>{content.wordmark}</div>
         <DrawBadge t={t} luckyDraw={luckyDraw} />

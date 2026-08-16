@@ -508,7 +508,7 @@ export default function LeadCapture() {
   // Loading state
   if (!campaign && !error) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: TOKENS.pagebg }}>
+      <div style={{ minHeight: 'var(--cp-vh, 100vh)', backgroundColor: TOKENS.pagebg }}>
         <TypingLoader />
       </div>
     );
@@ -636,7 +636,7 @@ export default function LeadCapture() {
       return (
         <div
           style={{
-            minHeight: '100vh',
+            minHeight: 'var(--cp-vh, 100vh)',
             background: vt.bg,
             display: 'flex',
             flexDirection: 'column',

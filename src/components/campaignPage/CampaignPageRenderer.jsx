@@ -74,7 +74,7 @@ function BlockedPage({ t, content, reason, luckyDraw }) {
     <div
       data-campaign-page-blocked={reason}
       style={{
-        minHeight: '100vh',
+        minHeight: 'var(--cp-vh, 100vh)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
