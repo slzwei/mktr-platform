@@ -24,6 +24,15 @@ export const STUDIO_EDIT_TARGETS = {
   'content.footer.regulatory': { section: 'page', id: 'studio-regulatory' },
   'content.footer.brand': { section: 'page', id: 'studio-brand-footer' },
   'template.params.express.trustLine': { section: 'page', id: 'studio-trustline' },
+  // Checklist step-rail copy — fields render only under the checklist
+  // template, and the markers are emitted only by that template (same
+  // condition), draw or not.
+  'template.params.checklist.step1Title': { section: 'page', id: 'studio-cl-step1-title' },
+  'template.params.checklist.step1Body': { section: 'page', id: 'studio-cl-step1-body' },
+  'template.params.checklist.step2Title': { section: 'page', id: 'studio-cl-step2-title' },
+  'template.params.checklist.step2Body': { section: 'page', id: 'studio-cl-step2-body' },
+  'template.params.checklist.step3Title': { section: 'page', id: 'studio-cl-step3-title' },
+  'template.params.checklist.step3Body': { section: 'page', id: 'studio-cl-step3-body' },
   // Draw-chrome overrides — their fields render only when luckyDraw is
   // enabled, and the markers are emitted only on draw pages (same condition).
   'content.drawCopy.trustRow': { section: 'page', id: 'studio-draw-trustrow' },

@@ -359,6 +359,48 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
               checked={params.heroBand !== false}
               onChange={(v) => setPath('template.params.checklist.heroBand', v)}
             />
+            {(() => {
+              // Placeholders = exactly what an untouched campaign renders on
+              // MOBILE. Desktop keeps its own terser wording until you type
+              // here; anything you type replaces BOTH layouts.
+              const drawOn = doc.luckyDraw?.enabled === true;
+              const w = Number.isInteger(doc.luckyDraw?.winners) && doc.luckyDraw.winners > 1 ? doc.luckyDraw.winners : 1;
+              const closes = formatDrawDateFull(doc.luckyDraw?.closesAt) || 'the close date';
+              const t3 = drawOn ? "You're in the draw" : "You're in";
+              const b3 = drawOn
+                ? `Your entry pass arrives by WhatsApp and email. ${w > 1 ? `${w} winners` : 'One winner'} drawn after ${closes} in a witnessed process.`
+                : 'Your details are received securely and confirmed by email.';
+              const step = (n, tLabel, tPlaceholder, bLabel, bPlaceholder) => (
+                <>
+                  <TextField
+                    id={`studio-cl-step${n}-title`}
+                    label={tLabel}
+                    bind={bind(`template.params.checklist.step${n}Title`, LIMITS.stepTitle)}
+                    placeholder={tPlaceholder}
+                  />
+                  <TextAreaField
+                    id={`studio-cl-step${n}-body`}
+                    label={bLabel}
+                    bind={bind(`template.params.checklist.step${n}Body`, LIMITS.stepBody)}
+                    rows={2}
+                    placeholder={bPlaceholder}
+                  />
+                </>
+              );
+              return (
+                <>
+                  <WarnNote tone="info">
+                    The three numbered steps. Empty = the default shown in the
+                    field. Text you type here replaces that step on BOTH mobile
+                    and desktop, and is static — it will NOT follow later
+                    changes to the draw settings (winners, dates).
+                  </WarnNote>
+                  {step(1, 'Step 1 title', 'Drop your details', 'Step 1 body', 'Empty on mobile — the form sits here')}
+                  {step(2, 'Step 2 title', 'Verify with an SMS code', 'Step 2 body', 'One entry per verified number — no bots, no multiple entries. Free.')}
+                  {step(3, 'Step 3 title', t3, 'Step 3 body', b3)}
+                </>
+              );
+            })()}
           </>
         )}
         {DRAW_TEMPLATE_SET.has(templateId) && (

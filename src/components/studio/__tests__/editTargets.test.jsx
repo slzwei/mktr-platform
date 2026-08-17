@@ -278,25 +278,32 @@ describe('useEditTargetFocus choreography', () => {
 
 describe('map ↔ panel contract', () => {
   it('every edit target resolves to a rendered element in its section panel', () => {
-    // Express so the trust-line param field renders; every other page target
-    // is unconditional in PagePanel. A target declaring another section MUST
+    // Template-scoped param fields render only under their own template, so
+    // the 'page' section needs one harness per such template: express (trust
+    // line) + checklist (step-rail copy). Every other page target is
+    // unconditional in PagePanel. A target declaring another section MUST
     // extend this test with that section's panel harness (diff review #4) —
     // 'form' mounts FormPanel (profileQuestions master toggle renders
     // unconditionally inside its section).
     const doc = docFor('express');
     doc.luckyDraw = { enabled: true, prize: 'P', closesAt: '2099-12-30', boostClosesAt: '2099-12-30', multiplier: 10, winners: 1 };
+    const checklistDoc = { ...doc, template: { ...doc.template, id: 'checklist' } };
     const { container: pageContainer } = render(
       <PagePanel doc={doc} setPath={vi.fn()} mut={vi.fn()} />
+    );
+    const { container: checklistContainer } = render(
+      <PagePanel doc={checklistDoc} setPath={vi.fn()} mut={vi.fn()} />
     );
     const { container: formContainer } = render(
       <FormPanel doc={doc} setPath={vi.fn()} mut={vi.fn()} />
     );
-    const harnesses = { page: pageContainer, form: formContainer };
+    const harnesses = { page: [pageContainer, checklistContainer], form: [formContainer] };
     for (const [path, target] of Object.entries(STUDIO_EDIT_TARGETS)) {
       expect(STUDIO_SECTIONS.map(([id]) => id)).toContain(target.section);
       const harness = harnesses[target.section];
       expect(harness, `no panel harness for section "${target.section}" (${path})`).toBeTruthy();
-      expect(harness.querySelector(`#${target.id}`), `missing #${target.id} for ${path}`).toBeTruthy();
+      const found = harness.some((c) => c.querySelector(`#${target.id}`));
+      expect(found, `missing #${target.id} for ${path}`).toBe(true);
     }
   });
 });

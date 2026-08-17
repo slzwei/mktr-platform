@@ -795,6 +795,20 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
   const rail = params.railStyle === 'dots'
     ? { width: 0, borderLeft: `2px dotted ${CL.line}` }
     : { width: 2, background: CL.line };
+  /**
+   * Step-rail copy. Each of the three steps has an operator override at
+   * template.params.checklist.step{N}{Title,Body} (Studio → Page → CHECKLIST);
+   * empty means "use this layout's built-in default", which is deliberately
+   * terser on desktop (inline "**title** body") than on mobile (title over
+   * body). An override wins on BOTH layouts — one field, one edit.
+   * Bodies render only when non-empty, so a blank one stamps no dead marker.
+   */
+  const stepCopy = (n, part, fallback, Tag = 'span') => {
+    const raw = params[`step${n}${part}`];
+    const text = typeof raw === 'string' && raw.trim() ? raw.trim() : fallback;
+    if (!text) return null;
+    return <Tag data-se={`template.params.checklist.step${n}${part}`}>{text}</Tag>;
+  };
   const circle = (inner, kind) => (
     <div
       style={{
@@ -825,19 +839,24 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
   const boostInline = s.draw && params.boostStep !== 'footnote';
   const spine = (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {spineStep('s1', circle('1', 'filled'), 'Drop your details', null, {
-        children: (
-          <div ref={formAnchorRef} style={{ background: CL.card, border: `1px solid ${CL.line}`, borderRadius: 12, padding: 14 }}>
-            <ReferredBadge t={t} referrerName={referrerName} />
-            {funnel}
-          </div>
-        ),
-      })}
-      {spineStep('s2', circle('2', 'outline'), 'Verify with an SMS code', 'One entry per verified number — no bots, no multiple entries. Free.')}
-      {spineStep('s3', circle('3', 'outline'), s.draw ? "You're in the draw" : "You're in",
-        s.draw
+      {spineStep('s1', circle('1', 'filled'),
+        stepCopy(1, 'Title', 'Drop your details'),
+        stepCopy(1, 'Body', ''), {
+          children: (
+            <div ref={formAnchorRef} style={{ background: CL.card, border: `1px solid ${CL.line}`, borderRadius: 12, padding: 14 }}>
+              <ReferredBadge t={t} referrerName={referrerName} />
+              {funnel}
+            </div>
+          ),
+        })}
+      {spineStep('s2', circle('2', 'outline'),
+        stepCopy(2, 'Title', 'Verify with an SMS code'),
+        stepCopy(2, 'Body', 'One entry per verified number — no bots, no multiple entries. Free.'))}
+      {spineStep('s3', circle('3', 'outline'),
+        stepCopy(3, 'Title', s.draw ? "You're in the draw" : "You're in"),
+        stepCopy(3, 'Body', s.draw
           ? `Your entry pass arrives by WhatsApp and email. ${s.winners > 1 ? `${s.winners} winners` : 'One winner'} drawn after ${s.closesFull} in a witnessed process.`
-          : 'Your details are received securely and confirmed by email.',
+          : 'Your details are received securely and confirmed by email.'),
         { last: !boostInline })}
       {boostInline && spineStep('s4', circle('+', 'plus'), `Bonus: make it ×${s.multiplier}`, <span data-se="content.drawCopy.boostBody">{s.boostBody}</span>, { last: true })}
     </div>
@@ -871,9 +890,15 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
               <div key={i} data-se="content.story" style={{ fontSize: 16, lineHeight: 1.55, color: CL.mut }}>{p}</div>
             ))}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', gap: 14 }}>{circle('1', 'filled')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Drop your details</strong> in the form.</div></div>
-              <div style={{ display: 'flex', gap: 14 }}>{circle('2', 'outline')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Verify with an SMS code</strong> — one entry per verified number.</div></div>
-              <div style={{ display: 'flex', gap: 14 }}>{circle('3', 'outline')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>{s.draw ? "You're in." : 'Done.'}</strong> {s.draw ? `Pass by WhatsApp/email; ${s.winners > 1 ? `${s.winners} winners` : 'winner'} drawn after ${s.closesFull}.` : 'Your details are received securely.'}</div></div>
+              {[
+                ['1', 'filled', stepCopy(1, 'Title', 'Drop your details', 'strong'), stepCopy(1, 'Body', 'in the form.')],
+                ['2', 'outline', stepCopy(2, 'Title', 'Verify with an SMS code', 'strong'), stepCopy(2, 'Body', '— one entry per verified number.')],
+                ['3', 'outline', stepCopy(3, 'Title', s.draw ? "You're in." : 'Done.', 'strong'), stepCopy(3, 'Body', s.draw
+                  ? `Pass by WhatsApp/email; ${s.winners > 1 ? `${s.winners} winners` : 'winner'} drawn after ${s.closesFull}.`
+                  : 'Your details are received securely.')],
+              ].map(([n, kind, title, body]) => (
+                <div key={n} style={{ display: 'flex', gap: 14 }}>{circle(n, kind)}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}>{title}{body ? <>{' '}{body}</> : null}</div></div>
+              ))}
               {s.draw && <div style={{ display: 'flex', gap: 14 }}>{circle('+', 'plus')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><span data-se="content.drawCopy.boostBody"><strong>Bonus ×{s.multiplier}:</strong> {s.boostBody}</span></div></div>}
             </div>
             {s.draw && (

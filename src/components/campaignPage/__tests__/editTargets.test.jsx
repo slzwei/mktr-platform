@@ -91,6 +91,15 @@ const DC_F = 'content.drawCopy.freeEntryTag';
 const DC_B = 'content.drawCopy.boostBody';
 const DC_W = 'content.drawCopy.winnersNote';
 const DC_C = 'content.drawCopy.ctaSubline';
+// Checklist step-rail copy (template.params.checklist.step*) — checklist only.
+// Step 1's body is empty by default on MOBILE (the form sits in that slot), so
+// its marker is desktop-only until an operator types one.
+const CL_STEP = [
+  'template.params.checklist.step1Title',
+  'template.params.checklist.step2Title', 'template.params.checklist.step2Body',
+  'template.params.checklist.step3Title', 'template.params.checklist.step3Body',
+];
+const CL_S1B = 'template.params.checklist.step1Body';
 const sorted = (arr) => [...new Set(arr)].sort();
 
 /** Expected editable-path set per template and viewport (the truth table). */
@@ -144,8 +153,8 @@ const EXPECTED = {
   },
   // Checklist has no emphasis site at all; story is desktop-only.
   checklist: {
-    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_B],
-    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_B],
+    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_B, ...CL_STEP],
+    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_B, ...CL_STEP, CL_S1B],
   },
 };
 
@@ -268,6 +277,50 @@ describe('draw-copy overrides', () => {
     });
     expect(container.querySelectorAll('[data-se^="content.drawCopy."]').length).toBe(0);
     expect(container.textContent).toContain('FREE ENTRY');
+  });
+});
+
+describe('checklist step-rail copy (template.params.checklist.step*)', () => {
+  const withSteps = (over) => {
+    const doc = fullDoc('checklist');
+    doc.template.params = {
+      ...doc.template.params,
+      checklist: { ...doc.template.params?.checklist, ...over },
+    };
+    return doc;
+  };
+
+  it('an override replaces that step on BOTH layouts; untouched steps keep their defaults', async () => {
+    for (const w of [390, 1024]) {
+      setViewport(w);
+      const { container, unmount } = renderTemplate(
+        withSteps({ step2Title: 'Confirm by text message', step2Body: 'One go per number.' })
+      );
+      await waitFor(() => {
+        expect(container.textContent).toContain('Confirm by text message');
+        expect(container.textContent).toContain('One go per number.');
+        expect(container.textContent).not.toContain('Verify with an SMS code');
+        expect(container.textContent).toContain('Drop your details'); // untouched
+      });
+      unmount();
+    }
+  });
+
+  it('whitespace-only falls back to the layout default, and an empty body stamps no marker', async () => {
+    setViewport(390);
+    const { container } = renderTemplate(withSteps({ step1Title: '   ', step1Body: '' }));
+    await waitFor(() => {
+      expect(container.textContent).toContain('Drop your details');
+    });
+    expect(container.querySelectorAll(`[data-se="${CL_S1B}"]`).length).toBe(0);
+  });
+
+  it('a typed step-1 body appears on mobile, where the default is empty', async () => {
+    setViewport(390);
+    const { container } = renderTemplate(withSteps({ step1Body: 'Takes about a minute.' }));
+    await waitFor(() => {
+      expect(container.querySelector(`[data-se="${CL_S1B}"]`)?.textContent).toBe('Takes about a minute.');
+    });
   });
 });
 

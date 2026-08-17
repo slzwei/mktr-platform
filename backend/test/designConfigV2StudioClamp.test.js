@@ -56,7 +56,11 @@ describe('draw-template ids + params (drawTemplates.jsx)', () => {
     expect(out.template.params.stub).toEqual({ ticketTone: 'paper', stubEdge: 'bottom', showSerial: false });
     // Untouched draw templates keep seeded defaults.
     expect(out.template.params.gazette).toEqual({ ruleDensity: 'airy', accentUse: 'fill', showSerial: true });
-    expect(out.template.params.checklist).toEqual({ boostStep: 'inline', heroBand: true, railStyle: 'line' });
+    expect(out.template.params.checklist).toEqual({
+      boostStep: 'inline', heroBand: true, railStyle: 'line',
+      // Step-rail copy seeds empty = "use the template's built-in default".
+      step1Title: '', step1Body: '', step2Title: '', step2Body: '', step3Title: '', step3Body: '',
+    });
   });
 
   it('unknown template id still falls back to editorial', () => {

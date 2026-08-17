@@ -50,6 +50,8 @@ export const LIMITS = {
   quizIntroS: 160, quizStart: 40, qPrompt: 140, qOption: 80, pTitle: 40,
   pDesc: 400, pCta: 40, pAngle: 80,
   mediaAlt: 120, formWidthMin: 300, formWidthMax: 600, trustLine: 80,
+  // Checklist step-rail copy (template.params.checklist.step{1,2,3}{Title,Body})
+  stepTitle: 60, stepBody: 200,
   // Draw-chrome copy overrides (content.drawCopy — v2-only, dropped on downgrade)
   drawTrustRow: 80, drawScamLine: 120, drawWinnersNote: 120,
   drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
@@ -128,8 +130,25 @@ export const TEMPLATE_REGISTRY = {
   },
   checklist: {
     draw: true,
-    params: { boostStep: 'inline', heroBand: true, railStyle: 'line' },
-    rules: { boostStep: { oneOf: ['inline', 'footnote'] }, railStyle: { oneOf: ['line', 'dots'] } },
+    // step{1,2,3}{Title,Body}: the numbered step-rail copy. '' = "use the
+    // template's built-in default", which differs per layout (desktop renders
+    // "**title** body" inline and is terser); an override wins on BOTH.
+    params: {
+      boostStep: 'inline', heroBand: true, railStyle: 'line',
+      step1Title: '', step1Body: '',
+      step2Title: '', step2Body: '',
+      step3Title: '', step3Body: '',
+    },
+    rules: {
+      boostStep: { oneOf: ['inline', 'footnote'] },
+      railStyle: { oneOf: ['line', 'dots'] },
+      step1Title: { maxLen: LIMITS.stepTitle },
+      step1Body: { maxLen: LIMITS.stepBody },
+      step2Title: { maxLen: LIMITS.stepTitle },
+      step2Body: { maxLen: LIMITS.stepBody },
+      step3Title: { maxLen: LIMITS.stepTitle },
+      step3Body: { maxLen: LIMITS.stepBody },
+    },
   },
 };
 
