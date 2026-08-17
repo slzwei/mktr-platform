@@ -461,6 +461,18 @@ export default function LeadCapture() {
     }
   };
 
+  // Outcome screens land the visitor at the TOP (#460 follow-up). Submitting
+  // means having scrolled down a tall capture page, and React keeps that offset
+  // when the outcome screen replaces it — then ShareCampaignDialog locks body
+  // scroll (`body.style.overflow = 'hidden'`) the instant it opens. A stale
+  // offset past the shorter outcome page's content therefore FREEZES the
+  // visitor on a band of empty page background under the content, with no way
+  // to scroll back. Resetting on the transition is what keeps the band away;
+  // the dvh sizing fix alone never covered this path.
+  useEffect(() => {
+    if (submitted || error || duplicateDetected) window.scrollTo(0, 0);
+  }, [submitted, error, duplicateDetected]);
+
   // Duplicate countdown
   useEffect(() => {
     if (!duplicateDetected) return;
