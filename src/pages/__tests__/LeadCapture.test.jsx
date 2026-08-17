@@ -176,6 +176,28 @@ describe('LeadCapture', () => {
  });
  });
 
+ // The share sheet locks body scroll the moment it opens, so an offset carried
+ // over from the taller capture page would strand the visitor on a band of
+ // empty background under the outcome content, unable to scroll back up.
+ it('resets scroll to the top when the outcome screen replaces the form', async () => {
+ apiClient.post.mockResolvedValue({ success: true });
+ const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+ renderPage();
+ await waitFor(() => {
+ expect(screen.getByTestId('signup-form')).toBeInTheDocument();
+ });
+
+ const user = userEvent.setup();
+ await user.click(screen.getByText('Submit'));
+
+ await waitFor(() => {
+ expect(screen.getByTestId('share-dialog')).toBeInTheDocument();
+ });
+ expect(scrollTo).toHaveBeenCalledWith(0, 0);
+ scrollTo.mockRestore();
+ });
+
  it('shows error when submission fails', async () => {
  // First post is analytics (landing), subsequent post for prospect will fail
  let postCount = 0;
