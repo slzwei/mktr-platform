@@ -399,7 +399,7 @@ describe('workers', () => {
     expect(set1.mock.calls[0][3].cas).toEqual({ path: ['gads', 'confirmed_resident'], contains: { state: 'pending', requestId: 'req-1' } });
 
     const set2 = jest.fn().mockResolvedValue(1);
-    const rejected = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set2, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'INVALID_ARGUMENT' }] } }), now: nowAt(T0) });
+    const rejected = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set2, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_INVALID_EVENT' }] } }), now: nowAt(T0) });
     expect(rejected.failedPermanent).toBe(1);
     expect(set2.mock.calls[0][2]).toMatchObject({ state: 'failedPermanent', reason: 'ingest_rejected' });
 
