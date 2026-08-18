@@ -43,7 +43,11 @@ import {
 } from './tiktokEventsService.js';
 // Cycle-safe + graph-neutral: leadOutcomeService imports only models,
 // metaCapiService and consentService — all already in this module's graph.
-import { processLeadOutcome } from './leadOutcomeService.js';
+import { processLeadOutcome, eventKeysForStatus } from './leadOutcomeService.js';
+import {
+  mergeFirstWins as mergeSourceMetadataFirstWins,
+  removePaths as removeSourceMetadataPaths,
+} from '../utils/prospectJsonPatch.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 import { isPhoneVerifiedDurable } from './verifiedPhoneStore.js';
 import {
@@ -120,6 +124,9 @@ const defaultDeps = {
   sendTikTokLeadEvent,
   sendTikTokCompleteRegistrationEvent,
   processLeadOutcome,
+  eventKeysForStatus,
+  mergeSourceMetadataFirstWins,
+  removeSourceMetadataPaths,
   getOrCreateProspectShareLink,
   isPhoneVerifiedDurable,
   resolveConsumerForCaptureTx,

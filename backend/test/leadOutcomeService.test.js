@@ -33,13 +33,29 @@ function buildDeps(overrides = {}) {
   // verified grant" (the fixtures' old consent_contact:true, ledger-shaped).
   const canMarketTo = overrides.canMarketTo ?? jest.fn().mockResolvedValue(true);
   const sleep = jest.fn().mockResolvedValue(undefined);
+  // Marker writes go through the atomic prospectJsonPatch seam now (plan
+  // google-ads-signal-levers §4.3). The spy EMULATES the write on the
+  // in-memory fixture so existing assertions keep reading the result.
+  const setSourceMetadataPath =
+    overrides.setSourceMetadataPath ??
+    jest.fn(async (id, path, value) => {
+      if (!prospect.sourceMetadata) prospect.sourceMetadata = {};
+      let target = prospect.sourceMetadata;
+      for (const k of path.slice(0, -1)) {
+        if (!target[k]) target[k] = {};
+        target = target[k];
+      }
+      target[path[path.length - 1]] = value;
+      return 1;
+    });
   return {
-    deps: { models: { Prospect, Campaign }, sendConversionEvent, canMarketTo, logger: silentLogger, sleep, ...overrides.deps },
+    deps: { models: { Prospect, Campaign }, sendConversionEvent, canMarketTo, setSourceMetadataPath, logger: silentLogger, sleep, ...overrides.deps },
     prospect,
     Prospect,
     Campaign,
     sendConversionEvent,
     canMarketTo,
+    setSourceMetadataPath,
     sleep,
   };
 }
@@ -55,7 +71,7 @@ const QUALIFIED = {
 
 describe('leadOutcomeService.processLeadOutcome', () => {
   it('dispatches ConfirmedResident with deterministic event_id, back-dated event_time, and pixel override', async () => {
-    const { deps, sendConversionEvent } = buildDeps();
+    const { deps, sendConversionEvent, setSourceMetadataPath } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
@@ -70,7 +86,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
   });
 
   it('won emits BOTH ConfirmedResident and ClosedWon (won implies SC/PR)', async () => {
-    const { deps, prospect, sendConversionEvent } = buildDeps();
+    const { deps, prospect, sendConversionEvent, setSourceMetadataPath } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'won', old_status: 'proposed' });
@@ -83,14 +99,18 @@ describe('leadOutcomeService.processLeadOutcome', () => {
     expect(sendConversionEvent.mock.calls[1][2].eventName).toBe('ClosedWon');
     expect(prospect.sourceMetadata.capi.confirmedResidentAt).toEqual(expect.any(String));
     expect(prospect.sourceMetadata.capi.closedWonAt).toEqual(expect.any(String));
-    expect(prospect.save).toHaveBeenCalledTimes(2);
+    expect(setSourceMetadataPath).toHaveBeenCalledTimes(2);
+    expect(setSourceMetadataPath.mock.calls.map((c) => c[1])).toEqual([
+      ['capi', 'confirmedResidentAt'],
+      ['capi', 'closedWonAt'],
+    ]);
   });
 
   it('won skips ConfirmedResident if already sent, still emits ClosedWon', async () => {
     const prospect = makeProspect({
       sourceMetadata: { consent_contact: true, capi: { confirmedResidentAt: '2026-06-08T00:00:00Z' } },
     });
-    const { deps, sendConversionEvent } = buildDeps({ prospect });
+    const { deps, sendConversionEvent, setSourceMetadataPath } = buildDeps({ prospect });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'won' });
@@ -101,14 +121,14 @@ describe('leadOutcomeService.processLeadOutcome', () => {
   });
 
   it('writes the dedup marker ONLY after a successful send', async () => {
-    const { deps, prospect } = buildDeps();
+    const { deps, prospect, setSourceMetadataPath } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     await svc.processLeadOutcome(QUALIFIED);
 
     expect(prospect.sourceMetadata.capi.confirmedResidentAt).toEqual(expect.any(String));
-    expect(prospect.changed).toHaveBeenCalledWith('sourceMetadata', true);
-    expect(prospect.save).toHaveBeenCalledTimes(1);
+    expect(setSourceMetadataPath).toHaveBeenCalledTimes(1);
+    expect(setSourceMetadataPath.mock.calls[0][1]).toEqual(['capi', 'confirmedResidentAt']);
     // existing sourceMetadata preserved, not clobbered
     expect(prospect.sourceMetadata.consent_contact).toBe(true);
     expect(prospect.sourceMetadata.fbp).toBe('fb.1.1.x');
@@ -116,14 +136,14 @@ describe('leadOutcomeService.processLeadOutcome', () => {
 
   it('does NOT mark (leaves re-tryable) when the send fails', async () => {
     const sendConversionEvent = jest.fn().mockResolvedValue({ sent: false, status: 500 });
-    const { deps, prospect } = buildDeps({ sendConversionEvent });
+    const { deps, prospect, setSourceMetadataPath } = buildDeps({ sendConversionEvent });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
 
     expect(result).toMatchObject({ dispatched: [], duplicate: [], failed: ['ConfirmedResident'] });
     expect(prospect.sourceMetadata.capi).toBeUndefined();
-    expect(prospect.save).not.toHaveBeenCalled();
+    expect(setSourceMetadataPath).not.toHaveBeenCalled();
   });
 
   it('retries a transient failure then succeeds', async () => {
@@ -131,7 +151,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
       .fn()
       .mockResolvedValueOnce({ sent: false, status: 503 })
       .mockResolvedValueOnce({ sent: true });
-    const { deps, prospect, sleep } = buildDeps({ sendConversionEvent });
+    const { deps, prospect, sleep, setSourceMetadataPath } = buildDeps({ sendConversionEvent });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
@@ -139,12 +159,12 @@ describe('leadOutcomeService.processLeadOutcome', () => {
     expect(result.dispatched).toEqual(['ConfirmedResident']);
     expect(sendConversionEvent).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledTimes(1);
-    expect(prospect.save).toHaveBeenCalledTimes(1);
+    expect(setSourceMetadataPath).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT retry a guarded (CAPI disabled / ineligible) result', async () => {
     const sendConversionEvent = jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' });
-    const { deps, sleep } = buildDeps({ sendConversionEvent });
+    const { deps, sleep, setSourceMetadataPath } = buildDeps({ sendConversionEvent });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
@@ -156,7 +176,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
 
   it('does NOT retry a 4xx (non-transient) result', async () => {
     const sendConversionEvent = jest.fn().mockResolvedValue({ sent: false, status: 400 });
-    const { deps, sleep } = buildDeps({ sendConversionEvent });
+    const { deps, sleep, setSourceMetadataPath } = buildDeps({ sendConversionEvent });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
@@ -170,18 +190,18 @@ describe('leadOutcomeService.processLeadOutcome', () => {
     const prospect = makeProspect({
       sourceMetadata: { consent_contact: true, capi: { confirmedResidentAt: '2026-06-08T00:00:00Z' } },
     });
-    const { deps, sendConversionEvent } = buildDeps({ prospect });
+    const { deps, sendConversionEvent, setSourceMetadataPath } = buildDeps({ prospect });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
 
     expect(result).toMatchObject({ dispatched: [], duplicate: ['ConfirmedResident'], failed: [] });
     expect(sendConversionEvent).not.toHaveBeenCalled();
-    expect(prospect.save).not.toHaveBeenCalled();
+    expect(setSourceMetadataPath).not.toHaveBeenCalled();
   });
 
   it('skips cleanly when the prospect is not found', async () => {
-    const { deps, Prospect, sendConversionEvent } = buildDeps();
+    const { deps, Prospect, sendConversionEvent, setSourceMetadataPath } = buildDeps();
     Prospect.findByPk.mockResolvedValueOnce(null);
     const svc = makeLeadOutcomeService(deps);
 
@@ -192,7 +212,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
   });
 
   it('skips unmapped statuses without touching the DB', async () => {
-    const { deps, Prospect } = buildDeps();
+    const { deps, Prospect, setSourceMetadataPath } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'contacted' });
@@ -202,7 +222,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
   });
 
   it('omits eventTime when occurred_at is missing/invalid (falls back to now in payload)', async () => {
-    const { deps, sendConversionEvent } = buildDeps();
+    const { deps, sendConversionEvent, setSourceMetadataPath } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     await svc.processLeadOutcome({ ...QUALIFIED, occurred_at: 'not-a-date' });
@@ -215,7 +235,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
     process.env.META_EVENT_QUALIFIED = 'Lead';
     process.env.META_EVENT_WON = 'Purchase';
     try {
-      const { deps, sendConversionEvent } = buildDeps();
+      const { deps, sendConversionEvent, setSourceMetadataPath } = buildDeps();
       const svc = makeLeadOutcomeService(deps);
       await svc.processLeadOutcome(QUALIFIED);
       expect(sendConversionEvent.mock.calls[0][2].eventName).toBe('Lead');
@@ -231,7 +251,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
 describe('leadOutcomeService — ledger-derived em/ph gate (3sites)', () => {
   it('computes canMarketTo from the prospect identity + campaign scope and threads it into ctx', async () => {
     const prospect = makeProspect({ consumerId: 'consumer-uuid-1', phone: '+6581234567' });
-    const { deps, canMarketTo, sendConversionEvent } = buildDeps({ prospect });
+    const { deps, canMarketTo, sendConversionEvent, setSourceMetadataPath } = buildDeps({ prospect });
     const svc = makeLeadOutcomeService(deps);
 
     await svc.processLeadOutcome(QUALIFIED);
@@ -247,7 +267,7 @@ describe('leadOutcomeService — ledger-derived em/ph gate (3sites)', () => {
   });
 
   it('threads marketingConsent:false when the ledger denies (withdrawal/unverified)', async () => {
-    const { deps, sendConversionEvent } = buildDeps({ canMarketTo: jest.fn().mockResolvedValue(false) });
+    const { deps, sendConversionEvent, setSourceMetadataPath } = buildDeps({ canMarketTo: jest.fn().mockResolvedValue(false) });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
@@ -257,7 +277,7 @@ describe('leadOutcomeService — ledger-derived em/ph gate (3sites)', () => {
   });
 
   it('fails CLOSED when the ledger lookup rejects — event fires without em/ph consent', async () => {
-    const { deps, sendConversionEvent } = buildDeps({ canMarketTo: jest.fn().mockRejectedValue(new Error('ledger down')) });
+    const { deps, sendConversionEvent, setSourceMetadataPath } = buildDeps({ canMarketTo: jest.fn().mockRejectedValue(new Error('ledger down')) });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
@@ -267,7 +287,7 @@ describe('leadOutcomeService — ledger-derived em/ph gate (3sites)', () => {
   });
 
   it('dispatches the ORIGINAL prospect instance — the PR B clone hack is gone', async () => {
-    const { deps, prospect, sendConversionEvent } = buildDeps({ canMarketTo: jest.fn().mockResolvedValue(false) });
+    const { deps, prospect, sendConversionEvent, setSourceMetadataPath } = buildDeps({ canMarketTo: jest.fn().mockResolvedValue(false) });
     const svc = makeLeadOutcomeService(deps);
 
     await svc.processLeadOutcome(QUALIFIED);

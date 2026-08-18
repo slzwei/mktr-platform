@@ -8,6 +8,7 @@ import { dispatchEvent } from './webhookService.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
+import { setPath as setSourceMetadataPath } from '../utils/prospectJsonPatch.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, buildLeadCreatedPayload } from './prospectHelpers.js';
 import { buildProspectWhere } from './prospectScope.js';
@@ -532,11 +533,12 @@ export function makeRetellService(overrides = {}) {
 
     const recordingUrl = call.recording_url || null;
 
-    // Cache it in sourceMetadata for next time
+    // Cache it in sourceMetadata for next time — atomic single-key write
+    // (prospectJsonPatch): the old whole-object update could delete marker/
+    // fact keys other writers landed after `meta` was read
+    // (plan google-ads-signal-levers §4.3).
     if (recordingUrl) {
-      await prospect.update({
-        sourceMetadata: { ...meta, recordingUrl }
-      });
+      await setSourceMetadataPath(prospect.id, ['recordingUrl'], recordingUrl);
     }
 
     return { recordingUrl };

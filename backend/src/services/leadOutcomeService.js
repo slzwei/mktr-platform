@@ -39,6 +39,7 @@
  */
 
 import { Prospect, Campaign } from '../models/index.js';
+import { setPath as setSourceMetadataPath } from '../utils/prospectJsonPatch.js';
 import { sendConversionEvent as metaSendConversionEvent } from './metaCapiService.js';
 import { canMarketTo as ledgerCanMarketTo } from './consentService.js';
 import { logger } from '../utils/logger.js';
@@ -72,6 +73,7 @@ const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const defaultDeps = {
   models: { Prospect, Campaign },
   sendConversionEvent: metaSendConversionEvent,
+  setSourceMetadataPath,
   canMarketTo: ledgerCanMarketTo,
   logger,
   sleep: realSleep,
@@ -181,10 +183,11 @@ export function makeLeadOutcomeService(overrides = {}) {
       const result = await dispatchWithRetry(prospect, ctx, { eventName });
 
       if (result?.sent) {
-        const capi = { ...(prospect.sourceMetadata?.capi || {}), [markerKey]: new Date().toISOString() };
-        prospect.sourceMetadata = { ...(prospect.sourceMetadata || {}), capi };
-        if (typeof prospect.changed === 'function') prospect.changed('sourceMetadata', true);
-        await prospect.save();
+        // Atomic single-key marker write (prospectJsonPatch) — the old
+        // read-spread-save of the whole object could delete keys any OTHER
+        // writer (google markers, outcome facts, redemption) landed between
+        // this handler's load and save (plan google-ads-signal-levers §4.3).
+        await d.setSourceMetadataPath(prospect.id, ['capi', markerKey], new Date().toISOString());
         dispatched.push(eventName);
       } else {
         // Not marked → reconciliation / next trigger can retry. (`guarded` = CAPI off.)
