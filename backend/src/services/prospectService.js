@@ -188,6 +188,13 @@ export function makeProspectService(overrides = {}) {
     const registrationEventId = meta?.registrationEventId ?? safeBody.registrationEventId;
     const ttclid = meta?.ttclid ?? safeBody.ttclid;
     const ttp = meta?.ttp ?? safeBody.ttp;
+    // Google click ids + capture time (plan google-ads-signal-levers §4.1) —
+    // persisted for the Phase 3 offline-conversion upload; the browser tag
+    // handles its own attribution, so these serve ONLY the server-side path.
+    const gclid = meta?.gclid ?? safeBody.gclid;
+    const gbraid = meta?.gbraid ?? safeBody.gbraid;
+    const wbraid = meta?.wbraid ?? safeBody.wbraid;
+    const gclCapturedAt = meta?.gclCapturedAt ?? safeBody.gclCapturedAt;
     // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
@@ -224,6 +231,7 @@ export function makeProspectService(overrides = {}) {
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       registrationEventId: _re, ttclid: _tc, ttp: _tp,
+      gclid: _gc, gbraid: _gb, wbraid: _wb, gclCapturedAt: _gca,
       consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp, consent_dnc: _cd,
       consent_copy_version: _ccv,
       // consentMetadata is SERVER-authoritative — the third-party-consent evidence is
@@ -268,6 +276,9 @@ export function makeProspectService(overrides = {}) {
       ...(registrationEventId ? { registrationEventId } : {}),
       ...(ttclid ? { ttclid } : {}),
       ...(ttp ? { ttp } : {}),
+      ...(gclid || gbraid || wbraid
+        ? { gcl: { ...(gclid ? { gclid } : {}), ...(gbraid ? { gbraid } : {}), ...(wbraid ? { wbraid } : {}), ...(gclCapturedAt ? { capturedAt: gclCapturedAt } : {}) } }
+        : {}),
       ...(consentContact !== undefined ? { consent_contact: consentContact } : {}),
       ...(consentTerms !== undefined ? { consent_terms: consentTerms } : {}),
       ...(consentCopyVersion !== undefined ? { consent_copy_version: consentCopyVersion } : {}),

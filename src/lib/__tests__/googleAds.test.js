@@ -7,6 +7,8 @@ import {
   toE164Sg,
   setGoogleUserData,
   clearGoogleUserData,
+  captureGclFromUrl,
+  readGcl,
   __resetGoogleAdsStateForTests,
 } from '../googleAds.js';
 
@@ -118,15 +120,19 @@ describe('initGoogleAds', () => {
   it('is idempotent per id — a repeat call neither reconfigures nor re-injects', () => {
     initGoogleAds(CONVERSION_ID);
     initGoogleAds(CONVERSION_ID);
-    expect(gtag).toHaveBeenCalledTimes(1);
+    const configCalls = gtag.mock.calls.filter((c) => c[0] === 'config');
+    expect(configCalls).toHaveLength(1);
+    // each NEW config also fires exactly one gclid-recovery 'get'
+    expect(gtag.mock.calls.filter((c) => c[0] === 'get')).toHaveLength(1);
     expect(document.querySelectorAll(GTAG_SELECTOR)).toHaveLength(1);
   });
 
   it('configures a second id but injects the script only once', () => {
     initGoogleAds(CONVERSION_ID);
     initGoogleAds(OTHER_ID);
-    expect(gtag).toHaveBeenCalledTimes(2);
-    expect(gtag).toHaveBeenLastCalledWith('config', OTHER_ID);
+    const configCalls = gtag.mock.calls.filter((c) => c[0] === 'config');
+    expect(configCalls).toHaveLength(2);
+    expect(configCalls[1]).toEqual(['config', OTHER_ID]);
     expect(document.querySelectorAll(GTAG_SELECTOR)).toHaveLength(1);
   });
 
@@ -341,5 +347,87 @@ describe('setGoogleUserData / clearGoogleUserData', () => {
     expect(
       afterClear.some((c) => c[0] === 'set' && c[1] === 'user_data' && c[2] !== null)
     ).toBe(false);
+  });
+});
+
+describe('captureGclFromUrl / readGcl', () => {
+  beforeEach(() => sessionStorage.clear());
+
+  it('captures gclid/gbraid/wbraid with a load-bearing capturedAt', () => {
+    const stored = captureGclFromUrl('?gclid=g1&gbraid=b1&utm_source=google');
+    expect(stored.gclid).toBe('g1');
+    expect(stored.gbraid).toBe('b1');
+    expect(stored.wbraid).toBeUndefined();
+    expect(new Date(stored.capturedAt).getTime()).not.toBeNaN();
+    expect(readGcl()).toEqual({ gclid: 'g1', gbraid: 'b1', gclCapturedAt: stored.capturedAt });
+  });
+
+  it('is a no-op without any click id, and last-touch overwrites on a new landing', () => {
+    expect(captureGclFromUrl('?utm_source=google')).toBeNull();
+    expect(readGcl()).toBeNull();
+    captureGclFromUrl('?gclid=old');
+    captureGclFromUrl('?gclid=new');
+    expect(readGcl().gclid).toBe('new');
+  });
+
+  it('shapes keys for direct payload spread (gclCapturedAt, not capturedAt)', () => {
+    captureGclFromUrl('?wbraid=w1');
+    const read = readGcl();
+    expect(read.wbraid).toBe('w1');
+    expect(read.capturedAt).toBeUndefined();
+    expect(read.gclCapturedAt).toBeTruthy();
+  });
+});
+
+describe('initGoogleAds gclid recovery via gtag("get")', () => {
+  let gtag;
+  let getCallback;
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    __resetGoogleAdsStateForTests();
+    document.querySelectorAll(GTAG_SELECTOR).forEach((s) => s.remove());
+    getCallback = undefined;
+    gtag = jest_fn_with_get();
+    window.gtag = gtag;
+  });
+
+  afterEach(() => {
+    delete window.gtag;
+    document.querySelectorAll(GTAG_SELECTOR).forEach((s) => s.remove());
+  });
+
+  function jest_fn_with_get() {
+    const fn = vi.fn((...args) => {
+      if (args[0] === 'get') getCallback = args[3];
+    });
+    return fn;
+  }
+
+  it('fills gclid from recovery only when storage has none', () => {
+    initGoogleAds(CONVERSION_ID);
+    expect(typeof getCallback).toBe('function');
+    getCallback('recovered-gclid');
+    expect(readGcl().gclid).toBe('recovered-gclid');
+  });
+
+  it('a stale recovery never overwrites a fresher URL capture', () => {
+    captureGclFromUrl('?gclid=fresh-from-url');
+    initGoogleAds(CONVERSION_ID);
+    getCallback('stale-recovered');
+    expect(readGcl().gclid).toBe('fresh-from-url');
+  });
+
+  it('recovery preserves URL-captured gbraid/wbraid when filling gclid', () => {
+    captureGclFromUrl('?gbraid=b-url');
+    initGoogleAds(CONVERSION_ID);
+    getCallback('recovered');
+    expect(readGcl()).toMatchObject({ gclid: 'recovered', gbraid: 'b-url' });
+  });
+
+  it('an empty recovery result writes nothing', () => {
+    initGoogleAds(CONVERSION_ID);
+    getCallback(undefined);
+    expect(readGcl()).toBeNull();
   });
 });

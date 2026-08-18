@@ -23,6 +23,7 @@ import {
 import {
   shouldTrackGoogle, initGoogleAds, trackGoogleLead,
   setGoogleUserData, clearGoogleUserData,
+  captureGclFromUrl, readGcl,
 } from '@/lib/googleAds';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 import {
@@ -134,6 +135,7 @@ export default function MarketplaceFlow() {
     if (!leadEventIdRef.current) leadEventIdRef.current = generateEventId();
     captureFbcFromUrl(window.location.search);
     captureTtclidFromUrl(window.location.search);
+    captureGclFromUrl(window.location.search);
     captureUtmsFromUrl(window.location.search);
   }, []);
 
@@ -387,6 +389,7 @@ export default function MarketplaceFlow() {
         ...(readUtms() || {}),
         ttclid: readTtclid() || undefined,
         ttp: readTtp() || undefined,
+        ...(readGcl() || {}),
         ...(Object.keys(marketplaceMeta).length ? { marketplace: marketplaceMeta } : {}),
       };
       const payload = Object.fromEntries(

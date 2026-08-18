@@ -10,7 +10,7 @@ import { shouldTrack, initPixel, ensureFbp, trackEvent, captureFbcFromUrl, captu
 import { shouldTrackTikTok, initTikTokPixel, trackTikTokViewContent, captureTtclidFromUrl } from '@/lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
 import { resolveMetaPixelId, resolveTikTokPixelId, resolveGoogleAdsConversionId } from '@/lib/pixelIds';
-import { shouldTrackGoogle, initGoogleAds } from '@/lib/googleAds';
+import { shouldTrackGoogle, initGoogleAds, captureGclFromUrl } from '@/lib/googleAds';
 
 /**
  * Offer detail (/offers/:slug) — the FIRST public content surface for
@@ -45,6 +45,7 @@ export default function MarketplaceOffer() {
   useEffect(() => {
     captureFbcFromUrl(window.location.search);
     captureTtclidFromUrl(window.location.search);
+    captureGclFromUrl(window.location.search);
     captureUtmsFromUrl(window.location.search);
   }, [slug]);
 
