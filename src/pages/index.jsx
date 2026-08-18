@@ -4,6 +4,7 @@ import RedeemOpsRoute from '@/components/auth/RedeemOpsRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import RedeemOpsLayout from '@/components/redeemops/RedeemOpsLayout';
 import RouteErrorBoundary from '@/components/RouteErrorBoundary';
+import AdRollRouteTracker from '@/components/AdRollRouteTracker';
 import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import { brand } from '@/lib/brand';
@@ -216,6 +217,9 @@ function PagesContent() {
 
  return (
  <ErrorBoundary>
+ {/* AdRoll retargeting pageViews on the public browse surfaces. No-op unless
+     the build carries the AdRoll ids; never mounted on the ops surface. */}
+ {!IS_OPS_SURFACE && <AdRollRouteTracker />}
  <Suspense
  fallback={
  <div className="min-h-screen flex items-center justify-center">

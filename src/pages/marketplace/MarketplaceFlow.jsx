@@ -25,6 +25,7 @@ import {
   setGoogleUserData, clearGoogleUserData,
   captureGclFromUrl, readGcl,
 } from '@/lib/googleAds';
+import { shouldTrackAdRoll, initAdRoll, trackAdRollPageView } from '@/lib/adroll';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 import {
   shouldTrackTikTok, captureTtclidFromUrl, readTtclid, readTtp,
@@ -194,6 +195,15 @@ export default function MarketplaceFlow() {
         initGoogleAds(googleId);
         markVcFired(campaign.id, 'google');
       }
+    }
+
+    // AdRoll (retargeting): fires here rather than in AdRollRouteTracker because
+    // the gate needs the loaded campaign to apply the test-data exclusion. No
+    // session guard and no shared event id — a retargeting pixel wants every
+    // qualifying view, and it has no server-side twin to dedup against.
+    if (shouldTrackAdRoll(trackCtx)) {
+      initAdRoll();
+      trackAdRollPageView();
     }
   }, [campaign]);
 
