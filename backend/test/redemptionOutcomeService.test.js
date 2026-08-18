@@ -47,13 +47,30 @@ function buildDeps(overrides = {}) {
   const sendConversionEvent = overrides.sendConversionEvent ?? jest.fn().mockResolvedValue({ sent: true });
   const canMarketTo = overrides.canMarketTo ?? jest.fn().mockResolvedValue(true);
   const sleep = jest.fn().mockResolvedValue(undefined);
+  // Marker writes go through the atomic prospectJsonPatch seam (plan
+  // google-ads-signal-levers §4.3) — the spy EMULATES the first-wins deep
+  // merge on the fixture so existing assertions keep reading the result.
+  const mergeSourceMetadataFirstWins =
+    overrides.mergeSourceMetadataFirstWins ??
+    jest.fn(async (id, path, patch) => {
+      if (!prospect.sourceMetadata) prospect.sourceMetadata = {};
+      let target = prospect.sourceMetadata;
+      for (const k of path) {
+        if (!target[k]) target[k] = {};
+        target = target[k];
+      }
+      for (const [k, v] of Object.entries(patch)) {
+        if (!(k in target)) target[k] = v;
+      }
+      return 1;
+    });
   return {
     deps: {
       models: { Prospect, Campaign, Activation, RewardEntitlement },
-      sendConversionEvent, canMarketTo, logger: silentLogger, sleep,
+      sendConversionEvent, canMarketTo, mergeSourceMetadataFirstWins, logger: silentLogger, sleep,
       ...overrides.deps,
     },
-    prospect, Prospect, Campaign, Activation, RewardEntitlement, sendConversionEvent, canMarketTo, sleep,
+    prospect, Prospect, Campaign, Activation, RewardEntitlement, sendConversionEvent, canMarketTo, mergeSourceMetadataFirstWins, sleep,
   };
 }
 
@@ -63,7 +80,7 @@ afterEach(() => {
 
 describe('processRedemption — guards', () => {
   test('no entitlement → skipped, nothing sent', async () => {
-    const { deps, sendConversionEvent } = buildDeps();
+    const { deps, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps();
     const svc = makeRedemptionOutcomeService(deps);
     expect(await svc.processRedemption({})).toEqual({ skipped: 'no_entitlement' });
     expect(await svc.processRedemption()).toEqual({ skipped: 'no_entitlement' });
@@ -71,7 +88,7 @@ describe('processRedemption — guards', () => {
   });
 
   test('prospect-less entitlement → skipped (nullable prospectId is real)', async () => {
-    const { deps, sendConversionEvent } = buildDeps();
+    const { deps, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps();
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement({ prospectId: null }) });
     expect(r).toEqual({ skipped: 'no_prospect' });
@@ -79,7 +96,7 @@ describe('processRedemption — guards', () => {
   });
 
   test('prospect row gone → skipped', async () => {
-    const { deps, Prospect, sendConversionEvent } = buildDeps();
+    const { deps, Prospect, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps();
     Prospect.findByPk.mockResolvedValue(null);
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
@@ -91,7 +108,7 @@ describe('processRedemption — guards', () => {
     const prospect = makeProspect({
       sourceMetadata: { capi: { voucherRedeemed: { 'ent-uuid-1': '2026-07-01T00:00:00Z' } } },
     });
-    const { deps, sendConversionEvent } = buildDeps({ prospect });
+    const { deps, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps({ prospect });
     const svc = makeRedemptionOutcomeService(deps);
     expect(await svc.processRedemption({ entitlement: makeEntitlement() })).toEqual({ duplicate: true });
     expect(sendConversionEvent).not.toHaveBeenCalled();
@@ -101,7 +118,7 @@ describe('processRedemption — guards', () => {
     const prospect = makeProspect({
       sourceMetadata: { capi: { voucherRedeemed: { 'other-ent': '2026-07-01T00:00:00Z' } } },
     });
-    const { deps, sendConversionEvent } = buildDeps({ prospect });
+    const { deps, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps({ prospect });
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
     expect(r).toEqual({ dispatched: 'VoucherRedeemed' });
@@ -111,7 +128,7 @@ describe('processRedemption — guards', () => {
 
 describe('processRedemption — dispatch shape', () => {
   test('happy path: deterministic event_id, physical_store, activation-campaign scope, pixel override, marker on success', async () => {
-    const { deps, prospect, sendConversionEvent, canMarketTo, Campaign } = buildDeps();
+    const { deps, prospect, sendConversionEvent, canMarketTo, Campaign, mergeSourceMetadataFirstWins } = buildDeps();
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
 
@@ -134,12 +151,15 @@ describe('processRedemption — dispatch shape', () => {
 
     // Marker written only after the confirmed send.
     expect(prospect.sourceMetadata.capi.voucherRedeemed['ent-uuid-1']).toEqual(expect.any(String));
-    expect(prospect.changed).toHaveBeenCalledWith('sourceMetadata', true);
-    expect(prospect.save).toHaveBeenCalled();
+    expect(mergeSourceMetadataFirstWins).toHaveBeenCalledWith(
+      prospect.id,
+      ['capi', 'voucherRedeemed'],
+      { 'ent-uuid-1': expect.any(String) }
+    );
   });
 
   test('activation.campaignId undefined (association loaded without the column) → reloads the Activation', async () => {
-    const { deps, Activation, sendConversionEvent, canMarketTo } = buildDeps();
+    const { deps, Activation, sendConversionEvent, canMarketTo, mergeSourceMetadataFirstWins } = buildDeps();
     const svc = makeRedemptionOutcomeService(deps);
     const entitlement = makeEntitlement({ activation: { id: 'act-uuid-1' } }); // campaignId missing entirely
     await svc.processRedemption({ entitlement });
@@ -149,7 +169,7 @@ describe('processRedemption — dispatch shape', () => {
   });
 
   test('explicit null campaignId (campaign deleted) → no override, consent falls to global scope (fail-closed)', async () => {
-    const { deps, Activation, Campaign, sendConversionEvent, canMarketTo } = buildDeps();
+    const { deps, Activation, Campaign, sendConversionEvent, canMarketTo, mergeSourceMetadataFirstWins } = buildDeps();
     const svc = makeRedemptionOutcomeService(deps);
     const entitlement = makeEntitlement({ activation: { id: 'act-uuid-1', campaignId: null } });
     await svc.processRedemption({ entitlement });
@@ -162,7 +182,7 @@ describe('processRedemption — dispatch shape', () => {
   });
 
   test('canMarketTo throws → marketingConsent false, event still fires (fail-closed PII, not a lost event)', async () => {
-    const { deps, sendConversionEvent } = buildDeps({
+    const { deps, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps({
       canMarketTo: jest.fn().mockRejectedValue(new Error('ledger down')),
     });
     const svc = makeRedemptionOutcomeService(deps);
@@ -173,7 +193,7 @@ describe('processRedemption — dispatch shape', () => {
 
   test('META_EVENT_REDEEMED renames the event', async () => {
     process.env.META_EVENT_REDEEMED = 'Purchase';
-    const { deps, sendConversionEvent } = buildDeps();
+    const { deps, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps();
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
     expect(r).toEqual({ dispatched: 'Purchase' });
@@ -185,7 +205,7 @@ describe('processRedemption — dispatch shape', () => {
 describe('processRedemption — reliability', () => {
   test('guarded (CAPI off / ineligible origin) → no retry, no marker, benign failure', async () => {
     const send = jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' });
-    const { deps, prospect } = buildDeps({ sendConversionEvent: send });
+    const { deps, prospect, mergeSourceMetadataFirstWins } = buildDeps({ sendConversionEvent: send });
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
     expect(r).toEqual({ failed: 'VoucherRedeemed', reason: 'guarded' });
@@ -197,18 +217,18 @@ describe('processRedemption — reliability', () => {
     const send = jest.fn()
       .mockResolvedValueOnce({ sent: false, status: 500 })
       .mockResolvedValueOnce({ sent: true });
-    const { deps, prospect, sleep } = buildDeps({ sendConversionEvent: send });
+    const { deps, prospect, sleep, mergeSourceMetadataFirstWins } = buildDeps({ sendConversionEvent: send });
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
     expect(r).toEqual({ dispatched: 'VoucherRedeemed' });
     expect(send).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledTimes(1);
-    expect(prospect.save).toHaveBeenCalled();
+    expect(mergeSourceMetadataFirstWins).toHaveBeenCalled();
   });
 
   test('4xx does not retry and leaves the marker unwritten (replay/sweep can retry later)', async () => {
     const send = jest.fn().mockResolvedValue({ sent: false, status: 400 });
-    const { deps, prospect } = buildDeps({ sendConversionEvent: send });
+    const { deps, prospect, mergeSourceMetadataFirstWins } = buildDeps({ sendConversionEvent: send });
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
     expect(r.failed).toBe('VoucherRedeemed');
@@ -217,7 +237,7 @@ describe('processRedemption — reliability', () => {
   });
 
   test('never throws — an exploding model resolves to a failed result', async () => {
-    const { deps, Prospect } = buildDeps();
+    const { deps, Prospect, mergeSourceMetadataFirstWins } = buildDeps();
     Prospect.findByPk.mockRejectedValue(new Error('db down'));
     const svc = makeRedemptionOutcomeService(deps);
     const r = await svc.processRedemption({ entitlement: makeEntitlement() });
@@ -233,7 +253,7 @@ describe('sweepUnmarkedRedemptions', () => {
       sourceMetadata: { capi: { voucherRedeemed: { 'ent-marked': 'ts' } } },
     });
     const fresh = makeProspect({ id: 'p-fresh' });
-    const { deps, RewardEntitlement, Prospect, sendConversionEvent } = buildDeps();
+    const { deps, RewardEntitlement, Prospect, sendConversionEvent, mergeSourceMetadataFirstWins } = buildDeps();
     RewardEntitlement.findAll.mockResolvedValue([
       { id: 'ent-nopros', prospectId: null, activationId: 'act-1' },
       { id: 'ent-marked', prospectId: 'p-marked', activationId: 'act-1', activation: undefined },

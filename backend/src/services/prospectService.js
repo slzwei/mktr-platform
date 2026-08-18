@@ -43,7 +43,11 @@ import {
 } from './tiktokEventsService.js';
 // Cycle-safe + graph-neutral: leadOutcomeService imports only models,
 // metaCapiService and consentService — all already in this module's graph.
-import { processLeadOutcome } from './leadOutcomeService.js';
+import { processLeadOutcome, eventKeysForStatus } from './leadOutcomeService.js';
+import {
+  mergeFirstWins as mergeSourceMetadataFirstWins,
+  removePaths as removeSourceMetadataPaths,
+} from '../utils/prospectJsonPatch.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 import { isPhoneVerifiedDurable } from './verifiedPhoneStore.js';
 import {
@@ -120,6 +124,9 @@ const defaultDeps = {
   sendTikTokLeadEvent,
   sendTikTokCompleteRegistrationEvent,
   processLeadOutcome,
+  eventKeysForStatus,
+  mergeSourceMetadataFirstWins,
+  removeSourceMetadataPaths,
   getOrCreateProspectShareLink,
   isPhoneVerifiedDurable,
   resolveConsumerForCaptureTx,
@@ -188,6 +195,21 @@ export function makeProspectService(overrides = {}) {
     const registrationEventId = meta?.registrationEventId ?? safeBody.registrationEventId;
     const ttclid = meta?.ttclid ?? safeBody.ttclid;
     const ttp = meta?.ttp ?? safeBody.ttp;
+    // Google click ids + capture time (plan google-ads-signal-levers §4.1) —
+    // persisted for the Phase 3 offline-conversion upload; the browser tag
+    // handles its own attribution, so these serve ONLY the server-side path.
+    const gclid = meta?.gclid ?? safeBody.gclid;
+    const gbraid = meta?.gbraid ?? safeBody.gbraid;
+    const wbraid = meta?.wbraid ?? safeBody.wbraid;
+    // CLAMP to now: the capture timestamp is client-supplied and anchors the
+    // offline-conversion age guard — a forged future value must not extend
+    // eligibility (Codex P3 M4). Unparseable → dropped (server falls back to
+    // the signup timestamp).
+    const rawGclCapturedAt = meta?.gclCapturedAt ?? safeBody.gclCapturedAt;
+    const gclCapturedMs = rawGclCapturedAt ? Date.parse(rawGclCapturedAt) : NaN;
+    const gclCapturedAt = Number.isNaN(gclCapturedMs)
+      ? undefined
+      : new Date(Math.min(gclCapturedMs, Date.now())).toISOString();
     // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
@@ -224,6 +246,7 @@ export function makeProspectService(overrides = {}) {
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       registrationEventId: _re, ttclid: _tc, ttp: _tp,
+      gclid: _gc, gbraid: _gb, wbraid: _wb, gclCapturedAt: _gca,
       consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp, consent_dnc: _cd,
       consent_copy_version: _ccv,
       // consentMetadata is SERVER-authoritative — the third-party-consent evidence is
@@ -268,6 +291,9 @@ export function makeProspectService(overrides = {}) {
       ...(registrationEventId ? { registrationEventId } : {}),
       ...(ttclid ? { ttclid } : {}),
       ...(ttp ? { ttp } : {}),
+      ...(gclid || gbraid || wbraid
+        ? { gcl: { ...(gclid ? { gclid } : {}), ...(gbraid ? { gbraid } : {}), ...(wbraid ? { wbraid } : {}), ...(gclCapturedAt ? { capturedAt: gclCapturedAt } : {}) } }
+        : {}),
       ...(consentContact !== undefined ? { consent_contact: consentContact } : {}),
       ...(consentTerms !== undefined ? { consent_terms: consentTerms } : {}),
       ...(consentCopyVersion !== undefined ? { consent_copy_version: consentCopyVersion } : {}),

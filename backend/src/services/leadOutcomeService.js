@@ -39,6 +39,12 @@
  */
 
 import { Prospect, Campaign } from '../models/index.js';
+import { setPath as setSourceMetadataPath, mergeFirstWins as mergeSourceMetadataFirstWins } from '../utils/prospectJsonPatch.js';
+import {
+  dispatchOutcome as dispatchGoogleOutcome,
+  uploadsEnabled as googleUploadsEnabled,
+  actionIdFor as googleActionIdFor,
+} from './googleOfflineConversionsService.js';
 import { sendConversionEvent as metaSendConversionEvent } from './metaCapiService.js';
 import { canMarketTo as ledgerCanMarketTo } from './consentService.js';
 import { logger } from '../utils/logger.js';
@@ -72,6 +78,11 @@ const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const defaultDeps = {
   models: { Prospect, Campaign },
   sendConversionEvent: metaSendConversionEvent,
+  setSourceMetadataPath,
+  mergeSourceMetadataFirstWins,
+  dispatchGoogleOutcome,
+  googleUploadsEnabled,
+  googleActionIdFor,
   canMarketTo: ledgerCanMarketTo,
   logger,
   sleep: realSleep,
@@ -108,7 +119,7 @@ export function makeLeadOutcomeService(overrides = {}) {
    * @param {object} payload { external_id, new_status, old_status, lead_id, agent_id, occurred_at }
    * @returns {Promise<{dispatched?: string[], duplicate?: string[], failed?: string[], skipped?: string}>}
    */
-  async function processLeadOutcome(payload = {}) {
+  async function processLeadOutcome(payload = {}, context = {}) {
     const { external_id: externalId, new_status: newStatus, occurred_at: occurredAt } = payload;
 
     const keys = eventKeysForStatus(newStatus);
@@ -117,6 +128,49 @@ export function makeLeadOutcomeService(overrides = {}) {
 
     const prospect = await m.Prospect.findByPk(externalId);
     if (!prospect) return { skipped: 'no_prospect' };
+
+    // Canonical outcome timestamp (plan google-ads-signal-levers §4.3):
+    // validated body value → the AUTHENTICATED webhook timestamp (passed
+    // explicitly by the Lyfe controller) → receipt time. The body field is
+    // caller-supplied and unvalidated upstream.
+    const bodyTs = occurredAt ? Date.parse(occurredAt) : NaN;
+    const canonicalOccurredAt = !Number.isNaN(bodyTs)
+      ? new Date(bodyTs).toISOString()
+      : context.signedWebhookAt && !Number.isNaN(Date.parse(context.signedWebhookAt))
+        ? new Date(Date.parse(context.signedWebhookAt)).toISOString()
+        : new Date().toISOString();
+
+    // DURABLE FACTS FIRST, all keys for this status in ONE first-wins merge —
+    // the Google worker re-sends from these, so a crash after this line can
+    // never lose the outcome, and a later `won` can never rewrite an earlier
+    // qualified timestamp. (The admin path writes the same facts inside its
+    // edit transaction; this merge is idempotent against that.)
+    try {
+      const factRows = await d.mergeSourceMetadataFirstWins(
+        prospect.id,
+        ['outcomes'],
+        Object.fromEntries(keys.map((k) => [k, canonicalOccurredAt]))
+      );
+      if (factRows === 0) {
+        // The erased guard is the only thing that blocks a plain merge — a
+        // concurrent erasure won between our load and this write. Nothing
+        // may dispatch from the stale pre-erasure row (B2).
+        const fresh = await m.Prospect.findByPk(prospect.id, { raw: true });
+        if (!fresh || fresh.sourceMetadata?.erased === true) {
+          d.logger.warn('[lead-outcome] row erased mid-flight — dispatch aborted', {
+            prospectId: prospect.id,
+          });
+          return { skipped: 'erased' };
+        }
+      }
+    } catch (factErr) {
+      // A fact-write failure is the ONLY unrecoverable branch on the Lyfe
+      // path (pg_net never retries) — the Lyfe reconciler is the durability
+      // net. Loudly logged; dispatch still proceeds with in-memory values.
+      d.logger.error('[lead-outcome] outcome fact write failed (reconciler heals)', {
+        prospectId: prospect.id, error: factErr?.message || String(factErr),
+      });
+    }
 
     // Send-time em/ph gate (3sites, supersedes the PR B clone hack): derived
     // from the consent ledger at dispatch time — canMarketTo requires a
@@ -163,12 +217,10 @@ export function makeLeadOutcomeService(overrides = {}) {
       const { markerKey } = EVENTS[key];
       const eventName = eventNameFor(key);
 
-      // Permanent first-transition dedup. Marker is written only on success
-      // (below), so a never-sent event stays re-tryable.
-      if (prospect.sourceMetadata?.capi?.[markerKey]) {
-        duplicate.push(eventName);
-        continue;
-      }
+      // Permanent first-transition dedup — for the META send only. Google is
+      // evaluated independently below (its own marker owns its dedup).
+      const metaDuplicate = Boolean(prospect.sourceMetadata?.capi?.[markerKey]);
+      if (metaDuplicate) duplicate.push(eventName);
 
       const ctx = {
         // Stable across qualified/won → Meta dedups any duplicate send.
@@ -178,15 +230,36 @@ export function makeLeadOutcomeService(overrides = {}) {
         ...(pixelIdOverride ? { pixelIdOverride } : {}),
       };
 
-      const result = await dispatchWithRetry(prospect, ctx, { eventName });
+      const result = metaDuplicate ? null : await dispatchWithRetry(prospect, ctx, { eventName });
 
-      if (result?.sent) {
-        const capi = { ...(prospect.sourceMetadata?.capi || {}), [markerKey]: new Date().toISOString() };
-        prospect.sourceMetadata = { ...(prospect.sourceMetadata || {}), capi };
-        if (typeof prospect.changed === 'function') prospect.changed('sourceMetadata', true);
-        await prospect.save();
+      if (!metaDuplicate && result?.sent) {
+        // Atomic single-key marker write (prospectJsonPatch) — the old
+        // read-spread-save of the whole object could delete keys any OTHER
+        // writer (google markers, outcome facts, redemption) landed between
+        // this handler's load and save (plan google-ads-signal-levers §4.3).
+        await d.setSourceMetadataPath(prospect.id, ['capi', markerKey], new Date().toISOString());
         dispatched.push(eventName);
-      } else {
+      }
+
+      // Google offline outcome — SEQUENTIAL after Meta (both write disjoint
+      // sourceMetadata keys atomically), isolated: a Google failure never
+      // blocks the Meta result, the other key, or the 200 to Lyfe. Inline
+      // dispatch is the low-latency path; the worker re-sends anything this
+      // misses from the durable fact.
+      if (d.googleUploadsEnabled() && d.googleActionIdFor(key)) {
+        // dispatchOutcome reloads the FRESH row, claims the marker with an
+        // atomic CAS (race-safe against the worker), and never throws — the
+        // try is belt-and-braces for injected seams.
+        try {
+          await d.dispatchGoogleOutcome(prospect.id, key);
+        } catch (googleErr) {
+          d.logger.warn('[lead-outcome] google outcome dispatch error (worker heals)', {
+            prospectId: prospect.id, key, error: googleErr?.message || String(googleErr),
+          });
+        }
+      }
+
+      if (!metaDuplicate && !result?.sent) {
         // Not marked → reconciliation / next trigger can retry. (`guarded` = CAPI off.)
         failed.push(eventName);
         if (result?.reason === 'guarded') {

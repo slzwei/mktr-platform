@@ -56,12 +56,11 @@ export function makeProspectMutationOps({ d, m }) {
     }
     const phoneChanged = safeUpdates.phone !== undefined && safeUpdates.phone !== oldPhone;
     const emailChanged = safeUpdates.email !== undefined && safeUpdates.email !== prospect.email;
-    if (phoneChanged && prospect.sourceMetadata?.phoneVerifiedAt) {
-      const sm = { ...(prospect.sourceMetadata || {}) };
-      delete sm.phoneVerifiedAt;
-      delete sm.phoneVerifiedFor;
-      safeUpdates.sourceMetadata = sm;
-    }
+    // The strip itself happens ATOMICALLY inside the managed transaction via
+    // prospectJsonPatch.removePaths — the old whole-object spread-save could
+    // delete marker/fact keys landed by other writers between this read and
+    // the save (plan google-ads-signal-levers §4.3).
+    const strippingVerification = Boolean(phoneChanged && prospect.sourceMetadata?.phoneVerifiedAt);
     if (phoneChanged && !safeUpdates.phone) {
       // Phone cleared entirely: no number, no person link (recompute below
       // only handles E.164 values; the reconciler's empty-phone step is the
@@ -96,6 +95,9 @@ export function makeProspectMutationOps({ d, m }) {
     // outbox write now rolls the edit back (all-or-nothing) instead of
     // committing fields the enrichment pipeline never hears about.
     const editingDemographics = safeUpdates.demographics !== undefined;
+    const mappedStatusTransition =
+      ['qualified', 'won'].includes(safeUpdates.leadStatus) && safeUpdates.leadStatus !== oldStatus;
+    const adminOccurredAt = new Date().toISOString();
     const updatePayload = becomingWon ? { ...safeUpdates, conversionDate: new Date() } : safeUpdates;
 
     // H4: a won-transition is enforced AT MUTATION TIME — the UPDATE's WHERE
@@ -130,10 +132,59 @@ export function makeProspectMutationOps({ d, m }) {
       await prospect.reload(opts);
     };
 
+    // ONE managed transaction for the edits that must be atomic with their
+    // side-writes: demographics (enrichment outbox, H3), phone changes
+    // (verification-stamp strip), and mapped status transitions (durable
+    // outcome facts — plan google-ads-signal-levers §4.3). Inside it the row
+    // is LOCK-RELOADED and the erased flag RE-CHECKED: the pre-transaction
+    // check above races a concurrent erasure, and a stale phone edit must
+    // never re-attach a number to a freshly scrubbed row (410, same as the
+    // pre-check).
+    // EVERY non-empty edit takes the managed transaction (B1): the erased
+    // pre-check above races a concurrent erasure, and ANY field write to the
+    // stale instance (email, name, unmapped status) would re-attach data to
+    // a scrubbed skeleton. The lock-reload + 410 inside is the real gate.
+    const needsTxn = Object.keys(safeUpdates).length > 0;
     try {
-      if (editingDemographics) {
+      if (needsTxn) {
         await d.sequelize.transaction(async (t) => {
+          // Lock via a fresh minimal fetch — reloading `prospect` would carry
+          // its eager assignedAgent include, and FOR UPDATE cannot lock the
+          // nullable side of an outer join.
+          const locked = await m.Prospect.findByPk(prospect.id, {
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          });
+          if (!locked) {
+            throw new d.AppError('Prospect not found or access denied', 404);
+          }
+          if (locked.sourceMetadata?.erased === true) {
+            throw new d.AppError('This lead was erased (PDPA) and can no longer be edited', 410);
+          }
           await applyProspectWrite(t);
+          if (strippingVerification) {
+            await d.removeSourceMetadataPaths(
+              prospect.id,
+              [['phoneVerifiedAt'], ['phoneVerifiedFor']],
+              { transaction: t }
+            );
+          }
+          if (mappedStatusTransition) {
+            // Durable outcome facts land IN the status transaction (write-once,
+            // first-wins; a `won` records both keys with one timestamp) — the
+            // worker re-sends from these, so a crash after commit can never
+            // lose the outcome (plan §4.3).
+            const factKeys = d.eventKeysForStatus(safeUpdates.leadStatus);
+            if (factKeys.length) {
+              await d.mergeSourceMetadataFirstWins(
+                prospect.id,
+                ['outcomes'],
+                Object.fromEntries(factKeys.map((k) => [k, adminOccurredAt])),
+                { transaction: t }
+              );
+            }
+          }
+          if (!editingDemographics) return;
           const [rows] = await d.sequelize.query(
             `UPDATE prospects
                 SET "enrichmentRevision" = COALESCE("enrichmentRevision", 1) + 1
@@ -206,7 +257,7 @@ export function makeProspectMutationOps({ d, m }) {
         const hook = d.processLeadOutcome({
           external_id: prospect.id,
           new_status: safeUpdates.leadStatus,
-          occurred_at: new Date().toISOString(),
+          occurred_at: adminOccurredAt,
         });
         if (hook && typeof hook.catch === 'function') {
           hook.catch((err) =>

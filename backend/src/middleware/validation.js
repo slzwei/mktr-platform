@@ -207,6 +207,16 @@ export const schemas = {
     // CompleteRegistration dedup id — set when a quiz reveal fired the browser
     // CompleteRegistration; the server fires a matching CAPI event with this id.
     registrationEventId: Joi.string().max(64).optional(),
+    // Google Ads click ids (gclid/gbraid/wbraid) + the CAPTURE timestamp —
+    // load-bearing for the offline-conversion age guard, which measures from
+    // the click (capture lands minutes after it), never the outcome
+    // (plan google-ads-signal-levers §4.1). Whitelisted so stripUnknown
+    // doesn't drop them (it logs a contract-drift warning, but the data is
+    // still lost).
+    gclid: Joi.string().max(512).optional(),
+    gbraid: Joi.string().max(512).optional(),
+    wbraid: Joi.string().max(512).optional(),
+    gclCapturedAt: Joi.string().isoDate().optional(),
     // TikTok attribution identifiers (ttclid click id + _ttp first-party cookie).
     // Captured at the landing page, stashed in sourceMetadata for the Phase 6
     // server-side TikTok Events API. Whitelisted here so they don't 400.

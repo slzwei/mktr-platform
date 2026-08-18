@@ -109,6 +109,9 @@ function buildMocks() {
   const mockTransaction = {
     commit: jest.fn().mockResolvedValue(undefined),
     rollback: jest.fn().mockResolvedValue(undefined),
+    // The managed-transaction edit path lock-reloads the row (plan
+    // google-ads-signal-levers §4.3).
+    LOCK: { UPDATE: 'UPDATE' },
   };
 
   const sequelize = {
@@ -160,6 +163,13 @@ function buildMocks() {
     logger,
     processLeadOutcome: jest.fn().mockResolvedValue({ dispatched: [] }),
     cancelLiveEntitlementsForProspectTx: jest.fn().mockResolvedValue({ cancelled: 0 }),
+    eventKeysForStatus: jest.fn((status) => {
+      if (status === 'qualified') return ['confirmed_resident'];
+      if (status === 'won') return ['confirmed_resident', 'closed_won'];
+      return [];
+    }),
+    mergeSourceMetadataFirstWins: jest.fn().mockResolvedValue(1),
+    removeSourceMetadataPaths: jest.fn().mockResolvedValue(1),
   };
 }
 
@@ -176,6 +186,11 @@ function makeService(mocks, extra = {}) {
     AppError: mocks.AppError,
     logger: mocks.logger,
     processLeadOutcome: mocks.processLeadOutcome,
+    // Atomic sourceMetadata seams (plan google-ads-signal-levers §4.3) —
+    // stubbed: the real ones run raw SQL against the live DB.
+    eventKeysForStatus: mocks.eventKeysForStatus,
+    mergeSourceMetadataFirstWins: mocks.mergeSourceMetadataFirstWins,
+    removeSourceMetadataPaths: mocks.removeSourceMetadataPaths,
     // PR-2 (CX13): stub the lazy default — the real one reaches the live DB.
     cancelLiveEntitlementsForProspectTx: mocks.cancelLiveEntitlementsForProspectTx,
     ...extra,
@@ -884,7 +899,16 @@ describe('prospectService (unit)', () => {
       expect(updateArg.leadStatus).toBe('won');
       expect(updateArg.conversionDate).toBeInstanceOf(Date);
       expect(updateOpts.where.id).toBe('prospect-1');
-      expect(updateOpts.transaction).toBeUndefined(); // still no tx for a plain status edit
+      // Mapped status transitions now run IN the managed transaction — the
+      // durable outcome facts must be atomic with the status write (plan
+      // google-ads-signal-levers §4.3).
+      expect(updateOpts.transaction).toBe(mocks.mockTransaction);
+      expect(mocks.mergeSourceMetadataFirstWins).toHaveBeenCalledWith(
+        'prospect-1',
+        ['outcomes'],
+        { confirmed_resident: expect.any(String), closed_won: expect.any(String) },
+        { transaction: mocks.mockTransaction }
+      );
       expect(prospect.update).not.toHaveBeenCalled();
       expect(prospect.reload).toHaveBeenCalled();
       expect(mocks.models.Commission.create).not.toHaveBeenCalled();

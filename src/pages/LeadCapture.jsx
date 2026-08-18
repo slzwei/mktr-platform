@@ -48,6 +48,7 @@ import {
 import {
   shouldTrackGoogle, initGoogleAds, trackGoogleLead,
   setGoogleUserData, clearGoogleUserData,
+  captureGclFromUrl, readGcl,
 } from '../lib/googleAds';
 import { trackFunnelEvent } from '../lib/pixelCustom';
 
@@ -99,6 +100,7 @@ export default function LeadCapture() {
     if (!registrationEventIdRef.current) registrationEventIdRef.current = generateEventId();
     captureFbcFromUrl(location.search);
     captureTtclidFromUrl(location.search);
+    captureGclFromUrl(location.search);
     // Capture UTM params from the landing URL into sessionStorage (last-touch,
     // mirrors the _mktr_fbc pattern) — forwarded into the prospect submit and
     // stored server-side in sourceMetadata.utm.
@@ -375,6 +377,7 @@ export default function LeadCapture() {
         // TikTok attribution identifiers (server-side Events API consumes these in
         // Phase 6). Captured from the landing URL / pixel cookie.
         ttclid: readTtclid() || undefined,
+        ...(readGcl() || {}),
         ttp: readTtp() || undefined,
       };
 
@@ -435,10 +438,15 @@ export default function LeadCapture() {
           // marketplace flow passes the 8-digit local number — toE164Sg
           // inside setGoogleUserData normalizes both.
           setGoogleUserData({ email: formData.email, phone: formData.phone });
-          trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
-            transactionId: leadEventIdRef.current,
-          });
-          clearGoogleUserData();
+          try {
+            trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
+              transactionId: leadEventIdRef.current,
+            });
+          } finally {
+            // finally: a throwing tag call must never leave page-global PII
+            // attached to later SPA events.
+            clearGoogleUserData();
+          }
         }
         setSubmitted(true);
         setShareOpen(true);

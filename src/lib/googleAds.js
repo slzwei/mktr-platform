@@ -47,6 +47,7 @@ import { isTrackableLeadCapture } from './pixelSuppression';
 
 const configuredIds = new Set();
 let sdkInjected = false;
+const GCL_STORAGE_KEY = '_mktr_gcl';
 
 /**
  * `conversionId` is the CALLER-RESOLVED id for this campaign (see lib/pixelIds.js)
@@ -95,6 +96,34 @@ export function initGoogleAds(conversionId) {
 
   window.gtag('config', conversionId);
   configuredIds.add(conversionId);
+
+  // Click-id recovery (plan google-ads-signal-levers §4.1): the documented
+  // gtag('get') API can surface a gclid the tag saw on an EARLIER landing
+  // (its own first-party state) when the current URL carries no param. Runs
+  // here because gtag('get') is an async callback API and only answers after
+  // config. The callback RE-CHECKS storage before writing: a stale recovery
+  // must never overwrite a fresher URL capture. gclid only — gbraid/wbraid
+  // are URL-param capture only.
+  try {
+    window.gtag('get', conversionId, 'gclid', (recovered) => {
+      if (!recovered) return;
+      try {
+        const existing = sessionStorage.getItem(GCL_STORAGE_KEY);
+        if (existing && JSON.parse(existing)?.gclid) return;
+        const prior = existing ? JSON.parse(existing) : {};
+        // NO capturedAt for a recovered id: the tag saw this click on an
+        // EARLIER landing whose time we don't know — stamping "now" would
+        // reset the offline-conversion age window (the server falls back to
+        // the signup timestamp instead, which is strictly older-or-equal).
+        const { capturedAt: _prior, ...rest } = prior;
+        sessionStorage.setItem(GCL_STORAGE_KEY, JSON.stringify({ ...rest, gclid: recovered }));
+      } catch {
+        /* storage unavailable — recovery is best-effort */
+      }
+    });
+  } catch {
+    /* older gtag without 'get' — recovery is best-effort */
+  }
 }
 
 /**
@@ -183,6 +212,52 @@ export function clearGoogleUserData() {
   if (import.meta.env.VITE_GOOGLE_ADS_EC_ENABLED !== 'true') return;
   if (typeof window === 'undefined' || typeof window.gtag !== 'function') return;
   window.gtag('set', 'user_data', null);
+}
+
+/**
+ * Capture Google click ids (gclid / gbraid / wbraid) from the landing URL
+ * into sessionStorage, mirroring the `_mktr_fbc` pattern. capturedAt is
+ * LOAD-BEARING: the backend's offline-conversion age guard measures from the
+ * click (capture happens on the landing that carried it), not from the
+ * outcome. Last-touch: any landing carrying at least one id overwrites the
+ * stored set. Called from the SAME unconditional early capture effects as
+ * captureFbcFromUrl — independent of the firedGoogle view guard, which may
+ * already be set on a later reload.
+ */
+export function captureGclFromUrl(search) {
+  if (!search || typeof sessionStorage === 'undefined') return null;
+  try {
+    const params = new URLSearchParams(search);
+    const ids = {};
+    for (const key of ['gclid', 'gbraid', 'wbraid']) {
+      const value = params.get(key);
+      if (value) ids[key] = value;
+    }
+    if (Object.keys(ids).length === 0) return null;
+    const stored = { ...ids, capturedAt: new Date().toISOString() };
+    sessionStorage.setItem(GCL_STORAGE_KEY, JSON.stringify(stored));
+    return stored;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the captured click ids for the submit payload. Returns
+ * `{ gclid?, gbraid?, wbraid?, gclCapturedAt }` or null — keys shaped for
+ * spreading straight into the /prospects body beside ttclid.
+ */
+export function readGcl() {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(GCL_STORAGE_KEY);
+    if (!raw) return null;
+    const { capturedAt, ...ids } = JSON.parse(raw);
+    if (Object.keys(ids).length === 0) return null;
+    return { ...ids, ...(capturedAt ? { gclCapturedAt: capturedAt } : {}) };
+  } catch {
+    return null;
+  }
 }
 
 /** Test seam — resets the module-level idempotency state. */

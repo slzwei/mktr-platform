@@ -23,6 +23,7 @@ import {
 import {
   shouldTrackGoogle, initGoogleAds, trackGoogleLead,
   setGoogleUserData, clearGoogleUserData,
+  captureGclFromUrl, readGcl,
 } from '@/lib/googleAds';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 import {
@@ -134,6 +135,7 @@ export default function MarketplaceFlow() {
     if (!leadEventIdRef.current) leadEventIdRef.current = generateEventId();
     captureFbcFromUrl(window.location.search);
     captureTtclidFromUrl(window.location.search);
+    captureGclFromUrl(window.location.search);
     captureUtmsFromUrl(window.location.search);
   }, []);
 
@@ -387,6 +389,7 @@ export default function MarketplaceFlow() {
         ...(readUtms() || {}),
         ttclid: readTtclid() || undefined,
         ttp: readTtp() || undefined,
+        ...(readGcl() || {}),
         ...(Object.keys(marketplaceMeta).length ? { marketplace: marketplaceMeta } : {}),
       };
       const payload = Object.fromEntries(
@@ -420,10 +423,15 @@ export default function MarketplaceFlow() {
           // page-global, so clear right after the conversion queues — later
           // SPA tag events must not inherit the submitter's PII.
           setGoogleUserData({ email: form.email, phone: form.phone });
-          trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
-            transactionId: leadEventIdRef.current,
-          });
-          clearGoogleUserData();
+          try {
+            trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
+              transactionId: leadEventIdRef.current,
+            });
+          } finally {
+            // finally: a throwing tag call must never leave page-global PII
+            // attached to later SPA events.
+            clearGoogleUserData();
+          }
         }
         if (isDraw) trackCustom('draw_entry_confirmed');
         setResult({

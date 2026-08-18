@@ -35,6 +35,7 @@
 
 import { Prospect, Campaign, Activation, RewardEntitlement } from '../models/index.js';
 import { sendConversionEvent as metaSendConversionEvent } from './metaCapiService.js';
+import { mergeFirstWins as mergeSourceMetadataFirstWins } from '../utils/prospectJsonPatch.js';
 import { canMarketTo as ledgerCanMarketTo } from './consentService.js';
 import { logger } from '../utils/logger.js';
 
@@ -47,6 +48,7 @@ const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const defaultDeps = {
   models: { Prospect, Campaign, Activation, RewardEntitlement },
   sendConversionEvent: metaSendConversionEvent,
+  mergeSourceMetadataFirstWins,
   canMarketTo: ledgerCanMarketTo,
   logger,
   sleep: realSleep,
@@ -139,11 +141,12 @@ export function makeRedemptionOutcomeService(overrides = {}) {
       const result = await dispatchWithRetry(prospect, ctx, { eventName });
 
       if (result?.sent) {
-        const capi = { ...(prospect.sourceMetadata?.capi || {}) };
-        capi.voucherRedeemed = { ...(capi.voucherRedeemed || {}), [entitlement.id]: new Date().toISOString() };
-        prospect.sourceMetadata = { ...(prospect.sourceMetadata || {}), capi };
-        if (typeof prospect.changed === 'function') prospect.changed('sourceMetadata', true);
-        await prospect.save();
+        // Atomic deep merge into capi.voucherRedeemed (prospectJsonPatch):
+        // preserves sibling entitlement markers AND capi siblings without the
+        // stale-instance whole-object save (plan google-ads-signal-levers §4.3).
+        await d.mergeSourceMetadataFirstWins(prospect.id, ['capi', 'voucherRedeemed'], {
+          [entitlement.id]: new Date().toISOString(),
+        });
         d.logger.info(
           { entitlement_id: entitlement.id, prospect_id: prospect.id, event_name: eventName },
           '[redemption-capi] dispatched'

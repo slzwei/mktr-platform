@@ -122,7 +122,12 @@ export async function handleLyfeLeadOutcome(req, res) {
   }
 
   try {
-    const result = await processLeadOutcome(req.body);
+    // The signed webhook timestamp is the TRUSTED occurred_at fallback for
+    // the durable outcome facts (plan google-ads-signal-levers §4.3) — the
+    // body field is caller-supplied and unvalidated.
+    const result = await processLeadOutcome(req.body, {
+      signedWebhookAt: new Date(tsMs).toISOString(),
+    });
     const summary = result.skipped
       ? result.skipped
       : `dispatched=[${(result.dispatched || []).join(',')}] dup=[${(result.duplicate || []).join(',')}] failed=[${(result.failed || []).join(',')}]`;
