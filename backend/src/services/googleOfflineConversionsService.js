@@ -59,13 +59,16 @@ const SENDING_LEASE_MS = 10 * 60_000; // stale-claim reclaim window (crash recov
 // cannot repair. The API namespaces them as PROCESSING_ERROR_REASON_<SUFFIX>
 // (Codex P3-3 #1) — canonicalizeReason strips that prefix so this set holds
 // the documented suffixes. Unknown reasons default to RETRY.
-const PROCESSING_REASON_PREFIX = 'PROCESSING_ERROR_REASON_';
+// Google's enum namespace has an EXCEPTION: most values are
+// PROCESSING_ERROR_REASON_<SUFFIX>, but at least one documented value uses
+// the bare PROCESSING_ERROR_ prefix — strip the longest matching prefix.
+const PROCESSING_REASON_PREFIXES = ['PROCESSING_ERROR_REASON_', 'PROCESSING_ERROR_'];
 const PERMANENT_REASONS = new Set([
   'INVALID_EVENT',
   'INVALID_TIMESTAMP',
   'EVENT_TOO_OLD',
   'DENIED_CONSENT',
-  'MISSING_CONSENT',
+  'NO_CONSENT',
   'DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED',
   'DESTINATION_ACCOUNT_CUSTOMER_MATCH_TERMS_NOT_SIGNED',
   'OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER',
@@ -77,7 +80,10 @@ const PERMANENT_REASONS = new Set([
 /** Strip the ProcessingErrorReason namespace; unknown shapes pass through. */
 export function canonicalizeReason(reason) {
   const up = String(reason || '').toUpperCase();
-  return up.startsWith(PROCESSING_REASON_PREFIX) ? up.slice(PROCESSING_REASON_PREFIX.length) : up;
+  for (const prefix of PROCESSING_REASON_PREFIXES) {
+    if (up.startsWith(prefix)) return up.slice(prefix.length);
+  }
+  return up;
 }
 const EVENT_KEYS = ['confirmed_resident', 'closed_won'];
 const DEFAULT_VALUES = { confirmed_resident: 40, closed_won: 500 };

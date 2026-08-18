@@ -345,7 +345,9 @@ describe('classifyStatusBody (M2 reason taxonomy)', () => {
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_EVENT_TOO_OLD' }] } })).toBe('permanent');
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_DENIED_CONSENT' }] } })).toBe('permanent');
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED' }] } })).toBe('permanent');
-    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER' }] } })).toBe('permanent');
+    // the EXCEPTIONAL bare PROCESSING_ERROR_ prefix (documented as-is)
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_NO_CONSENT' }] } })).toBe('permanent');
     // bare suffixes still classify (defensive against shape drift)
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'EVENT_TOO_OLD' }] } })).toBe('permanent');
     // unknown enum → retry, even when it CONTAINS a scary substring
