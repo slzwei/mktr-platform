@@ -339,16 +339,28 @@ describe('classifyStatusBody (M2 reason taxonomy)', () => {
     expect(svc.classifyStatusBody({ requestStatus: 'PARTIAL_SUCCESS', errorInfo: { errorCounts: [{ errorReason: 'duplicate' }] } })).toBe('delivered');
   });
 
-  it('EXACT permanent enums never retry; UNKNOWN reasons default to retry (never substring guesses)', () => {
-    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'INVALID_ARGUMENT' }] } })).toBe('permanent');
+  it('EXACT ProcessingErrorReason enums (namespaced) never retry; UNKNOWN reasons default to retry', () => {
+    // The API namespaces reasons as PROCESSING_ERROR_REASON_<SUFFIX> —
+    // fixtures use the REAL response shapes (Codex P3-3 #1).
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_EVENT_TOO_OLD' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_DENIED_CONSENT' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER' }] } })).toBe('permanent');
+    // bare suffixes still classify (defensive against shape drift)
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'EVENT_TOO_OLD' }] } })).toBe('permanent');
-    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED' }] } })).toBe('permanent');
-    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER' }] } })).toBe('permanent');
-    // unknown enum → retry, even if it CONTAINS a scary substring
-    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'SOME_FUTURE_AGE_RELATED_ENUM' }] } })).toBe('transient');
+    // unknown enum → retry, even when it CONTAINS a scary substring
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'PROCESSING_ERROR_REASON_SOME_FUTURE_AGE_ENUM' }] } })).toBe('transient');
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED' })).toBe('transient');
     expect(svc.classifyStatusBody({ requestStatus: 'SUCCESS' })).toBe('delivered');
     expect(svc.classifyStatusBody({ requestStatus: 'PROCESSING' })).toBe('processing');
+  });
+
+  it('a zero-row CAS in the PROCESSING branch is not counted (erasure mid-settle)', async () => {
+    const marker = { state: 'pending', requestId: 'req-1', retryCount: 0, sentAt: new Date(T0 - 40 * 60_000).toISOString(), nextPollAt: new Date(T0 - 60_000).toISOString() };
+    const sequelize = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) };
+    const setPath = jest.fn().mockResolvedValue(0);
+    const res = await svc.settleDueOutcomes({ sequelize, setPath, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' }), now: nowAt(T0) });
+    expect(res.stillPending).toBe(0);
   });
 });
 

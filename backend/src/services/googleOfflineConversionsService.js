@@ -55,14 +55,16 @@ const defaultDeps = {
 
 const GADS = 'gads';
 const SENDING_LEASE_MS = 10 * 60_000; // stale-claim reclaim window (crash recovery)
-// Deterministic processing enums that a retry of the UNCHANGED event cannot
-// repair (official Data Manager status reasons; extend as observed).
+// Deterministic ProcessingErrorReason values a retry of the UNCHANGED event
+// cannot repair. The API namespaces them as PROCESSING_ERROR_REASON_<SUFFIX>
+// (Codex P3-3 #1) — canonicalizeReason strips that prefix so this set holds
+// the documented suffixes. Unknown reasons default to RETRY.
+const PROCESSING_REASON_PREFIX = 'PROCESSING_ERROR_REASON_';
 const PERMANENT_REASONS = new Set([
-  'INVALID_ARGUMENT',
   'INVALID_EVENT',
   'INVALID_TIMESTAMP',
   'EVENT_TOO_OLD',
-  'CONSENT_DENIED',
+  'DENIED_CONSENT',
   'MISSING_CONSENT',
   'DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED',
   'DESTINATION_ACCOUNT_CUSTOMER_MATCH_TERMS_NOT_SIGNED',
@@ -71,6 +73,12 @@ const PERMANENT_REASONS = new Set([
   'UNSUPPORTED_EVENT_SOURCE',
   'MALFORMED_IDENTIFIER',
 ]);
+
+/** Strip the ProcessingErrorReason namespace; unknown shapes pass through. */
+export function canonicalizeReason(reason) {
+  const up = String(reason || '').toUpperCase();
+  return up.startsWith(PROCESSING_REASON_PREFIX) ? up.slice(PROCESSING_REASON_PREFIX.length) : up;
+}
 const EVENT_KEYS = ['confirmed_resident', 'closed_won'];
 const DEFAULT_VALUES = { confirmed_resident: 40, closed_won: 500 };
 
@@ -406,7 +414,7 @@ export function classifyStatusBody(body) {
   // unchanged event cannot sign terms or fix an account mismatch) and broad
   // substrings are unsafe against future enums. Unknown reasons default to
   // RETRY. Set re-pinned by the validateOnly smoke / first live failures.
-  const hasPermanent = reasons.some((r) => PERMANENT_REASONS.has(r.toUpperCase()));
+  const hasPermanent = reasons.some((r) => PERMANENT_REASONS.has(canonicalizeReason(r)));
   if (status === 'SUCCESS') return 'delivered';
   if (status === 'PARTIAL_SUCCESS' || status === 'FAILED') {
     if (hasDuplicate) return 'delivered';
@@ -535,13 +543,13 @@ export async function settleDueOutcomes(deps = {}) {
           Math.round((Date.parse(marker.nextPollAt) - Date.parse(marker.sentAt) || firstPollMs()) * 1.3),
           60 * 60_000
         );
-        await d.setPath(
+        const n = await d.setPath(
           id,
           [GADS, eventKey],
           { ...marker, nextPollAt: new Date(d.now() + nextDelay + Math.floor(Math.random() * 30_000)).toISOString() },
           { cas }
         );
-        summary.stillPending += 1;
+        if (n > 0) summary.stillPending += 1;
       }
     }
   }
