@@ -159,7 +159,13 @@ describe('handleLyfeLeadOutcome', () => {
     await handleLyfeLeadOutcome(makeReq(validBody), res);
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ success: true, dispatched: ['ConfirmedResident'] });
-    expect(processLeadOutcomeMock).toHaveBeenCalledWith(validBody);
+    expect(processLeadOutcomeMock).toHaveBeenCalledWith(validBody, {
+      signedWebhookAt: expect.any(String),
+    });
+    // the trusted fallback comes from the SIGNED header timestamp
+    expect(
+      Number.isNaN(Date.parse(processLeadOutcomeMock.mock.calls[0][1].signedWebhookAt))
+    ).toBe(false);
   });
 
   it('still returns 200 (not 5xx) if the service throws — no pg_net retry storm', async () => {

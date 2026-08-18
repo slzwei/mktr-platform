@@ -48,8 +48,19 @@ function buildDeps(overrides = {}) {
       target[path[path.length - 1]] = value;
       return 1;
     });
+  const mergeSourceMetadataFirstWins = overrides.mergeSourceMetadataFirstWins ?? jest.fn().mockResolvedValue(1);
+  const dispatchGoogleOutcome = overrides.dispatchGoogleOutcome ?? jest.fn().mockResolvedValue({ sent: true });
+  const googleUploadsEnabled = overrides.googleUploadsEnabled ?? jest.fn().mockReturnValue(false);
+  const googleActionIdFor = overrides.googleActionIdFor ?? jest.fn().mockReturnValue('act-1');
   return {
-    deps: { models: { Prospect, Campaign }, sendConversionEvent, canMarketTo, setSourceMetadataPath, logger: silentLogger, sleep, ...overrides.deps },
+    deps: {
+      models: { Prospect, Campaign }, sendConversionEvent, canMarketTo, setSourceMetadataPath,
+      mergeSourceMetadataFirstWins, dispatchGoogleOutcome, googleUploadsEnabled, googleActionIdFor,
+      logger: silentLogger, sleep, ...overrides.deps,
+    },
+    mergeSourceMetadataFirstWins,
+    dispatchGoogleOutcome,
+    googleUploadsEnabled,
     prospect,
     Prospect,
     Campaign,
@@ -295,5 +306,77 @@ describe('leadOutcomeService — ledger-derived em/ph gate (3sites)', () => {
     expect(sendConversionEvent.mock.calls[0][0]).toBe(prospect);
     // stored evidence untouched (no consent_contact:false overwrite)
     expect(prospect.sourceMetadata.consent_contact).toBe(true);
+  });
+});
+
+
+describe('leadOutcomeService — durable outcome facts + Google dispatch (plan §4.3)', () => {
+  it('writes ALL facts for the status FIRST (one first-wins merge), before any dispatch', async () => {
+    const calls = [];
+    const mergeSourceMetadataFirstWins = jest.fn(async () => { calls.push('facts'); return 1; });
+    const sendConversionEvent = jest.fn(async () => { calls.push('meta'); return { sent: true }; });
+    const { deps } = buildDeps({ mergeSourceMetadataFirstWins, sendConversionEvent });
+    const svc = makeLeadOutcomeService(deps);
+    await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'won' });
+    expect(calls[0]).toBe('facts');
+    expect(mergeSourceMetadataFirstWins).toHaveBeenCalledTimes(1);
+    const [, path, patch] = mergeSourceMetadataFirstWins.mock.calls[0];
+    expect(path).toEqual(['outcomes']);
+    expect(patch).toEqual({
+      confirmed_resident: '2026-06-09T10:00:00.000Z',
+      closed_won: '2026-06-09T10:00:00.000Z',
+    });
+  });
+
+  it('canonical timestamp chain: invalid body occurred_at → signedWebhookAt → receipt time', async () => {
+    const { deps, mergeSourceMetadataFirstWins } = buildDeps();
+    const svc = makeLeadOutcomeService(deps);
+    await svc.processLeadOutcome(
+      { ...QUALIFIED, occurred_at: 'not-a-date' },
+      { signedWebhookAt: '2026-06-09T09:00:00.000Z' }
+    );
+    expect(mergeSourceMetadataFirstWins.mock.calls[0][2]).toEqual({
+      confirmed_resident: '2026-06-09T09:00:00.000Z',
+    });
+
+    const { deps: d2, mergeSourceMetadataFirstWins: m2 } = buildDeps();
+    const svc2 = makeLeadOutcomeService(d2);
+    const before = Date.now();
+    await svc2.processLeadOutcome({ ...QUALIFIED, occurred_at: undefined });
+    const written = Date.parse(m2.mock.calls[0][2].confirmed_resident);
+    expect(written).toBeGreaterThanOrEqual(before - 1000);
+  });
+
+  it('a fact-write failure is loud but never blocks the Meta dispatch', async () => {
+    const mergeSourceMetadataFirstWins = jest.fn().mockRejectedValue(new Error('db down'));
+    const { deps, sendConversionEvent } = buildDeps({ mergeSourceMetadataFirstWins });
+    const svc = makeLeadOutcomeService(deps);
+    const result = await svc.processLeadOutcome(QUALIFIED);
+    expect(result.dispatched).toEqual(['ConfirmedResident']);
+    expect(sendConversionEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('Google dispatch runs per key when enabled (fresh markers only) and its failure never touches the Meta result', async () => {
+    const dispatchGoogleOutcome = jest.fn().mockRejectedValue(new Error('google down'));
+    const googleUploadsEnabled = jest.fn().mockReturnValue(true);
+    const { deps, sendConversionEvent } = buildDeps({ dispatchGoogleOutcome, googleUploadsEnabled });
+    const svc = makeLeadOutcomeService(deps);
+    const result = await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'won' });
+    expect(result.dispatched).toEqual(['ConfirmedResident', 'ClosedWon']);
+    expect(sendConversionEvent).toHaveBeenCalledTimes(2);
+    expect(dispatchGoogleOutcome).toHaveBeenCalledTimes(2);
+    expect(dispatchGoogleOutcome.mock.calls.map((c) => c[1])).toEqual(['confirmed_resident', 'closed_won']);
+  });
+
+  it('an existing gads marker suppresses the inline Google dispatch (worker owns retries)', async () => {
+    const prospect = makeProspect({
+      sourceMetadata: { consent_contact: true, gads: { confirmed_resident: { state: 'pending', requestId: 'r' } } },
+    });
+    const dispatchGoogleOutcome = jest.fn();
+    const googleUploadsEnabled = jest.fn().mockReturnValue(true);
+    const { deps } = buildDeps({ prospect, dispatchGoogleOutcome, googleUploadsEnabled });
+    const svc = makeLeadOutcomeService(deps);
+    await svc.processLeadOutcome(QUALIFIED);
+    expect(dispatchGoogleOutcome).not.toHaveBeenCalled();
   });
 });

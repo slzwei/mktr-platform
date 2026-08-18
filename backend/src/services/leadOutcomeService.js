@@ -39,7 +39,12 @@
  */
 
 import { Prospect, Campaign } from '../models/index.js';
-import { setPath as setSourceMetadataPath } from '../utils/prospectJsonPatch.js';
+import { setPath as setSourceMetadataPath, mergeFirstWins as mergeSourceMetadataFirstWins } from '../utils/prospectJsonPatch.js';
+import {
+  dispatchOutcome as dispatchGoogleOutcome,
+  uploadsEnabled as googleUploadsEnabled,
+  actionIdFor as googleActionIdFor,
+} from './googleOfflineConversionsService.js';
 import { sendConversionEvent as metaSendConversionEvent } from './metaCapiService.js';
 import { canMarketTo as ledgerCanMarketTo } from './consentService.js';
 import { logger } from '../utils/logger.js';
@@ -74,6 +79,10 @@ const defaultDeps = {
   models: { Prospect, Campaign },
   sendConversionEvent: metaSendConversionEvent,
   setSourceMetadataPath,
+  mergeSourceMetadataFirstWins,
+  dispatchGoogleOutcome,
+  googleUploadsEnabled,
+  googleActionIdFor,
   canMarketTo: ledgerCanMarketTo,
   logger,
   sleep: realSleep,
@@ -110,7 +119,7 @@ export function makeLeadOutcomeService(overrides = {}) {
    * @param {object} payload { external_id, new_status, old_status, lead_id, agent_id, occurred_at }
    * @returns {Promise<{dispatched?: string[], duplicate?: string[], failed?: string[], skipped?: string}>}
    */
-  async function processLeadOutcome(payload = {}) {
+  async function processLeadOutcome(payload = {}, context = {}) {
     const { external_id: externalId, new_status: newStatus, occurred_at: occurredAt } = payload;
 
     const keys = eventKeysForStatus(newStatus);
@@ -119,6 +128,37 @@ export function makeLeadOutcomeService(overrides = {}) {
 
     const prospect = await m.Prospect.findByPk(externalId);
     if (!prospect) return { skipped: 'no_prospect' };
+
+    // Canonical outcome timestamp (plan google-ads-signal-levers §4.3):
+    // validated body value → the AUTHENTICATED webhook timestamp (passed
+    // explicitly by the Lyfe controller) → receipt time. The body field is
+    // caller-supplied and unvalidated upstream.
+    const bodyTs = occurredAt ? Date.parse(occurredAt) : NaN;
+    const canonicalOccurredAt = !Number.isNaN(bodyTs)
+      ? new Date(bodyTs).toISOString()
+      : context.signedWebhookAt && !Number.isNaN(Date.parse(context.signedWebhookAt))
+        ? new Date(Date.parse(context.signedWebhookAt)).toISOString()
+        : new Date().toISOString();
+
+    // DURABLE FACTS FIRST, all keys for this status in ONE first-wins merge —
+    // the Google worker re-sends from these, so a crash after this line can
+    // never lose the outcome, and a later `won` can never rewrite an earlier
+    // qualified timestamp. (The admin path writes the same facts inside its
+    // edit transaction; this merge is idempotent against that.)
+    try {
+      await d.mergeSourceMetadataFirstWins(
+        prospect.id,
+        ['outcomes'],
+        Object.fromEntries(keys.map((k) => [k, canonicalOccurredAt]))
+      );
+    } catch (factErr) {
+      // A fact-write failure is the ONLY unrecoverable branch on the Lyfe
+      // path (pg_net never retries) — the Lyfe reconciler is the durability
+      // net. Loudly logged; dispatch still proceeds with in-memory values.
+      d.logger.error('[lead-outcome] outcome fact write failed (reconciler heals)', {
+        prospectId: prospect.id, error: factErr?.message || String(factErr),
+      });
+    }
 
     // Send-time em/ph gate (3sites, supersedes the PR B clone hack): derived
     // from the consent ledger at dispatch time — canMarketTo requires a
@@ -189,7 +229,27 @@ export function makeLeadOutcomeService(overrides = {}) {
         // this handler's load and save (plan google-ads-signal-levers §4.3).
         await d.setSourceMetadataPath(prospect.id, ['capi', markerKey], new Date().toISOString());
         dispatched.push(eventName);
-      } else {
+      }
+
+      // Google offline outcome — SEQUENTIAL after Meta (both write disjoint
+      // sourceMetadata keys atomically), isolated: a Google failure never
+      // blocks the Meta result, the other key, or the 200 to Lyfe. Inline
+      // dispatch is the low-latency path; the worker re-sends anything this
+      // misses from the durable fact.
+      if (d.googleUploadsEnabled() && d.googleActionIdFor(key)) {
+        const existingGads = prospect.sourceMetadata?.gads?.[key];
+        if (!existingGads) {
+          try {
+            await d.dispatchGoogleOutcome(prospect, key, canonicalOccurredAt, 0);
+          } catch (googleErr) {
+            d.logger.warn('[lead-outcome] google outcome dispatch error (worker heals)', {
+              prospectId: prospect.id, key, error: googleErr?.message || String(googleErr),
+            });
+          }
+        }
+      }
+
+      if (!result?.sent) {
         // Not marked → reconciliation / next trigger can retry. (`guarded` = CAPI off.)
         failed.push(eventName);
         if (result?.reason === 'guarded') {

@@ -306,6 +306,48 @@ export async function bootstrapDatabase() {
       logger.info(`[GoogleCM] settlement drainer scheduled (${settleMinutes}m interval)`);
     }
 
+    // Google offline-outcome workers (plan google-ads-signal-levers §4.3):
+    // (a) re-send — rows with a durable outcomes fact whose gads marker is
+    //     absent or in a due retryWait;
+    // (b) settle — due pending markers polled to terminal states (Google's
+    //     diagnostics window: first poll ~30min, up to 24h);
+    // (c) the Lyfe outcome reconciler — the durability net (pg_net never
+    //     retries) that also backfills pre-arc outcomes.
+    // In-process single-flight; single-instance backend.
+    if (process.env.GOOGLE_ADS_UPLOADS_ENABLED === 'true') {
+      const workerMinutes = Math.max(1, Number(process.env.GOOGLE_OUTCOMES_WORKER_MINUTES) || 10);
+      const reconcileHours = Math.max(1, Number(process.env.GOOGLE_LYFE_RECONCILE_INTERVAL_HOURS) || 6);
+      let outcomesInFlight = false;
+      const runOutcomesWorker = async () => {
+        if (outcomesInFlight) return;
+        outcomesInFlight = true;
+        try {
+          const { resendDueOutcomes, settleDueOutcomes } = await import('../services/googleOfflineConversionsService.js');
+          await resendDueOutcomes();
+          await settleDueOutcomes();
+        } catch (err) {
+          logger.warn('[GoogleOutcomes] worker pass failed (non-fatal)', { error: err?.message });
+        } finally {
+          outcomesInFlight = false;
+        }
+      };
+      const runLyfeReconcile = async () => {
+        try {
+          const { reconcileLyfeOutcomes } = await import('../services/googleOutcomesReconciler.js');
+          await reconcileLyfeOutcomes();
+        } catch (err) {
+          logger.warn('[GoogleOutcomes] reconcile pass failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runOutcomesWorker, 120_000);
+      setInterval(runOutcomesWorker, workerMinutes * 60 * 1000);
+      setTimeout(runLyfeReconcile, 180_000);
+      setInterval(runLyfeReconcile, reconcileHours * 60 * 60 * 1000);
+      logger.info(
+        `[GoogleOutcomes] workers scheduled (${workerMinutes}m worker, ${reconcileHours}h reconcile)`
+      );
+    }
+
     // Redemption CAPI reconciliation sweep — the no-rescan safety net for
     // VoucherRedeemed sends lost between the redemption commit and the
     // fire-and-forget dispatch (process death). Marker-guarded + Meta event_id
