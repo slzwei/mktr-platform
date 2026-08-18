@@ -58,3 +58,26 @@ export function hashCountry(code) {
   if (!normalized) return undefined;
   return sha256Hex(normalized);
 }
+
+/**
+ * Hash an email for Google Customer Match / Data Manager userData. Google's
+ * formatting rules go beyond Meta's trim+lowercase (`hashEmail`): remove ALL
+ * whitespace, and canonicalize gmail.com/googlemail.com local parts by
+ * stripping dots and dropping any `+suffix` before hashing. Non-Google
+ * domains keep their local part intact (dots/plus are significant elsewhere).
+ */
+export function hashEmailGoogle(email) {
+  if (!email || typeof email !== 'string') return undefined;
+  const normalized = email.trim().toLowerCase().replace(/\s+/g, '');
+  if (!normalized || !normalized.includes('@')) return undefined;
+  const at = normalized.lastIndexOf('@');
+  let local = normalized.slice(0, at);
+  const domain = normalized.slice(at + 1);
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    const plus = local.indexOf('+');
+    if (plus !== -1) local = local.slice(0, plus);
+    local = local.replace(/\./g, '');
+  }
+  if (!local) return undefined;
+  return sha256Hex(`${local}@${domain}`);
+}

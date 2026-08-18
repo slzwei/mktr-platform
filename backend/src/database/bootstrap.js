@@ -264,6 +264,29 @@ export async function bootstrapDatabase() {
       logger.info(`[RedeemedAudience] periodic sync scheduled (${intervalHours}h interval)`);
     }
 
+    // Google Customer Match exclusion sync — same in-process pattern as the
+    // Meta block above (single-instance backend, no separate cron service),
+    // uploading the target campaign's verified entrants to the exclusion
+    // list via the Data Manager API. Gated by GOOGLE_CM_SYNC_ENABLED; initial
+    // run 90s after boot (offset from Meta's 60s so the two ledger scans
+    // don't land together), then every GOOGLE_CM_SYNC_INTERVAL_HOURS
+    // (default 24). Additive + in-service single-flight ⇒ extra runs are
+    // harmless.
+    if (String(process.env.GOOGLE_CM_SYNC_ENABLED || 'false').toLowerCase() === 'true') {
+      const cmIntervalHours = Math.max(1, Number(process.env.GOOGLE_CM_SYNC_INTERVAL_HOURS) || 24);
+      const runGoogleCmSync = async () => {
+        try {
+          const { syncGoogleCustomerMatch } = await import('../services/googleCustomerMatchService.js');
+          await syncGoogleCustomerMatch();
+        } catch (err) {
+          logger.warn('[GoogleCM] periodic sync failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runGoogleCmSync, 90_000);
+      setInterval(runGoogleCmSync, cmIntervalHours * 60 * 60 * 1000);
+      logger.info(`[GoogleCM] periodic sync scheduled (${cmIntervalHours}h interval)`);
+    }
+
     // Redemption CAPI reconciliation sweep — the no-rescan safety net for
     // VoucherRedeemed sends lost between the redemption commit and the
     // fire-and-forget dispatch (process death). Marker-guarded + Meta event_id
