@@ -518,6 +518,17 @@ describe('removeAudienceMembers / removeByConsumerId', () => {
     expect(dmRequestGet).toHaveBeenCalled(); // removal is settled, not assumed
   });
 
+  it('removal PARTIAL_SUCCESS is NOT removed:true — people stayed on the list', async () => {
+    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-1' });
+    const partialGet = jest.fn().mockResolvedValue({ requestStatus: 'PARTIAL_SUCCESS' });
+    const res = await svc.removeAudienceMembers(
+      [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
+      { dmRequest, dmRequestGet: partialGet, sleep: fastSleep }
+    );
+    expect(res.removed).toBe(false);
+    expect(res.status.partialSuccess).toBe(1);
+  });
+
   it('removal is UNCONFIRMED (removed:false) when the status never settles or FAILs', async () => {
     const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-1' });
     const stuckGet = jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' });

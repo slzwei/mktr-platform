@@ -799,6 +799,19 @@ describe('erasure/withdrawal — Google Customer Match removal hooks (plan googl
     expect(observed.emailAtCall).toBeFalsy(); // scrub committed before the seam ran
   });
 
+  test('a SYNCHRONOUSLY throwing seam cannot fail erasure either', async () => {
+    const phone8 = p8(2103);
+    const prospect = await captureProspect(phone8, campaign1, { firstName: 'Cm', lastName: 'SyncThrow' });
+    process.env.GOOGLE_CM_CAMPAIGN_ID = campaign1.id;
+    const googleCmRemove = jest.fn(() => {
+      throw new Error('sync throw'); // NOT an async rejection
+    });
+    const svcErase = makeErasureService({ googleCmRemove });
+    const report = await svcErase.eraseConsumer(prospect.consumerId, { actorUser: admin.user });
+    expect(report.prospects).toBeGreaterThanOrEqual(1);
+    expect(googleCmRemove).toHaveBeenCalledTimes(1);
+  });
+
   test('erasure collects nothing when no prospect is in the target campaign', async () => {
     const phone8 = p8(2101);
     const prospect = await captureProspect(phone8, campaign2, { firstName: 'Cm', lastName: 'Off' });

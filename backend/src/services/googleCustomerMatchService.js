@@ -438,9 +438,12 @@ export async function removeAudienceMembers(identifierRows, deps = {}) {
       }
     }
     const status = acceptedIds.length ? await settleRequestStatuses(acceptedIds, d) : null;
-    const confirmed = status ? status.succeeded + status.partialSuccess : 0;
-    const removed =
-      failedBatches === 0 && status !== null && confirmed === acceptedIds.length && status.stuck === 0;
+    // Removal demands FULL success: a PARTIAL_SUCCESS removal left people ON
+    // the list, which must never be reported as removed (ingest tolerates
+    // partials — coverage self-heals additively; removal has no such healer,
+    // only the membership TTL).
+    const confirmed = status ? status.succeeded : 0;
+    const removed = failedBatches === 0 && status !== null && confirmed === acceptedIds.length;
     const summary = { removed, members: rows.length, accepted: acceptedIds.length, failedBatches, status };
     if (!removed) {
       Sentry.captureMessage('google_cm.remove.unconfirmed', {

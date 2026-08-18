@@ -605,7 +605,7 @@ export function makeConsentService(overrides = {}) {
     // Post-commit, fire-and-forget via dynamic import (no static edge — the
     // CM service dynamically imports THIS module for its ledger gates); the
     // list's finite membership duration backstops a lost call.
-    Promise.resolve(d.googleCmRemoveByConsumerId(consumer.id))
+    (async () => d.googleCmRemoveByConsumerId(consumer.id))()
       .catch((err) => {
         d.logger.warn('[consent] google customer match removal failed (membership TTL heals)', {
           consumerId: consumer.id, error: err?.message || String(err),

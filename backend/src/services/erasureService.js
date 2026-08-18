@@ -791,7 +791,9 @@ export function makeErasureService(overrides = {}) {
     // membership duration backstops a lost call). Dynamic import keeps this
     // service's import graph unchanged.
     if (googleCmRemovalPairs.length) {
-      Promise.resolve(d.googleCmRemove(googleCmRemovalPairs))
+      // async IIFE: a SYNCHRONOUSLY throwing seam becomes a rejection too —
+      // nothing an injected hook does may fail the already-committed erasure.
+      (async () => d.googleCmRemove(googleCmRemovalPairs))()
         .catch((err) => {
           d.logger.warn('[erasure] google customer match removal failed (membership TTL heals)', {
             consumerId, error: err?.message || String(err),
