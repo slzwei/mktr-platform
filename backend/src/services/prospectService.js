@@ -201,7 +201,15 @@ export function makeProspectService(overrides = {}) {
     const gclid = meta?.gclid ?? safeBody.gclid;
     const gbraid = meta?.gbraid ?? safeBody.gbraid;
     const wbraid = meta?.wbraid ?? safeBody.wbraid;
-    const gclCapturedAt = meta?.gclCapturedAt ?? safeBody.gclCapturedAt;
+    // CLAMP to now: the capture timestamp is client-supplied and anchors the
+    // offline-conversion age guard — a forged future value must not extend
+    // eligibility (Codex P3 M4). Unparseable → dropped (server falls back to
+    // the signup timestamp).
+    const rawGclCapturedAt = meta?.gclCapturedAt ?? safeBody.gclCapturedAt;
+    const gclCapturedMs = rawGclCapturedAt ? Date.parse(rawGclCapturedAt) : NaN;
+    const gclCapturedAt = Number.isNaN(gclCapturedMs)
+      ? undefined
+      : new Date(Math.min(gclCapturedMs, Date.now())).toISOString();
     // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;

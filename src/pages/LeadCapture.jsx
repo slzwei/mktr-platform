@@ -438,10 +438,15 @@ export default function LeadCapture() {
           // marketplace flow passes the 8-digit local number — toE164Sg
           // inside setGoogleUserData normalizes both.
           setGoogleUserData({ email: formData.email, phone: formData.phone });
-          trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
-            transactionId: leadEventIdRef.current,
-          });
-          clearGoogleUserData();
+          try {
+            trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
+              transactionId: leadEventIdRef.current,
+            });
+          } finally {
+            // finally: a throwing tag call must never leave page-global PII
+            // attached to later SPA events.
+            clearGoogleUserData();
+          }
         }
         setSubmitted(true);
         setShareOpen(true);

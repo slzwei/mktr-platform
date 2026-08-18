@@ -140,7 +140,11 @@ export function makeProspectMutationOps({ d, m }) {
     // check above races a concurrent erasure, and a stale phone edit must
     // never re-attach a number to a freshly scrubbed row (410, same as the
     // pre-check).
-    const needsTxn = editingDemographics || phoneChanged || mappedStatusTransition;
+    // EVERY non-empty edit takes the managed transaction (B1): the erased
+    // pre-check above races a concurrent erasure, and ANY field write to the
+    // stale instance (email, name, unmapped status) would re-attach data to
+    // a scrubbed skeleton. The lock-reload + 410 inside is the real gate.
+    const needsTxn = Object.keys(safeUpdates).length > 0;
     try {
       if (needsTxn) {
         await d.sequelize.transaction(async (t) => {

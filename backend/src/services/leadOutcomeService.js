@@ -146,11 +146,23 @@ export function makeLeadOutcomeService(overrides = {}) {
     // qualified timestamp. (The admin path writes the same facts inside its
     // edit transaction; this merge is idempotent against that.)
     try {
-      await d.mergeSourceMetadataFirstWins(
+      const factRows = await d.mergeSourceMetadataFirstWins(
         prospect.id,
         ['outcomes'],
         Object.fromEntries(keys.map((k) => [k, canonicalOccurredAt]))
       );
+      if (factRows === 0) {
+        // The erased guard is the only thing that blocks a plain merge — a
+        // concurrent erasure won between our load and this write. Nothing
+        // may dispatch from the stale pre-erasure row (B2).
+        const fresh = await m.Prospect.findByPk(prospect.id, { raw: true });
+        if (!fresh || fresh.sourceMetadata?.erased === true) {
+          d.logger.warn('[lead-outcome] row erased mid-flight — dispatch aborted', {
+            prospectId: prospect.id,
+          });
+          return { skipped: 'erased' };
+        }
+      }
     } catch (factErr) {
       // A fact-write failure is the ONLY unrecoverable branch on the Lyfe
       // path (pg_net never retries) — the Lyfe reconciler is the durability
@@ -205,12 +217,10 @@ export function makeLeadOutcomeService(overrides = {}) {
       const { markerKey } = EVENTS[key];
       const eventName = eventNameFor(key);
 
-      // Permanent first-transition dedup. Marker is written only on success
-      // (below), so a never-sent event stays re-tryable.
-      if (prospect.sourceMetadata?.capi?.[markerKey]) {
-        duplicate.push(eventName);
-        continue;
-      }
+      // Permanent first-transition dedup — for the META send only. Google is
+      // evaluated independently below (its own marker owns its dedup).
+      const metaDuplicate = Boolean(prospect.sourceMetadata?.capi?.[markerKey]);
+      if (metaDuplicate) duplicate.push(eventName);
 
       const ctx = {
         // Stable across qualified/won → Meta dedups any duplicate send.
@@ -220,9 +230,9 @@ export function makeLeadOutcomeService(overrides = {}) {
         ...(pixelIdOverride ? { pixelIdOverride } : {}),
       };
 
-      const result = await dispatchWithRetry(prospect, ctx, { eventName });
+      const result = metaDuplicate ? null : await dispatchWithRetry(prospect, ctx, { eventName });
 
-      if (result?.sent) {
+      if (!metaDuplicate && result?.sent) {
         // Atomic single-key marker write (prospectJsonPatch) — the old
         // read-spread-save of the whole object could delete keys any OTHER
         // writer (google markers, outcome facts, redemption) landed between
@@ -237,19 +247,19 @@ export function makeLeadOutcomeService(overrides = {}) {
       // dispatch is the low-latency path; the worker re-sends anything this
       // misses from the durable fact.
       if (d.googleUploadsEnabled() && d.googleActionIdFor(key)) {
-        const existingGads = prospect.sourceMetadata?.gads?.[key];
-        if (!existingGads) {
-          try {
-            await d.dispatchGoogleOutcome(prospect, key, canonicalOccurredAt, 0);
-          } catch (googleErr) {
-            d.logger.warn('[lead-outcome] google outcome dispatch error (worker heals)', {
-              prospectId: prospect.id, key, error: googleErr?.message || String(googleErr),
-            });
-          }
+        // dispatchOutcome reloads the FRESH row, claims the marker with an
+        // atomic CAS (race-safe against the worker), and never throws — the
+        // try is belt-and-braces for injected seams.
+        try {
+          await d.dispatchGoogleOutcome(prospect.id, key);
+        } catch (googleErr) {
+          d.logger.warn('[lead-outcome] google outcome dispatch error (worker heals)', {
+            prospectId: prospect.id, key, error: googleErr?.message || String(googleErr),
+          });
         }
       }
 
-      if (!result?.sent) {
+      if (!metaDuplicate && !result?.sent) {
         // Not marked → reconciliation / next trigger can retry. (`guarded` = CAPI off.)
         failed.push(eventName);
         if (result?.reason === 'guarded') {

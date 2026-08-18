@@ -331,12 +331,17 @@ export async function bootstrapDatabase() {
           outcomesInFlight = false;
         }
       };
+      let reconcileInFlight = false;
       const runLyfeReconcile = async () => {
+        if (reconcileInFlight) return; // a stalled REST pass must not overlap the next tick
+        reconcileInFlight = true;
         try {
           const { reconcileLyfeOutcomes } = await import('../services/googleOutcomesReconciler.js');
           await reconcileLyfeOutcomes();
         } catch (err) {
           logger.warn('[GoogleOutcomes] reconcile pass failed (non-fatal)', { error: err?.message });
+        } finally {
+          reconcileInFlight = false;
         }
       };
       setTimeout(runOutcomesWorker, 120_000);

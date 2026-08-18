@@ -133,3 +133,57 @@ describe('concurrency: atomic single-key writers cannot clobber each other', () 
     expect(sm.recordingUrl).toBe('https://r.example/x');
   });
 });
+
+describe('ancestor edge cases (Codex P3 minor)', () => {
+  test('a JSON-null or scalar ancestor is converted to an object, not silently no-opped', async () => {
+    const p = await seed({ capi: null });
+    expect(await mergeFirstWins(p.id, ['capi', 'voucherRedeemed'], { e1: 'T1' })).toBe(1);
+    expect((await smOf(p.id)).capi.voucherRedeemed).toEqual({ e1: 'T1' });
+
+    const p2 = await seed({ gads: 'scalar-garbage' });
+    expect(await setPath(p2.id, ['gads', 'k'], { state: 'pending' })).toBe(1);
+    expect((await smOf(p2.id)).gads.k.state).toBe('pending');
+  });
+
+  test('root merge (path []) is first-wins against the whole document', async () => {
+    const p = await seed({ keep: 'original' });
+    expect(await mergeFirstWins(p.id, [], { keep: 'MUST-LOSE', added: 'new' })).toBe(1);
+    const sm = await smOf(p.id);
+    expect(sm.keep).toBe('original');
+    expect(sm.added).toBe('new');
+  });
+});
+
+describe('REAL converted writers interleave safely (Codex P3 M7)', () => {
+  test('concurrent lead-outcome capi marker, redemption deep merge, retell cache, and an outcomes fact all land on one row', async () => {
+    const p = await seed({});
+    const { setPath: sp, mergeFirstWins: mf } = await import('../../src/utils/prospectJsonPatch.js');
+    // The four converted writers' exact write shapes, fired concurrently:
+    await Promise.all([
+      sp(p.id, ['capi', 'confirmedResidentAt'], '2026-08-18T01:00:00Z'), // leadOutcomeService
+      mf(p.id, ['capi', 'voucherRedeemed'], { 'ent-1': '2026-08-18T01:00:01Z' }), // redemptionOutcomeService
+      sp(p.id, ['recordingUrl'], 'https://r.example/rec'), // retellService
+      mf(p.id, ['outcomes'], { confirmed_resident: '2026-08-18T01:00:02Z' }), // processLeadOutcome facts
+      sp(p.id, ['gads', 'confirmed_resident'], { state: 'pending', requestId: 'r1' }), // dispatch marker
+    ]);
+    const sm = await smOf(p.id);
+    expect(sm.capi.confirmedResidentAt).toBe('2026-08-18T01:00:00Z');
+    expect(sm.capi.voucherRedeemed).toEqual({ 'ent-1': '2026-08-18T01:00:01Z' });
+    expect(sm.recordingUrl).toBe('https://r.example/rec');
+    expect(sm.outcomes.confirmed_resident).toBe('2026-08-18T01:00:02Z');
+    expect(sm.gads.confirmed_resident).toEqual({ state: 'pending', requestId: 'r1' });
+  });
+
+  test('the admin removePaths strip in a transaction cannot clobber a concurrent marker write', async () => {
+    const p = await seed({ phoneVerifiedAt: 'T', phoneVerifiedFor: 'H' });
+    const { sequelize } = await import('../../src/models/index.js');
+    const { setPath: sp, removePaths: rp } = await import('../../src/utils/prospectJsonPatch.js');
+    await Promise.all([
+      sequelize.transaction(async (t) => rp(p.id, [['phoneVerifiedAt'], ['phoneVerifiedFor']], { transaction: t })),
+      sp(p.id, ['capi', 'confirmedResidentAt'], 'K'),
+    ]);
+    const sm = await smOf(p.id);
+    expect('phoneVerifiedAt' in sm).toBe(false);
+    expect(sm.capi.confirmedResidentAt).toBe('K');
+  });
+});

@@ -81,13 +81,31 @@ export function historyWants(activities) {
   return wants;
 }
 
+const PAGE = 1000;
+const MAX_PAGES = 20;
+
+/** Paged stable scan — one PostgREST page loop, ordered by id. */
+async function restGetAll(basePath, d) {
+  const all = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const sep = basePath.includes('?') ? '&' : '?';
+    const rows = await restGet(`${basePath}${sep}limit=${PAGE}&offset=${page * PAGE}`, d);
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return all;
+}
+
 export async function reconcileLyfeOutcomes(deps = {}) {
   const d = { ...defaultDeps, ...deps };
   if (!reconcilerConfigured()) return { ran: false, reason: 'guarded' };
   const summary = { ran: true, leads: 0, factsWritten: 0, historyLookups: 0, errors: 0 };
   try {
-    const leads = await restGet(
-      'leads?source_name=eq.mktr&status=in.(qualified,proposed,won,lost)&select=id,external_id,status,updated_at&limit=1000',
+    // ALL SIX statuses (M3): the history-fill contract is "every still-
+    // missing key regardless of current status" — a missed `won` followed by
+    // regression to `new`/`contacted` must still be recoverable.
+    const leads = await restGetAll(
+      'leads?source_name=eq.mktr&select=id,external_id,status,updated_at&order=id.asc',
       d
     );
     summary.leads = leads.length;
@@ -121,15 +139,23 @@ export async function reconcileLyfeOutcomes(deps = {}) {
     // Pass 2: one batched activities query for the candidates.
     if (historyLeadIds.length) {
       summary.historyLookups = historyLeadIds.length;
-      const inList = historyLeadIds.map((id) => `"${id}"`).join(',');
-      const activities = await restGet(
-        `lead_activities?type=eq.status_change&lead_id=in.(${inList})&select=lead_id,created_at,metadata&order=created_at.asc&limit=2000`,
-        d
-      );
+      // Batched + encoded id filters, the JSON to_status predicate applied
+      // SERVER-SIDE (irrelevant transitions must not consume the page), and
+      // per-batch pagination (M3).
       const byLead = new Map();
-      for (const a of activities) {
-        if (!byLead.has(a.lead_id)) byLead.set(a.lead_id, []);
-        byLead.get(a.lead_id).push(a);
+      for (let i = 0; i < historyLeadIds.length; i += 100) {
+        const batch = historyLeadIds.slice(i, i + 100);
+        const inList = encodeURIComponent(`(${batch.map((id) => `"${id}"`).join(',')})`);
+        const activities = await restGetAll(
+          `lead_activities?type=eq.status_change&lead_id=in.${inList}` +
+            `&metadata->>to_status=in.(qualified,won)` +
+            `&select=lead_id,created_at,metadata&order=created_at.asc`,
+          d
+        );
+        for (const a of activities) {
+          if (!byLead.has(a.lead_id)) byLead.set(a.lead_id, []);
+          byLead.get(a.lead_id).push(a);
+        }
       }
       for (const lead of leads) {
         const entry = wantsById.get(lead.external_id);

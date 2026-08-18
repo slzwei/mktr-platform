@@ -33,8 +33,8 @@ import { QueryTypes } from 'sequelize';
 
 const SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
 
-function assertPath(path) {
-  if (!Array.isArray(path) || path.length === 0) {
+function assertPath(path, { allowRoot = false } = {}) {
+  if (!Array.isArray(path) || (!allowRoot && path.length === 0)) {
     throw new Error('prospectJsonPatch: path must be a non-empty array');
   }
   for (const seg of path) {
@@ -50,14 +50,27 @@ function pgPath(path) {
 
 const BASE = `COALESCE("sourceMetadata"::jsonb, '{}'::jsonb)`;
 
-/** Ancestor-ensured expression: every prefix of `path` becomes '{}' if absent. */
+/**
+ * Ancestor-ensured expression: every prefix of `path` becomes '{}' unless it
+ * is ALREADY an object — jsonb_typeof guards convert JSON null / scalar
+ * ancestors too (COALESCE alone passes a JSON null through, and jsonb_set
+ * into a scalar no-ops).
+ */
 function ensuredExpr(path) {
   let expr = BASE;
   for (let i = 1; i < path.length; i++) {
     const prefix = path.slice(0, i);
-    expr = `jsonb_set(${expr}, '${pgPath(prefix)}', COALESCE(${BASE}#>'${pgPath(prefix)}', '{}'::jsonb))`;
+    const at = `${BASE}#>'${pgPath(prefix)}'`;
+    expr = `jsonb_set(${expr}, '${pgPath(prefix)}', CASE WHEN jsonb_typeof(${at}) = 'object' THEN ${at} ELSE '{}'::jsonb END)`;
   }
   return expr;
+}
+
+/** Target-existing expression with the same object-or-'{}' semantics. */
+function objectAt(path) {
+  if (path.length === 0) return BASE;
+  const at = `${BASE}#>'${pgPath(path)}'`;
+  return `CASE WHEN jsonb_typeof(${at}) = 'object' THEN ${at} ELSE '{}'::jsonb END`;
 }
 
 /**
@@ -93,9 +106,13 @@ function whereSql(extra) {
  * @param {CasPredicate} [cas]
  */
 export function buildMergeFirstWinsSql(path, cas) {
-  assertPath(path);
+  assertPath(path, { allowRoot: true });
   const { sql: casClause } = casSql(cas, 'cas');
-  const merged = `$patch::jsonb || COALESCE(${BASE}#>'${pgPath(path)}', '{}'::jsonb)`;
+  const merged = `$patch::jsonb || ${objectAt(path)}`;
+  if (path.length === 0) {
+    // Root merge (contracted `path: []`): first-wins against the whole doc.
+    return `UPDATE prospects SET "sourceMetadata" = (${merged})::json ${whereSql(casClause)}`;
+  }
   return `UPDATE prospects SET "sourceMetadata" = (jsonb_set(${ensuredExpr(path)}, '${pgPath(path)}', ${merged}))::json ${whereSql(casClause)}`;
 }
 

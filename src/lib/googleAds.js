@@ -111,10 +111,12 @@ export function initGoogleAds(conversionId) {
         const existing = sessionStorage.getItem(GCL_STORAGE_KEY);
         if (existing && JSON.parse(existing)?.gclid) return;
         const prior = existing ? JSON.parse(existing) : {};
-        sessionStorage.setItem(
-          GCL_STORAGE_KEY,
-          JSON.stringify({ ...prior, gclid: recovered, capturedAt: new Date().toISOString() })
-        );
+        // NO capturedAt for a recovered id: the tag saw this click on an
+        // EARLIER landing whose time we don't know — stamping "now" would
+        // reset the offline-conversion age window (the server falls back to
+        // the signup timestamp instead, which is strictly older-or-equal).
+        const { capturedAt: _prior, ...rest } = prior;
+        sessionStorage.setItem(GCL_STORAGE_KEY, JSON.stringify({ ...rest, gclid: recovered }));
       } catch {
         /* storage unavailable — recovery is best-effort */
       }

@@ -88,35 +88,43 @@ function prospectFx(overrides = {}) {
   };
 }
 
-describe('factEligibility', () => {
-  it('skips call_bot and no-identifier permanently; passes a normal row', () => {
-    expect(svc.factEligibility(prospectFx({ leadSource: 'call_bot' }), { now: nowAt(T0) })).toEqual({ ok: false, reason: 'call_bot' });
-    expect(svc.factEligibility(prospectFx({ email: null, phone: null, sourceMetadata: {} }), { now: nowAt(T0) })).toEqual({ ok: false, reason: 'no_identifier' });
-    expect(svc.factEligibility(prospectFx(), { now: nowAt(T0) })).toEqual({ ok: true });
+describe('factScreen', () => {
+  it('terminally screens call_bot and expired click windows; erased is non-terminal (guards block writes)', () => {
+    expect(svc.factScreen(prospectFx({ leadSource: 'call_bot' }), { now: nowAt(T0) })).toEqual({ ok: false, reason: 'call_bot', terminal: true });
+    expect(svc.factScreen(prospectFx({ sourceMetadata: { erased: true } }), { now: nowAt(T0) })).toEqual({ ok: false, reason: 'erased', terminal: false });
+    expect(svc.factScreen(prospectFx(), { now: nowAt(T0) })).toEqual({ ok: true });
   });
 
-  it('age-guards from the CLICK capture (or signup for PII-only), never the outcome', () => {
+  it('age-guards from the CLICK capture (or signup for click-less rows) and a FUTURE anchor cannot extend the window', () => {
     const oldClick = prospectFx({ sourceMetadata: { gcl: { gclid: 'g', capturedAt: new Date(T0 - 61 * 24 * 60 * 60 * 1000).toISOString() } } });
-    expect(svc.factEligibility(oldClick, { now: nowAt(T0) })).toEqual({ ok: false, reason: 'age_window_expired' });
+    expect(svc.factScreen(oldClick, { now: nowAt(T0) })).toEqual({ ok: false, reason: 'age_window_expired', terminal: true });
+    const futureForged = prospectFx({
+      createdAt: new Date(T0 - 61 * 24 * 60 * 60 * 1000).toISOString(),
+      sourceMetadata: { gcl: { gclid: 'g', capturedAt: new Date(T0 + 90 * 24 * 60 * 60 * 1000).toISOString() } },
+    });
+    // clamped to now → within window is TRUE only because the click anchor is
+    // clamped, not extended — a future stamp cannot push eligibility out
+    expect(svc.factScreen(futureForged, { now: nowAt(T0) })).toEqual({ ok: true });
     const piiOnlyOld = prospectFx({ sourceMetadata: {}, createdAt: new Date(T0 - 61 * 24 * 60 * 60 * 1000).toISOString() });
-    expect(svc.factEligibility(piiOnlyOld, { now: nowAt(T0) })).toEqual({ ok: false, reason: 'age_window_expired' });
-    const piiOnlyFresh = prospectFx({ sourceMetadata: {}, createdAt: new Date(T0 - 5 * 24 * 60 * 60 * 1000).toISOString() });
-    expect(svc.factEligibility(piiOnlyFresh, { now: nowAt(T0) })).toEqual({ ok: true });
+    expect(svc.factScreen(piiOnlyOld, { now: nowAt(T0) })).toEqual({ ok: false, reason: 'age_window_expired', terminal: true });
   });
 
   it('Meta-Lead-Ads-origin rows are NOT skipped (upload-all guidance)', () => {
     const metaLead = prospectFx({ sourceMetadata: { metaLeadgenId: 'ml-1', gcl: { gclid: 'g', capturedAt: new Date(T0 - 1000).toISOString() } } });
-    expect(svc.factEligibility(metaLead, { now: nowAt(T0) })).toEqual({ ok: true });
+    expect(svc.factScreen(metaLead, { now: nowAt(T0) })).toEqual({ ok: true });
   });
 });
 
 describe('buildOutcomeEnvelope', () => {
   it('pins the consented envelope: OTHER, RFC3339, transactionId, ALL identifiers, HEX + consent WITH userData', () => {
     const env = svc.buildOutcomeEnvelope(
-      prospectFx({ sourceMetadata: { gcl: { gclid: 'g1', gbraid: 'b1', wbraid: 'w1' } } }),
+      prospectFx(),
       'confirmed_resident',
       '2026-08-18T01:02:03.000Z',
-      { marketingConsent: true }
+      {
+        adIdentifiers: { gclid: 'g1', gbraid: 'b1', wbraid: 'w1' },
+        userIdentifiers: [{ emailAddress: sha('jane@mktr.sg') }, { phoneNumber: sha('+6591234567') }],
+      }
     );
     expect(env).toEqual({
       destinations: [{ operatingAccount: { product: 'GOOGLE_ADS', accountId: '1829163947' }, productDestinationId: 'act-cr' }],
@@ -135,7 +143,10 @@ describe('buildOutcomeEnvelope', () => {
   });
 
   it('click-only (no consent) omits userData, encoding, AND the consent block — never a false CONSENT_GRANTED', () => {
-    const env = svc.buildOutcomeEnvelope(prospectFx(), 'closed_won', '2026-08-18T01:02:03.000Z', { marketingConsent: false });
+    const env = svc.buildOutcomeEnvelope(prospectFx(), 'closed_won', '2026-08-18T01:02:03.000Z', {
+      adIdentifiers: { gclid: 'g1' },
+      userIdentifiers: [],
+    });
     expect(env.events[0].userData).toBeUndefined();
     expect(env.encoding).toBeUndefined();
     expect(env.consent).toBeUndefined();
@@ -145,79 +156,162 @@ describe('buildOutcomeEnvelope', () => {
   });
 });
 
-describe('dispatchOutcome', () => {
-  it('accept → pending marker carrying retryCount, ~30min first poll', async () => {
-    const setPath = jest.fn().mockResolvedValue(1);
-    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'req-1' });
-    const res = await svc.dispatchOutcome(prospectFx(), 'confirmed_resident', new Date(T0).toISOString(), 2, {
-      setPath, dmRequest, canMarketTo: consentMocks.canMarketTo, now: nowAt(T0),
-    });
+describe('dispatchOutcome (claim-flow)', () => {
+  function freshDeps(row, over = {}) {
+    return {
+      Prospect: { findByPk: jest.fn().mockResolvedValue(row) },
+      setPath: jest.fn().mockResolvedValue(1),
+      dmRequest: jest.fn().mockResolvedValue({ requestId: 'req-1' }),
+      canMarketTo: consentMocks.canMarketTo,
+      now: nowAt(T0),
+      randomUUID: () => 'claim-1',
+      ...over,
+    };
+  }
+  function rowWithFact(overrides = {}) {
+    const base = prospectFx(overrides);
+    base.sourceMetadata = { ...base.sourceMetadata, outcomes: { confirmed_resident: '2026-08-18T01:00:00.000Z' }, ...(overrides.sourceMetadata || {}) };
+    return base;
+  }
+
+  it('claims (CAS absent), sends, and CASes pending against the claim token', async () => {
+    const d = freshDeps(rowWithFact());
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
     expect(res).toEqual({ sent: true, requestId: 'req-1' });
-    const [, path, marker] = setPath.mock.calls[0];
-    expect(path).toEqual(['gads', 'confirmed_resident']);
-    expect(marker).toMatchObject({ state: 'pending', requestId: 'req-1', retryCount: 2 });
-    expect(Date.parse(marker.nextPollAt) - T0).toBe(30 * 60_000);
+    const claim = d.setPath.mock.calls[0];
+    expect(claim[2]).toMatchObject({ state: 'sending', claimToken: 'claim-1', retryCount: 0 });
+    expect(claim[3].cas).toEqual({ path: ['gads', 'confirmed_resident'], absent: true });
+    const pending = d.setPath.mock.calls[1];
+    expect(pending[2]).toMatchObject({ state: 'pending', requestId: 'req-1', retryCount: 0 });
+    expect(Date.parse(pending[2].nextPollAt) - T0).toBe(30 * 60_000);
+    expect(pending[3].cas).toEqual({ path: ['gads', 'confirmed_resident'], contains: { state: 'sending', claimToken: 'claim-1' } });
   });
 
-  it('permanently ineligible facts get skippedPermanent (no send)', async () => {
-    const setPath = jest.fn().mockResolvedValue(1);
-    const dmRequest = jest.fn();
-    const res = await svc.dispatchOutcome(prospectFx({ leadSource: 'call_bot' }), 'confirmed_resident', new Date(T0).toISOString(), 0, {
-      setPath, dmRequest, now: nowAt(T0),
-    });
-    expect(res.reason).toBe('call_bot');
-    expect(dmRequest).not.toHaveBeenCalled();
-    expect(setPath.mock.calls[0][2]).toMatchObject({ state: 'skippedPermanent', reason: 'call_bot' });
+  it('a lost claim walks away without sending (worker/inline race)', async () => {
+    const d = freshDeps(rowWithFact(), { setPath: jest.fn().mockResolvedValue(0) });
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(res).toEqual({ sent: false, reason: 'claim_lost' });
+    expect(d.dmRequest).not.toHaveBeenCalled();
   });
 
-  it('retry cap is checked BEFORE dispatch → failedPermanent', async () => {
-    const setPath = jest.fn().mockResolvedValue(1);
-    const dmRequest = jest.fn();
-    const res = await svc.dispatchOutcome(prospectFx(), 'confirmed_resident', new Date(T0).toISOString(), 5, {
-      setPath, dmRequest, canMarketTo: consentMocks.canMarketTo, now: nowAt(T0),
-    });
-    expect(res.reason).toBe('retry_cap');
-    expect(dmRequest).not.toHaveBeenCalled();
-    expect(setPath.mock.calls[0][2]).toMatchObject({ state: 'failedPermanent', reason: 'retry_cap' });
-  });
-
-  it('ledger failure fails CLOSED for PII but the click-only event still sends', async () => {
-    consentMocks.canMarketTo.mockRejectedValue(new Error('ledger down'));
-    const setPath = jest.fn().mockResolvedValue(1);
-    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'req-1' });
-    const res = await svc.dispatchOutcome(prospectFx(), 'confirmed_resident', new Date(T0).toISOString(), 0, {
-      setPath, dmRequest, canMarketTo: consentMocks.canMarketTo, now: nowAt(T0),
-    });
+  it('claims a DUE retryWait with its retryCount and refuses one that is not due', async () => {
+    const due = rowWithFact({ sourceMetadata: { gads: { confirmed_resident: { state: 'retryWait', retryCount: 2, nextSendAt: new Date(T0 - 1000).toISOString() } } } });
+    const d = freshDeps(due);
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
     expect(res.sent).toBe(true);
-    const envelope = dmRequest.mock.calls[0][1];
+    expect(d.setPath.mock.calls[0][3].cas).toEqual({
+      path: ['gads', 'confirmed_resident'],
+      contains: { state: 'retryWait', retryCount: 2 },
+    });
+    expect(d.setPath.mock.calls[1][2].retryCount).toBe(2); // rides through pending
+
+    const notDue = rowWithFact({ sourceMetadata: { gads: { confirmed_resident: { state: 'retryWait', retryCount: 1, nextSendAt: new Date(T0 + 60_000).toISOString() } } } });
+    const d2 = freshDeps(notDue);
+    expect(await svc.dispatchOutcome('p-1', 'confirmed_resident', d2)).toEqual({ sent: false, reason: 'not_due' });
+  });
+
+  it('existing pending/delivered markers are never re-dispatched; missing fact/row abort', async () => {
+    const pendingRow = rowWithFact({ sourceMetadata: { gads: { confirmed_resident: { state: 'pending', requestId: 'r' } } } });
+    expect(await svc.dispatchOutcome('p-1', 'confirmed_resident', freshDeps(pendingRow))).toEqual({ sent: false, reason: 'marker_present' });
+    expect(await svc.dispatchOutcome('p-1', 'confirmed_resident', freshDeps(prospectFx()))).toEqual({ sent: false, reason: 'no_fact' });
+    expect(await svc.dispatchOutcome('p-1', 'confirmed_resident', freshDeps(null))).toEqual({ sent: false, reason: 'missing_row' });
+  });
+
+  it('erased rows never send and never get a marker written', async () => {
+    const erased = rowWithFact({ sourceMetadata: { erased: true } });
+    const d = freshDeps(erased);
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(res).toEqual({ sent: false, reason: 'erased' });
+    expect(d.dmRequest).not.toHaveBeenCalled();
+    expect(d.setPath).not.toHaveBeenCalled();
+  });
+
+  it('terminal screens write skippedPermanent THROUGH the claim CAS', async () => {
+    const bot = rowWithFact({ leadSource: 'call_bot' });
+    const d = freshDeps(bot);
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(res.reason).toBe('call_bot');
+    expect(d.dmRequest).not.toHaveBeenCalled();
+    expect(d.setPath.mock.calls[0][2]).toMatchObject({ state: 'skippedPermanent', reason: 'call_bot' });
+    expect(d.setPath.mock.calls[0][3].cas).toEqual({ path: ['gads', 'confirmed_resident'], absent: true });
+  });
+
+  it('retry cap is enforced BEFORE dispatch', async () => {
+    const capped = rowWithFact({ sourceMetadata: { gads: { confirmed_resident: { state: 'retryWait', retryCount: 5, nextSendAt: new Date(T0 - 1000).toISOString() } } } });
+    const d = freshDeps(capped);
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(res.reason).toBe('retry_cap');
+    expect(d.dmRequest).not.toHaveBeenCalled();
+    expect(d.setPath.mock.calls[0][2]).toMatchObject({ state: 'failedPermanent', reason: 'retry_cap' });
+  });
+
+  it('identifier decision is POST-ledger: PII-only + ledger outage → retryWait; PII-only + denial → skippedPermanent; click-only sends without consent block', async () => {
+    const piiOnly = rowWithFact({ sourceMetadata: { outcomes: { confirmed_resident: 'X' } } });
+    piiOnly.sourceMetadata.gcl = undefined;
+    consentMocks.canMarketTo.mockRejectedValueOnce(new Error('ledger down'));
+    const d = freshDeps(piiOnly);
+    const outage = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(outage.reason).toBe('ledger_outage');
+    expect(d.setPath.mock.calls[1][2]).toMatchObject({ state: 'retryWait', retryCount: 1, lastReason: 'ledger_outage' });
+    expect(d.dmRequest).not.toHaveBeenCalled();
+
+    consentMocks.canMarketTo.mockResolvedValueOnce(false);
+    const d2 = freshDeps(structuredClone(piiOnly));
+    const denied = await svc.dispatchOutcome('p-1', 'confirmed_resident', d2);
+    expect(denied.reason).toBe('no_identifier');
+    expect(d2.setPath.mock.calls[1][2]).toMatchObject({ state: 'skippedPermanent', reason: 'no_identifier' });
+    expect(d2.dmRequest).not.toHaveBeenCalled();
+
+    consentMocks.canMarketTo.mockRejectedValueOnce(new Error('ledger down'));
+    const clickOnly = freshDeps(rowWithFact());
+    const sent = await svc.dispatchOutcome('p-1', 'confirmed_resident', clickOnly);
+    expect(sent.sent).toBe(true);
+    const envelope = clickOnly.dmRequest.mock.calls[0][1];
     expect(envelope.events[0].userData).toBeUndefined();
     expect(envelope.consent).toBeUndefined();
     expect(envelope.events[0].adIdentifiers.gclid).toBe('g1');
   });
 
-  it('missing requestId and transient errors → retryWait with retryCount+1; 4xx → failedPermanent', async () => {
-    const setPath = jest.fn().mockResolvedValue(1);
-    const noId = await svc.dispatchOutcome(prospectFx(), 'confirmed_resident', new Date(T0).toISOString(), 1, {
-      setPath, dmRequest: jest.fn().mockResolvedValue({}), canMarketTo: consentMocks.canMarketTo, now: nowAt(T0),
-    });
+  it('missing requestId / transient / 4xx transitions all CAS against the claim', async () => {
+    const d = freshDeps(rowWithFact(), { dmRequest: jest.fn().mockResolvedValue({}) });
+    const noId = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
     expect(noId.reason).toBe('missing_request_id');
-    expect(setPath.mock.calls[0][2]).toMatchObject({ state: 'retryWait', retryCount: 2, lastReason: 'missing_request_id' });
+    expect(d.setPath.mock.calls[1][2]).toMatchObject({ state: 'retryWait', retryCount: 1 });
+    expect(d.setPath.mock.calls[1][3].cas.contains).toEqual({ state: 'sending', claimToken: 'claim-1' });
 
-    setPath.mockClear();
-    const transient = await svc.dispatchOutcome(prospectFx(), 'confirmed_resident', new Date(T0).toISOString(), 0, {
-      setPath, dmRequest: jest.fn().mockRejectedValue(Object.assign(new Error('boom'), { status: 503 })),
-      canMarketTo: consentMocks.canMarketTo, now: nowAt(T0),
-    });
-    expect(transient.reason).toBe('transient');
-    expect(setPath.mock.calls[0][2]).toMatchObject({ state: 'retryWait', retryCount: 1 });
+    const d2 = freshDeps(rowWithFact(), { dmRequest: jest.fn().mockRejectedValue(Object.assign(new Error('x'), { status: 400 })) });
+    const perm = await svc.dispatchOutcome('p-1', 'confirmed_resident', d2);
+    expect(perm.reason).toBe('permanent');
+    expect(d2.setPath.mock.calls[1][2]).toMatchObject({ state: 'failedPermanent', reason: 'http_400' });
 
-    setPath.mockClear();
-    const permanent = await svc.dispatchOutcome(prospectFx(), 'confirmed_resident', new Date(T0).toISOString(), 0, {
-      setPath, dmRequest: jest.fn().mockRejectedValue(Object.assign(new Error('bad'), { status: 400 })),
-      canMarketTo: consentMocks.canMarketTo, now: nowAt(T0),
-    });
-    expect(permanent.reason).toBe('permanent');
-    expect(setPath.mock.calls[0][2]).toMatchObject({ state: 'failedPermanent', reason: 'http_400' });
+    const d3 = freshDeps(rowWithFact(), { dmRequest: jest.fn().mockRejectedValue(Object.assign(new Error('x'), { status: 503 })) });
+    const trans = await svc.dispatchOutcome('p-1', 'confirmed_resident', d3);
+    expect(trans.reason).toBe('transient');
+    expect(d3.setPath.mock.calls[1][2]).toMatchObject({ state: 'retryWait', retryCount: 1 });
+  });
+
+  it('default values survive missing env (plan-contracted S$40/S$500)', async () => {
+    delete process.env.GOOGLE_VALUE_QUALIFIED;
+    delete process.env.GOOGLE_VALUE_WON;
+    expect(svc.valueFor('confirmed_resident')).toBe(40);
+    expect(svc.valueFor('closed_won')).toBe(500);
+    process.env.GOOGLE_VALUE_QUALIFIED = 'garbage';
+    expect(svc.valueFor('confirmed_resident')).toBe(40);
+  });
+});
+
+describe('classifyStatusBody (M2 reason taxonomy)', () => {
+  it('duplicate evidence in errorCounts = delivered even on FAILED/PARTIAL', () => {
+    expect(svc.classifyStatusBody({ requestStatusPerDestination: [{ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'DUPLICATE_TRANSACTION_ID', count: 1 }] } }] })).toBe('delivered');
+    expect(svc.classifyStatusBody({ requestStatus: 'PARTIAL_SUCCESS', errorInfo: { errorCounts: [{ errorReason: 'duplicate' }] } })).toBe('delivered');
+  });
+
+  it('permanent validation/consent/age reasons never retry; unexplained failures do', () => {
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'INVALID_ARGUMENT' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'EVENT_TOO_OLD' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED' })).toBe('transient');
+    expect(svc.classifyStatusBody({ requestStatus: 'SUCCESS' })).toBe('delivered');
+    expect(svc.classifyStatusBody({ requestStatus: 'PROCESSING' })).toBe('processing');
   });
 });
 
@@ -231,45 +325,60 @@ describe('workers', () => {
     expect(sequelize.query).not.toHaveBeenCalled();
   });
 
-  it('settle: SUCCESS delivers with a requestId CAS; FAILED re-queues with Sentry; PROCESSING advances nextPollAt', async () => {
-    const marker = { state: 'pending', requestId: 'req-1', retryCount: 0, sentAt: new Date(T0 - 40 * 60_000).toISOString(), nextPollAt: new Date(T0 - 60_000).toISOString() };
-    const sequelize = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) };
+  it('resend: dispatches each due row through the claim flow (fresh reload inside)', async () => {
+    const sequelize = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1' }]).mockResolvedValue([]) };
+    const row = prospectFx();
+    row.sourceMetadata = { ...row.sourceMetadata, outcomes: { confirmed_resident: '2026-08-18T01:00:00.000Z' } };
+    const Prospect = { findByPk: jest.fn().mockResolvedValue(row) };
     const setPath = jest.fn().mockResolvedValue(1);
-    const dmRequestGet = jest.fn().mockResolvedValue({ requestStatus: 'SUCCESS' });
-    const res = await svc.settleDueOutcomes({ sequelize, setPath, dmRequestGet, now: nowAt(T0) });
-    expect(res.delivered).toBe(1);
-    const [, path, value, opts] = setPath.mock.calls[0];
-    expect(path).toEqual(['gads', 'confirmed_resident']);
-    expect(value).toMatchObject({ state: 'delivered', requestId: 'req-1' });
-    expect(opts.cas).toEqual({ path: ['gads', 'confirmed_resident'], contains: { state: 'pending', requestId: 'req-1' } });
-
-    const seq2 = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) };
-    const set2 = jest.fn().mockResolvedValue(1);
-    const failed = await svc.settleDueOutcomes({ sequelize: seq2, setPath: set2, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'FAILED' }), now: nowAt(T0) });
-    expect(failed.retried).toBe(1);
-    expect(set2.mock.calls[0][2]).toMatchObject({ state: 'retryWait', retryCount: 1, lastReason: 'ingest_failed' });
-    expect(sentryMocks.captureMessage).toHaveBeenCalled();
-
-    const seq3 = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) };
-    const set3 = jest.fn().mockResolvedValue(1);
-    const processing = await svc.settleDueOutcomes({ sequelize: seq3, setPath: set3, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' }), now: nowAt(T0) });
-    expect(processing.stillPending).toBe(1);
-    expect(Date.parse(set3.mock.calls[0][2].nextPollAt)).toBeGreaterThan(T0);
+    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'req-1' });
+    const res = await svc.resendDueOutcomes({ sequelize, Prospect, setPath, dmRequest, canMarketTo: consentMocks.canMarketTo, now: nowAt(T0), randomUUID: () => 'c' });
+    expect(res.sent).toBe(1);
+    expect(Prospect.findByPk).toHaveBeenCalledWith('p-1', { raw: true });
+    expect(sequelize.query.mock.calls[0][0]).toContain("-> 'outcomes'");
   });
 
-  it('settle: duplicate-transaction evidence counts as delivered; pending past the horizon fails permanently', async () => {
-    const marker = { state: 'pending', requestId: 'req-1', retryCount: 0, sentAt: new Date(T0 - 8 * 24 * 60 * 60_000).toISOString(), nextPollAt: new Date(T0 - 60_000).toISOString() };
-    const seq = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) };
-    const set = jest.fn().mockResolvedValue(1);
-    const dup = await svc.settleDueOutcomes({ sequelize: seq, setPath: set, dmRequestGet: jest.fn().mockRejectedValue(new Error('HTTP 409 duplicate transaction id')), now: nowAt(T0) });
-    expect(dup.delivered).toBe(1);
-    expect(set.mock.calls[0][2]).toMatchObject({ state: 'delivered' });
+  it('settle: delivered/permanent/transient via the taxonomy, all CAS on the exact pending marker', async () => {
+    const marker = { state: 'pending', requestId: 'req-1', retryCount: 0, sentAt: new Date(T0 - 40 * 60_000).toISOString(), nextPollAt: new Date(T0 - 60_000).toISOString() };
+    const mk = () => ({ query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) });
 
-    const seq2 = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) };
+    const set1 = jest.fn().mockResolvedValue(1);
+    const ok = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set1, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'SUCCESS' }), now: nowAt(T0) });
+    expect(ok.delivered).toBe(1);
+    expect(set1.mock.calls[0][3].cas).toEqual({ path: ['gads', 'confirmed_resident'], contains: { state: 'pending', requestId: 'req-1' } });
+
     const set2 = jest.fn().mockResolvedValue(1);
-    const timedOut = await svc.settleDueOutcomes({ sequelize: seq2, setPath: set2, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' }), now: nowAt(T0) });
+    const rejected = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set2, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'INVALID_ARGUMENT' }] } }), now: nowAt(T0) });
+    expect(rejected.failedPermanent).toBe(1);
+    expect(set2.mock.calls[0][2]).toMatchObject({ state: 'failedPermanent', reason: 'ingest_rejected' });
+
+    const set3 = jest.fn().mockResolvedValue(1);
+    const transient = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set3, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'FAILED' }), now: nowAt(T0) });
+    expect(transient.retried).toBe(1);
+    expect(set3.mock.calls[0][2]).toMatchObject({ state: 'retryWait', retryCount: 1, lastReason: 'ingest_failed' });
+
+    const set4 = jest.fn().mockResolvedValue(1);
+    const processing = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set4, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' }), now: nowAt(T0) });
+    expect(processing.stillPending).toBe(1);
+    expect(Date.parse(set4.mock.calls[0][2].nextPollAt)).toBeGreaterThan(T0);
+  });
+
+  it('settle: duplicate evidence (body OR thrown) = delivered; pending past the horizon fails permanently', async () => {
+    const marker = { state: 'pending', requestId: 'req-1', retryCount: 0, sentAt: new Date(T0 - 8 * 24 * 60 * 60_000).toISOString(), nextPollAt: new Date(T0 - 60_000).toISOString() };
+    const mk = () => ({ query: jest.fn().mockResolvedValueOnce([{ id: 'p-1', marker }]).mockResolvedValue([]) });
+
+    const set1 = jest.fn().mockResolvedValue(1);
+    const viaBody = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set1, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'duplicate_transaction' }] } }), now: nowAt(T0) });
+    expect(viaBody.delivered).toBe(1);
+
+    const set2 = jest.fn().mockResolvedValue(1);
+    const viaThrow = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set2, dmRequestGet: jest.fn().mockRejectedValue(new Error('HTTP 409 duplicate transaction id')), now: nowAt(T0) });
+    expect(viaThrow.delivered).toBe(1);
+
+    const set3 = jest.fn().mockResolvedValue(1);
+    const timedOut = await svc.settleDueOutcomes({ sequelize: mk(), setPath: set3, dmRequestGet: jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' }), now: nowAt(T0) });
     expect(timedOut.failedPermanent).toBe(1);
-    expect(set2.mock.calls[0][2]).toMatchObject({ state: 'failedPermanent', reason: 'pending_timeout' });
+    expect(set3.mock.calls[0][2]).toMatchObject({ state: 'failedPermanent', reason: 'pending_timeout' });
   });
 });
 

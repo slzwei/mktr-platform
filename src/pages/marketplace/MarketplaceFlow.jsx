@@ -423,10 +423,15 @@ export default function MarketplaceFlow() {
           // page-global, so clear right after the conversion queues — later
           // SPA tag events must not inherit the submitter's PII.
           setGoogleUserData({ email: form.email, phone: form.phone });
-          trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
-            transactionId: leadEventIdRef.current,
-          });
-          clearGoogleUserData();
+          try {
+            trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
+              transactionId: leadEventIdRef.current,
+            });
+          } finally {
+            // finally: a throwing tag call must never leave page-global PII
+            // attached to later SPA events.
+            clearGoogleUserData();
+          }
         }
         if (isDraw) trackCustom('draw_entry_confirmed');
         setResult({

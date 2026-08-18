@@ -368,15 +368,17 @@ describe('leadOutcomeService — durable outcome facts + Google dispatch (plan �
     expect(dispatchGoogleOutcome.mock.calls.map((c) => c[1])).toEqual(['confirmed_resident', 'closed_won']);
   });
 
-  it('an existing gads marker suppresses the inline Google dispatch (worker owns retries)', async () => {
+  it('delegates marker dedup to the claim flow — dispatch is CALLED and owns the race (id-based)', async () => {
     const prospect = makeProspect({
       sourceMetadata: { consent_contact: true, gads: { confirmed_resident: { state: 'pending', requestId: 'r' } } },
     });
-    const dispatchGoogleOutcome = jest.fn();
+    const dispatchGoogleOutcome = jest.fn().mockResolvedValue({ sent: false, reason: 'marker_present' });
     const googleUploadsEnabled = jest.fn().mockReturnValue(true);
     const { deps } = buildDeps({ prospect, dispatchGoogleOutcome, googleUploadsEnabled });
     const svc = makeLeadOutcomeService(deps);
     await svc.processLeadOutcome(QUALIFIED);
-    expect(dispatchGoogleOutcome).not.toHaveBeenCalled();
-  });
-});
+    // claim-flow contract: the service delegates with the PROSPECT ID (the
+    // dispatcher reloads fresh state and CAS-claims — suppression of existing
+    // markers is proven in googleOfflineConversionsService.test.js).
+    expect(dispatchGoogleOutcome).toHaveBeenCalledWith(prospect.id, 'confirmed_resident');
+  });});

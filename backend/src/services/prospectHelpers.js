@@ -24,6 +24,19 @@ export function phoneDigits(v) {
   return String(v ?? '').replace(/\D/g, '');
 }
 
+/**
+ * Destination-safe sourceMetadata projection for OUTBOUND webhook payloads
+ * (Codex P3 M5): Google click ids, delivery-state internals, and outcome
+ * facts are ad-plumbing — Lyfe / MKTR Leads have no use for them and online
+ * identifiers must not fan out to third systems. Only the NEW ad-delivery
+ * keys are stripped; historical exposure of other keys is unchanged.
+ */
+export function webhookSafeSourceMetadata(sm) {
+  if (!sm || typeof sm !== 'object') return sm;
+  const { gcl: _gcl, gads: _gads, outcomes: _outcomes, ...rest } = sm;
+  return rest;
+}
+
 export function normalizePhone(phone) {
   if (!phone) return phone;
   let p = String(phone).replace(/\s+/g, '');
@@ -137,7 +150,7 @@ export function buildLeadCreatedPayload(prospect, routingMode, agentForWebhook, 
         location: prospect.location,
         tags: prospect.tags,
         notes: prospect.notes,
-        sourceMetadata: prospect.sourceMetadata,
+        sourceMetadata: webhookSafeSourceMetadata(prospect.sourceMetadata),
         recordingUrl: prospect.sourceMetadata?.recordingUrl || null,
         transcript: prospect.sourceMetadata?.retellCallId ? prospect.notes : null,
         dnc: dncPayloadBlock(prospect),
@@ -200,7 +213,7 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign, 
         location: prospect.location,
         tags: prospect.tags,
         notes: prospect.notes,
-        sourceMetadata: meta,
+        sourceMetadata: webhookSafeSourceMetadata(meta),
         recordingUrl: meta.recordingUrl || null,
         transcript: meta.retellCallId ? prospect.notes : null,
         dnc: dncPayloadBlock(prospect),
@@ -240,7 +253,7 @@ export function buildLeadUnassignedPayload(prospect, previousAgentLyfeId, opts =
         phone: prospect.phone,
         email: prospect.email,
         leadSource: prospect.leadSource,
-        sourceMetadata: prospect.sourceMetadata
+        sourceMetadata: webhookSafeSourceMetadata(prospect.sourceMetadata)
       },
       previousAgentId: previousAgentLyfeId,
       // Admin pull-back to the held queue: signals the mktr-leads receiver to SOFT-DELETE
