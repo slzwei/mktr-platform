@@ -2,7 +2,7 @@ import * as Sentry from '@sentry/node';
 import { Op } from 'sequelize';
 import { Prospect } from '../models/index.js';
 import { hashEmailGoogle, hashPhoneE164 } from '../utils/piiHashing.js';
-import { dmRequest } from '../utils/googleDataManagerClient.js';
+import { dmRequest, dmRequestGet } from '../utils/googleDataManagerClient.js';
 import { phoneVerificationIsCurrent } from './consumerService.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail } from './mailer.js';
@@ -32,31 +32,60 @@ import { contactGrantAllows } from './contactConsent.js';
  *    since 2026-04-01. Requests carry encoding:HEX (mandatory with hashed
  *    userData), the Customer Match terms acceptance, and CONSENT_GRANTED
  *    enums — truthful because every row is ledger-gated before upload.
+ *  - Ingestion is ASYNCHRONOUS: HTTP accept returns a requestId whose
+ *    processing settles later. Every accepted id is polled through
+ *    requestStatus:retrieve to a terminal state (bounded backoff); stuck or
+ *    FAILED requests alert. Accounting stays aggregate-only — membership is
+ *    not tracked per-row locally and the next additive run self-heals.
  *
- * Erased rows never upload (sourceMetadata.erased skeleton). Erasure-time and
- * withdrawal-time REMOVAL hooks live with the erasure/consent services (plan
- * §3); the list's finite membership duration (Ads UI setting, 180d) is the
- * backstop for anything those hooks miss.
+ * REMOVAL surface (plan §3 removal path): removeAudienceMembers /
+ * removeByConsumerId serve the erasure post-commit hook and the
+ * applyUnsubscribe post-commit hook (both call in via dynamic import,
+ * fire-and-forget). Removal is gated only on removalConfigured() — NOT the
+ * sync ENABLED flag: once anything was ever uploaded, honoring erasure/
+ * withdrawal must not depend on the sync still being switched on. The list's
+ * finite membership duration (Ads UI setting, 180d) is the backstop for
+ * anything these hooks miss.
  */
 
 const MAX_BATCH_MEMBERS = 5000; // ≤2 identifiers/member keeps us under the 10k identifier cap
 const SYNTHETIC_EMAIL_SUFFIX = '@calls.mktr.sg';
+const TERMINAL_STATUSES = new Set(['SUCCESS', 'PARTIAL_SUCCESS', 'FAILED']);
 
-const defaultDeps = { Prospect, fetch: globalThis.fetch, sendEmail, dmRequest };
+const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const defaultDeps = {
+  Prospect,
+  fetch: globalThis.fetch,
+  sendEmail,
+  dmRequest,
+  dmRequestGet,
+  sleep: realSleep,
+};
 
 /**
- * Guard: no-op cleanly when the master switch is off or config is missing —
- * a misconfigured scheduler exits instead of erroring. Mirrors
+ * Guard for the SYNC: no-op cleanly when the master switch is off or config
+ * is missing — a misconfigured scheduler exits instead of erroring. Mirrors
  * redeemedAudienceService.shouldSync.
  */
 export function shouldSync() {
   if (process.env.GOOGLE_CM_SYNC_ENABLED !== 'true') return false;
+  if (!removalConfigured()) return false;
+  if (!process.env.GOOGLE_CM_CAMPAIGN_ID) return false;
+  return true;
+}
+
+/**
+ * Guard for the REMOVAL surface: creds + destination only. Deliberately
+ * ignores GOOGLE_CM_SYNC_ENABLED — erasure/withdrawal removal must keep
+ * working after the sync is switched off.
+ */
+export function removalConfigured() {
   if (!process.env.GOOGLE_DM_OAUTH_CLIENT_ID) return false;
   if (!process.env.GOOGLE_DM_OAUTH_CLIENT_SECRET) return false;
   if (!process.env.GOOGLE_DM_REFRESH_TOKEN) return false;
   if (!process.env.GOOGLE_ADS_CUSTOMER_ID) return false;
   if (!process.env.GOOGLE_CM_USER_LIST_ID) return false;
-  if (!process.env.GOOGLE_CM_CAMPAIGN_ID) return false;
   return true;
 }
 
@@ -83,6 +112,18 @@ export async function selectCampaignProspects(deps = {}) {
   });
 }
 
+/** email/phone → HEX-hash identifier array (shared by ingest + removal). */
+function identifiersFor(email, phone) {
+  const usableEmail =
+    email && !String(email).toLowerCase().endsWith(SYNTHETIC_EMAIL_SUFFIX) ? email : null;
+  const emHash = hashEmailGoogle(usableEmail);
+  const phHash = hashPhoneE164(phone);
+  const userIdentifiers = [];
+  if (emHash) userIdentifiers.push({ emailAddress: emHash });
+  if (phHash) userIdentifiers.push({ phoneNumber: phHash });
+  return userIdentifiers;
+}
+
 /**
  * Prospect rows → Data Manager audience members. Every filter fails CLOSED:
  *  - erased skeletons out
@@ -93,8 +134,6 @@ export async function selectCampaignProspects(deps = {}) {
  *  - suppressed phones out
  *  - synthetic Retell emails dropped from the email key
  *  - neither usable identifier → out
- * Returns [{ userIdentifiers: [{emailAddress}|{phoneNumber}...] }, ...] with
- * HEX SHA-256 values (request-level `encoding: "HEX"` declares this).
  */
 export function buildMemberRows(prospects, { suppressedPhones = null, grantMap = null } = {}) {
   const rows = [];
@@ -103,19 +142,39 @@ export function buildMemberRows(prospects, { suppressedPhones = null, grantMap =
     if (!phoneVerificationIsCurrent(p)) continue;
     if (!contactGrantAllows(grantMap?.get(p?.phone), p?.campaignId || null)) continue;
     if (suppressedPhones && p?.phone && suppressedPhones.has(p.phone)) continue;
-    const email =
-      p?.email && !String(p.email).toLowerCase().endsWith(SYNTHETIC_EMAIL_SUFFIX)
-        ? p.email
-        : null;
-    const emHash = hashEmailGoogle(email);
-    const phHash = hashPhoneE164(p?.phone);
-    if (!emHash && !phHash) continue;
-    const userIdentifiers = [];
-    if (emHash) userIdentifiers.push({ emailAddress: emHash });
-    if (phHash) userIdentifiers.push({ phoneNumber: phHash });
+    const userIdentifiers = identifiersFor(p?.email, p?.phone);
+    if (userIdentifiers.length === 0) continue;
     rows.push({ userIdentifiers });
   }
   return rows;
+}
+
+/**
+ * Raw {email, phone} pairs → identifier rows for REMOVAL. No consent /
+ * verification gates: removing someone from an ad audience is always
+ * permitted and erasure-time callers hold pre-scrub values that are about to
+ * be destroyed. Synthetic emails still dropped (they never matched anyway).
+ */
+export function buildRemovalIdentifiers(pairs) {
+  const rows = [];
+  for (const p of pairs || []) {
+    const userIdentifiers = identifiersFor(p?.email, p?.phone);
+    if (userIdentifiers.length === 0) continue;
+    rows.push({ userIdentifiers });
+  }
+  return rows;
+}
+
+function destinations() {
+  return [
+    {
+      operatingAccount: {
+        product: 'GOOGLE_ADS',
+        accountId: process.env.GOOGLE_ADS_CUSTOMER_ID,
+      },
+      productDestinationId: process.env.GOOGLE_CM_USER_LIST_ID,
+    },
+  ];
 }
 
 /**
@@ -125,20 +184,22 @@ export function buildMemberRows(prospects, { suppressedPhones = null, grantMap =
  */
 export function buildIngestBody(members, { validateOnly = false } = {}) {
   return {
-    destinations: [
-      {
-        operatingAccount: {
-          product: 'GOOGLE_ADS',
-          accountId: process.env.GOOGLE_ADS_CUSTOMER_ID,
-        },
-        productDestinationId: process.env.GOOGLE_CM_USER_LIST_ID,
-      },
-    ],
+    destinations: destinations(),
     audienceMembers: members.map((m) => ({ userData: { userIdentifiers: m.userIdentifiers } })),
     consent: { adUserData: 'CONSENT_GRANTED', adPersonalization: 'CONSENT_GRANTED' },
     encoding: 'HEX',
     termsOfService: { customerMatchTermsOfServiceStatus: 'ACCEPTED' },
     ...(validateOnly ? { validateOnly: true } : {}),
+  };
+}
+
+/** The removal envelope. encoding:HEX is required with hashed userData; the
+ * Customer Match terms block is an INGEST requirement and is omitted here. */
+export function buildRemoveBody(members) {
+  return {
+    destinations: destinations(),
+    audienceMembers: members.map((m) => ({ userData: { userIdentifiers: m.userIdentifiers } })),
+    encoding: 'HEX',
   };
 }
 
@@ -153,15 +214,69 @@ async function sendBadRunAlert(d, subject, body) {
   }
 }
 
+function extractStatus(body) {
+  const raw =
+    body?.requestStatusPerDestination?.[0]?.requestStatus ??
+    body?.requestStatus ??
+    body?.status ??
+    null;
+  return raw ? String(raw).toUpperCase() : null;
+}
+
+/**
+ * Poll each unique accepted requestId through requestStatus:retrieve to a
+ * terminal state with bounded backoff (10s → 60s cap, GOOGLE_CM_STATUS_MAX_POLLS
+ * attempts each, default 6). Ids still non-terminal after the budget count as
+ * STUCK. A retrieve call that itself errors marks the id stuck (never throws).
+ * Aggregate counts only — never per-person state.
+ */
+export async function settleRequestStatuses(requestIds, deps = {}) {
+  const d = { ...defaultDeps, ...deps };
+  const maxPolls = Math.max(1, Number(process.env.GOOGLE_CM_STATUS_MAX_POLLS) || 6);
+  const summary = { succeeded: 0, partialSuccess: 0, failed: 0, stuck: 0 };
+  const unique = [...new Set((requestIds || []).filter(Boolean))];
+  for (const id of unique) {
+    let settled = false;
+    for (let attempt = 0; attempt < maxPolls && !settled; attempt++) {
+      if (attempt > 0) await d.sleep(Math.min(10_000 * 2 ** (attempt - 1), 60_000));
+      let status = null;
+      try {
+        const body = await d.dmRequestGet(
+          `requestStatus:retrieve?requestId=${encodeURIComponent(id)}`,
+          d
+        );
+        status = extractStatus(body);
+      } catch (err) {
+        logger.warn({ requestId: id, err: err.message }, 'google_cm.status.retrieve_failed');
+        break; // treated as stuck below
+      }
+      if (status && TERMINAL_STATUSES.has(status)) {
+        settled = true;
+        if (status === 'SUCCESS') summary.succeeded += 1;
+        else if (status === 'PARTIAL_SUCCESS') summary.partialSuccess += 1;
+        else summary.failed += 1;
+        logger.info({ requestId: id, status }, 'google_cm.status.terminal');
+      }
+    }
+    if (!settled) {
+      summary.stuck += 1;
+      logger.warn({ requestId: id }, 'google_cm.status.stuck');
+    }
+  }
+  return summary;
+}
+
 // In-process single-flight: the scheduler's interval and a deploy's initial
 // run must never overlap (single-instance backend — this is the whole lock).
+// Held through status settling, not just the uploads.
 let syncInFlight = false;
 
 /**
  * Orchestrate a full sync. Never throws — errors land in Sentry + structured
- * logs (counts only, never PII) + an optional alert email. Aggregate-only
- * accounting is deliberate: membership isn't tracked per-row locally and the
- * next additive run self-heals partial failures (plan §3 job lifecycle).
+ * logs (counts only, never PII) + an optional alert email. Per-batch
+ * accounting: an accepted batch is never un-reported because a later batch
+ * failed, and alerts distinguish partial transport failure from wholesale
+ * failure.
  */
 export async function syncGoogleCustomerMatch(deps = {}) {
   const d = { ...defaultDeps, ...deps };
@@ -192,31 +307,83 @@ export async function syncGoogleCustomerMatch(deps = {}) {
 
     if (rows.length === 0) {
       logger.warn('google_cm.sync.empty (no eligible members)');
-      return { synced: true, eligible: 0, batches: 0, requestIds: [] };
+      return { synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, status: null };
     }
 
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
-    const requestIds = [];
+    const acceptedIds = [];
+    let failedBatches = 0;
     for (let i = 0; i < batches.length; i++) {
-      const body = buildIngestBody(batches[i]);
-      const res = await d.dmRequest('audienceMembers:ingest', body, d);
-      requestIds.push(res?.requestId || null);
-      logger.info(
-        { batch: i + 1, members: batches[i].length, requestId: res?.requestId },
-        'google_cm.sync.batch'
-      );
+      try {
+        const body = buildIngestBody(batches[i]);
+        const res = await d.dmRequest('audienceMembers:ingest', body, d);
+        if (!res?.requestId) {
+          // An accept without a requestId cannot be settled — count it failed
+          // rather than assuming success (the next additive run re-covers it).
+          failedBatches += 1;
+          logger.warn({ batch: i + 1 }, 'google_cm.sync.batch_missing_request_id');
+          continue;
+        }
+        acceptedIds.push(res.requestId);
+        logger.info(
+          { batch: i + 1, members: batches[i].length, requestId: res.requestId },
+          'google_cm.sync.batch'
+        );
+      } catch (err) {
+        failedBatches += 1;
+        logger.error({ batch: i + 1, err: err.message }, 'google_cm.sync.batch_failed');
+        Sentry.captureException(err, { tags: { source: 'google_cm_sync' } });
+      }
     }
 
-    logger.info({ eligible: rows.length, batches: batches.length, requestIds }, 'google_cm.sync.done');
-    return { synced: true, eligible: rows.length, batches: batches.length, requestIds };
+    const status = acceptedIds.length ? await settleRequestStatuses(acceptedIds, d) : null;
+
+    const summary = {
+      synced: acceptedIds.length > 0,
+      eligible: rows.length,
+      batches: batches.length,
+      accepted: acceptedIds.length,
+      failedBatches,
+      status,
+    };
+    logger.info(summary, 'google_cm.sync.done');
+
+    const wholesale = acceptedIds.length === 0;
+    const troubled = failedBatches > 0 || (status && (status.failed > 0 || status.stuck > 0));
+    if (wholesale || troubled) {
+      await sendBadRunAlert(
+        d,
+        wholesale
+          ? '⚠️ MKTR Google Customer Match sync FAILED (nothing uploaded)'
+          : '⚠️ MKTR Google Customer Match sync — partial failure',
+        [
+          wholesale
+            ? 'Every ingest batch failed — nothing was uploaded this run.'
+            : 'Some batches or request statuses failed; accepted batches stand.',
+          '',
+          `Eligible:        ${rows.length}`,
+          `Batches:         ${batches.length}`,
+          `Accepted:        ${acceptedIds.length}`,
+          `Failed batches:  ${failedBatches}`,
+          `Status summary:  ${JSON.stringify(status)}`,
+          `List:            ${process.env.GOOGLE_CM_USER_LIST_ID}`,
+          `Campaign:        ${process.env.GOOGLE_CM_CAMPAIGN_ID}`,
+          `Time:            ${new Date().toISOString()}`,
+          '',
+          'The nightly additive re-ingest self-heals partial coverage.',
+          'Check Render logs (mktr-backend-jo6r, search "google_cm") + Sentry (source:google_cm_sync).',
+        ].join('\n')
+      );
+    }
+    return summary;
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'google_cm_sync' } });
     logger.error({ err: err.message }, 'google_cm.sync.failed');
     await sendBadRunAlert(
       d,
-      '⚠️ MKTR Google Customer Match sync FAILED',
+      '⚠️ MKTR Google Customer Match sync FAILED (nothing uploaded)',
       [
-        'The Google Customer Match exclusion sync failed — nothing was uploaded this run.',
+        'The Google Customer Match exclusion sync aborted — nothing was uploaded this run.',
         '',
         `Error:     ${err.message}`,
         `List:      ${process.env.GOOGLE_CM_USER_LIST_ID || '(unset)'}`,
@@ -230,5 +397,55 @@ export async function syncGoogleCustomerMatch(deps = {}) {
     return { synced: false, error: err.message };
   } finally {
     syncInFlight = false;
+  }
+}
+
+/**
+ * Remove identifier rows from the list. Never throws — erasure/withdrawal
+ * must never fail on Google availability; failures land in Sentry/logs and
+ * the finite membership duration mops up. Gated on removalConfigured() only.
+ */
+export async function removeAudienceMembers(identifierRows, deps = {}) {
+  const d = { ...defaultDeps, ...deps };
+  if (!removalConfigured()) return { removed: false, reason: 'unconfigured' };
+  const rows = (identifierRows || []).filter((r) => r?.userIdentifiers?.length);
+  if (rows.length === 0) return { removed: false, reason: 'empty' };
+  try {
+    const batches = chunk(rows, MAX_BATCH_MEMBERS);
+    const requestIds = [];
+    for (const batch of batches) {
+      const res = await d.dmRequest('audienceMembers:remove', buildRemoveBody(batch), d);
+      requestIds.push(res?.requestId || null);
+    }
+    logger.info({ members: rows.length, batches: batches.length }, 'google_cm.remove.done');
+    return { removed: true, members: rows.length, requestIds };
+  } catch (err) {
+    Sentry.captureException(err, { tags: { source: 'google_cm_remove' } });
+    logger.error({ err: err.message }, 'google_cm.remove.failed');
+    return { removed: false, error: err.message };
+  }
+}
+
+/**
+ * Withdrawal-time removal: look up the person's rows in the target campaign
+ * and remove their identifiers. Called post-commit from
+ * consentService.applyUnsubscribe (dynamic import, fire-and-forget).
+ */
+export async function removeByConsumerId(consumerId, deps = {}) {
+  const d = { ...defaultDeps, ...deps };
+  if (!removalConfigured() || !process.env.GOOGLE_CM_CAMPAIGN_ID || !consumerId) {
+    return { removed: false, reason: 'unconfigured' };
+  }
+  try {
+    const rows = await d.Prospect.findAll({
+      attributes: ['email', 'phone'],
+      where: { consumerId, campaignId: process.env.GOOGLE_CM_CAMPAIGN_ID },
+      raw: true,
+    });
+    return removeAudienceMembers(buildRemovalIdentifiers(rows), d);
+  } catch (err) {
+    Sentry.captureException(err, { tags: { source: 'google_cm_remove' } });
+    logger.error({ err: err.message }, 'google_cm.remove.lookup_failed');
+    return { removed: false, error: err.message };
   }
 }

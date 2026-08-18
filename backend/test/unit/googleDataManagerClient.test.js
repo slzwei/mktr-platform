@@ -120,3 +120,58 @@ describe('dmRequest', () => {
     expect(err.message).not.toMatch(/abc123/);
   });
 });
+
+describe('fetchWithRetry', () => {
+  it('retries transient 429/5xx with backoff and returns the eventual response', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 429, ok: false, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 503, ok: false, json: async () => ({}) })
+      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({}) });
+    const sleep = jest.fn().mockResolvedValue();
+    const res = await client.fetchWithRetry('https://x', {}, { fetch, sleep });
+    expect(res.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('does NOT retry a terminal 4xx (returned to the caller to classify)', async () => {
+    const fetch = jest.fn().mockResolvedValue({ status: 400, ok: false, json: async () => ({}) });
+    const sleep = jest.fn();
+    const res = await client.fetchWithRetry('https://x', {}, { fetch, sleep });
+    expect(res.status).toBe(400);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('retries network errors and surfaces a sanitized failure after the budget', async () => {
+    const fetch = jest.fn().mockRejectedValue(new Error('socket hang up'));
+    const sleep = jest.fn().mockResolvedValue();
+    await expect(client.fetchWithRetry('https://x', {}, { fetch, sleep })).rejects.toThrow(
+      /failed after 3 attempts: socket hang up/
+    );
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('passes an abort signal so a hung fetch cannot wedge the caller', async () => {
+    const fetch = jest.fn().mockResolvedValue({ status: 200, ok: true, json: async () => ({}) });
+    await client.fetchWithRetry('https://x', {}, { fetch });
+    expect(fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('dmRequestGet', () => {
+  it('GETs the path with auth and no body', async () => {
+    const fetch = jest
+      .fn()
+      .mockImplementationOnce(tokenOk)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ requestStatus: 'SUCCESS' }) });
+    const res = await client.dmRequestGet('requestStatus:retrieve?requestId=r1', { fetch });
+    expect(res).toEqual({ requestStatus: 'SUCCESS' });
+    const [url, init] = fetch.mock.calls[1];
+    expect(url).toBe('https://datamanager.googleapis.com/v1/requestStatus:retrieve?requestId=r1');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+    expect(init.headers.Authorization).toBe('Bearer at-1');
+  });
+});

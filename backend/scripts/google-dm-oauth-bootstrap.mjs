@@ -47,8 +47,20 @@ const authUrl =
 console.log('\nOpen this URL as admin@mktr.sg and approve:\n');
 console.log(authUrl + '\n');
 
+// A denied consent must not leave the script listening forever.
+const deadline = setTimeout(() => {
+  console.error('Timed out waiting for the OAuth redirect (10 min).');
+  process.exit(1);
+}, 10 * 60 * 1000);
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, REDIRECT_URI);
+  const oauthError = url.searchParams.get('error');
+  if (oauthError) {
+    res.writeHead(200, { 'Content-Type': 'text/plain' }).end(`OAuth error: ${oauthError}`);
+    console.error(`OAuth error from Google: ${oauthError}`);
+    process.exit(1);
+  }
   const code = url.searchParams.get('code');
   const gotState = url.searchParams.get('state');
   if (!code) {
@@ -62,7 +74,9 @@ const server = http.createServer(async (req, res) => {
   }
   res.writeHead(200, { 'Content-Type': 'text/plain' }).end('Token minted — you can close this tab.');
   server.close();
+  clearTimeout(deadline);
 
+  try {
   const form = new URLSearchParams({
     code,
     client_id: CLIENT_ID,
@@ -83,6 +97,10 @@ const server = http.createServer(async (req, res) => {
   console.log('\nGOOGLE_DM_REFRESH_TOKEN (copy into Render env, never commit):\n');
   console.log(body.refresh_token + '\n');
   process.exit(0);
+  } catch (err) {
+    console.error('Token exchange threw:', err?.message || err);
+    process.exit(1);
+  }
 });
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Listening on ${REDIRECT_URI} for the OAuth redirect…`);

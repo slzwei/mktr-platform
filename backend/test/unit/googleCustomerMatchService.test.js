@@ -2,15 +2,10 @@ import { jest } from '@jest/globals';
 import crypto from 'crypto';
 
 // Mocks BEFORE importing the SUT (Jest ESM pattern).
-jest.unstable_mockModule('@sentry/node', () => ({
-  captureException: jest.fn(),
-  captureMessage: jest.fn(),
-  init: jest.fn(),
-  setTag: jest.fn(),
-}));
-jest.unstable_mockModule('../../src/utils/logger.js', () => ({
-  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
-}));
+const sentryMocks = { captureException: jest.fn(), captureMessage: jest.fn(), init: jest.fn(), setTag: jest.fn() };
+jest.unstable_mockModule('@sentry/node', () => sentryMocks);
+const loggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+jest.unstable_mockModule('../../src/utils/logger.js', () => ({ logger: loggerMock }));
 // consumerService (imported for phoneVerificationIsCurrent) drags a wide
 // transitive graph, so the models mock must satisfy EVERY named export of
 // models/index.js — generated, not hand-picked, so a new model never breaks
@@ -50,10 +45,12 @@ jest.unstable_mockModule('../../src/services/consentService.js', () => consentMo
 let svc;
 let piiHashing;
 let phoneHashOf;
+let Op;
 beforeAll(async () => {
   svc = await import('../../src/services/googleCustomerMatchService.js');
   piiHashing = await import('../../src/utils/piiHashing.js');
   ({ phoneHashOf } = await import('../../src/services/consumerService.js'));
+  ({ Op } = await import('sequelize'));
 });
 
 const ENV_KEYS = [
@@ -66,6 +63,7 @@ const ENV_KEYS = [
   'GOOGLE_CM_CAMPAIGN_ID',
   'GOOGLE_CM_ALERT_EMAIL',
   'REDEEMED_AUDIENCE_ALERT_EMAIL',
+  'GOOGLE_CM_STATUS_MAX_POLLS',
 ];
 const saved = {};
 beforeEach(() => {
@@ -77,10 +75,15 @@ beforeEach(() => {
   process.env.GOOGLE_ADS_CUSTOMER_ID = '1829163947';
   process.env.GOOGLE_CM_USER_LIST_ID = '999888777';
   process.env.GOOGLE_CM_CAMPAIGN_ID = 'camp-airpods';
+  process.env.GOOGLE_CM_STATUS_MAX_POLLS = '3';
   delete process.env.GOOGLE_CM_ALERT_EMAIL;
   delete process.env.REDEEMED_AUDIENCE_ALERT_EMAIL;
   consentMocks.getSuppressedPhoneSet.mockReset().mockResolvedValue(new Set());
   consentMocks.getMarketableGrantMap.mockReset().mockResolvedValue(new Map());
+  sentryMocks.captureException.mockClear();
+  loggerMock.info.mockClear();
+  loggerMock.warn.mockClear();
+  loggerMock.error.mockClear();
 });
 afterEach(() => {
   for (const k of ENV_KEYS) {
@@ -90,6 +93,8 @@ afterEach(() => {
 });
 
 const sha = (v) => crypto.createHash('sha256').update(v).digest('hex');
+const fastSleep = () => Promise.resolve();
+const okStatus = { requestStatusPerDestination: [{ requestStatus: 'SUCCESS' }] };
 
 /** A fully-eligible prospect row + the grantMap entry that admits it. */
 function eligibleRow(overrides = {}) {
@@ -104,20 +109,53 @@ function eligibleRow(overrides = {}) {
 function grantAll(rows) {
   return new Map(rows.map((r) => [r.phone, new Map([['*', true]])]));
 }
+function happyDeps(rows, dmOverrides = {}) {
+  consentMocks.getMarketableGrantMap.mockResolvedValue(grantAll(rows));
+  return {
+    Prospect: { findAll: jest.fn().mockResolvedValue(rows) },
+    dmRequest: jest.fn().mockResolvedValue({ requestId: 'req-1' }),
+    dmRequestGet: jest.fn().mockResolvedValue(okStatus),
+    sendEmail: jest.fn().mockResolvedValue({}),
+    sleep: fastSleep,
+    ...dmOverrides,
+  };
+}
 
-describe('shouldSync', () => {
-  it('is true only with the full config set', () => {
+describe('shouldSync / removalConfigured', () => {
+  it('shouldSync is true only with the full config set', () => {
     expect(svc.shouldSync()).toBe(true);
   });
 
-  it.each(ENV_KEYS.slice(0, 7))('is false when %s is missing', (key) => {
+  it.each(ENV_KEYS.slice(0, 7))('shouldSync is false when %s is missing', (key) => {
     delete process.env[key];
     expect(svc.shouldSync()).toBe(false);
   });
 
-  it('is false when the flag is any non-"true" value', () => {
+  it('shouldSync is false when the flag is any non-"true" value', () => {
     process.env.GOOGLE_CM_SYNC_ENABLED = '1';
     expect(svc.shouldSync()).toBe(false);
+  });
+
+  it('removalConfigured ignores the sync flag (erasure honor survives a sync switch-off)', () => {
+    process.env.GOOGLE_CM_SYNC_ENABLED = 'false';
+    expect(svc.removalConfigured()).toBe(true);
+    delete process.env.GOOGLE_CM_USER_LIST_ID;
+    expect(svc.removalConfigured()).toBe(false);
+  });
+});
+
+describe('selectCampaignProspects', () => {
+  it('pins the exact selector: target campaign, non-bot, minimal attributes', async () => {
+    const findAll = jest.fn().mockResolvedValue([]);
+    await svc.selectCampaignProspects({ Prospect: { findAll } });
+    expect(findAll).toHaveBeenCalledWith({
+      attributes: ['email', 'phone', 'campaignId', 'sourceMetadata'],
+      where: {
+        campaignId: 'camp-airpods',
+        leadSource: { [Op.ne]: 'call_bot' },
+      },
+      raw: true,
+    });
   });
 });
 
@@ -128,7 +166,6 @@ describe('buildMemberRows', () => {
     expect(out).toEqual([
       {
         userIdentifiers: [
-          // gmail canonicalization: dots stripped, +suffix dropped
           { emailAddress: sha('janedoe@gmail.com') },
           { phoneNumber: sha('+6591234567') },
         ],
@@ -188,18 +225,32 @@ describe('buildMemberRows', () => {
   });
 
   it('drops rows with neither usable identifier', () => {
-    const rows = [eligibleRow({ email: null, phone: '' })];
-    // phone '' → no verification either, but assert the neither-identifier path
-    // with a verified-but-unhashable row too:
     const weird = eligibleRow({ email: 'not-an-email', phone: null });
-    expect(svc.buildMemberRows([...rows, weird], { grantMap: grantAll([...rows, weird]) })).toEqual(
-      []
-    );
+    expect(svc.buildMemberRows([weird], { grantMap: grantAll([weird]) })).toEqual([]);
   });
 });
 
-describe('buildIngestBody', () => {
-  it('pins the golden envelope: destination, consent enums, HEX, CM terms', () => {
+describe('buildRemovalIdentifiers', () => {
+  it('builds identifiers with NO consent/verification gate (removal is always permitted)', () => {
+    const out = svc.buildRemovalIdentifiers([
+      { email: 'jane.doe@gmail.com', phone: '+6591234567' },
+      { email: 'retell-x@calls.mktr.sg', phone: '+6598765432' },
+      { email: null, phone: null },
+    ]);
+    expect(out).toEqual([
+      {
+        userIdentifiers: [
+          { emailAddress: sha('janedoe@gmail.com') },
+          { phoneNumber: sha('+6591234567') },
+        ],
+      },
+      { userIdentifiers: [{ phoneNumber: sha('+6598765432') }] },
+    ]);
+  });
+});
+
+describe('buildIngestBody / buildRemoveBody', () => {
+  it('pins the golden ingest envelope: destination, consent enums, HEX, CM terms', () => {
     const members = [{ userIdentifiers: [{ phoneNumber: 'ph' }] }];
     expect(svc.buildIngestBody(members)).toEqual({
       destinations: [
@@ -219,11 +270,55 @@ describe('buildIngestBody', () => {
     expect(svc.buildIngestBody([], { validateOnly: true }).validateOnly).toBe(true);
     expect(svc.buildIngestBody([]).validateOnly).toBeUndefined();
   });
+
+  it('pins the removal envelope: HEX, destination, NO consent/terms blocks', () => {
+    const body = svc.buildRemoveBody([{ userIdentifiers: [{ phoneNumber: 'ph' }] }]);
+    expect(body).toEqual({
+      destinations: [
+        {
+          operatingAccount: { product: 'GOOGLE_ADS', accountId: '1829163947' },
+          productDestinationId: '999888777',
+        },
+      ],
+      audienceMembers: [{ userData: { userIdentifiers: [{ phoneNumber: 'ph' }] } }],
+      encoding: 'HEX',
+    });
+  });
 });
 
-describe('chunk', () => {
-  it('splits at the batch cap', () => {
-    expect(svc.chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+describe('settleRequestStatuses', () => {
+  it('classifies terminal states and dedupes request ids', async () => {
+    const dmRequestGet = jest
+      .fn()
+      .mockResolvedValueOnce({ requestStatusPerDestination: [{ requestStatus: 'SUCCESS' }] })
+      .mockResolvedValueOnce({ requestStatus: 'PARTIAL_SUCCESS' })
+      .mockResolvedValueOnce({ status: 'FAILED' });
+    const res = await svc.settleRequestStatuses(['a', 'a', 'b', 'c', null], {
+      dmRequestGet,
+      sleep: fastSleep,
+    });
+    expect(res).toEqual({ succeeded: 1, partialSuccess: 1, failed: 1, stuck: 0 });
+    expect(dmRequestGet).toHaveBeenCalledTimes(3);
+    expect(dmRequestGet.mock.calls[0][0]).toBe('requestStatus:retrieve?requestId=a');
+  });
+
+  it('polls PROCESSING through to a terminal state', async () => {
+    const dmRequestGet = jest
+      .fn()
+      .mockResolvedValueOnce({ requestStatus: 'PROCESSING' })
+      .mockResolvedValueOnce({ requestStatus: 'PROCESSING' })
+      .mockResolvedValueOnce({ requestStatus: 'SUCCESS' });
+    const res = await svc.settleRequestStatuses(['a'], { dmRequestGet, sleep: fastSleep });
+    expect(res).toEqual({ succeeded: 1, partialSuccess: 0, failed: 0, stuck: 0 });
+  });
+
+  it('marks an id stuck after the poll budget, and on a retrieve error', async () => {
+    const neverDone = jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' });
+    expect(await svc.settleRequestStatuses(['a'], { dmRequestGet: neverDone, sleep: fastSleep }))
+      .toEqual({ succeeded: 0, partialSuccess: 0, failed: 0, stuck: 1 });
+    const broken = jest.fn().mockRejectedValue(new Error('boom'));
+    expect(await svc.settleRequestStatuses(['b'], { dmRequestGet: broken, sleep: fastSleep }))
+      .toEqual({ succeeded: 0, partialSuccess: 0, failed: 0, stuck: 1 });
   });
 });
 
@@ -235,66 +330,132 @@ describe('syncGoogleCustomerMatch', () => {
     expect(consentMocks.getMarketableGrantMap).not.toHaveBeenCalled();
   });
 
-  it('uploads eligible members in batches and reports requestIds', async () => {
+  it('uploads, settles statuses, and reports the full summary', async () => {
     const rows = [eligibleRow(), eligibleRow({ phone: '+6598765432' })];
-    consentMocks.getMarketableGrantMap.mockResolvedValue(grantAll(rows));
-    const Prospect = { findAll: jest.fn().mockResolvedValue(rows) };
-    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'req-1' });
-    const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest });
-    expect(res).toEqual({ synced: true, eligible: 2, batches: 1, requestIds: ['req-1'] });
-    expect(dmRequest).toHaveBeenCalledTimes(1);
-    const [method, body] = dmRequest.mock.calls[0];
-    expect(method).toBe('audienceMembers:ingest');
-    expect(body.audienceMembers).toHaveLength(2);
-    expect(body.encoding).toBe('HEX');
+    const d = happyDeps(rows);
+    const res = await svc.syncGoogleCustomerMatch(d);
+    expect(res).toEqual({
+      synced: true,
+      eligible: 2,
+      batches: 1,
+      accepted: 1,
+      failedBatches: 0,
+      status: { succeeded: 1, partialSuccess: 0, failed: 0, stuck: 0 },
+    });
+    expect(d.dmRequest.mock.calls[0][0]).toBe('audienceMembers:ingest');
+    expect(d.sendEmail).not.toHaveBeenCalled();
   });
 
-  it('aborts fail-closed (no upload, alert sent) when a ledger lookup throws', async () => {
+  it('splits 5001 members into envelopes of 5000 and 1 (the production cap)', async () => {
+    const rows = Array.from({ length: 5001 }, (_, i) =>
+      eligibleRow({ phone: `+659${String(1000000 + i).slice(-7)}` })
+    );
+    const d = happyDeps(rows);
+    d.dmRequest
+      .mockResolvedValueOnce({ requestId: 'req-1' })
+      .mockResolvedValueOnce({ requestId: 'req-2' });
+    d.dmRequestGet.mockResolvedValue(okStatus);
+    const res = await svc.syncGoogleCustomerMatch(d);
+    expect(res.batches).toBe(2);
+    expect(res.accepted).toBe(2);
+    expect(d.dmRequest.mock.calls[0][1].audienceMembers).toHaveLength(5000);
+    expect(d.dmRequest.mock.calls[1][1].audienceMembers).toHaveLength(1);
+  });
+
+  it('partial batch failure: accepted batches stand, alert says partial (not wholesale)', async () => {
+    const rows = Array.from({ length: 5001 }, (_, i) =>
+      eligibleRow({ phone: `+659${String(1000000 + i).slice(-7)}` })
+    );
+    const d = happyDeps(rows);
+    d.dmRequest
+      .mockResolvedValueOnce({ requestId: 'req-1' })
+      .mockRejectedValueOnce(new Error('google dm audienceMembers:ingest failed: HTTP 500'));
+    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
+    const res = await svc.syncGoogleCustomerMatch(d);
+    expect(res.synced).toBe(true);
+    expect(res.accepted).toBe(1);
+    expect(res.failedBatches).toBe(1);
+    expect(d.sendEmail).toHaveBeenCalledTimes(1);
+    expect(d.sendEmail.mock.calls[0][0].subject).toMatch(/partial failure/);
+    expect(d.sendEmail.mock.calls[0][0].text).toMatch(/accepted batches stand/i);
+  });
+
+  it('a missing requestId on accept counts as a failed batch, never silent success', async () => {
+    const rows = [eligibleRow()];
+    const d = happyDeps(rows);
+    d.dmRequest.mockResolvedValue({});
+    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
+    const res = await svc.syncGoogleCustomerMatch(d);
+    expect(res.synced).toBe(false);
+    expect(res.failedBatches).toBe(1);
+    expect(res.accepted).toBe(0);
+    expect(d.sendEmail.mock.calls[0][0].subject).toMatch(/nothing uploaded/);
+  });
+
+  it('FAILED/stuck statuses trigger the partial alert even with all batches accepted', async () => {
+    const rows = [eligibleRow()];
+    const d = happyDeps(rows);
+    d.dmRequestGet.mockResolvedValue({ requestStatus: 'FAILED' });
+    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
+    const res = await svc.syncGoogleCustomerMatch(d);
+    expect(res.status.failed).toBe(1);
+    expect(d.sendEmail).toHaveBeenCalledTimes(1);
+    expect(d.sendEmail.mock.calls[0][0].subject).toMatch(/partial failure/);
+  });
+
+  it('aborts fail-closed (no upload, wholesale alert) when a ledger lookup throws', async () => {
     consentMocks.getSuppressedPhoneSet.mockRejectedValue(new Error('ledger down'));
     process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
     const sendEmail = jest.fn().mockResolvedValue({});
     const dmRequest = jest.fn();
-    const res = await svc.syncGoogleCustomerMatch({ dmRequest, sendEmail });
+    const res = await svc.syncGoogleCustomerMatch({ dmRequest, sendEmail, sleep: fastSleep });
     expect(res.synced).toBe(false);
     expect(res.error).toMatch(/ledger down/);
     expect(dmRequest).not.toHaveBeenCalled();
-    expect(sendEmail).toHaveBeenCalledTimes(1);
-    expect(sendEmail.mock.calls[0][0].to).toBe('ops@mktr.sg');
+    expect(sendEmail.mock.calls[0][0].subject).toMatch(/nothing uploaded/);
   });
 
-  it('reports a failed upload with an alert and keeps PII out of the summary', async () => {
-    const rows = [eligibleRow()];
-    consentMocks.getMarketableGrantMap.mockResolvedValue(grantAll(rows));
-    const Prospect = { findAll: jest.fn().mockResolvedValue(rows) };
-    const dmRequest = jest.fn().mockRejectedValue(
-      Object.assign(new Error('google dm audienceMembers:ingest failed: HTTP 403 denied'), {
-        status: 403,
+  it('never leaks raw or hashed PII into errors, logs, Sentry, or alert email', async () => {
+    const rawEmail = 'pii.sentinel@gmail.com';
+    const rawPhone = '+6590000001';
+    const emailHash = sha('piisentinel@gmail.com');
+    const phoneHash = sha(rawPhone);
+    const rows = [eligibleRow({ email: rawEmail, phone: rawPhone })];
+    const d = happyDeps(rows);
+    d.dmRequest.mockRejectedValue(
+      Object.assign(new Error('google dm audienceMembers:ingest failed: HTTP 400 bad identifier'), {
+        status: 400,
       })
     );
-    process.env.REDEEMED_AUDIENCE_ALERT_EMAIL = 'fallback@mktr.sg';
-    const sendEmail = jest.fn().mockResolvedValue({});
-    const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest, sendEmail });
-    expect(res.synced).toBe(false);
-    expect(res.error).not.toMatch(/@gmail/);
-    expect(sendEmail.mock.calls[0][0].to).toBe('fallback@mktr.sg');
+    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
+    await svc.syncGoogleCustomerMatch(d);
+    const surfaces = [
+      JSON.stringify(d.sendEmail.mock.calls),
+      JSON.stringify(loggerMock.error.mock.calls),
+      JSON.stringify(loggerMock.warn.mock.calls),
+      JSON.stringify(loggerMock.info.mock.calls),
+      JSON.stringify(sentryMocks.captureException.mock.calls.map((c) => c[0]?.message)),
+    ].join(' ');
+    expect(surfaces).not.toContain(rawEmail);
+    expect(surfaces).not.toContain(rawPhone);
+    expect(surfaces).not.toContain(emailHash);
+    expect(surfaces).not.toContain(phoneHash);
   });
 
-  it('single-flights overlapping runs', async () => {
+  it('single-flights overlapping runs (held through settling)', async () => {
     const rows = [eligibleRow()];
-    consentMocks.getMarketableGrantMap.mockResolvedValue(grantAll(rows));
-    const Prospect = { findAll: jest.fn().mockResolvedValue(rows) };
+    const d = happyDeps(rows);
     let release;
     const gate = new Promise((r) => {
       release = r;
     });
-    const dmRequest = jest.fn(async () => {
+    d.dmRequestGet = jest.fn(async () => {
       await gate;
-      return { requestId: 'slow' };
+      return okStatus;
     });
-    const first = svc.syncGoogleCustomerMatch({ Prospect, dmRequest });
-    // Let the first run reach the in-flight section before starting the second.
+    const first = svc.syncGoogleCustomerMatch(d);
     await new Promise((r) => setTimeout(r, 10));
-    const second = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest });
+    const second = await svc.syncGoogleCustomerMatch(d);
     expect(second).toEqual({ synced: false, reason: 'overlap' });
     release();
     const firstRes = await first;
@@ -304,9 +465,57 @@ describe('syncGoogleCustomerMatch', () => {
   it('treats an empty eligible set as a successful no-op', async () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([]) };
     const dmRequest = jest.fn();
-    const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest });
-    expect(res).toEqual({ synced: true, eligible: 0, batches: 0, requestIds: [] });
+    const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest, sleep: fastSleep });
+    expect(res).toEqual({ synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, status: null });
     expect(dmRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeAudienceMembers / removeByConsumerId', () => {
+  it('no-ops unconfigured, and works with the sync flag OFF', async () => {
+    delete process.env.GOOGLE_CM_USER_LIST_ID;
+    expect(await svc.removeAudienceMembers([{ userIdentifiers: [{ phoneNumber: 'x' }] }])).toEqual({
+      removed: false,
+      reason: 'unconfigured',
+    });
+    process.env.GOOGLE_CM_USER_LIST_ID = '999888777';
+    process.env.GOOGLE_CM_SYNC_ENABLED = 'false';
+    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-1' });
+    const res = await svc.removeAudienceMembers(
+      [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
+      { dmRequest }
+    );
+    expect(res.removed).toBe(true);
+    expect(dmRequest.mock.calls[0][0]).toBe('audienceMembers:remove');
+    expect(dmRequest.mock.calls[0][1].encoding).toBe('HEX');
+  });
+
+  it('never throws on a provider failure (erasure must not depend on Google)', async () => {
+    const dmRequest = jest.fn().mockRejectedValue(new Error('boom'));
+    const res = await svc.removeAudienceMembers(
+      [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
+      { dmRequest }
+    );
+    expect(res).toEqual({ removed: false, error: 'boom' });
+    expect(sentryMocks.captureException).toHaveBeenCalled();
+  });
+
+  it('removeByConsumerId scopes the lookup to the target campaign and removes', async () => {
+    const findAll = jest
+      .fn()
+      .mockResolvedValue([{ email: 'jane@mktr.sg', phone: '+6591234567' }]);
+    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-1' });
+    const res = await svc.removeByConsumerId('consumer-1', {
+      Prospect: { findAll },
+      dmRequest,
+    });
+    expect(findAll).toHaveBeenCalledWith({
+      attributes: ['email', 'phone'],
+      where: { consumerId: 'consumer-1', campaignId: 'camp-airpods' },
+      raw: true,
+    });
+    expect(res.removed).toBe(true);
+    expect(res.members).toBe(1);
   });
 });
 
