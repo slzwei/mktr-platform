@@ -82,17 +82,25 @@ export function historyWants(activities) {
 }
 
 const PAGE = 1000;
-const MAX_PAGES = 20;
+const HARD_PAGE_CEILING = 500; // runaway-loop backstop, loudly logged — never a silent cap
 
-/** Paged stable scan — one PostgREST page loop, ordered by id. */
-async function restGetAll(basePath, d) {
+/**
+ * KEYSET-paginated scan on a unique column (offset restarts would silently
+ * skip rows beyond any fixed cap — Codex P3-2 #5). `keyCol` must be selected
+ * by the query and totally ordered.
+ */
+async function restGetAllKeyset(basePath, keyCol, d) {
   const all = [];
-  for (let page = 0; page < MAX_PAGES; page++) {
+  let lastKey = null;
+  for (let page = 0; page < HARD_PAGE_CEILING; page++) {
     const sep = basePath.includes('?') ? '&' : '?';
-    const rows = await restGet(`${basePath}${sep}limit=${PAGE}&offset=${page * PAGE}`, d);
+    const cursor = lastKey === null ? '' : `&${keyCol}=gt.${encodeURIComponent(lastKey)}`;
+    const rows = await restGet(`${basePath}${sep}order=${keyCol}.asc${cursor}&limit=${PAGE}`, d);
     all.push(...rows);
-    if (rows.length < PAGE) break;
+    if (rows.length < PAGE) return all;
+    lastKey = rows[rows.length - 1][keyCol];
   }
+  logger.warn({ basePath, pages: HARD_PAGE_CEILING }, 'google_outcomes.reconcile.page_ceiling_hit');
   return all;
 }
 
@@ -104,8 +112,9 @@ export async function reconcileLyfeOutcomes(deps = {}) {
     // ALL SIX statuses (M3): the history-fill contract is "every still-
     // missing key regardless of current status" — a missed `won` followed by
     // regression to `new`/`contacted` must still be recoverable.
-    const leads = await restGetAll(
-      'leads?source_name=eq.mktr&select=id,external_id,status,updated_at&order=id.asc',
+    const leads = await restGetAllKeyset(
+      'leads?source_name=eq.mktr&select=id,external_id,status,updated_at',
+      'id',
       d
     );
     summary.leads = leads.length;
@@ -146,12 +155,16 @@ export async function reconcileLyfeOutcomes(deps = {}) {
       for (let i = 0; i < historyLeadIds.length; i += 100) {
         const batch = historyLeadIds.slice(i, i + 100);
         const inList = encodeURIComponent(`(${batch.map((id) => `"${id}"`).join(',')})`);
-        const activities = await restGetAll(
+        // Per-batch keyset on the unique activity id; consumers re-sort by
+        // created_at (historyWants takes the EARLIEST transition per key).
+        const activities = await restGetAllKeyset(
           `lead_activities?type=eq.status_change&lead_id=in.${inList}` +
             `&metadata->>to_status=in.(qualified,won)` +
-            `&select=lead_id,created_at,metadata&order=created_at.asc`,
+            `&select=id,lead_id,created_at,metadata`,
+          'id',
           d
         );
+        activities.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
         for (const a of activities) {
           if (!byLead.has(a.lead_id)) byLead.set(a.lead_id, []);
           byLead.get(a.lead_id).push(a);

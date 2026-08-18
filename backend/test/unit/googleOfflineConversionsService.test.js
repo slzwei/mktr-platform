@@ -160,6 +160,8 @@ describe('dispatchOutcome (claim-flow)', () => {
   function freshDeps(row, over = {}) {
     return {
       Prospect: { findByPk: jest.fn().mockResolvedValue(row) },
+      // pre-send erased re-check (round 2 #1)
+      sequelize: { query: jest.fn().mockResolvedValue([{ erased: 'false' }]) },
       setPath: jest.fn().mockResolvedValue(1),
       dmRequest: jest.fn().mockResolvedValue({ requestId: 'req-1' }),
       canMarketTo: consentMocks.canMarketTo,
@@ -290,6 +292,37 @@ describe('dispatchOutcome (claim-flow)', () => {
     expect(d3.setPath.mock.calls[1][2]).toMatchObject({ state: 'retryWait', retryCount: 1 });
   });
 
+  it('a live sending claim is respected; a STALE one is reclaimed as a lease carrying retryCount', async () => {
+    const live = rowWithFact({ sourceMetadata: { gads: { confirmed_resident: { state: 'sending', claimToken: 'other', retryCount: 3, claimedAt: new Date(T0 - 60_000).toISOString() } } } });
+    expect(await svc.dispatchOutcome('p-1', 'confirmed_resident', freshDeps(live))).toEqual({ sent: false, reason: 'claim_held' });
+
+    const stale = rowWithFact({ sourceMetadata: { gads: { confirmed_resident: { state: 'sending', claimToken: 'dead', retryCount: 3, claimedAt: new Date(T0 - 11 * 60_000).toISOString() } } } });
+    const d = freshDeps(stale);
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(res.sent).toBe(true);
+    expect(d.setPath.mock.calls[0][3].cas).toEqual({
+      path: ['gads', 'confirmed_resident'],
+      contains: { state: 'sending', claimToken: 'dead' },
+    });
+    expect(d.setPath.mock.calls[1][2].retryCount).toBe(3); // lease reclaim preserves history
+  });
+
+  it('the pre-send erased re-check aborts the wire call (ms-window fence)', async () => {
+    const d = freshDeps(rowWithFact(), { sequelize: { query: jest.fn().mockResolvedValue([{ erased: 'true' }]) } });
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(res).toEqual({ sent: false, reason: 'erased' });
+    expect(d.dmRequest).not.toHaveBeenCalled();
+  });
+
+  it('a zero-row pending transition after a real upload reports claimLost, never plain success', async () => {
+    const d = freshDeps(rowWithFact());
+    d.setPath = jest.fn()
+      .mockResolvedValueOnce(1) // claim
+      .mockResolvedValueOnce(0); // pending write lost (erasure/lease reclaim)
+    const res = await svc.dispatchOutcome('p-1', 'confirmed_resident', d);
+    expect(res).toEqual({ sent: true, requestId: 'req-1', claimLost: true });
+  });
+
   it('default values survive missing env (plan-contracted S$40/S$500)', async () => {
     delete process.env.GOOGLE_VALUE_QUALIFIED;
     delete process.env.GOOGLE_VALUE_WON;
@@ -306,9 +339,13 @@ describe('classifyStatusBody (M2 reason taxonomy)', () => {
     expect(svc.classifyStatusBody({ requestStatus: 'PARTIAL_SUCCESS', errorInfo: { errorCounts: [{ errorReason: 'duplicate' }] } })).toBe('delivered');
   });
 
-  it('permanent validation/consent/age reasons never retry; unexplained failures do', () => {
+  it('EXACT permanent enums never retry; UNKNOWN reasons default to retry (never substring guesses)', () => {
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'INVALID_ARGUMENT' }] } })).toBe('permanent');
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'EVENT_TOO_OLD' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED' }] } })).toBe('permanent');
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER' }] } })).toBe('permanent');
+    // unknown enum → retry, even if it CONTAINS a scary substring
+    expect(svc.classifyStatusBody({ requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'SOME_FUTURE_AGE_RELATED_ENUM' }] } })).toBe('transient');
     expect(svc.classifyStatusBody({ requestStatus: 'FAILED' })).toBe('transient');
     expect(svc.classifyStatusBody({ requestStatus: 'SUCCESS' })).toBe('delivered');
     expect(svc.classifyStatusBody({ requestStatus: 'PROCESSING' })).toBe('processing');
@@ -326,7 +363,9 @@ describe('workers', () => {
   });
 
   it('resend: dispatches each due row through the claim flow (fresh reload inside)', async () => {
-    const sequelize = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1' }]).mockResolvedValue([]) };
+    // first call = the worker's due-row scan; later calls = the dispatch
+    // pre-send erased re-check
+    const sequelize = { query: jest.fn().mockResolvedValueOnce([{ id: 'p-1' }]).mockResolvedValue([{ erased: 'false' }]) };
     const row = prospectFx();
     row.sourceMetadata = { ...row.sourceMetadata, outcomes: { confirmed_resident: '2026-08-18T01:00:00.000Z' } };
     const Prospect = { findByPk: jest.fn().mockResolvedValue(row) };
@@ -425,7 +464,9 @@ describe('reconcileLyfeOutcomes', () => {
     expect(patch.closed_won).toBe('2026-08-05T00:00:00.000Z'); // history-proven
     // the exact PostgREST shapes are pinned (column `type`, metadata to_status)
     expect(fetch.mock.calls[1][0]).toContain('lead_activities?type=eq.status_change');
-    expect(fetch.mock.calls[1][0]).toContain('select=lead_id,created_at,metadata');
+    expect(fetch.mock.calls[1][0]).toContain('metadata->>to_status=in.(qualified,won)');
+    expect(fetch.mock.calls[1][0]).toContain('select=id,lead_id,created_at,metadata');
+    expect(fetch.mock.calls[1][0]).toContain('order=id.asc');
   });
 
   it('existing facts are never re-written; guarded without config', async () => {

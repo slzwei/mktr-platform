@@ -54,6 +54,23 @@ const defaultDeps = {
 };
 
 const GADS = 'gads';
+const SENDING_LEASE_MS = 10 * 60_000; // stale-claim reclaim window (crash recovery)
+// Deterministic processing enums that a retry of the UNCHANGED event cannot
+// repair (official Data Manager status reasons; extend as observed).
+const PERMANENT_REASONS = new Set([
+  'INVALID_ARGUMENT',
+  'INVALID_EVENT',
+  'INVALID_TIMESTAMP',
+  'EVENT_TOO_OLD',
+  'CONSENT_DENIED',
+  'MISSING_CONSENT',
+  'DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED',
+  'DESTINATION_ACCOUNT_CUSTOMER_MATCH_TERMS_NOT_SIGNED',
+  'OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER',
+  'ONE_PER_CLICK_CONVERSION_ACTION_NOT_PERMITTED_WITH_BRAID',
+  'UNSUPPORTED_EVENT_SOURCE',
+  'MALFORMED_IDENTIFIER',
+]);
 const EVENT_KEYS = ['confirmed_resident', 'closed_won'];
 const DEFAULT_VALUES = { confirmed_resident: 40, closed_won: 500 };
 
@@ -200,6 +217,14 @@ export async function dispatchOutcome(prospectId, eventKey, deps = {}) {
     if (!due) return { sent: false, reason: 'not_due' };
     retryCount = Number(existing.retryCount) || 0;
     claimCas = { path: [GADS, eventKey], contains: { state: 'retryWait', retryCount: existing.retryCount } };
+  } else if (existing?.state === 'sending') {
+    // The claim is a LEASE: a crash between claim and transition must not
+    // strand the fact forever. A stale lease (older than SENDING_LEASE_MS)
+    // is reclaimable, carrying its retryCount forward.
+    const age = d.now() - Date.parse(existing.claimedAt || 0);
+    if (age < SENDING_LEASE_MS) return { sent: false, reason: 'claim_held' };
+    retryCount = Number(existing.retryCount) || 0;
+    claimCas = { path: [GADS, eventKey], contains: { state: 'sending', claimToken: existing.claimToken } };
   } else {
     return { sent: false, reason: 'marker_present' };
   }
@@ -293,6 +318,22 @@ export async function dispatchOutcome(prospectId, eventKey, deps = {}) {
       return { sent: false, reason: 'no_identifier' };
     }
 
+    // FINAL erased re-check, immediately before the wire (Codex P3-2 #1):
+    // shrinks the erasure race to milliseconds. The residual (erasure
+    // committing inside this last gap) is accepted and matches the Meta CAPI
+    // dispatch path's own unguarded load→send window; a conversion event is
+    // a bounded, non-retained disclosure and the CM removal hook clears list
+    // memberships independently. A row lock is deliberately NOT held here —
+    // PDPA erasure must never block on a Google outage.
+    const freshErased = await d.sequelize.query(
+      `SELECT COALESCE("sourceMetadata"::jsonb->>'erased','false') AS erased FROM prospects WHERE id = $id`,
+      { bind: { id: prospect.id }, type: QueryTypes.SELECT }
+    );
+    if (!freshErased.length || freshErased[0].erased === 'true') {
+      await d.setPath(prospect.id, [GADS, eventKey], retryWaitState(retryCount, 'erased_pre_send', d), { cas: claimGuard });
+      return { sent: false, reason: 'erased' };
+    }
+
     const envelope = buildOutcomeEnvelope(prospect, eventKey, fact, { adIdentifiers, userIdentifiers });
     const res = await d.dmRequest('events:ingest', envelope, d);
     if (!res?.requestId) {
@@ -312,9 +353,12 @@ export async function dispatchOutcome(prospectId, eventKey, deps = {}) {
       { cas: claimGuard }
     );
     if (n === 0) {
-      // Claim vanished under us (erasure is the only writer that can do
-      // that) — the upload happened; transactionId dedup absorbs a re-send.
-      logger.warn({ prospectId, eventKey }, 'google_outcomes.claim_lost_post_send');
+      // Claim vanished under us (erasure, or a lease reclaim after a long
+      // stall) — the upload DID happen but the marker no longer records it;
+      // transactionId dedup absorbs any re-send. Reported distinctly, never
+      // as plain success (Codex P3-2 #3).
+      logger.warn({ prospectId, eventKey, requestId: res.requestId }, 'google_outcomes.accepted_but_claim_lost');
+      return { sent: true, requestId: res.requestId, claimLost: true };
     }
     logger.info({ prospectId, eventKey, requestId: res.requestId }, 'google_outcomes.accepted');
     return { sent: true, requestId: res.requestId };
@@ -357,9 +401,12 @@ export function classifyStatusBody(body) {
   collect(body?.errorInfo);
   const reasons = countBuckets.filter(Boolean);
   const hasDuplicate = reasons.some((r) => r.includes('duplicate'));
-  const hasPermanent = reasons.some((r) =>
-    /(invalid|validation|malformed|consent|denied|too_old|age|unsupported)/.test(r)
-  );
+  // EXACT enum matching for permanence (Codex P3-2 #4): substring guessing
+  // misclassifies deterministic processing enums as transient (retrying an
+  // unchanged event cannot sign terms or fix an account mismatch) and broad
+  // substrings are unsafe against future enums. Unknown reasons default to
+  // RETRY. Set re-pinned by the validateOnly smoke / first live failures.
+  const hasPermanent = reasons.some((r) => PERMANENT_REASONS.has(r.toUpperCase()));
   if (status === 'SUCCESS') return 'delivered';
   if (status === 'PARTIAL_SUCCESS' || status === 'FAILED') {
     if (hasDuplicate) return 'delivered';
@@ -394,9 +441,20 @@ export async function resendDueOutcomes(deps = {}) {
               ("sourceMetadata"::jsonb -> 'gads' -> $key ->> 'state') = 'retryWait'
               AND ("sourceMetadata"::jsonb -> 'gads' -> $key ->> 'nextSendAt') <= $nowIso
             )
+            OR (
+              ("sourceMetadata"::jsonb -> 'gads' -> $key ->> 'state') = 'sending'
+              AND ("sourceMetadata"::jsonb -> 'gads' -> $key ->> 'claimedAt') <= $staleIso
+            )
           )
         LIMIT 200`,
-      { bind: { key: eventKey, nowIso: new Date(d.now()).toISOString() }, type: QueryTypes.SELECT }
+      {
+        bind: {
+          key: eventKey,
+          nowIso: new Date(d.now()).toISOString(),
+          staleIso: new Date(d.now() - SENDING_LEASE_MS).toISOString(),
+        },
+        type: QueryTypes.SELECT,
+      }
     );
     for (const { id } of rows) {
       const res = await dispatchOutcome(id, eventKey, d);
@@ -445,11 +503,11 @@ export async function settleDueOutcomes(deps = {}) {
         else logger.warn({ requestId, err: err.message }, 'google_outcomes.settle.retrieve_failed');
       }
       if (classification === 'delivered') {
-        await d.setPath(id, [GADS, eventKey], { state: 'delivered', requestId, deliveredAt: nowIso }, { cas });
-        summary.delivered += 1;
+        const n = await d.setPath(id, [GADS, eventKey], { state: 'delivered', requestId, deliveredAt: nowIso }, { cas });
+        if (n > 0) summary.delivered += 1;
       } else if (classification === 'permanent') {
-        await d.setPath(id, [GADS, eventKey], { state: 'failedPermanent', reason: 'ingest_rejected', at: nowIso }, { cas });
-        summary.failedPermanent += 1;
+        const n = await d.setPath(id, [GADS, eventKey], { state: 'failedPermanent', reason: 'ingest_rejected', at: nowIso }, { cas });
+        if (n > 0) summary.failedPermanent += 1;
         Sentry.captureMessage('google_outcomes.ingest_rejected', {
           level: 'warning',
           tags: { source: 'google_outcomes' },
@@ -457,16 +515,16 @@ export async function settleDueOutcomes(deps = {}) {
         });
       } else if (classification === 'transient') {
         const retryCount = (Number(marker.retryCount) || 0) + 1;
-        await d.setPath(id, [GADS, eventKey], retryWaitState(retryCount, 'ingest_failed', d), { cas });
-        summary.retried += 1;
+        const n = await d.setPath(id, [GADS, eventKey], retryWaitState(retryCount, 'ingest_failed', d), { cas });
+        if (n > 0) summary.retried += 1;
         Sentry.captureMessage('google_outcomes.ingest_failed', {
           level: 'warning',
           tags: { source: 'google_outcomes' },
           extra: { prospectId: id, eventKey, requestId },
         });
       } else if (pendingAgeMs > pendingMaxMs()) {
-        await d.setPath(id, [GADS, eventKey], { state: 'failedPermanent', reason: 'pending_timeout', at: nowIso }, { cas });
-        summary.failedPermanent += 1;
+        const n = await d.setPath(id, [GADS, eventKey], { state: 'failedPermanent', reason: 'pending_timeout', at: nowIso }, { cas });
+        if (n > 0) summary.failedPermanent += 1;
         Sentry.captureMessage('google_outcomes.pending_timeout', {
           level: 'warning',
           tags: { source: 'google_outcomes' },
