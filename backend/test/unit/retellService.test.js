@@ -520,11 +520,15 @@ describe('retellService (unit)', () => {
   // ────────────────────────────────────────────────
 
   describe('getRecordingUrl', () => {
-    let mocks, service;
+    let mocks, service, setSourceMetadataPath;
 
     beforeEach(() => {
       mocks = buildMocks();
+      // The cache write is an atomic single-key patch (prospectJsonPatch), not a
+      // whole-object save — inject it so the write path is assertable here.
+      setSourceMetadataPath = jest.fn().mockResolvedValue(1);
       service = makeRetellService({
+        setSourceMetadataPath,
         Prospect: mocks.Prospect,
         IdempotencyKey: mocks.IdempotencyKey,
         User: mocks.User,
@@ -559,7 +563,11 @@ describe('retellService (unit)', () => {
 
     it('scopes the lookup with buildProspectWhere', async () => {
       mocks.Prospect.findOne.mockResolvedValue({
-        sourceMetadata: { retellCallId: 'call123', recordingUrl: 'https://cached.url/recording.mp3' },
+        sourceMetadata: {
+          retellCallId: 'call123',
+          recordingUrl: 'https://cached.url/recording.mp3',
+          recordingMultiChannelUrl: 'https://cached.url/recording_multichannel.wav',
+        },
       });
       const agent = { id: 'agent-9', role: 'agent' };
 
@@ -579,16 +587,88 @@ describe('retellService (unit)', () => {
         .rejects.toThrow('Not a Retell prospect');
     });
 
-    it('returns cached recordingUrl from sourceMetadata', async () => {
+    it('returns cached URLs once both legs are stored', async () => {
       mocks.Prospect.findOne.mockResolvedValue({
+        sourceMetadata: {
+          retellCallId: 'call123',
+          recordingUrl: 'https://cached.url/recording.mp3',
+          recordingMultiChannelUrl: 'https://cached.url/recording_multichannel.wav',
+        },
+      });
+
+      const result = await service.getRecordingUrl('prospect-1', admin);
+      expect(result).toEqual({
+        recordingUrl: 'https://cached.url/recording.mp3',
+        recordingMultiChannelUrl: 'https://cached.url/recording_multichannel.wav',
+      });
+      expect(setSourceMetadataPath).not.toHaveBeenCalled();
+    });
+
+    // Prospects captured before the split recording was stored hold a mono URL
+    // and no multi-channel key at all — they earn exactly one refetch, and the
+    // key is written even when Retell has no split file so it can't re-loop.
+    it('refetches once to backfill the split recording on a legacy prospect', async () => {
+      const prevKey = process.env.RETELL_API_KEY;
+      process.env.RETELL_API_KEY = 'test-key';
+      mocks.Prospect.findOne.mockResolvedValue({
+        id: 'prospect-1',
         sourceMetadata: {
           retellCallId: 'call123',
           recordingUrl: 'https://cached.url/recording.mp3',
         },
       });
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          recording_url: 'https://cdn.retell/recording.wav',
+          recording_multi_channel_url: 'https://cdn.retell/recording_multichannel.wav',
+        }),
+      });
 
-      const result = await service.getRecordingUrl('prospect-1', admin);
-      expect(result).toEqual({ recordingUrl: 'https://cached.url/recording.mp3' });
+      try {
+        const result = await service.getRecordingUrl('prospect-1', admin);
+        expect(result).toEqual({
+          recordingUrl: 'https://cdn.retell/recording.wav',
+          recordingMultiChannelUrl: 'https://cdn.retell/recording_multichannel.wav',
+        });
+        // Atomic single-key patches — never a whole-object sourceMetadata save.
+        expect(setSourceMetadataPath).toHaveBeenCalledWith(
+          'prospect-1',
+          ['recordingMultiChannelUrl'],
+          'https://cdn.retell/recording_multichannel.wav'
+        );
+      } finally {
+        process.env.RETELL_API_KEY = prevKey;
+        delete global.fetch;
+      }
+    });
+
+    // Retell returns no split file for some calls; storing the null still ends
+    // the backfill so the next read is a cache hit rather than another fetch.
+    it('stores a null split URL so the backfill settles after one fetch', async () => {
+      const prevKey = process.env.RETELL_API_KEY;
+      process.env.RETELL_API_KEY = 'test-key';
+      mocks.Prospect.findOne.mockResolvedValue({
+        id: 'prospect-1',
+        sourceMetadata: { retellCallId: 'call123', recordingUrl: 'https://cached.url/r.mp3' },
+      });
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ recording_url: 'https://cdn.retell/recording.wav' }),
+      });
+
+      try {
+        const result = await service.getRecordingUrl('prospect-1', admin);
+        expect(result.recordingMultiChannelUrl).toBeNull();
+        expect(setSourceMetadataPath).toHaveBeenCalledWith(
+          'prospect-1',
+          ['recordingMultiChannelUrl'],
+          null
+        );
+      } finally {
+        process.env.RETELL_API_KEY = prevKey;
+        delete global.fetch;
+      }
     });
   });
 });

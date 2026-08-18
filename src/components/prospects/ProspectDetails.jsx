@@ -10,6 +10,7 @@ import { format } from"date-fns";
 import { Clock, User, Edit2, ChevronLeft, UserPlus, Phone, Mail, Tag, Building, Headphones } from"lucide-react";
 import { Prospect as ProspectEntity, User as UserEntity } from"@/api/entities";
 import { apiClient } from"@/api/client";
+import CallRecordingPlayer from"@/components/prospects/CallRecordingPlayer";
 import ContactInfoCard from"@/components/prospects/details/ContactInfoCard";
 import ActivityTimeline from"@/components/prospects/details/ActivityTimeline";
 import QuizResultCard from"@/components/prospects/details/QuizResultCard";
@@ -42,6 +43,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
  const [assignedAgentId, setAssignedAgentId] = useState(prospect.assigned_agent_id ||"");
  const [isAssigning, setIsAssigning] = useState(false);
  const [recordingUrl, setRecordingUrl] = useState(null);
+ const [recordingMultiChannelUrl, setRecordingMultiChannelUrl] = useState(null);
 
  useEffect(() => {
  let mounted = true;
@@ -67,6 +69,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
  try {
  const rec = await apiClient.get(`/retell/recording/${prospect.id}`);
  if (mounted && rec.data?.recordingUrl) setRecordingUrl(rec.data.recordingUrl);
+ if (mounted && rec.data?.recordingMultiChannelUrl) setRecordingMultiChannelUrl(rec.data.recordingMultiChannelUrl);
  } catch (_) { /* no recording available */ }
  }
  } catch (_) { /* ignore */ }
@@ -271,10 +274,11 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
  <Headphones className="w-3.5 h-3.5"/>
  Call Recording
  </Label>
- <audio controls preload="metadata" className="w-full h-10">
- <source src={recordingUrl} type="audio/wav"/>
- Your browser does not support audio playback.
- </audio>
+ <CallRecordingPlayer
+ src={recordingUrl}
+ multiChannelSrc={recordingMultiChannelUrl}
+ className="w-full"
+ />
  <p className="text-xs text-muted-foreground">
  {details?.sourceMetadata?.durationMs
  ? `Duration: ${Math.round(details.sourceMetadata.durationMs / 1000)}s`
