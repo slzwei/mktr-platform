@@ -264,6 +264,48 @@ export async function bootstrapDatabase() {
       logger.info(`[RedeemedAudience] periodic sync scheduled (${intervalHours}h interval)`);
     }
 
+    // Google Customer Match exclusion sync — same in-process pattern as the
+    // Meta block above (single-instance backend, no separate cron service),
+    // uploading the target campaign's verified entrants to the exclusion
+    // list via the Data Manager API. Gated by GOOGLE_CM_SYNC_ENABLED; initial
+    // run 90s after boot (offset from Meta's 60s so the two ledger scans
+    // don't land together), then every GOOGLE_CM_SYNC_INTERVAL_HOURS
+    // (default 24). Additive + in-service single-flight ⇒ extra runs are
+    // harmless.
+    if (String(process.env.GOOGLE_CM_SYNC_ENABLED || 'false').toLowerCase() === 'true') {
+      const cmIntervalHours = Math.max(1, Number(process.env.GOOGLE_CM_SYNC_INTERVAL_HOURS) || 24);
+      const runGoogleCmSync = async () => {
+        try {
+          const { syncGoogleCustomerMatch } = await import('../services/googleCustomerMatchService.js');
+          await syncGoogleCustomerMatch();
+        } catch (err) {
+          logger.warn('[GoogleCM] periodic sync failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runGoogleCmSync, 90_000);
+      setInterval(runGoogleCmSync, cmIntervalHours * 60 * 60 * 1000);
+      logger.info(`[GoogleCM] periodic sync scheduled (${cmIntervalHours}h interval)`);
+    }
+
+    // Settlement drainer for accepted Data Manager requests (ingest AND the
+    // erasure/withdrawal removals) — Google's diagnostics window starts ~30min
+    // after acceptance and runs to 24h, so settling is decoupled from the
+    // sync run. Registered whenever the DM credentials exist: removals must
+    // settle even with the sync switched off.
+    if (process.env.GOOGLE_DM_REFRESH_TOKEN && process.env.GOOGLE_CM_USER_LIST_ID) {
+      const settleMinutes = Math.max(1, Number(process.env.GOOGLE_CM_SETTLE_INTERVAL_MINUTES) || 15);
+      const runGoogleCmSettle = async () => {
+        try {
+          const { settlePendingStatuses } = await import('../services/googleCustomerMatchService.js');
+          await settlePendingStatuses();
+        } catch (err) {
+          logger.warn('[GoogleCM] settle pass failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setInterval(runGoogleCmSettle, settleMinutes * 60 * 1000);
+      logger.info(`[GoogleCM] settlement drainer scheduled (${settleMinutes}m interval)`);
+    }
+
     // Redemption CAPI reconciliation sweep — the no-rescan safety net for
     // VoucherRedeemed sends lost between the redemption commit and the
     // fire-and-forget dispatch (process death). Marker-guarded + Meta event_id

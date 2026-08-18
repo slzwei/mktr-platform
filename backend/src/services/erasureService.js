@@ -68,6 +68,12 @@ const defaultDeps = {
   evictVerifiedPhone, evictDncCheckCache, forgetPhoneVerification,
   inventory: makeInventoryService(),
   audit: makeRedeemOpsAuditService(),
+  // Injectable seam (tests spy here): lazy so this service's import graph is
+  // unchanged and a config-less environment costs nothing.
+  googleCmRemove: async (pairs) => {
+    const m = await import('./googleCustomerMatchService.js');
+    return m.removeAudienceMembers(m.buildRemovalIdentifiers(pairs));
+  },
 };
 
 export function makeErasureService(overrides = {}) {
@@ -134,6 +140,7 @@ export function makeErasureService(overrides = {}) {
     };
     let outboxPairs = [];
     let erasedPhone = null;
+    const googleCmRemovalPairs = []; // pre-scrub {email, phone} for the CM removal hook
 
     await d.sequelize.transaction(async (t) => {
       // 1. THE lock — every capture of this phone serializes behind this row.
@@ -179,6 +186,18 @@ export function makeErasureService(overrides = {}) {
         lock: Transaction.LOCK.UPDATE,
       });
       const pids = prospects.map((p) => p.id);
+      // Google Customer Match removal (plan google-ads-signal-levers §3):
+      // capture the raw pairs BEFORE the scrub destroys them — after commit
+      // no identifier survives to remove the external list membership.
+      // Collection is pure string-copying; the actual removal call runs
+      // post-commit (never inside the row-locked transaction).
+      if (process.env.GOOGLE_CM_CAMPAIGN_ID) {
+        for (const p of prospects) {
+          if (p.campaignId === process.env.GOOGLE_CM_CAMPAIGN_ID && (p.email || p.phone)) {
+            googleCmRemovalPairs.push({ email: p.email, phone: p.phone });
+          }
+        }
+      }
       const prospectEmails = prospects.map((p) => emailNormKey(p.email)).filter(Boolean);
       const sessionIds = [...new Set(prospects.map((p) => p.sessionId).filter(Boolean))];
       const attributionIds = [...new Set(prospects.map((p) => p.attributionId).filter(Boolean))];
@@ -767,6 +786,20 @@ export function makeErasureService(overrides = {}) {
     // (fallback rule, tracker "propagate"). Fire-and-forget: the periodic
     // pass heals a lost trigger.
     d.flushDeliveries(outboxPairs);
+    // Google Customer Match removal — post-commit, fire-and-forget (erasure
+    // success never depends on Google availability; the list's finite
+    // membership duration backstops a lost call). Dynamic import keeps this
+    // service's import graph unchanged.
+    if (googleCmRemovalPairs.length) {
+      // async IIFE: a SYNCHRONOUSLY throwing seam becomes a rejection too —
+      // nothing an injected hook does may fail the already-committed erasure.
+      (async () => d.googleCmRemove(googleCmRemovalPairs))()
+        .catch((err) => {
+          d.logger.warn('[erasure] google customer match removal failed (membership TTL heals)', {
+            consumerId, error: err?.message || String(err),
+          });
+        });
+    }
     Promise.resolve(d.reconcileSuppressionPropagation({ consumerId })).catch((err) => {
       d.logger.warn('[erasure] suppression propagation trigger failed (periodic pass heals)', {
         consumerId, error: err?.message || String(err),

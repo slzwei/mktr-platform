@@ -56,6 +56,12 @@ export function unsubTokenHashOf(token) {
 const defaultDeps = {
   sequelize, Consumer, ConsentEvent, ConsumerSuppression, Prospect, logger,
   reconcileSuppressionPropagation, // tracker "propagate" — post-commit trigger
+  // Injectable seam (tests spy here): lazy import — the CM service imports
+  // THIS module dynamically for its ledger gates, so the edge must not be static.
+  googleCmRemoveByConsumerId: async (consumerId) => {
+    const m = await import('./googleCustomerMatchService.js');
+    return m.removeByConsumerId(consumerId);
+  },
 };
 
 export function makeConsentService(overrides = {}) {
@@ -594,6 +600,17 @@ export function makeConsentService(overrides = {}) {
         });
       });
     }
+    // Google Customer Match removal (plan google-ads-signal-levers §3):
+    // a global withdrawal also pulls the person off the ad-exclusion list.
+    // Post-commit, fire-and-forget via dynamic import (no static edge — the
+    // CM service dynamically imports THIS module for its ledger gates); the
+    // list's finite membership duration backstops a lost call.
+    (async () => d.googleCmRemoveByConsumerId(consumer.id))()
+      .catch((err) => {
+        d.logger.warn('[consent] google customer match removal failed (membership TTL heals)', {
+          consumerId: consumer.id, error: err?.message || String(err),
+        });
+      });
     return result;
   }
 

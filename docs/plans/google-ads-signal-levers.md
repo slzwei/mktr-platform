@@ -239,7 +239,7 @@ needed; id → env).
     campaigns, remove members / delete the list in the UI, lifespan expiry
     mops up.
 - **Scheduler:** same in-process interval block in `bootstrap.js` beside the
-  Meta one (24h default via `GOOGLE_CM_SYNC_INTERVAL_HOURS`, 60s initial).
+  Meta one (24h default via `GOOGLE_CM_SYNC_INTERVAL_HOURS`; 90s initial — deliberately offset from the Meta block's 60s so the two ledger scans never land together).
 - **Eligibility caveat:** Customer Match exclusions are available without the
   90-day/USD 50k *targeting* threshold, but the account must be policy- and
   payment-compliant — check the account's Customer Match status page as a
