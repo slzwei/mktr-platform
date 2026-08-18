@@ -22,8 +22,8 @@ import {
 } from '../../src/models/index.js';
 import { markPhoneVerified, isPhoneRecentlyVerified } from '../../src/services/verifiedPhoneStore.js';
 import { phoneHashOf } from '../../src/services/consumerService.js';
-import { eraseConsumer, ERASED_PHONE_HASH } from '../../src/services/erasureService.js';
-import { isSuppressed, canMarketTo, applyUnsubscribe } from '../../src/services/consentService.js';
+import { eraseConsumer, makeErasureService, ERASED_PHONE_HASH } from '../../src/services/erasureService.js';
+import { isSuppressed, canMarketTo, applyUnsubscribe, makeConsentService } from '../../src/services/consentService.js';
 import { makeEntitlementService, flushDeliveries as flushEntDeliveries } from '../../src/services/redeemOps/entitlementService.js';
 import { makeWebhookService } from '../../src/services/webhookService.js';
 import { makeLuckyDrawService } from '../../src/services/luckyDrawService.js';
@@ -755,5 +755,80 @@ describe('erasure — suppression upgrade over a prior unsubscribe', () => {
 describe('erasure — service-level 404', () => {
   test('unknown consumer id rejects with 404 AppError', async () => {
     await expect(eraseConsumer(crypto.randomUUID(), {})).rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
+describe('erasure/withdrawal — Google Customer Match removal hooks (plan google-ads-signal-levers §3)', () => {
+  let savedCm;
+  beforeEach(() => { savedCm = process.env.GOOGLE_CM_CAMPAIGN_ID; });
+  afterEach(() => {
+    if (savedCm === undefined) delete process.env.GOOGLE_CM_CAMPAIGN_ID;
+    else process.env.GOOGLE_CM_CAMPAIGN_ID = savedCm;
+  });
+
+  test('erasure hands PRE-SCRUB pairs to the seam, target campaign only, strictly post-commit, and a seam failure cannot fail erasure', async () => {
+    const phone8 = p8(2100);
+    const pIn = await captureProspect(phone8, campaign1, { firstName: 'Cm', lastName: 'Hook' });
+    // Same person, second campaign — must NOT be collected (per-campaign scope).
+    const pOut = await captureProspect(phone8, campaign2, { firstName: 'Cm', lastName: 'Hook' });
+    expect(pOut.consumerId).toBe(pIn.consumerId);
+    process.env.GOOGLE_CM_CAMPAIGN_ID = campaign1.id;
+    const rawEmail = pIn.email;
+    const e164 = pIn.phone;
+
+    let observed = null;
+    let resolveCalled;
+    const called = new Promise((r) => { resolveCalled = r; });
+    const googleCmRemove = jest.fn(async (pairs) => {
+      // Post-commit probe: by the time the seam runs, the scrub must already
+      // be visible outside the erasure transaction.
+      const row = await Prospect.findByPk(pIn.id);
+      observed = { pairs, emailAtCall: row.email };
+      resolveCalled();
+      // Failure-independence probe: the seam blowing up must not fail erasure
+      // (it already succeeded — this exercises the fire-and-forget catch).
+      throw new Error('google down');
+    });
+
+    const svcErase = makeErasureService({ googleCmRemove });
+    const report = await svcErase.eraseConsumer(pIn.consumerId, { actorUser: admin.user });
+    expect(report.prospects).toBeGreaterThanOrEqual(2); // erasure succeeded despite the throwing seam
+    await called;
+    expect(googleCmRemove).toHaveBeenCalledTimes(1);
+    expect(observed.pairs).toEqual([{ email: rawEmail, phone: e164 }]); // pre-scrub values, ONE row (campaign2 excluded)
+    expect(observed.emailAtCall).toBeFalsy(); // scrub committed before the seam ran
+  });
+
+  test('erasure collects nothing when no prospect is in the target campaign', async () => {
+    const phone8 = p8(2101);
+    const prospect = await captureProspect(phone8, campaign2, { firstName: 'Cm', lastName: 'Off' });
+    process.env.GOOGLE_CM_CAMPAIGN_ID = campaign1.id;
+    const googleCmRemove = jest.fn(async () => ({ removed: true }));
+    const svcErase = makeErasureService({ googleCmRemove });
+    await svcErase.eraseConsumer(prospect.consumerId, { actorUser: admin.user });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(googleCmRemove).not.toHaveBeenCalled();
+  });
+
+  test('unsubscribe dispatches removeByConsumerId strictly post-commit', async () => {
+    const phone8 = p8(2102);
+    const prospect = await captureProspect(phone8, campaign1, { firstName: 'Cm', lastName: 'Unsub' });
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+
+    let committedAtCall = null;
+    let resolveCalled;
+    const called = new Promise((r) => { resolveCalled = r; });
+    const googleCmRemoveByConsumerId = jest.fn(async (cid) => {
+      const sup = await ConsumerSuppression.findOne({ where: { consumerId: cid, channel: 'all' } });
+      committedAtCall = !!sup; // suppression row visible ⇒ the transaction committed first
+      resolveCalled();
+      return { removed: true };
+    });
+
+    const consent = makeConsentService({ googleCmRemoveByConsumerId });
+    await consent.applyUnsubscribe(consumer, { source: 'unsubscribe_link' });
+    await called;
+    expect(googleCmRemoveByConsumerId).toHaveBeenCalledWith(consumer.id);
+    expect(committedAtCall).toBe(true);
   });
 });

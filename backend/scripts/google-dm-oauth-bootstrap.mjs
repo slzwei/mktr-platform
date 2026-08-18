@@ -84,10 +84,13 @@ const server = http.createServer(async (req, res) => {
     redirect_uri: REDIRECT_URI,
     grant_type: 'authorization_code',
   });
+  // The exchange gets its own bound — a stalled token endpoint must not
+  // hang the script after the redirect deadline was cleared.
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
+    signal: AbortSignal.timeout(30_000),
   });
   const body = await tokenRes.json();
   if (!tokenRes.ok || !body.refresh_token) {

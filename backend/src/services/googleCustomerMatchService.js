@@ -338,8 +338,14 @@ export async function syncGoogleCustomerMatch(deps = {}) {
 
     const status = acceptedIds.length ? await settleRequestStatuses(acceptedIds, d) : null;
 
+    // Classification derives from TERMINAL OUTCOMES, not HTTP acceptance:
+    // Google can accept every batch and later fail every record.
+    const confirmed = status ? status.succeeded + status.partialSuccess : 0;
+    const wholesale = acceptedIds.length === 0 || (status !== null && confirmed === 0 && status.stuck === 0);
+    const unconfirmed = status !== null && confirmed === 0 && status.stuck > 0;
     const summary = {
-      synced: acceptedIds.length > 0,
+      synced: !wholesale && !unconfirmed,
+      ...(unconfirmed ? { reason: 'unconfirmed' } : {}),
       eligible: rows.length,
       batches: batches.length,
       accepted: acceptedIds.length,
@@ -348,18 +354,21 @@ export async function syncGoogleCustomerMatch(deps = {}) {
     };
     logger.info(summary, 'google_cm.sync.done');
 
-    const wholesale = acceptedIds.length === 0;
     const troubled = failedBatches > 0 || (status && (status.failed > 0 || status.stuck > 0));
-    if (wholesale || troubled) {
+    if (wholesale || unconfirmed || troubled) {
       await sendBadRunAlert(
         d,
         wholesale
           ? '⚠️ MKTR Google Customer Match sync FAILED (nothing uploaded)'
-          : '⚠️ MKTR Google Customer Match sync — partial failure',
+          : unconfirmed
+            ? '⚠️ MKTR Google Customer Match sync — unconfirmed (status stuck)'
+            : '⚠️ MKTR Google Customer Match sync — partial failure',
         [
           wholesale
-            ? 'Every ingest batch failed — nothing was uploaded this run.'
-            : 'Some batches or request statuses failed; accepted batches stand.',
+            ? 'No batch reached a successful terminal state — treat as nothing uploaded.'
+            : unconfirmed
+              ? 'Accepted batches never reached a terminal state — outcome unknown.'
+              : 'Some batches or request statuses failed; confirmed batches stand.',
           '',
           `Eligible:        ${rows.length}`,
           `Batches:         ${batches.length}`,
@@ -411,14 +420,39 @@ export async function removeAudienceMembers(identifierRows, deps = {}) {
   const rows = (identifierRows || []).filter((r) => r?.userIdentifiers?.length);
   if (rows.length === 0) return { removed: false, reason: 'empty' };
   try {
+    // Removal is as asynchronous as ingestion: HTTP accept only returns a
+    // requestId. A missing id is a failed batch, and accepted ids are settled
+    // to terminal states before success is claimed.
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
-    const requestIds = [];
+    const acceptedIds = [];
+    let failedBatches = 0;
     for (const batch of batches) {
-      const res = await d.dmRequest('audienceMembers:remove', buildRemoveBody(batch), d);
-      requestIds.push(res?.requestId || null);
+      try {
+        const res = await d.dmRequest('audienceMembers:remove', buildRemoveBody(batch), d);
+        if (res?.requestId) acceptedIds.push(res.requestId);
+        else failedBatches += 1;
+      } catch (err) {
+        failedBatches += 1;
+        Sentry.captureException(err, { tags: { source: 'google_cm_remove' } });
+        logger.error({ err: err.message }, 'google_cm.remove.batch_failed');
+      }
     }
-    logger.info({ members: rows.length, batches: batches.length }, 'google_cm.remove.done');
-    return { removed: true, members: rows.length, requestIds };
+    const status = acceptedIds.length ? await settleRequestStatuses(acceptedIds, d) : null;
+    const confirmed = status ? status.succeeded + status.partialSuccess : 0;
+    const removed =
+      failedBatches === 0 && status !== null && confirmed === acceptedIds.length && status.stuck === 0;
+    const summary = { removed, members: rows.length, accepted: acceptedIds.length, failedBatches, status };
+    if (!removed) {
+      Sentry.captureMessage('google_cm.remove.unconfirmed', {
+        level: 'warning',
+        tags: { source: 'google_cm_remove' },
+        extra: { members: rows.length, accepted: acceptedIds.length, failedBatches, status },
+      });
+      logger.warn(summary, 'google_cm.remove.unconfirmed (membership TTL backstops)');
+    } else {
+      logger.info(summary, 'google_cm.remove.done');
+    }
+    return summary;
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'google_cm_remove' } });
     logger.error({ err: err.message }, 'google_cm.remove.failed');

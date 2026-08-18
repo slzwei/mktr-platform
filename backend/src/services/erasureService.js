@@ -68,6 +68,12 @@ const defaultDeps = {
   evictVerifiedPhone, evictDncCheckCache, forgetPhoneVerification,
   inventory: makeInventoryService(),
   audit: makeRedeemOpsAuditService(),
+  // Injectable seam (tests spy here): lazy so this service's import graph is
+  // unchanged and a config-less environment costs nothing.
+  googleCmRemove: async (pairs) => {
+    const m = await import('./googleCustomerMatchService.js');
+    return m.removeAudienceMembers(m.buildRemovalIdentifiers(pairs));
+  },
 };
 
 export function makeErasureService(overrides = {}) {
@@ -785,10 +791,7 @@ export function makeErasureService(overrides = {}) {
     // membership duration backstops a lost call). Dynamic import keeps this
     // service's import graph unchanged.
     if (googleCmRemovalPairs.length) {
-      import('./googleCustomerMatchService.js')
-        .then(({ buildRemovalIdentifiers, removeAudienceMembers }) =>
-          removeAudienceMembers(buildRemovalIdentifiers(googleCmRemovalPairs))
-        )
+      Promise.resolve(d.googleCmRemove(googleCmRemovalPairs))
         .catch((err) => {
           d.logger.warn('[erasure] google customer match removal failed (membership TTL heals)', {
             consumerId, error: err?.message || String(err),

@@ -14,14 +14,16 @@ import { logger } from './logger.js';
  * tokens die after 7 days, Internal ones are durable). Access tokens are
  * cached until shortly before expiry.
  *
- * Every call runs through a timeout + bounded-retry wrapper: a hanging fetch
- * must never wedge the scheduler's single-flight lock, and a transient
- * 429/5xx/network blip must not postpone recovery to the next daily run.
+ * Every call runs through a timeout + bounded-retry wrapper whose abort
+ * window covers HEADERS AND BODY (a server that returns headers then stalls
+ * the body must never wedge the scheduler's single-flight lock), with
+ * bounded backoff+jitter on network/429/5xx/body-stream failures only.
  * Terminal 4xx never retries.
  *
- * Error hygiene mirrors the Meta services: messages carry HTTP status +
- * Google's error message only — never request bodies (they contain hashed
- * PII, and hashes are still personal data).
+ * Error hygiene: provider error text is REDACTED before it reaches
+ * exceptions/logs/Sentry — Google can echo rejected identifier values (hex
+ * hashes are still personal data), so free-text messages are stripped of
+ * long hex/token runs and truncated. Request bodies are never attached.
  */
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -51,12 +53,28 @@ export function __resetTokenCacheForTests() {
 }
 
 /**
- * fetch with an AbortController timeout and bounded exponential backoff +
- * jitter on transient failures (network error, 429, 5xx). Non-2xx responses
- * are RETURNED (callers classify); only transport-level transients retry.
+ * Redact provider free-text before it can reach any observable surface:
+ * long hex runs (hashed identifiers) and long opaque tokens become
+ * placeholders, and the result is truncated. Exported for testing.
+ */
+export function redactProviderText(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/[a-f0-9]{32,}/gi, '[hash]')
+    .replace(/[A-Za-z0-9_-]{40,}/g, '[token]')
+    .replace(/[^\s@"']+@[^\s@"']+\.[^\s@"']+/g, '[email]')
+    .replace(/\+?\d[\d\s-]{6,}\d/g, '[phone]')
+    .slice(0, 200);
+}
+
+/**
+ * fetch + JSON-parse under ONE abort window, with bounded exponential
+ * backoff + jitter on transient failures (network error, body-stream error,
+ * 429, 5xx). Returns { status, ok, body } — non-2xx responses are RETURNED
+ * for the caller to classify; only transport-level transients retry.
  * Exported for testing.
  */
-export async function fetchWithRetry(url, init, deps = {}) {
+export async function fetchJsonWithRetry(url, init, deps = {}) {
   const fetchFn = deps.fetch || globalThis.fetch;
   const sleep = deps.sleep || realSleep;
   const attempts = deps.attempts || DEFAULT_ATTEMPTS;
@@ -70,7 +88,13 @@ export async function fetchWithRetry(url, init, deps = {}) {
         await sleep(500 * 2 ** attempt + Math.floor(Math.random() * 250));
         continue;
       }
-      return res;
+      // Body consumption stays INSIDE the abort window — a stalled body is a
+      // timeout, not a hang. A malformed/failed body on a 2xx is transient.
+      const body = await res.json().catch((err) => {
+        if (res.ok) throw err;
+        return {};
+      });
+      return { status: res.status, ok: res.ok, body };
     } catch (err) {
       lastErr = err;
       if (attempt < attempts - 1) {
@@ -81,7 +105,9 @@ export async function fetchWithRetry(url, init, deps = {}) {
       clearTimeout(timer);
     }
   }
-  throw new Error(`google dm fetch failed after ${attempts} attempts: ${lastErr?.message || 'network error'}`);
+  throw new Error(
+    `google dm fetch failed after ${attempts} attempts: ${redactProviderText(lastErr?.message) || 'network error'}`
+  );
 }
 
 /**
@@ -108,7 +134,7 @@ export async function getAccessToken(deps = {}) {
     client_secret: clientSecret,
     refresh_token: refreshToken,
   });
-  const res = await fetchWithRetry(
+  const { status, ok, body } = await fetchJsonWithRetry(
     TOKEN_URL,
     {
       method: 'POST',
@@ -117,10 +143,9 @@ export async function getAccessToken(deps = {}) {
     },
     deps
   );
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.access_token) {
+  if (!ok || !body.access_token) {
     throw new Error(
-      `google dm token refresh failed: HTTP ${res.status} ${body?.error_description || body?.error || ''}`.trim()
+      `google dm token refresh failed: HTTP ${status} ${redactProviderText(body?.error_description || body?.error)}`.trim()
     );
   }
   cachedToken = {
@@ -132,7 +157,7 @@ export async function getAccessToken(deps = {}) {
 
 async function authedRequest(method, path, payload, deps) {
   const accessToken = await getAccessToken(deps);
-  const res = await fetchWithRetry(
+  const { status, ok, body } = await fetchJsonWithRetry(
     `${baseUrl()}/${path}`,
     {
       method,
@@ -144,12 +169,16 @@ async function authedRequest(method, path, payload, deps) {
     },
     deps
   );
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw Object.assign(
-      new Error(`google dm ${path} failed: HTTP ${res.status} ${body?.error?.message || ''}`.trim()),
-      { status: res.status }
-    );
+  if (!ok) {
+    // error.status/code are structured enums (safe); error.message is
+    // free-text Google can stuff identifier echoes into — redacted.
+    const parts = [
+      `google dm ${path} failed:`,
+      `HTTP ${status}`,
+      body?.error?.status || body?.error?.code || '',
+      redactProviderText(body?.error?.message),
+    ].filter(Boolean);
+    throw Object.assign(new Error(parts.join(' ')), { status });
   }
   logger.debug({ path, requestId: body?.requestId }, 'google_dm.request.ok');
   return body;

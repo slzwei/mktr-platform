@@ -121,16 +121,16 @@ describe('dmRequest', () => {
   });
 });
 
-describe('fetchWithRetry', () => {
-  it('retries transient 429/5xx with backoff and returns the eventual response', async () => {
+describe('fetchJsonWithRetry', () => {
+  it('retries transient 429/5xx with backoff and returns the eventual parsed body', async () => {
     const fetch = jest
       .fn()
       .mockResolvedValueOnce({ status: 429, ok: false, json: async () => ({}) })
       .mockResolvedValueOnce({ status: 503, ok: false, json: async () => ({}) })
-      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({}) });
+      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({ fine: true }) });
     const sleep = jest.fn().mockResolvedValue();
-    const res = await client.fetchWithRetry('https://x', {}, { fetch, sleep });
-    expect(res.status).toBe(200);
+    const res = await client.fetchJsonWithRetry('https://x', {}, { fetch, sleep });
+    expect(res).toEqual({ status: 200, ok: true, body: { fine: true } });
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(2);
   });
@@ -138,7 +138,7 @@ describe('fetchWithRetry', () => {
   it('does NOT retry a terminal 4xx (returned to the caller to classify)', async () => {
     const fetch = jest.fn().mockResolvedValue({ status: 400, ok: false, json: async () => ({}) });
     const sleep = jest.fn();
-    const res = await client.fetchWithRetry('https://x', {}, { fetch, sleep });
+    const res = await client.fetchJsonWithRetry('https://x', {}, { fetch, sleep });
     expect(res.status).toBe(400);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(sleep).not.toHaveBeenCalled();
@@ -147,15 +147,32 @@ describe('fetchWithRetry', () => {
   it('retries network errors and surfaces a sanitized failure after the budget', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('socket hang up'));
     const sleep = jest.fn().mockResolvedValue();
-    await expect(client.fetchWithRetry('https://x', {}, { fetch, sleep })).rejects.toThrow(
+    await expect(client.fetchJsonWithRetry('https://x', {}, { fetch, sleep })).rejects.toThrow(
       /failed after 3 attempts: socket hang up/
     );
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
+  it('consumes the BODY inside the retry/abort boundary — a failed 2xx body stream retries', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => {
+          throw new Error('body stream stalled/aborted');
+        },
+      })
+      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => ({ fine: true }) });
+    const sleep = jest.fn().mockResolvedValue();
+    const res = await client.fetchJsonWithRetry('https://x', {}, { fetch, sleep });
+    expect(res.body).toEqual({ fine: true });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('passes an abort signal so a hung fetch cannot wedge the caller', async () => {
     const fetch = jest.fn().mockResolvedValue({ status: 200, ok: true, json: async () => ({}) });
-    await client.fetchWithRetry('https://x', {}, { fetch });
+    await client.fetchJsonWithRetry('https://x', {}, { fetch });
     expect(fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
 });
