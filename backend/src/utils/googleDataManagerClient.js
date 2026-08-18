@@ -146,11 +146,10 @@ async function authedRequest(method, path, payload, deps) {
   );
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(
-      `google dm ${path} failed: HTTP ${res.status} ${body?.error?.message || ''}`.trim()
+    throw Object.assign(
+      new Error(`google dm ${path} failed: HTTP ${res.status} ${body?.error?.message || ''}`.trim()),
+      { status: res.status }
     );
-    err.status = res.status;
-    throw err;
   }
   logger.debug({ path, requestId: body?.requestId }, 'google_dm.request.ok');
   return body;
