@@ -557,7 +557,7 @@ describe('syncGoogleCustomerMatch', () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([]) };
     const dmRequest = jest.fn();
     const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest, sleep: fastSleep });
-    expect(res).toEqual({ submitted: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null });
+    expect(res).toEqual({ submitted: false, ok: true, reason: 'empty', eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null });
     expect(dmRequest).not.toHaveBeenCalled();
   });
 });

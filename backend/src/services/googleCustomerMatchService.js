@@ -392,7 +392,9 @@ export async function syncGoogleCustomerMatch(deps = {}) {
 
     if (rows.length === 0) {
       logger.warn('google_cm.sync.empty (no eligible members)');
-      return { submitted: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null };
+      // ok distinguishes a healthy no-op from failure; submitted stays
+      // acceptance-only (zero requests were made).
+      return { submitted: false, ok: true, reason: 'empty', eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null };
     }
 
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
