@@ -20,7 +20,10 @@ import {
   resolveMetaPixelId, resolveTikTokPixelId,
   resolveGoogleAdsConversionId, resolveGoogleAdsLeadLabel,
 } from '@/lib/pixelIds';
-import { shouldTrackGoogle, initGoogleAds, trackGoogleLead } from '@/lib/googleAds';
+import {
+  shouldTrackGoogle, initGoogleAds, trackGoogleLead,
+  setGoogleUserData, clearGoogleUserData,
+} from '@/lib/googleAds';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 import {
   shouldTrackTikTok, captureTtclidFromUrl, readTtclid, readTtp,
@@ -413,9 +416,14 @@ export default function MarketplaceFlow() {
           // unconfigured id is dropped. initGoogleAds is idempotent, so this is
           // free when the view effect already ran.
           initGoogleAds(googleId);
+          // Enhanced Conversions: plain values, the tag hashes them. `set` is
+          // page-global, so clear right after the conversion queues — later
+          // SPA tag events must not inherit the submitter's PII.
+          setGoogleUserData({ email: form.email, phone: form.phone });
           trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
             transactionId: leadEventIdRef.current,
           });
+          clearGoogleUserData();
         }
         if (isDraw) trackCustom('draw_entry_confirmed');
         setResult({
