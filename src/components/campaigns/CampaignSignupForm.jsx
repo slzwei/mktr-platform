@@ -1006,14 +1006,18 @@ export default function CampaignSignupForm({
             Studio click-to-edit jump target; inert on live pages. */}
         {Array.isArray(profileQuestions?.questionIds) && profileQuestions.questionIds.length > 0 && (
           <div data-se="profileQuestions" style={{ marginTop: 18 }}>
-            <div style={{
-              fontSize: 12, color: TOKENS.muted, marginBottom: 10,
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-            }}>
-              {(profileQuestions.requiredIds || []).length === 0
-                ? 'Optional — helps us serve you better'
-                : 'Helps us serve you better'}
-            </div>
+            {/* The reassurance header renders ONLY when every question is
+                optional (its original design intent). With any required
+                question the block opens straight on the first prompt —
+                owner call, 2026-08-18. */}
+            {(profileQuestions.requiredIds || []).length === 0 && (
+              <div style={{
+                fontSize: 12, color: TOKENS.muted, marginBottom: 10,
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+              }}>
+                Optional — helps us serve you better
+              </div>
+            )}
             {profileQuestions.questionIds.map((qid) => {
               const q = resolveQuestion(qid, profileQuestions.custom);
               if (!q) return null;

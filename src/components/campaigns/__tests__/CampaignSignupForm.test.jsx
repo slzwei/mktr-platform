@@ -676,12 +676,12 @@ describe('CampaignSignupForm — profile question controls (required + showZh)',
     expect(document.querySelector('[data-se="profileQuestions"]').textContent).toContain('您偏好哪种语言');
   });
 
-  it('required questions get an asterisk and the header drops "Optional"', () => {
+  it('required questions get an asterisk and NO header at all (owner call, 2026-08-18)', () => {
     renderForm({ profileQuestions: { enabled: true, questionIds: ['language', 'pets'], requiredIds: ['language'], showZh: true } });
     const block = document.querySelector('[data-se="profileQuestions"]');
     expect(block.textContent).toContain('*');
-    expect(block.textContent).toContain('Helps us serve you better');
-    expect(block.textContent).not.toContain('Optional — helps us serve you better');
+    expect(block.textContent).not.toContain('Helps us serve you better');
+    expect(block.textContent).not.toContain('Optional');
   });
 
   it('all-optional keeps the Optional header and no asterisk', () => {
