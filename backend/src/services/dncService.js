@@ -160,7 +160,9 @@ export function parseResponse(json) {
     ? json.numbers.map((n) => ({
         number: n.number,
         noVoiceCall: n.no_voice_call === 'R',
-        noTextMessage: n.no_text_message === 'R',
+        // Spec v1.1 documents `no_text_message`, but the live UAT system returns
+        // `no_text` (observed 12 Aug 2026, confirmed with DNC Ops). Accept both.
+        noTextMessage: (n.no_text_message ?? n.no_text) === 'R',
         noFax: n.no_fax === 'R',
       }))
     : [];

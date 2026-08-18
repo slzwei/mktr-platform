@@ -129,6 +129,22 @@ describe('parseResponse', () => {
     expect(r.results[1].noVoiceCall).toBe(false);
     expect(r.validUntil).toBeInstanceOf(Date);
   });
+
+  it('accepts the live UAT field name no_text (spec says no_text_message)', () => {
+    const json = {
+      msg: 'These results are valid until 02-Sep-2026',
+      numbers: [
+        { number: '88880052', no_voice_call: 'NR', no_text: 'R', no_fax: 'NR' },
+        { number: '88880005', no_voice_call: 'R', no_text: 'NR', no_fax: 'NR' },
+      ],
+      transactionid: '1992072',
+      created_time: '2026-08-12 12:30:00',
+      status_code: 'S000',
+    };
+    const r = dnc.parseResponse(json);
+    expect(r.results[0].noTextMessage).toBe(true);
+    expect(r.results[1].noTextMessage).toBe(false);
+  });
 });
 
 describe('nextTimestamp', () => {
