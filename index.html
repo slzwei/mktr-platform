@@ -66,6 +66,33 @@
         window.gtag('js', new Date());
       })();
     </script>
+
+    <!-- AdRoll pixel base stub (gated on VITE_ADROLL_ADV_ID + VITE_ADROLL_PIX_ID).
+         Sets the adroll_* globals roundtrip.js reads at load time and defines the
+         `adroll` command queue, but does NOT inject roundtrip.js and does NOT call
+         adroll.track('pageView') — React (adroll.initAdRoll) does both, only on
+         public customer surfaces, so the SDK never loads on admin/ops/preview
+         pages (same contract as the ttq and gtag stubs above). -->
+    <script>
+      (function (w) {
+        var ADV_ID = '%VITE_ADROLL_ADV_ID%';
+        var PIX_ID = '%VITE_ADROLL_PIX_ID%';
+        if (!ADV_ID || ADV_ID.charAt(0) === '%') return;
+        if (!PIX_ID || PIX_ID.charAt(0) === '%') return;
+        w.adroll_adv_id = ADV_ID;
+        w.adroll_pix_id = PIX_ID;
+        w.adroll_version = '2.0';
+        w.adroll_tag_source = 'manual';
+        w.__adroll_loaded = true;
+        w.adroll = w.adroll || [];
+        w.adroll.f = ['setProperties', 'identify', 'track', 'identify_email', 'get_cookie'];
+        for (var a = 0; a < w.adroll.f.length; a++) {
+          w.adroll[w.adroll.f[a]] = w.adroll[w.adroll.f[a]] || (function (n) {
+            return function () { w.adroll.push([n, arguments]) };
+          })(w.adroll.f[a]);
+        }
+      })(window);
+    </script>
   </head>
   <body>
     <div id="root"></div>

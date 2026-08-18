@@ -11,6 +11,7 @@ import { shouldTrackTikTok, initTikTokPixel, trackTikTokViewContent, captureTtcl
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
 import { resolveMetaPixelId, resolveTikTokPixelId, resolveGoogleAdsConversionId } from '@/lib/pixelIds';
 import { shouldTrackGoogle, initGoogleAds, captureGclFromUrl } from '@/lib/googleAds';
+import { shouldTrackAdRoll, initAdRoll, trackAdRollPageView } from '@/lib/adroll';
 
 /**
  * Offer detail (/offers/:slug) — the FIRST public content surface for
@@ -89,6 +90,15 @@ export default function MarketplaceOffer() {
         initGoogleAds(googleId);
         markVcFired(campaign.id, 'google');
       }
+    }
+
+    // AdRoll (retargeting): fires here rather than in AdRollRouteTracker because
+    // the gate needs the loaded campaign to apply the test-data exclusion. No
+    // session guard and no shared event id — a retargeting pixel wants every
+    // qualifying view, and it has no server-side twin to dedup against.
+    if (shouldTrackAdRoll(trackCtx)) {
+      initAdRoll();
+      trackAdRollPageView();
     }
   }, [campaign]);
 

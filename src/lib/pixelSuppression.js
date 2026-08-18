@@ -22,23 +22,34 @@
  * ViewContent fires at the FIRST public content surface for a campaign; every
  * other route stays suppressed). SSR-safe.
  */
-export function isTrackableLeadCapture({ campaign, pathname, search } = {}) {
+/**
+ * The exclusion half of the rule set, factored out so surfaces with a WIDER
+ * allow-list than the campaign funnel (adroll.js — retargeting fires on the
+ * browse pages too) can suppress on exactly the same terms instead of keeping
+ * a second copy of these checks that can drift.
+ */
+export function isSuppressedSurface({ campaign, pathname, search } = {}) {
   const path = (pathname || '').toLowerCase();
-  if (path === '/preview' || path.startsWith('/preview/')) return false;
-  if (path.startsWith('/leadcapture/demo')) return false;
-  if (path.startsWith('/p/')) return false;
+  if (path === '/preview' || path.startsWith('/preview/')) return true;
+  if (path.startsWith('/leadcapture/demo')) return true;
+  if (path.startsWith('/p/')) return true;
 
   if (search) {
     try {
       const params = new URLSearchParams(search);
-      if (params.get('preview') === 'true') return false;
+      if (params.get('preview') === 'true') return true;
     } catch {
       /* malformed query — ignore */
     }
   }
 
-  if (campaign?.is_test_data === true) return false;
+  return campaign?.is_test_data === true;
+}
 
+export function isTrackableLeadCapture({ campaign, pathname, search } = {}) {
+  if (isSuppressedSurface({ campaign, pathname, search })) return false;
+
+  const path = (pathname || '').toLowerCase();
   if (path === '/leadcapture') return true;
   // Marketplace campaign surfaces — a slug segment must be present.
   if (/^\/offers\/[a-z0-9-]+$/.test(path)) return true;
