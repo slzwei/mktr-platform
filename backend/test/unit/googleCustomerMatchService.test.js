@@ -350,6 +350,39 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
     expect(mid.pending).toBe(1); // rescheduled — a flaky retrieve is not yet stuck
   });
 
+  it('a blocked pass cannot hide a later-due request from a subsequent pass', async () => {
+    await seedIngestRequest('req-slow', T0);
+    // second request accepted five minutes later — NOT yet due at pass 1
+    const rows = [eligibleRow()];
+    const d2 = happyDeps(rows);
+    d2.dmRequest = jest.fn().mockResolvedValue({ requestId: 'req-later' });
+    d2.now = () => T0 + 5 * 60_000;
+    const second = await svc.syncGoogleCustomerMatch(d2);
+    expect(second).toMatchObject({ submitted: true, accepted: 1, settlement: 'queued' });
+
+    let releaseSlow;
+    const slowGate = new Promise((r) => { releaseSlow = r; });
+    const slowGet = jest.fn(async (path) => {
+      if (path.includes('req-slow')) {
+        await slowGate; // Google outage: this poll hangs
+        return okStatus;
+      }
+      return okStatus;
+    });
+    // Pass 1 at T0+31min: only req-slow is due; it hangs mid-poll.
+    const pass1 = svc.settlePendingStatuses({ dmRequestGet: slowGet, now: () => T0 + 31 * 60_000 });
+    await new Promise((r) => setTimeout(r, 10));
+    // Pass 2 at T0+36min: req-later is due now — it must be visible and settle
+    // even though pass 1 still holds req-slow.
+    const pass2 = await svc.settlePendingStatuses({ dmRequestGet: slowGet, now: () => T0 + 36 * 60_000 });
+    expect(pass2.succeeded).toBe(1);
+    expect(pass2.polled).toBe(1);
+    releaseSlow();
+    const pass1Res = await pass1;
+    expect(pass1Res.succeeded).toBe(1);
+    expect(slowGet.mock.calls.filter((c) => c[0].includes('req-slow'))).toHaveLength(1); // no double-poll
+  });
+
   it('a PARTIAL_SUCCESS *removal* alerts (people stayed on the list); a partial ingest does not', async () => {
     const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-partial' });
     const acceptance = await svc.removeAudienceMembers(
@@ -378,7 +411,7 @@ describe('syncGoogleCustomerMatch', () => {
   it('returns guarded without touching the ledger when config is missing', async () => {
     delete process.env.GOOGLE_CM_USER_LIST_ID;
     const res = await svc.syncGoogleCustomerMatch({ dmRequest: jest.fn() });
-    expect(res).toEqual({ synced: false, reason: 'guarded' });
+    expect(res).toEqual({ submitted: false, reason: 'guarded' });
     expect(consentMocks.getMarketableGrantMap).not.toHaveBeenCalled();
   });
 
@@ -387,7 +420,7 @@ describe('syncGoogleCustomerMatch', () => {
     const d = happyDeps(rows);
     const res = await svc.syncGoogleCustomerMatch(d);
     expect(res).toEqual({
-      synced: true,
+      submitted: true,
       eligible: 2,
       batches: 1,
       accepted: 1,
@@ -426,7 +459,7 @@ describe('syncGoogleCustomerMatch', () => {
       .mockRejectedValueOnce(new Error('google dm audienceMembers:ingest failed: HTTP 500'));
     process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
     const res = await svc.syncGoogleCustomerMatch(d);
-    expect(res.synced).toBe(true);
+    expect(res.submitted).toBe(true);
     expect(res.accepted).toBe(1);
     expect(res.failedBatches).toBe(1);
     expect(d.sendEmail).toHaveBeenCalledTimes(1);
@@ -440,7 +473,7 @@ describe('syncGoogleCustomerMatch', () => {
     d.dmRequest.mockResolvedValue({});
     process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
     const res = await svc.syncGoogleCustomerMatch(d);
-    expect(res.synced).toBe(false);
+    expect(res.submitted).toBe(false);
     expect(res.failedBatches).toBe(1);
     expect(res.accepted).toBe(0);
     expect(res.settlement).toBeNull();
@@ -453,7 +486,7 @@ describe('syncGoogleCustomerMatch', () => {
     const sendEmail = jest.fn().mockResolvedValue({});
     const dmRequest = jest.fn();
     const res = await svc.syncGoogleCustomerMatch({ dmRequest, sendEmail, sleep: fastSleep });
-    expect(res.synced).toBe(false);
+    expect(res.submitted).toBe(false);
     expect(res.error).toMatch(/ledger down/);
     expect(dmRequest).not.toHaveBeenCalled();
     expect(sendEmail.mock.calls[0][0].subject).toMatch(/nothing uploaded/);
@@ -514,17 +547,17 @@ describe('syncGoogleCustomerMatch', () => {
     const first = svc.syncGoogleCustomerMatch(d);
     await new Promise((r) => setTimeout(r, 10));
     const second = await svc.syncGoogleCustomerMatch(d);
-    expect(second).toEqual({ synced: false, reason: 'overlap' });
+    expect(second).toEqual({ submitted: false, reason: 'overlap' });
     release();
     const firstRes = await first;
-    expect(firstRes.synced).toBe(true);
+    expect(firstRes.submitted).toBe(true);
   });
 
   it('treats an empty eligible set as a successful no-op', async () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([]) };
     const dmRequest = jest.fn();
     const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest, sleep: fastSleep });
-    expect(res).toEqual({ synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null });
+    expect(res).toEqual({ submitted: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null });
     expect(dmRequest).not.toHaveBeenCalled();
   });
 });

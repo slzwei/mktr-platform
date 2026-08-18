@@ -278,12 +278,17 @@ export async function settlePendingStatuses(deps = {}) {
   // removePartial tracked separately: a PARTIAL_SUCCESS *removal* left people
   // on the list (alert-worthy); a PARTIAL_SUCCESS ingest self-heals nightly.
   const summary = { polled: 0, succeeded: 0, partialSuccess: 0, removePartial: 0, failed: 0, stuck: 0, pending: 0 };
+  // Partition SYNCHRONOUSLY, due entries ONLY: not-yet-due entries stay in
+  // the shared queue, so a pass stalled on a hung retrieve (Google outage)
+  // can never hide later-due entries from subsequent drainer runs — and
+  // because the take happens before any await, an overlapping pass cannot
+  // double-poll the same entry.
+  const due = [];
+  for (let i = pendingSettles.length - 1; i >= 0; i--) {
+    if (pendingSettles[i].nextPollAt <= now) due.push(...pendingSettles.splice(i, 1));
+  }
   const keep = [];
-  for (const entry of pendingSettles.splice(0)) {
-    if (entry.nextPollAt > now) {
-      keep.push(entry);
-      continue;
-    }
+  for (const entry of due) {
     summary.polled += 1;
     let status = null;
     let retrieveFailed = false;
@@ -363,11 +368,11 @@ export async function syncGoogleCustomerMatch(deps = {}) {
 
   if (!shouldSync()) {
     logger.info('google_cm.sync.skipped (disabled or missing config)');
-    return { synced: false, reason: 'guarded' };
+    return { submitted: false, reason: 'guarded' };
   }
   if (syncInFlight) {
     logger.warn('google_cm.sync.overlap_skipped');
-    return { synced: false, reason: 'overlap' };
+    return { submitted: false, reason: 'overlap' };
   }
   syncInFlight = true;
 
@@ -387,7 +392,7 @@ export async function syncGoogleCustomerMatch(deps = {}) {
 
     if (rows.length === 0) {
       logger.warn('google_cm.sync.empty (no eligible members)');
-      return { synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null };
+      return { submitted: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null };
     }
 
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
@@ -422,8 +427,10 @@ export async function syncGoogleCustomerMatch(deps = {}) {
     queueSettles(acceptedIds, 'ingest', d.now ? d.now() : Date.now());
 
     const wholesale = acceptedIds.length === 0;
+    // "submitted", not "synced": acceptance-only truth. Whether the accepted
+    // requests actually landed is the settler's story, hours later.
     const summary = {
-      synced: !wholesale,
+      submitted: !wholesale,
       eligible: rows.length,
       batches: batches.length,
       accepted: acceptedIds.length,
@@ -464,7 +471,7 @@ export async function syncGoogleCustomerMatch(deps = {}) {
       d,
       '⚠️ MKTR Google Customer Match sync FAILED (nothing uploaded)',
       [
-        'The Google Customer Match exclusion sync aborted — nothing was uploaded this run.',
+        'The Google Customer Match exclusion sync aborted — nothing was submitted this run.',
         '',
         `Error:     ${err.message}`,
         `List:      ${process.env.GOOGLE_CM_USER_LIST_ID || '(unset)'}`,
@@ -475,7 +482,7 @@ export async function syncGoogleCustomerMatch(deps = {}) {
         'Check Render logs (mktr-backend-jo6r, search "google_cm") + Sentry (source:google_cm_sync).',
       ].join('\n')
     );
-    return { synced: false, error: err.message };
+    return { submitted: false, error: err.message };
   } finally {
     syncInFlight = false;
   }
@@ -493,8 +500,8 @@ export async function removeAudienceMembers(identifierRows, deps = {}) {
   if (rows.length === 0) return { accepted: 0, reason: 'empty' };
   try {
     // Removal is as asynchronous as ingestion: HTTP accept only returns a
-    // requestId. A missing id is a failed batch, and accepted ids are settled
-    // to terminal states before success is claimed.
+    // requestId. A missing id is a failed batch; accepted ids join the
+    // deferred settlement queue — no removal success is ever claimed in-run.
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
     const acceptedIds = [];
     let failedBatches = 0;
