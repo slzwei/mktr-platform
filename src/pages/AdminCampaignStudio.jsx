@@ -29,6 +29,12 @@ import useStudioAi from '@/components/studio/useStudioAi';
 import { useEditTargetFocus } from '@/components/studio/studioEditTargets';
 import StudioAiPanel from '@/components/studio/StudioAiPanel';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
+import {
+  commitDraftTransform,
+  draftComplete,
+  genCustomQuestionId,
+  transformPQ,
+} from '@/components/studio/profileQuestionsModel';
 import '@/styles/adminV2.css';
 
 /**
@@ -59,6 +65,19 @@ export default function AdminCampaignStudio() {
   const [slugError, setSlugError] = useState(null);
   const slugDirty = slugDraft !== null && slugDraft !== (campaign?.slug || '');
 
+  // Custom-question draft (studio-custom-questions §4) — a NEW question being
+  // authored in the Form panel. Owned HERE, not by the panel: the rail
+  // unmounts inactive panels, so panel-local state would die on a rail
+  // switch. At most one open draft; it never touches the doc until committed
+  // (the server clamp drops incomplete rows and the save path adopts the
+  // clamped response, so a half-typed question written to the doc would
+  // vanish on Save).
+  const [cqDraft, setCqDraft] = useState(null); // null = no draft
+  const cqDraftDirty = cqDraft !== null;
+  const cqDraftBlockedReason = cqDraft && !draftComplete(cqDraft)
+    ? 'The custom question you are adding is incomplete — finish it in the Form panel (or discard it) before saving.'
+    : null;
+
   const { data: serverReadiness, status: readinessStatus } = useServerReadiness(campaign?.id);
   const { data: marketplacePreview, status: previewStatus } = useMarketplacePreview(campaign?.id);
   const readiness = useMemo(
@@ -83,8 +102,9 @@ export default function AdminCampaignStudio() {
   const [subject, setSubject] = useState('page');
 
   // Unified dirty (Codex F10): the doc AND any unsaved slug draft drive every
-  // guard — a pending slug is as losable as pending copy.
-  const anyDirty = dirty || slugDirty;
+  // guard — a pending slug is as losable as pending copy. The custom-question
+  // draft joins for the same reason (studio-custom-questions §4).
+  const anyDirty = dirty || slugDirty || cqDraftDirty;
   const { guard, guardedRun, leaveViaHistory, closeGuard } = useStudioGuards({
     dirty: anyDirty,
     campaignId: campaign?.id,
@@ -186,6 +206,7 @@ export default function AdminCampaignStudio() {
     setSubject('page');
     setSlugDraft(null);
     setSlugError(null);
+    setCqDraft(null); // a question drafted for A must never ride into B
   }, [campaign?.id]);
 
   const switcherCampaigns = useMemo(() => {
@@ -216,15 +237,39 @@ export default function AdminCampaignStudio() {
       setSection('dist');
       return { ok: false, reason: 'slug-invalid' };
     }
+    // Open custom-question draft (studio-custom-questions §4): a COMPLETE
+    // draft is committed into an EXPLICIT snapshot handed to save — mut()
+    // schedules setDoc while save() PUTs the render-captured doc, so
+    // "commit then save()" would persist the pre-commit doc and lose the
+    // question. An incomplete draft blocks the save (the guard modal's
+    // primary is disabled with the same reason before it ever gets here).
+    let saveOpts;
+    if (cqDraft) {
+      if (!draftComplete(cqDraft)) {
+        toast.error('Finish or discard the custom question draft before saving.');
+        setSection('form');
+        return { ok: false, reason: 'cq-draft-incomplete' };
+      }
+      const existingIds = Array.isArray(doc?.profileQuestions?.custom)
+        ? doc.profileQuestions.custom.map((q) => q?.id).filter(Boolean)
+        : [];
+      const qid = genCustomQuestionId(existingIds);
+      const nextDoc = {
+        ...doc,
+        profileQuestions: transformPQ(doc, (s) => commitDraftTransform(s, cqDraft, qid)),
+      };
+      saveOpts = { snapshot: nextDoc };
+    }
     const slugRide = slugDirty ? { slug: slugDraft || null } : {};
     const sentSlug = slugDraft;
     // Codex diff #3: commit only the proposal THIS save carried — a look
     // picked while the PUT is in flight must survive with its gate intact.
     const proposalAtStart = aiRef.current.proposal;
-    const res = await save(slugRide);
+    const res = await save(slugRide, saveOpts);
     if (res.ok) {
       aiRef.current.notifySaved(proposalAtStart); // commit point — that look is no longer revertable
       if ('slug' in slugRide) setSlugDraft((cur) => (cur === sentSlug ? null : cur));
+      if (saveOpts) setCqDraft(null); // the draft is now IN the saved doc
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'detail', id] });
       queryClient.invalidateQueries({ queryKey: ['studio', 'readiness', id] });
       queryClient.invalidateQueries({ queryKey: ['studio', 'marketplace-preview', id] });
@@ -233,7 +278,7 @@ export default function AdminCampaignStudio() {
     }
     return res;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [save, id, slugDirty, slugDraft]);
+  }, [save, id, slugDirty, slugDraft, cqDraft, doc]);
 
   // The explicit "Save slug" action (Distribution panel) — slug ONLY, its own
   // path per the handoff; 409 lock / 422 format surfaced inline.
@@ -326,6 +371,7 @@ export default function AdminCampaignStudio() {
   const handleGuardDiscard = useCallback(() => {
     const parked = guard;
     closeGuard();
+    setCqDraft(null); // Discard means everything pending, the draft included
     if (!parked) return;
     if (parked.kind === 'back-browser') leaveViaHistory();
     else parked.action?.();
@@ -441,6 +487,8 @@ export default function AdminCampaignStudio() {
               // failed refetch must not claim "verified".
               whatsappOtpConfigured={readinessStatus === 'success' ? serverReadiness?.whatsappOtpConfigured : undefined}
               campaignBrief={campaign?.targetAudience}
+              cqDraft={cqDraft}
+              onCqDraftChange={setCqDraft}
             />
           )}
           {doc && section === 'quiz' && <StudioQuizPanel doc={doc} campaign={campaign} setPath={setPath} />}
@@ -542,6 +590,7 @@ export default function AdminCampaignStudio() {
       <StudioGuardModal
         guard={guard}
         saving={saving}
+        primaryBlockedReason={cqDraftBlockedReason}
         onPrimary={handleGuardPrimary}
         onDiscard={handleGuardDiscard}
         onCancel={closeGuard}

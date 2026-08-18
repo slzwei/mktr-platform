@@ -1105,3 +1105,43 @@ describe('useStudioAi — draw T&Cs never contradict the channel in the same res
     expect(termsRow.value.html).toContain('one-time SMS code');
   });
 });
+
+describe('useStudioAi — profileQuestions graft (studio-custom-questions §5b)', () => {
+  const PQ = {
+    enabled: true,
+    questionIds: ['c_abc123'],
+    requiredIds: [],
+    showZh: true,
+    custom: [{ id: 'c_abc123', type: 'text', prompt: 'Note?', options: [] }],
+  };
+
+  it('a question edit made DURING a proposal survives revert (the whole-doc restore grafts the live subtree)', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+    act(() => result.current.docApi.mut((d) => { d.profileQuestions = PQ; }));
+    act(() => result.current.ai.revertLook());
+    expect(result.current.docApi.doc.profileQuestions).toEqual(PQ);
+  });
+
+  it('the edit also survives a re-pick and a keep-toggle (every replacement site grafts)', async () => {
+    const { result } = renderAi();
+    await looksReady(result, [LOOK, LOOK]);
+    act(() => result.current.ai.pickLook(0));
+    act(() => result.current.docApi.mut((d) => { d.profileQuestions = PQ; }));
+    act(() => result.current.ai.pickLook(1));
+    expect(result.current.docApi.doc.profileQuestions).toEqual(PQ);
+    act(() => result.current.ai.toggleKeep('copy'));
+    expect(result.current.docApi.doc.profileQuestions).toEqual(PQ);
+    act(() => result.current.ai.revertLook());
+    expect(result.current.docApi.doc.profileQuestions).toEqual(PQ);
+  });
+
+  it('a pick can never INTRODUCE profileQuestions the live doc does not carry', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    expect(result.current.docApi.doc.profileQuestions).toBeUndefined();
+    act(() => result.current.ai.pickLook(0));
+    expect(result.current.docApi.doc.profileQuestions).toBeUndefined();
+  });
+});

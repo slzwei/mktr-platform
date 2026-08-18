@@ -240,3 +240,60 @@ describe('buildPublicDesignConfig — content.submitFontSize', () => {
     expect(out.content.submitFontSize).toBeUndefined();
   });
 });
+
+describe('profileQuestions.custom leaf-pick (studio-custom-questions §3)', () => {
+  const v2 = (pq) => ({
+    version: 2,
+    template: { id: 'express' },
+    theme: { preset: 'warm-cream' },
+    profileQuestions: pq,
+  });
+
+  test('projects EXACTLY {id,type,prompt,promptZh?,options[{id,label,labelZh?}]} — internal keys stripped', () => {
+    const out = buildPublicDesignConfig(v2({
+      enabled: true,
+      questionIds: ['language', 'c_abc123'],
+      requiredIds: ['c_abc123'],
+      custom: [{
+        id: 'c_abc123',
+        type: 'single',
+        prompt: 'Which outlet?',
+        promptZh: 'ZH',
+        internalNote: 'never ships',
+        options: [
+          { id: 'o1', label: 'East', labelZh: 'E', weight: 99 },
+          { id: 'o2', label: 'West' },
+        ],
+      }],
+    }));
+    expect(out.profileQuestions.custom).toEqual([{
+      id: 'c_abc123',
+      type: 'single',
+      prompt: 'Which outlet?',
+      promptZh: 'ZH',
+      options: [{ id: 'o1', label: 'East', labelZh: 'E' }, { id: 'o2', label: 'West' }],
+    }]);
+    expect(JSON.stringify(out)).not.toContain('internalNote');
+    expect(JSON.stringify(out)).not.toContain('weight');
+  });
+
+  test('defs not in questionIds are excluded (defensive re-filter); no custom key when none survive', () => {
+    const out = buildPublicDesignConfig(v2({
+      enabled: true,
+      questionIds: ['language'],
+      requiredIds: [],
+      custom: [{ id: 'c_ghost1', type: 'text', prompt: 'Unreferenced', options: [] }],
+    }));
+    expect(out.profileQuestions).toBeDefined();
+    expect(out.profileQuestions.custom).toBeUndefined();
+  });
+
+  test('disabled subtree stays absent from the anonymous payload (unchanged)', () => {
+    const out = buildPublicDesignConfig(v2({
+      enabled: false,
+      questionIds: ['c_abc123'],
+      custom: [{ id: 'c_abc123', type: 'text', prompt: 'X', options: [] }],
+    }));
+    expect(out.profileQuestions).toBeUndefined();
+  });
+});

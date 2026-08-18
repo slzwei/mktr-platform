@@ -691,3 +691,142 @@ describe('CampaignSignupForm — profile question controls (required + showZh)',
     expect(block.textContent).not.toContain('*');
   });
 });
+
+describe('CampaignSignupForm — custom questions (studio-custom-questions §5)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const CQ = {
+    enabled: true,
+    questionIds: ['language', 'c_showrm', 'c_hobby1', 'c_notes1'],
+    requiredIds: [],
+    showZh: true,
+    custom: [
+      { id: 'c_showrm', type: 'single', prompt: 'Which showroom?', promptZh: '哪个门店？', options: [{ id: 'o1', label: 'East' }, { id: 'o2', label: 'West' }] },
+      { id: 'c_hobby1', type: 'multi', prompt: 'What do you enjoy?', options: [{ id: 'o1', label: 'Golf' }, { id: 'o2', label: 'Travel' }] },
+      { id: 'c_notes1', type: 'text', prompt: 'Anything else?' },
+    ],
+  };
+
+  it('renders custom questions through the shared resolver, in questionIds order, after the library ones', () => {
+    renderForm({ profileQuestions: CQ });
+    const block = document.querySelector('[data-se="profileQuestions"]');
+    const text = block.textContent;
+    expect(text.indexOf('Which language do you prefer?')).toBeLessThan(text.indexOf('Which showroom?'));
+    expect(text.indexOf('Which showroom?')).toBeLessThan(text.indexOf('What do you enjoy?'));
+    expect(text).toContain('哪个门店？');
+    expect(block.querySelector('[data-question-id="c_notes1"] input')).toBeTruthy();
+    expect(block.querySelector('[data-question-id="c_notes1"] input').maxLength).toBe(200);
+  });
+
+  it('a custom MULTI question actually multi-selects (the q.multi/type normalization regression)', () => {
+    renderForm({ profileQuestions: CQ });
+    const golf = screen.getByRole('button', { name: 'Golf' });
+    const travel = screen.getByRole('button', { name: 'Travel' });
+    fireEvent.click(golf);
+    fireEvent.click(travel);
+    expect(golf).toHaveAttribute('aria-pressed', 'true');
+    expect(travel).toHaveAttribute('aria-pressed', 'true');
+    // single-custom stays single
+    const east = screen.getByRole('button', { name: 'East' });
+    const west = screen.getByRole('button', { name: 'West' });
+    fireEvent.click(east);
+    fireEvent.click(west);
+    expect(east).toHaveAttribute('aria-pressed', 'false');
+    expect(west).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('hostile prompts/labels render as literal text (React escaping), never markup', () => {
+    renderForm({
+      profileQuestions: {
+        enabled: true,
+        questionIds: ['c_evil01'],
+        requiredIds: [],
+        custom: [{ id: 'c_evil01', type: 'single', prompt: '<b>Bold?</b><img src=x onerror=alert(1)>', options: [{ id: 'o1', label: '<i>it</i>' }, { id: 'o2', label: 'ok' }] }],
+      },
+    });
+    const block = document.querySelector('[data-se="profileQuestions"]');
+    expect(block.textContent).toContain('<b>Bold?</b>');
+    expect(block.querySelector('b')).toBeNull();
+    expect(block.querySelector('img')).toBeNull();
+    expect(screen.getByRole('button', { name: '<i>it</i>' })).toBeTruthy();
+  });
+
+  it('showZh:false hides custom Chinese prompts too; unknown custom ids render nothing', () => {
+    renderForm({
+      profileQuestions: {
+        enabled: true,
+        questionIds: ['c_showrm', 'c_ghost9'],
+        requiredIds: [],
+        showZh: false,
+        custom: [CQ.custom[0]],
+      },
+    });
+    const block = document.querySelector('[data-se="profileQuestions"]');
+    expect(block.textContent).toContain('Which showroom?');
+    expect(block.textContent).not.toContain('哪个门店？');
+    expect(block.querySelector('[data-question-id="c_ghost9"]')).toBeNull();
+  });
+
+  it('a required CUSTOM question blocks submit (the library-only gate regression), and whitespace-only text never satisfies it', async () => {
+    const user = userEvent.setup();
+    renderForm({
+      previewMode: true,
+      profileQuestions: { ...CQ, requiredIds: ['c_notes1'] },
+    });
+    await user.type(screen.getByPlaceholderText('John Tan'), 'Jane Tan');
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'jane@example.com');
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+    await user.type(await screen.findByPlaceholderText('6-digit code'), '123456');
+    await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument(), { timeout: 2500 });
+    fireEvent.click(document.getElementById('consent_all'));
+    const submit = screen.getByRole('button', { name: 'Submit Now' });
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 2500 });
+
+    // Whitespace-only text does not satisfy the required gate.
+    const notesInput = document.querySelector('[data-question-id="c_notes1"] input');
+    fireEvent.change(notesInput, { target: { value: '   ' } });
+    await user.click(submit);
+    expect(await screen.findByText('Please answer: Anything else?')).toBeInTheDocument();
+
+    fireEvent.change(notesInput, { target: { value: 'after 6pm' } });
+    await user.click(submit);
+    expect(await screen.findByText('Preview — your details were not submitted.')).toBeInTheDocument();
+  });
+
+  it('live submit: the payload carries custom answers beside library ones in the existing profileAnswers field', async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderForm({ profileQuestions: CQ });
+    apiClient.post.mockImplementation((url) => {
+      if (url === '/verify/send') return Promise.resolve({ success: true });
+      if (url === '/verify/check') return Promise.resolve({ success: true, data: { verified: true } });
+      return Promise.resolve({ success: true });
+    });
+    await user.type(screen.getByPlaceholderText('John Tan'), 'Jane Tan');
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'jane@example.com');
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+    await user.type(await screen.findByPlaceholderText('6-digit code'), '123456');
+    await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument(), { timeout: 2500 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'English' }));
+    fireEvent.click(screen.getByRole('button', { name: 'West' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Golf' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Travel' }));
+    fireEvent.change(document.querySelector('[data-question-id="c_notes1"] input'), { target: { value: 'call after 6pm' } });
+
+    fireEvent.click(document.getElementById('consent_all'));
+    const submit = screen.getByRole('button', { name: 'Submit Now' });
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 2500 });
+    await user.click(submit);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.profileAnswers).toEqual({
+      language: 'en',
+      c_showrm: 'o2',
+      c_hobby1: ['o1', 'o2'],
+      c_notes1: 'call after 6pm',
+    });
+  });
+});

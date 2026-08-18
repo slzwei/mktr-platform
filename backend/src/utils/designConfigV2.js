@@ -57,6 +57,8 @@ export const LIMITS = {
   drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
   // Submit CTA font size in px (content.submitFontSize — v2-only, L7)
   submitFontSizeMin: 12, submitFontSizeMax: 24,
+  // Custom profile questions (profileQuestions.custom — studio-custom-questions §2)
+  cqPrompt: 140, cqOption: 48,
 };
 
 /**
@@ -247,6 +249,35 @@ export const V1_CONSUMED_KEYS = [
 
 /** Top-level v2 schema keys (used by downgrade + the clamp's alias scrub). */
 export const V2_TOP_KEYS = ['version', 'template', 'theme', 'content', 'form', 'distribution', 'ai', 'profileQuestions'];
+
+// ─────────── custom profile questions (studio-custom-questions §2) ───────────
+
+/** Owner-authored questions in the profileQuestions block. The library cap
+ * (MAX_PROFILE_QUESTIONS, profileQuestionLibrary.js) keeps its meaning — these
+ * bound the NEW `custom[]` defs and the combined `questionIds` membership.
+ * Custom answers are DISPLAY-ONLY (frozen onto sourceMetadata.customAnswers);
+ * they never mint consumer-observation facts. */
+export const MAX_CUSTOM_QUESTIONS = 5;
+export const MAX_TOTAL_PROFILE_QUESTIONS = 10;
+export const MAX_CUSTOM_OPTIONS = 8; // aligned with the capture Joi array bound
+export const CUSTOM_QUESTION_ID_RE = /^c_[a-z0-9]{4,12}$/;
+export const CUSTOM_OPTION_ID_RE = /^[a-z0-9_]{1,24}$/;
+export const CUSTOM_ANSWER_TEXT_MAX = 200;
+
+/** Shared sanitizer for owner-authored question copy AND customer free-text
+ * answers: strip C0/C1 controls + bidi overrides, trim, cap. The clamp's
+ * cleanString only slices — question copy renders on redeem.sg and in admin,
+ * so control/bidi stripping is non-negotiable. The Studio's completeness
+ * check MUST use this exact function (a value this sanitizer empties can
+ * never commit, then vanish in the clamp — studio-custom-questions §4). */
+export function sanitizeQuestionText(v, max) {
+  if (typeof v !== 'string') return '';
+  // eslint-disable-next-line no-control-regex
+  const stripped = v.replace(/[\u0000-\u001F\u007F-\u009F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '');
+  const trimmed = stripped.trim();
+  if (typeof max === 'number' && max >= 0 && trimmed.length > max) return trimmed.slice(0, max).trimEnd();
+  return trimmed;
+}
 
 // ───────────────────────── helpers (dependency-free) ─────────────────────────
 

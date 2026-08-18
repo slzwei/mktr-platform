@@ -12,8 +12,44 @@ import {
   isSponsoredCampaign, sponsorNameLine,
 } from '@/lib/consentCopy';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
-import { LIMITS } from '@/lib/designConfigV2';
+import { CUSTOM_ANSWER_TEXT_MAX, LIMITS } from '@/lib/designConfigV2';
 import { getProfileQuestion } from '@/lib/profileQuestionLibrary';
+
+// One normalized question resolver (studio-custom-questions §5): library defs
+// expose `multi` while custom defs expose `type` — both the render loop AND
+// the required-submit gate go through this shape, so a required CUSTOM
+// question can never be silently skipped by the library-only lookup.
+function resolveQuestion(qid, custom) {
+  const lib = getProfileQuestion(qid);
+  if (lib) {
+    return {
+      id: lib.id,
+      kind: lib.multi ? 'multi' : 'single',
+      prompt: lib.prompt,
+      promptZh: lib.promptZh,
+      options: lib.options,
+      isCustom: false,
+    };
+  }
+  const c = Array.isArray(custom) ? custom.find((q) => q && q.id === qid) : null;
+  if (!c || typeof c !== 'object') return null;
+  return {
+    id: c.id,
+    kind: c.type === 'multi' ? 'multi' : c.type === 'text' ? 'text' : 'single',
+    prompt: c.prompt,
+    promptZh: c.promptZh,
+    options: Array.isArray(c.options) ? c.options : [],
+    isCustom: true,
+  };
+}
+
+// Type-aware answered check, shared by the required gate — whitespace-only
+// text never satisfies a required question (the server trims it away anyway).
+function isQuestionAnswered(q, answer) {
+  if (q.kind === 'multi') return Array.isArray(answer) && answer.length > 0;
+  if (q.kind === 'text') return typeof answer === 'string' && answer.trim().length > 0;
+  return typeof answer === 'string' && answer.length > 0;
+}
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 import { isValidSgMobile } from '@/utils/validation';
 
@@ -315,12 +351,12 @@ export default function CampaignSignupForm({
 
     // Required profile questions (owner control, 2026-07-26): client-side
     // gate only — the server keeps its drop-not-fail policy as the net.
+    // Resolves library AND custom defs through the shared resolver
+    // (studio-custom-questions §5).
     for (const requiredId of profileQuestions?.requiredIds || []) {
-      const q = getProfileQuestion(requiredId);
+      const q = resolveQuestion(requiredId, profileQuestions?.custom);
       if (!q) continue;
-      const answer = profileAnswers[requiredId];
-      const answered = q.multi ? Array.isArray(answer) && answer.length > 0 : Boolean(answer);
-      if (!answered) {
+      if (!isQuestionAnswered(q, profileAnswers[requiredId])) {
         setError(`Please answer: ${q.prompt}`);
         return;
       }
@@ -979,16 +1015,16 @@ export default function CampaignSignupForm({
                 : 'Helps us serve you better'}
             </div>
             {profileQuestions.questionIds.map((qid) => {
-              const q = getProfileQuestion(qid);
+              const q = resolveQuestion(qid, profileQuestions.custom);
               if (!q) return null;
               const isRequired = (profileQuestions.requiredIds || []).includes(q.id);
               const current = profileAnswers[q.id];
-              const isSelected = (optId) => (q.multi
+              const isSelected = (optId) => (q.kind === 'multi'
                 ? Array.isArray(current) && current.includes(optId)
                 : current === optId);
               const toggle = (optId) => setProfileAnswers((prev) => {
                 const next = { ...prev };
-                if (!q.multi) {
+                if (q.kind !== 'multi') {
                   if (prev[q.id] === optId) delete next[q.id];
                   else next[q.id] = optId;
                 } else {
@@ -1004,10 +1040,13 @@ export default function CampaignSignupForm({
                 return next;
               });
               return (
-                <div key={q.id} style={{ marginBottom: 14 }}>
+                <div key={q.id} data-question-id={q.id} style={{ marginBottom: 14, maxWidth: '100%' }}>
                   <div style={{
                     fontSize: 13.5, fontWeight: 600, color: TOKENS.body, marginBottom: 8,
                     fontFamily: 'Albert Sans, system-ui, sans-serif',
+                    // Long unbroken owner-authored prompts must wrap, never
+                    // overflow 390px (studio-custom-questions §5).
+                    overflowWrap: 'anywhere', maxWidth: '100%',
                   }}>
                     {q.prompt}
                     {q.promptZh && profileQuestions.showZh !== false
@@ -1015,32 +1054,61 @@ export default function CampaignSignupForm({
                       : null}
                     {isRequired ? <span aria-hidden="true" style={{ color: themeColor || TOKENS.body }}> *</span> : null}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {q.options.map((opt) => {
-                      const on = isSelected(opt.id);
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => toggle(opt.id)}
-                          aria-pressed={on}
-                          style={{
-                            padding: '9px 14px',
-                            borderRadius: 999,
-                            border: `1px solid ${on ? (themeColor || TOKENS.body) : TOKENS.hairline}`,
-                            backgroundColor: on ? (themeColor || TOKENS.body) : (TOKENS.inputBg || '#ffffff'),
-                            color: on ? '#ffffff' : TOKENS.body,
-                            fontSize: 13.5,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            fontFamily: 'Albert Sans, system-ui, sans-serif',
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {q.kind === 'text' ? (
+                    <input
+                      type="text"
+                      value={typeof current === 'string' ? current : ''}
+                      maxLength={CUSTOM_ANSWER_TEXT_MAX}
+                      onChange={(e) => setProfileAnswers((prev) => {
+                        const next = { ...prev };
+                        if (e.target.value) next[q.id] = e.target.value; else delete next[q.id];
+                        return next;
+                      })}
+                      placeholder="Type your answer"
+                      aria-label={q.prompt}
+                      style={{
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box',
+                        padding: '12px 14px',
+                        borderRadius: 12,
+                        border: `1px solid ${TOKENS.hairline}`,
+                        backgroundColor: TOKENS.inputBg || '#ffffff',
+                        color: TOKENS.body,
+                        fontSize: 14.5,
+                        fontFamily: 'Albert Sans, system-ui, sans-serif',
+                      }}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxWidth: '100%' }}>
+                      {q.options.map((opt) => {
+                        const on = isSelected(opt.id);
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => toggle(opt.id)}
+                            aria-pressed={on}
+                            style={{
+                              padding: '9px 14px',
+                              borderRadius: 999,
+                              border: `1px solid ${on ? (themeColor || TOKENS.body) : TOKENS.hairline}`,
+                              backgroundColor: on ? (themeColor || TOKENS.body) : (TOKENS.inputBg || '#ffffff'),
+                              color: on ? '#ffffff' : TOKENS.body,
+                              fontSize: 13.5,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              fontFamily: 'Albert Sans, system-ui, sans-serif',
+                              overflowWrap: 'anywhere',
+                              maxWidth: '100%',
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

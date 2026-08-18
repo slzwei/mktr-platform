@@ -121,6 +121,23 @@ function buildPublicDesignConfigV2(dc) {
       requiredIds: Array.isArray(pq.requiredIds) ? [...pq.requiredIds] : [],
       showZh: pq.showZh !== false,
     };
+    // Custom question defs — leaf-picked to EXACTLY the funnel's render shape
+    // and re-filtered to membership (the clamp already guarantees defs ⊆
+    // questionIds; defensive here, like everything in this builder) —
+    // studio-custom-questions §3.
+    const custom = (Array.isArray(pq.custom) ? pq.custom : [])
+      .filter((q) => q && typeof q === 'object' && typeof q.id === 'string'
+        && pq.questionIds.includes(q.id))
+      .map((q) => ({
+        id: q.id,
+        type: q.type,
+        prompt: q.prompt,
+        ...(q.promptZh ? { promptZh: q.promptZh } : {}),
+        options: (Array.isArray(q.options) ? q.options : [])
+          .filter((o) => o && typeof o === 'object')
+          .map((o) => ({ id: o.id, label: o.label, ...(o.labelZh ? { labelZh: o.labelZh } : {}) })),
+      }));
+    if (custom.length) out.profileQuestions.custom = custom;
   }
   // media WITHOUT the internal legacy shadow (v1-URL bookkeeping for downgrade).
   const media = pick(dc.content?.media, ['kind', 'src', 'alt']);

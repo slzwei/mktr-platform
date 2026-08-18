@@ -776,6 +776,20 @@ export default function AdminV2LeadProfile() {
                     ))}
                 </Disclosure>
               )}
+              {/* Custom-question answers (studio-custom-questions §7) — the
+                  frozen {qid, prompt, values} snapshots from capture. Values
+                  include customer-typed free text: rendered as PLAIN React
+                  text only, never markup. */}
+              {Array.isArray(p.sourceMetadata?.customAnswers) && p.sourceMetadata.customAnswers.length > 0 && (
+                <Disclosure label="Custom answers" count={`${p.sourceMetadata.customAnswers.length}`}>
+                  {p.sourceMetadata.customAnswers.slice(0, 12).map((a, i) => (
+                    <div key={a?.qid || i} style={{ fontSize: 12, color: 'var(--ink-2)', padding: '4px 0', overflowWrap: 'anywhere' }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink-3)' }}>{String(a?.prompt || a?.qid || '')}</div>
+                      <div>{Array.isArray(a?.values) ? a.values.map((v) => String(v)).join(' · ') : ''}</div>
+                    </div>
+                  ))}
+                </Disclosure>
+              )}
             </Card>
 
             {hasScreening && (

@@ -231,19 +231,30 @@ export function makeProspectService(overrides = {}) {
       // consent can never be forged via the body (defence-in-depth beyond route stripUnknown).
       consentMetadata: _cm,
       quizResult: _qr, referralRef: _rref,
+      // profileAnswers is consumed by the scoring stage (scoreSubmission reads
+      // it off safeBody) — stripped here so it can never ride `incoming` into
+      // Prospect.create (studio-custom-questions §6; it was inert only because
+      // Sequelize ignores non-attribute keys).
+      profileAnswers: _pans,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
       // Marketplace flow extras — validated against the campaign config below
       // (never free text into sourceMetadata). NOTE: a caller-supplied
       // sourceMetadata object itself is preserved for internal callers (the
-      // public route strips it via Joi stripUnknown), but its `marketplace`
-      // subkey is server-built ONLY — scrubbed below before the validated
-      // values are written, so it can never be forged through the body.
+      // public route strips it via Joi stripUnknown), but its `marketplace`,
+      // `profileAnswers`, and `customAnswers` subkeys are server-built ONLY —
+      // scrubbed below before the validated values are written, so none can
+      // be forged through the body or an internal caller.
       marketplace: marketplaceRaw,
       ...bodyWithoutMeta
     } = safeBody;
     const incoming = { ...bodyWithoutMeta };
     if (incoming.sourceMetadata && typeof incoming.sourceMetadata === 'object') {
-      const { marketplace: _forgedMk, ...restSm } = incoming.sourceMetadata;
+      const {
+        marketplace: _forgedMk,
+        profileAnswers: _forgedPa,
+        customAnswers: _forgedCa,
+        ...restSm
+      } = incoming.sourceMetadata;
       incoming.sourceMetadata = restSm;
     }
 

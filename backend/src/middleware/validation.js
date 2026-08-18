@@ -1,6 +1,11 @@
 import Joi from 'joi';
 import { logger } from '../utils/logger.js';
 import { CAMPAIGN_TYPE_IDS } from '../utils/campaignTypes.js';
+import {
+  CUSTOM_ANSWER_TEXT_MAX,
+  MAX_CUSTOM_OPTIONS,
+  MAX_TOTAL_PROFILE_QUESTIONS,
+} from '../utils/designConfigV2.js';
 
 // Validation middleware.
 //
@@ -271,11 +276,15 @@ export const schemas = {
       .pattern(
         Joi.string().pattern(/^[a-z][a-z0-9_]{0,31}$/),
         Joi.alternatives().try(
-          Joi.string().max(32),
-          Joi.array().items(Joi.string().max(32)).max(8).unique()
+          // The string alternative also carries custom free-TEXT answers
+          // (studio-custom-questions §6) — semantic validation still drops any
+          // non-option value for select questions, so the wider bound never
+          // loosens library answers.
+          Joi.string().max(CUSTOM_ANSWER_TEXT_MAX),
+          Joi.array().items(Joi.string().max(32)).max(MAX_CUSTOM_OPTIONS).unique()
         )
       )
-      .max(5)
+      .max(MAX_TOTAL_PROFILE_QUESTIONS)
       .unknown(false)
       .optional(),
     // Ad attribution (IG/TikTok). Captured from the landing URL, stashed in
