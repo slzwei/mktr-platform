@@ -487,3 +487,146 @@ describe('the band reaches the Buy score (score/v3 — PR B seam)', () => {
     expect(profile.consumerScore).toBe(leadResult.score)
   })
 })
+
+describe('custom questions (studio-custom-questions §6–§7) — display-only answers', () => {
+  let cqCampaign
+  const V2_CQ = {
+    version: 2,
+    template: { id: 'express' },
+    profileQuestions: {
+      enabled: true,
+      questionIds: ['language', 'c_showrm', 'c_hobby1', 'c_notes1'],
+      requiredIds: [],
+      custom: [
+        { id: 'c_showrm', type: 'single', prompt: 'Which showroom is closer?', options: [{ id: 'o1', label: 'Jurong' }, { id: 'o2', label: 'Tampines' }] },
+        { id: 'c_hobby1', type: 'multi', prompt: 'What do you enjoy?', options: [{ id: 'o1', label: 'Golf' }, { id: 'o2', label: 'Travel' }, { id: 'o3', label: 'Food' }] },
+        { id: 'c_notes1', type: 'text', prompt: 'Anything else?' },
+      ],
+    },
+  }
+
+  beforeAll(async () => {
+    cqCampaign = await createTestCampaign(admin.id, {
+      name: `CQ IT ${Date.now()}`,
+      design_config: V2_CQ,
+    })
+  })
+
+  afterEach(() => {
+    delete process.env.ENRICHMENT_MAP_ARTIFACT_JOBS
+  })
+
+  it('accepts custom answers → frozen {qid, prompt, values} in questionIds order; library rides beside; ZERO observations minted from custom', async () => {
+    process.env.ENRICHMENT_MAP_ARTIFACT_JOBS = 'true'
+    const prospect = await capture({
+      campaignId: cqCampaign.id,
+      profileAnswers: {
+        language: 'zh',
+        c_showrm: 'o2',
+        c_hobby1: ['o3', 'o1'], // frozen in the DEF's option order, not submission order
+        c_notes1: '  Call after 6pm <b>pls</b>  ',
+      },
+    })
+    expect(prospect.sourceMetadata.profileAnswers).toEqual({ language: 'zh' })
+    expect(prospect.sourceMetadata.customAnswers).toEqual([
+      { qid: 'c_showrm', prompt: 'Which showroom is closer?', values: ['Tampines'] },
+      { qid: 'c_hobby1', prompt: 'What do you enjoy?', values: ['Golf', 'Food'] },
+      // Customer text: trimmed, stored as DATA (markup renders as literal text in admin)
+      { qid: 'c_notes1', prompt: 'Anything else?', values: ['Call after 6pm <b>pls</b>'] },
+    ])
+
+    // The fact ledger sees ONLY the library answer — custom answers mint
+    // zero observations by construction.
+    await drainAndQuiesce(prospect.id)
+    const obs = await ConsumerObservation.findAll({
+      where: { sourceProspectId: prospect.id, sourceArtifactId: `profile:${prospect.id}`, supersededAt: null },
+    })
+    expect(obs.map((o) => o.key)).toEqual(['identity.preferred_language'])
+  })
+
+  it('guided-review-TYPE campaign rejects answers via direct POST even with a non-guided template id (the repaired gate)', async () => {
+    const gr = await createTestCampaign(admin.id, {
+      name: `CQ GR ${Date.now()}`,
+      type: 'guided_review',
+      design_config: V2_CQ, // template.id is 'express' — the old gate missed this
+    })
+    const p = await capture({
+      campaignId: gr.id,
+      profileAnswers: { language: 'zh', c_showrm: 'o1' },
+    })
+    expect(p.sourceMetadata?.profileAnswers).toBeUndefined()
+    expect(p.sourceMetadata?.customAnswers).toBeUndefined()
+  })
+
+  it('drop-not-fail per answer: unknown option + whitespace-only text dropped, sibling survives; STRUCTURAL abuse (dup array) still 400s at Joi', async () => {
+    const p1 = await capture({
+      campaignId: cqCampaign.id,
+      profileAnswers: { c_showrm: 'o9', c_notes1: '   ' },
+    })
+    expect(p1.sourceMetadata?.customAnswers).toBeUndefined()
+
+    const p2 = await capture({
+      campaignId: cqCampaign.id,
+      profileAnswers: { c_showrm: 'o9', c_notes1: 'second attempt' },
+    })
+    expect(p2.sourceMetadata.customAnswers).toEqual([
+      { qid: 'c_notes1', prompt: 'Anything else?', values: ['second attempt'] },
+    ])
+
+    // Duplicate ids in a multi array are STRUCTURAL abuse — Joi's .unique()
+    // rejects before semantics (parent §5.4 step 1: 400, never a silent drop).
+    phoneSeq += 1
+    const res = await request(app)
+      .post('/api/prospects')
+      .send({
+        firstName: 'Enrich', lastName: 'Case',
+        email: `enrich-${phoneSeq}@example.com`, phone: phoneFor(phoneSeq),
+        leadSource: 'website', campaignId: cqCampaign.id,
+        profileAnswers: { c_hobby1: ['o1', 'o1'] },
+      })
+    expect(res.status).toBe(400)
+  })
+
+  it('customAnswers cannot be forged — public route strips body sourceMetadata; internal callers get the scrub', async () => {
+    // Public route: Joi stripUnknown drops sourceMetadata wholesale.
+    const p1 = await capture({
+      campaignId: cqCampaign.id,
+      sourceMetadata: { customAnswers: [{ qid: 'x', prompt: 'Forged', values: ['x'] }] },
+    })
+    expect(p1.sourceMetadata?.customAnswers).toBeUndefined()
+
+    // Internal caller: sourceMetadata is preserved — but the customAnswers /
+    // profileAnswers subkeys are server-built ONLY and get scrubbed.
+    phoneSeq += 1
+    const service = makeProspectService()
+    const { prospect } = await service.createProspect({
+      firstName: 'Forge', lastName: 'Case',
+      email: `forge-${phoneSeq}@example.com`, phone: phoneFor(phoneSeq),
+      leadSource: 'website', campaignId: cqCampaign.id,
+      sourceMetadata: {
+        customAnswers: [{ qid: 'x', prompt: 'Forged', values: ['x'] }],
+        profileAnswers: { language: 'zh' },
+        keepMe: 'yes',
+      },
+    }, admin)
+    const p2 = await Prospect.findByPk(prospect.id)
+    expect(p2.sourceMetadata.customAnswers).toBeUndefined()
+    expect(p2.sourceMetadata.profileAnswers).toBeUndefined()
+    expect(p2.sourceMetadata.keepMe).toBe('yes')
+  })
+
+  it('erasure sheds customAnswers via the allowlist rebuild', async () => {
+    const prospect = await capture({
+      campaignId: cqCampaign.id,
+      profileAnswers: { c_notes1: 'my private note' },
+      utm_source: 'ig',
+    })
+    expect(prospect.sourceMetadata.customAnswers).toHaveLength(1)
+    const erasure = makeErasureService()
+    await erasure.eraseConsumer(prospect.consumerId, { reason: 'test' })
+    const scrubbed = await Prospect.findByPk(prospect.id)
+    expect(scrubbed.sourceMetadata.customAnswers).toBeUndefined()
+    expect(scrubbed.sourceMetadata.erased).toBe(true)
+    expect(scrubbed.sourceMetadata.utm).toEqual({ utm_source: 'ig' })
+  })
+})

@@ -227,3 +227,116 @@ describe('StudioQuizPanel — the editing view over verbatim storage', () => {
     );
   });
 });
+
+// ── custom questions (studio-custom-questions §4) ──────────────────────────
+import { useState } from 'react';
+import { within } from '@testing-library/react';
+
+let latestDraft = null;
+
+function DraftHarness({ v1 }) {
+  const campaign = { id: 'c1', name: 'FairPrice Voucher', type: 'lead_generation', design_config: v1 };
+  const s = useStudioDoc(campaign);
+  const [cqDraft, setCqDraft] = useState(null);
+  latestDoc = s.doc;
+  latestDraft = cqDraft;
+  if (!s.doc) return null;
+  return <FormPanel doc={s.doc} setPath={s.setPath} mut={s.mut} cqDraft={cqDraft} onCqDraftChange={setCqDraft} />;
+}
+
+describe('FormPanel — custom questions (studio-custom-questions §4)', () => {
+  const CUSTOM_PQ = {
+    enabled: true,
+    questionIds: ['language', 'c_aaa111', 'c_bbb222'],
+    requiredIds: ['c_aaa111', 'language'],
+    showZh: false,
+    custom: [
+      { id: 'c_aaa111', type: 'single', prompt: 'Showroom?', options: [{ id: 'o1', label: 'East' }, { id: 'o2', label: 'West' }] },
+      { id: 'c_bbb222', type: 'text', prompt: 'Notes?', options: [] },
+    ],
+  };
+
+  it('the preservation matrix: master toggle, library tick, and required toggle never destroy the rest of the subtree', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={{ profileQuestions: CUSTOM_PQ }} Panel={FormPanel} />);
+
+    // Master toggle OFF: requiredIds/showZh/custom all survive (the old
+    // rebuild dropped requiredIds + showZh and would have deleted custom).
+    await user.click(screen.getByRole('switch', { name: /Ask profile questions/ }));
+    expect(latestDoc.profileQuestions).toEqual({ ...CUSTOM_PQ, enabled: false });
+    await user.click(screen.getByRole('switch', { name: /Ask profile questions/ }));
+    expect(latestDoc.profileQuestions).toEqual(CUSTOM_PQ);
+
+    // Library untick: custom block untouched; the library requiredId follows.
+    await user.click(screen.getByRole('switch', { name: /Which language do you prefer/ }));
+    expect(latestDoc.profileQuestions.questionIds).toEqual(['c_aaa111', 'c_bbb222']);
+    expect(latestDoc.profileQuestions.requiredIds).toEqual(['c_aaa111']);
+    expect(latestDoc.profileQuestions.custom).toEqual(CUSTOM_PQ.custom);
+    expect(latestDoc.profileQuestions.showZh).toBe(false);
+  });
+
+  it('authoring: Add opens a page-owned draft; commit is gated on completeness; commit writes def + id atomically', async () => {
+    const user = userEvent.setup();
+    render(<DraftHarness v1={{ profileQuestions: { enabled: true, questionIds: ['language'], requiredIds: [] } }} />);
+
+    await user.click(screen.getByTestId('custom-question-add'));
+    expect(latestDraft).not.toBeNull();
+    const draftBox = screen.getByTestId('custom-question-draft');
+    expect(screen.getByTestId('custom-question-draft-commit')).toBeDisabled();
+
+    await user.type(within(draftBox).getByLabelText('Question prompt'), 'Which outlet?');
+    expect(screen.getByTestId('custom-question-draft-commit')).toBeDisabled(); // options still unlabelled
+    await user.click(within(draftBox).getByRole('button', { name: 'Short text' }));
+    expect(screen.getByTestId('custom-question-draft-commit')).toBeEnabled();
+
+    await user.click(screen.getByTestId('custom-question-draft-commit'));
+    expect(latestDraft).toBeNull();
+    expect(screen.queryByTestId('custom-question-draft')).toBeNull();
+    const custom = latestDoc.profileQuestions.custom;
+    expect(custom).toHaveLength(1);
+    expect(custom[0].type).toBe('text');
+    expect(custom[0].prompt).toBe('Which outlet?');
+    expect(latestDoc.profileQuestions.questionIds).toEqual(['language', custom[0].id]);
+  });
+
+  it('Add question is disabled at the 5-question cap — a sixth can never enter the doc', () => {
+    const five = [1, 2, 3, 4, 5].map((n) => ({ id: `c_q${n}00000`, type: 'text', prompt: `Q${n}`, options: [] }));
+    render(<DraftHarness v1={{ profileQuestions: { enabled: true, questionIds: five.map((q) => q.id), requiredIds: [], custom: five } }} />);
+    expect(screen.getByTestId('custom-question-add')).toBeDisabled();
+    expect(screen.getByText(/Limit of 5 custom questions/)).toBeTruthy();
+  });
+
+  it('delete cleans questionIds + requiredIds; reorder moves within the custom segment only', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={{ profileQuestions: CUSTOM_PQ }} Panel={FormPanel} />);
+
+    await user.click(screen.getByRole('button', { name: 'Move question 1 down' }));
+    expect(latestDoc.profileQuestions.questionIds).toEqual(['language', 'c_bbb222', 'c_aaa111']);
+    expect(latestDoc.profileQuestions.custom.map((q) => q.id)).toEqual(['c_bbb222', 'c_aaa111']);
+
+    await user.click(screen.getByRole('button', { name: 'Delete question 2' }));
+    expect(latestDoc.profileQuestions.questionIds).toEqual(['language', 'c_bbb222']);
+    expect(latestDoc.profileQuestions.requiredIds).toEqual(['language']);
+    expect(latestDoc.profileQuestions.custom.map((q) => q.id)).toEqual(['c_bbb222']);
+  });
+
+  it('an incomplete EDIT of a committed question stays local — the doc keeps the last complete value, with a badge', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={{ profileQuestions: CUSTOM_PQ }} Panel={FormPanel} />);
+    const row = screen.getByTestId('custom-question-c_aaa111');
+    const promptInput = within(row).getByLabelText('Question prompt');
+    await user.clear(promptInput);
+    expect(latestDoc.profileQuestions.custom.find((q) => q.id === 'c_aaa111').prompt).toBe('Showroom?');
+    expect(within(row).getByText('incomplete — not saved')).toBeTruthy();
+    await user.type(promptInput, 'Which branch?');
+    expect(latestDoc.profileQuestions.custom.find((q) => q.id === 'c_aaa111').prompt).toBe('Which branch?');
+  });
+
+  it('the Required toggle on a custom question writes the shared requiredIds', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={{ profileQuestions: { ...CUSTOM_PQ, requiredIds: [] } }} Panel={FormPanel} />);
+    const row = screen.getByTestId('custom-question-c_bbb222');
+    await user.click(within(row).getByRole('switch', { name: /Required/ }));
+    expect(latestDoc.profileQuestions.requiredIds).toEqual(['c_bbb222']);
+  });
+});

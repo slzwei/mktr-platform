@@ -14,13 +14,17 @@ const PRIMARY_LABELS = {
 
 const SAVE_FIRST_KINDS = ['copy', 'share'];
 
-export default function StudioGuardModal({ guard, saving, onPrimary, onDiscard, onCancel }) {
+export default function StudioGuardModal({ guard, saving, primaryBlockedReason, onPrimary, onDiscard, onCancel }) {
   if (!guard) return null;
   const saveFirst = SAVE_FIRST_KINDS.includes(guard.kind);
   const title = saveFirst ? 'Save first?' : 'Unsaved changes';
   const body = saveFirst
     ? 'Links always reflect the last saved design. Save now so what you share is what people see.'
     : 'You have unsaved changes. Save them, or discard and leave.';
+  // studio-custom-questions §4: an INCOMPLETE custom-question draft cannot be
+  // committed, so the save path is blocked (with the reason shown) until the
+  // operator completes it — or explicitly chooses Discard.
+  const primaryBlocked = !saving && !!primaryBlockedReason;
 
   return (
     <div
@@ -52,6 +56,11 @@ export default function StudioGuardModal({ guard, saving, onPrimary, onDiscard, 
       >
         <div style={{ fontWeight: 700, fontSize: 15.5, marginBottom: 6 }}>{title}</div>
         <div style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--ink-2, #5B616E)', marginBottom: 16 }}>{body}</div>
+        {primaryBlocked && (
+          <div style={{ fontSize: 12, lineHeight: 1.5, color: '#B97D10', marginBottom: 12 }}>
+            {primaryBlockedReason}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <button type="button" className="av2-btn av2-btn--ghost" onClick={onCancel} disabled={saving}>
             Keep editing
@@ -61,7 +70,7 @@ export default function StudioGuardModal({ guard, saving, onPrimary, onDiscard, 
               Discard changes
             </button>
           )}
-          <button type="button" className="av2-btn av2-btn--primary" onClick={onPrimary} disabled={saving}>
+          <button type="button" className="av2-btn av2-btn--primary" onClick={onPrimary} disabled={saving || primaryBlocked}>
             {saving ? 'Saving…' : PRIMARY_LABELS[guard.kind] || 'Save & continue'}
           </button>
         </div>

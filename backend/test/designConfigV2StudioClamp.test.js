@@ -257,3 +257,91 @@ describe('featuredDrop.endsAt inherits luckyDraw.closesAt (PR-2, F9)', () => {
     expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
   });
 });
+
+describe('clampProfileQuestions — custom questions (studio-custom-questions §3)', () => {
+  const v2 = (pq) => ({
+    version: 2,
+    template: { id: 'express', params: {} },
+    theme: { preset: 'warm-cream' },
+    content: {},
+    form: {},
+    distribution: { host: 'redeem' },
+    profileQuestions: pq,
+  });
+  const clampPq = (pq) => clampDesignConfigV2(v2(pq), undefined, 'admin').profileQuestions;
+
+  it('sanitizes the full matrix: bad shapes/types/ids dropped, dup option ids dropped, labels/prompts trimmed, text rows lose options', () => {
+    const out = clampPq({
+      enabled: true,
+      questionIds: ['language', 'c_ok0001', 'c_txt001', 'c_badid', 'not_real'],
+      requiredIds: ['c_ok0001', 'c_ghost1'],
+      custom: [
+        { id: 'c_ok0001', type: 'single', prompt: '  Which?  ', options: [{ id: 'o1', label: ' A ' }, { id: 'o1', label: 'dup' }, { id: 'o2', label: 'B' }, { id: 'BAD ID', label: 'x' }] },
+        { id: 'c_txt001', type: 'text', prompt: 'Notes', options: [{ id: 'o1', label: 'stripped' }] },
+        { id: 'c_badid', type: 'single', prompt: 'x' }, // id fails the pattern? (c_badid matches — but no options → dropped)
+        { id: 'not-valid', type: 'single', prompt: 'x', options: [] },
+        { id: 'c_notype', type: 'wat', prompt: 'x', options: [] },
+        'garbage',
+      ],
+    });
+    expect(out.questionIds).toEqual(['language', 'c_ok0001', 'c_txt001']);
+    expect(out.requiredIds).toEqual(['c_ok0001']);
+    expect(out.custom).toEqual([
+      { id: 'c_ok0001', type: 'single', prompt: 'Which?', options: [{ id: 'o1', label: 'A' }, { id: 'o2', label: 'B' }] },
+      { id: 'c_txt001', type: 'text', prompt: 'Notes', options: [] },
+    ]);
+  });
+
+  it('cap ordering: 5 unreferenced defs never cost a referenced one; a 9th option is dropped; caps hold (5 custom / 10 total)', () => {
+    const unref = [1, 2, 3, 4, 5].map((n) => ({ id: `c_unref${n}`, type: 'text', prompt: `U${n}`, options: [] }));
+    const out = clampPq({
+      enabled: true,
+      questionIds: ['c_real01'],
+      requiredIds: [],
+      custom: [...unref, { id: 'c_real01', type: 'text', prompt: 'The real one', options: [] }],
+    });
+    expect(out.questionIds).toEqual(['c_real01']);
+    expect(out.custom.map((d) => d.id)).toEqual(['c_real01']);
+
+    const nineOptions = Array.from({ length: 9 }, (_, i) => ({ id: `o${i + 1}`, label: `L${i + 1}` }));
+    const capped = clampPq({
+      enabled: true,
+      questionIds: ['c_opts01'],
+      custom: [{ id: 'c_opts01', type: 'multi', prompt: 'Many?', options: nineOptions }],
+    });
+    expect(capped.custom[0].options).toHaveLength(8);
+
+    const six = [1, 2, 3, 4, 5, 6].map((n) => ({ id: `c_q${n}0000`, type: 'text', prompt: `Q${n}`, options: [] }));
+    const sixOut = clampPq({ enabled: true, questionIds: six.map((d) => d.id), custom: six });
+    expect(sixOut.questionIds).toHaveLength(5);
+    expect(sixOut.custom).toHaveLength(5);
+  });
+
+  it('a campaign with ONLY custom questions is fully valid; zero-valid disables; existing docs keep their exact key set', () => {
+    const onlyCustom = clampPq({
+      enabled: true,
+      questionIds: ['c_solo01'],
+      custom: [{ id: 'c_solo01', type: 'text', prompt: 'Solo', options: [] }],
+    });
+    expect(onlyCustom.enabled).toBe(true);
+
+    const zeroValid = clampPq({ enabled: true, questionIds: ['c_ghost1'], custom: [] });
+    expect(zeroValid.enabled).toBe(false);
+
+    // No custom input ⇒ no custom key — existing docs round-trip byte-stable.
+    const legacyShape = clampPq({ enabled: true, questionIds: ['language'], requiredIds: [] });
+    expect(Object.keys(legacyShape).sort()).toEqual(['enabled', 'questionIds', 'requiredIds', 'showZh']);
+  });
+
+  it('clamp is IDEMPOTENT over a custom-question doc (Studio adopts the clamped response — no phantom dirty)', () => {
+    const doc = v2({
+      enabled: true,
+      questionIds: ['language', 'c_ok0001'],
+      requiredIds: ['c_ok0001'],
+      custom: [{ id: 'c_ok0001', type: 'multi', prompt: 'Pick', promptZh: '选', options: [{ id: 'o1', label: 'A', labelZh: '甲' }, { id: 'o2', label: 'B' }] }],
+    });
+    const once = clampDesignConfigV2(doc, undefined, 'admin');
+    const twice = clampDesignConfigV2(once, undefined, 'admin');
+    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+  });
+});

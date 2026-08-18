@@ -677,6 +677,23 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     [campaign?.id, templateId, briefOrName, startRequest, noteCall, fail]
   );
 
+  /** profileQuestions is never the AI's to change, in EITHER direction
+   * (studio-custom-questions §5b): every whole-doc replacement this hook
+   * performs — pick, re-pick, keep-toggle, revert — grafts the LIVE doc's
+   * subtree over the replacement, so a question edit made before or during a
+   * proposal can never be destroyed by an AI interaction. */
+  const withLivePQ = useCallback((nextDoc) => {
+    if (!nextDoc || typeof nextDoc !== 'object') return nextDoc;
+    const live = docRef.current;
+    const out = { ...nextDoc };
+    if (live && typeof live === 'object' && 'profileQuestions' in live) {
+      out.profileQuestions = clone(live.profileQuestions);
+    } else {
+      delete out.profileQuestions;
+    }
+    return out;
+  }, []);
+
   /** Use this look — whole-doc swap built from the pre-proposal doc. */
   const pickLook = useCallback(
     (index) => {
@@ -685,7 +702,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       const baseDoc = proposalRef.current ? proposalRef.current.prev.doc : clone(docRef.current);
       if (lookBlockedReason(docRef.current, look)) return; // belt — the button is disabled with the reason
       const keep = { template: false, theme: false, copy: false };
-      replaceDoc(buildLookDoc(baseDoc, look, keep));
+      replaceDoc(withLivePQ(buildLookDoc(baseDoc, look, keep)));
       setProposal({ prev: { doc: baseDoc }, look, keep, adopted: false });
       setMediaHint(look.media?.note ? { kind: look.media.kind || 'none', note: look.media.note } : null);
       setSugs([]);
@@ -694,7 +711,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       setPhase('proposal');
       onPickLookRef.current?.(); // F12: subject → page, jump cleared, funnel remount
     },
-    [replaceDoc]
+    [replaceDoc, withLivePQ]
   );
 
   /** Keep-my-template/theme/copy — rebuild the doc from prev with the toggle. */
@@ -703,10 +720,10 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       const p = proposalRef.current;
       if (!p || p.adopted) return;
       const keep = { ...p.keep, [key]: !p.keep[key] };
-      replaceDoc(buildLookDoc(p.prev.doc, p.look, keep));
+      replaceDoc(withLivePQ(buildLookDoc(p.prev.doc, p.look, keep)));
       setProposal({ ...p, keep });
     },
-    [replaceDoc]
+    [replaceDoc, withLivePQ]
   );
 
   /** Discard / ↩ Revert look — restore the pre-proposal doc (works before AND
@@ -714,13 +731,13 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   const revertLook = useCallback(() => {
     const p = proposalRef.current;
     if (!p || !replaceDoc) return;
-    replaceDoc(p.prev.doc);
+    replaceDoc(withLivePQ(p.prev.doc));
     setProposal(null);
     setMediaHint(null);
     setSugs([]);
     setScope(null);
     setPhase(looksRef.current.length ? 'looks' : 'brief');
-  }, [replaceDoc]);
+  }, [replaceDoc, withLivePQ]);
 
   /** Adopt — all-three-kept is a no-op discard (F9); otherwise the look's
    * landed copy becomes an `applied` review list (old = pre-look values),

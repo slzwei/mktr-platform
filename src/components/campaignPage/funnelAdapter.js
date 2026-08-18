@@ -66,6 +66,11 @@ export function deriveFunnelProps(adapted, { onSubmit, previewMode = false, prev
         questionIds: doc.profileQuestions.questionIds,
         requiredIds: Array.isArray(doc.profileQuestions.requiredIds) ? doc.profileQuestions.requiredIds : [],
         showZh: doc.profileQuestions.showZh !== false,
+        // Owner-authored custom question defs (studio-custom-questions §5) —
+        // already leaf-picked upstream (public projection / Studio raw doc).
+        ...(Array.isArray(doc.profileQuestions.custom) && doc.profileQuestions.custom.length
+          ? { custom: doc.profileQuestions.custom }
+          : {}),
       }
       : undefined,
   };

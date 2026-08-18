@@ -17,6 +17,10 @@ const CONSTANT_EXPORTS = [
   'PRESET_IDS', 'LIMITS', 'FIELD_IDS', 'LOCKED_FIELD_IDS', 'V1_TO_V2_FIELD_ID',
   'V2_TO_V1_FIELD_ID', 'MARKETPLACE_V1_TO_V2', 'V1_CONSUMED_KEYS', 'V2_TOP_KEYS',
   'QR_V1_TO_V2', 'QR_V2_TO_V1',
+  // Custom profile questions (studio-custom-questions §2). RegExp constants
+  // compare by source+flags under toEqual, so drift still fails the build.
+  'MAX_CUSTOM_QUESTIONS', 'MAX_TOTAL_PROFILE_QUESTIONS', 'MAX_CUSTOM_OPTIONS',
+  'CUSTOM_QUESTION_ID_RE', 'CUSTOM_OPTION_ID_RE', 'CUSTOM_ANSWER_TEXT_MAX',
 ];
 
 const FUNCTION_EXPORTS = [
@@ -24,6 +28,7 @@ const FUNCTION_EXPORTS = [
   'downgradeDesignConfig', 'readLegacyView', 'resolveTheme', 'defaultFields',
   'fieldsFromV1', 'fieldsToV1', 'marketplaceToV1', 'nearestPresetForAccent',
   'onColor', 'youTubeIdFrom', 'getMarketplaceListedFromDoc',
+  'sanitizeQuestionText',
 ];
 
 describe('designConfigV2 twins — constant drift', () => {
@@ -196,5 +201,66 @@ describe('L7 — content.submitFontSize is v2-only in BOTH twins', () => {
         expect(twin.upgradeDesignConfig(v1).content?.submitFontSize).toBeUndefined();
       }
     }
+  });
+});
+
+describe('designConfigV2 twins — sanitizeQuestionText behavioral parity (studio-custom-questions §2)', () => {
+  const HOSTILE = [
+    '  plain  ',
+    'ok',
+    '',
+    null,
+    undefined,
+    42,
+    '\u0007ctrl',
+    'A\u202Ebidi\u202CB',
+    '\u200E\u200Fmarks',
+    '\u2066iso\u2069',
+    `${'x'.repeat(300)}  `,
+    '   \u202E   ',
+    '<b>html stays literal text</b>',
+  ];
+  it('same output on both imports for every hostile input × caps', () => {
+    for (const input of HOSTILE) {
+      for (const max of [undefined, 0, 5, 140, 200]) {
+        expect(mirror.sanitizeQuestionText(input, max)).toBe(backend.sanitizeQuestionText(input, max));
+      }
+    }
+  });
+  it('strips controls + bidi, trims, caps — and never invents content', () => {
+    expect(backend.sanitizeQuestionText('A\u202Ebidi\u202CB', 140)).toBe('AbidiB');
+    expect(backend.sanitizeQuestionText('   \u202E   ', 140)).toBe('');
+    expect(backend.sanitizeQuestionText('x'.repeat(300), 200)).toHaveLength(200);
+    expect(backend.sanitizeQuestionText('<b>x</b>', 140)).toBe('<b>x</b>'); // not an HTML stripper — React escaping owns render safety
+  });
+});
+
+describe('designConfigV2 twins — custom-question subtree preservation', () => {
+  const V2_WITH_CUSTOM = {
+    version: 2,
+    template: { id: 'express', params: {} },
+    theme: { preset: 'warm-cream', accent: null },
+    content: {},
+    form: { fields: [], verification: 'sms', gates: {} },
+    distribution: { host: 'redeem' },
+    profileQuestions: {
+      enabled: true,
+      questionIds: ['language', 'c_abc123'],
+      requiredIds: ['c_abc123'],
+      showZh: true,
+      custom: [
+        { id: 'c_abc123', type: 'single', prompt: 'Which outlet?', options: [{ id: 'o1', label: 'East' }, { id: 'o2', label: 'West' }] },
+      ],
+    },
+  };
+  it('upgrade of a v2 doc preserves the custom subtree verbatim on both twins', () => {
+    const m = mirror.upgradeDesignConfig(V2_WITH_CUSTOM);
+    const b = backend.upgradeDesignConfig(V2_WITH_CUSTOM);
+    expect(m).toEqual(b);
+    expect(m.profileQuestions).toEqual(V2_WITH_CUSTOM.profileQuestions);
+  });
+  it('the legacy downgrade view still excludes profileQuestions (marketplace parity, studio-custom-questions §1)', () => {
+    expect(mirror.downgradeDesignConfig(V2_WITH_CUSTOM).profileQuestions).toBeUndefined();
+    expect(backend.downgradeDesignConfig(V2_WITH_CUSTOM).profileQuestions).toBeUndefined();
   });
 });

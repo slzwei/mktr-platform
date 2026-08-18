@@ -39,3 +39,35 @@ describe('StudioGuardModal', () => {
     expect(screen.getByRole('button', { name: 'Discard changes' })).toBeDisabled();
   });
 });
+
+describe('StudioGuardModal — incomplete custom-question draft blocks the primary (studio-custom-questions §4)', () => {
+  it('disables Save & continue with the reason shown; Discard stays available', async () => {
+    const user = userEvent.setup();
+    const onPrimary = vi.fn();
+    const onDiscard = vi.fn();
+    render(
+      <StudioGuardModal
+        guard={{ kind: 'switch' }}
+        primaryBlockedReason="The custom question you are adding is incomplete — finish it in the Form panel (or discard it) before saving."
+        onPrimary={onPrimary}
+        onDiscard={onDiscard}
+        onCancel={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Save & continue' })).toBeDisabled();
+    expect(screen.getByText(/incomplete — finish it in the Form panel/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+    expect(onPrimary).not.toHaveBeenCalled();
+  });
+
+  it('no reason ⇒ primary works exactly as before', async () => {
+    const user = userEvent.setup();
+    const onPrimary = vi.fn();
+    render(
+      <StudioGuardModal guard={{ kind: 'switch' }} onPrimary={onPrimary} onDiscard={vi.fn()} onCancel={vi.fn()} />
+    );
+    await user.click(screen.getByRole('button', { name: 'Save & continue' }));
+    expect(onPrimary).toHaveBeenCalledTimes(1);
+  });
+});

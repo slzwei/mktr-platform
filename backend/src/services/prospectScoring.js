@@ -19,7 +19,13 @@
 import { scoreQuiz } from './quizScoringService.js';
 import { getProfileQuestion, resolveAnswer as resolveProfileAnswer } from '../utils/profileQuestionLibrary.js';
 import { validateFact } from '../utils/factTaxonomy.js';
-import { isV2 as isV2DesignConfig } from '../utils/designConfigV2.js';
+import {
+  isV2 as isV2DesignConfig,
+  CUSTOM_ANSWER_TEXT_MAX,
+  LIMITS,
+  MAX_CUSTOM_OPTIONS,
+  sanitizeQuestionText,
+} from '../utils/designConfigV2.js';
 
 /**
  * @param {object} args
@@ -93,6 +99,13 @@ export function makeScoringStage({ d }) {
         && isV2DesignConfig(dcRaw)
         && pq?.enabled === true
         && dcRaw?.template?.id !== 'guided_review'
+        // The leg the parent plan intended (studio-custom-questions §6, Codex
+        // R1 #7): the UI branches on campaign TYPE while this gate checked only
+        // template.id — a guided-review-type campaign carrying a v2 doc with a
+        // different template id accepted hidden answers via direct POST. Both
+        // checks stay (belt + braces); this also closes the same latent gap
+        // for LIBRARY answers.
+        && sourceCampaign?.type !== 'guided_review'
         && Array.isArray(pq?.questionIds);
       if (eligible) {
         const acceptedIds = {};
@@ -110,6 +123,52 @@ export function makeScoringStage({ d }) {
           acceptedProfileFacts.push({ key: q.factKey, value });
           acceptedIds[qid] = provided;
         }
+        // --- Custom questions (studio-custom-questions §6) — DISPLAY-ONLY ---
+        // Iterate the campaign's questionIds in order (never attacker keys),
+        // taking ids that resolve to a campaign custom def. Accepted answers
+        // freeze the EN prompt + EN labels (or the sanitized literal text)
+        // server-side, so a later Studio edit can never re-caption history.
+        // They deliberately NEVER touch acceptedProfileFacts — zero
+        // consumer-observation facts by construction.
+        const customById = new Map((Array.isArray(pq.custom) ? pq.custom : [])
+          .filter((q) => q && typeof q === 'object' && typeof q.id === 'string')
+          .map((q) => [q.id, q]));
+        const customAnswers = [];
+        for (const qid of pq.questionIds) {
+          const def = customById.get(qid);
+          if (!def) continue;
+          const provided = rawAnswers[qid];
+          if (provided === undefined || provided === null || provided === '') continue;
+          // Belt + braces vs direct-DB-authored defs: freeze SANITIZED copy.
+          const prompt = sanitizeQuestionText(def.prompt, LIMITS.cqPrompt);
+          if (!prompt) continue;
+          const options = Array.isArray(def.options) ? def.options.filter((o) => o && typeof o === 'object') : [];
+          let values = null;
+          if (def.type === 'text') {
+            if (typeof provided === 'string') {
+              const text = sanitizeQuestionText(provided, CUSTOM_ANSWER_TEXT_MAX);
+              if (text) values = [text];
+              else continue; // empty after trim = skipped, not an abuse signal
+            }
+          } else if (def.type === 'single') {
+            const opt = typeof provided === 'string' ? options.find((o) => o.id === provided) : null;
+            if (opt) values = [sanitizeQuestionText(opt.label, LIMITS.cqOption)].filter(Boolean);
+          } else if (def.type === 'multi') {
+            if (Array.isArray(provided) && provided.length && provided.length <= MAX_CUSTOM_OPTIONS
+              && new Set(provided).size === provided.length
+              && provided.every((v) => typeof v === 'string')) {
+              const chosen = options.filter((o) => provided.includes(o.id));
+              if (chosen.length === provided.length) {
+                values = chosen.map((o) => sanitizeQuestionText(o.label, LIMITS.cqOption)).filter(Boolean);
+              }
+            }
+          }
+          if (!values || !values.length) {
+            dropped.push(qid); // ids only — never answer content (log-injection surface)
+            continue;
+          }
+          customAnswers.push({ qid, prompt, values });
+        }
         if (dropped.length) {
           d.logger.warn('[enrichment] profile answers dropped (invalid)', {
             campaignId, dropped,
@@ -117,6 +176,9 @@ export function makeScoringStage({ d }) {
         }
         if (Object.keys(acceptedIds).length) {
           sourceMetadataPatch.profileAnswers = acceptedIds;
+        }
+        if (customAnswers.length) {
+          sourceMetadataPatch.customAnswers = customAnswers;
         }
       } else if (rawAnswers && typeof rawAnswers === 'object' && Object.keys(rawAnswers).length) {
         d.logger.warn('[enrichment] profile answers ignored (campaign not eligible)', {

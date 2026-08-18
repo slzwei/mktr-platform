@@ -26,16 +26,22 @@
 
 import {
   classifyDesignConfigVersion,
+  CUSTOM_OPTION_ID_RE,
+  CUSTOM_QUESTION_ID_RE,
   defaultFields,
   FIELD_IDS,
   FONT_IDS,
   LIMITS,
   LOCKED_FIELD_IDS,
   MARKETPLACE_V1_TO_V2,
+  MAX_CUSTOM_OPTIONS,
+  MAX_CUSTOM_QUESTIONS,
+  MAX_TOTAL_PROFILE_QUESTIONS,
   QR_V1_TO_V2,
   marketplaceToV1,
   PRESET_IDS,
   readLegacyView,
+  sanitizeQuestionText,
   TEMPLATE_REGISTRY,
   THEME_BACKGROUNDS,
   THEME_PRESETS,
@@ -58,21 +64,76 @@ import { PROFILE_QUESTION_IDS, MAX_PROFILE_QUESTIONS } from './profileQuestionLi
  * profileQuestions is a V2_TOP_KEY, so the unknown-passthrough below can
  * never overwrite this sanitized value with raw input (Codex PR0 R1 #7).
  */
+/**
+ * §3 step 1 (studio-custom-questions): validity-sanitize custom[] WITHOUT a
+ * count cap — membership caps in the questionIds pass, so an unreferenced
+ * def can never consume the cap ahead of a referenced one (Codex R2 #3).
+ * Returns a Map id → sanitized def.
+ */
+function sanitizeCustomQuestionDefs(raw) {
+  const defs = new Map();
+  for (const row of Array.isArray(raw) ? raw : []) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const id = row.id;
+    if (typeof id !== 'string' || !CUSTOM_QUESTION_ID_RE.test(id)) continue;
+    if (defs.has(id) || PROFILE_QUESTION_IDS.includes(id)) continue; // the c_ prefix already precludes library collisions; checked anyway
+    const type = row.type === 'single' || row.type === 'multi' || row.type === 'text' ? row.type : null;
+    if (!type) continue;
+    const prompt = sanitizeQuestionText(row.prompt, LIMITS.cqPrompt);
+    if (!prompt) continue;
+    const promptZh = sanitizeQuestionText(row.promptZh, LIMITS.cqPrompt);
+    const options = [];
+    if (type !== 'text') {
+      const seenOpt = new Set();
+      for (const opt of Array.isArray(row.options) ? row.options : []) {
+        if (!opt || typeof opt !== 'object' || Array.isArray(opt)) continue;
+        if (typeof opt.id !== 'string' || !CUSTOM_OPTION_ID_RE.test(opt.id) || seenOpt.has(opt.id)) continue;
+        const label = sanitizeQuestionText(opt.label, LIMITS.cqOption);
+        if (!label) continue;
+        seenOpt.add(opt.id);
+        const labelZh = sanitizeQuestionText(opt.labelZh, LIMITS.cqOption);
+        options.push({ id: opt.id, label, ...(labelZh ? { labelZh } : {}) });
+        if (options.length >= MAX_CUSTOM_OPTIONS) break;
+      }
+      if (options.length < 2) continue; // a select question needs a real choice
+    }
+    defs.set(id, { id, type, prompt, ...(promptZh ? { promptZh } : {}), options });
+  }
+  return defs;
+}
+
 function clampProfileQuestions(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { enabled: false, questionIds: [], requiredIds: [], showZh: true };
   }
+  const customDefs = sanitizeCustomQuestionDefs(raw.custom);
   const seen = new Set();
   const questionIds = [];
+  let libraryCount = 0;
+  let customCount = 0;
   for (const id of Array.isArray(raw.questionIds) ? raw.questionIds : []) {
-    if (typeof id !== 'string' || seen.has(id) || !PROFILE_QUESTION_IDS.includes(id)) continue;
+    if (typeof id !== 'string' || seen.has(id)) continue;
+    if (PROFILE_QUESTION_IDS.includes(id)) {
+      if (libraryCount >= MAX_PROFILE_QUESTIONS) continue;
+      libraryCount += 1;
+    } else if (customDefs.has(id)) {
+      if (customCount >= MAX_CUSTOM_QUESTIONS) continue;
+      customCount += 1;
+    } else {
+      continue;
+    }
     seen.add(id);
     questionIds.push(id);
-    if (questionIds.length >= MAX_PROFILE_QUESTIONS) break;
+    if (questionIds.length >= MAX_TOTAL_PROFILE_QUESTIONS) break;
   }
+  // §3 step 3: store only defs REFERENCED by the final membership, in their
+  // original array order — no server-side drafts, and `custom` is omitted
+  // entirely when empty so existing docs round-trip byte-identically.
+  const custom = [...customDefs.values()].filter((d) => seen.has(d.id));
   // requiredIds ⊆ questionIds (a question can't be required if it isn't
   // asked); showZh defaults ON (hide the inline Chinese only on explicit
-  // false) — owner controls added 2026-07-26.
+  // false) — owner controls added 2026-07-26. Custom ids participate in both
+  // mechanisms (studio-custom-questions §2).
   const requiredIds = [...new Set(Array.isArray(raw.requiredIds) ? raw.requiredIds : [])]
     .filter((id) => questionIds.includes(id));
   return {
@@ -80,6 +141,7 @@ function clampProfileQuestions(raw) {
     questionIds,
     requiredIds,
     showZh: raw.showZh !== false,
+    ...(custom.length ? { custom } : {}),
   };
 }
 

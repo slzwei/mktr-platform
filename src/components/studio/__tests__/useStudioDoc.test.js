@@ -259,3 +259,50 @@ describe('sanity — twins agreement', () => {
     expect(isV2(result.current.doc)).toBe(true);
   });
 });
+
+describe('useStudioDoc — save with an explicit snapshot (studio-custom-questions §4)', () => {
+  it('PUTs the OVERRIDE doc (not the render-captured one) and the adoption identity still holds', async () => {
+    const campaign = v2Campaign();
+    const { result } = renderHook(() => useStudioDoc(campaign));
+    const committed = {
+      ...result.current.doc,
+      profileQuestions: {
+        enabled: true,
+        questionIds: ['c_new001'],
+        requiredIds: [],
+        showZh: true,
+        custom: [{ id: 'c_new001', type: 'text', prompt: 'Note?', options: [] }],
+      },
+    };
+    Campaign.update.mockResolvedValue({ id: 'c2', design_config: committed });
+
+    let res;
+    await act(async () => {
+      // The guard handler derives the committed doc synchronously and hands
+      // the SAME reference to save — the PUT body must be the committed doc.
+      res = await result.current.save({}, { snapshot: committed });
+    });
+    expect(res.ok).toBe(true);
+    expect(Campaign.update).toHaveBeenCalledWith('c2', { design_config: committed });
+    // No intervening edit → the server doc is adopted as the working doc
+    // (prev === snapshot reference identity survived the override path).
+    expect(result.current.doc.profileQuestions.custom[0].id).toBe('c_new001');
+    expect(result.current.dirty).toBe(false);
+  });
+
+  it('the draw invariant runs against the OVERRIDE doc', async () => {
+    const campaign = v2Campaign();
+    const { result } = renderHook(() => useStudioDoc(campaign));
+    const badDraw = {
+      ...result.current.doc,
+      luckyDraw: { enabled: true, closesAt: 'not-a-date' },
+    };
+    let res;
+    await act(async () => {
+      res = await result.current.save({}, { snapshot: badDraw });
+    });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('draw-invariant');
+    expect(Campaign.update).not.toHaveBeenCalled();
+  });
+});

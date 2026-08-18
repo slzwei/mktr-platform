@@ -159,16 +159,25 @@ export default function useStudioDoc(campaign) {
   // `extra` merges into the PUT body — the guard modal's "Save & continue"
   // passes { slug } when a slug draft is pending so nothing is silently lost
   // (slug is a campaign column; same endpoint, own field).
-  const save = useCallback(async (extra = {}) => {
-    if (!doc || !campaign?.id || saving) return { ok: false, reason: 'busy' };
-    const drawProblem = drawInvariantProblem(doc);
+  //
+  // `opts.snapshot` (studio-custom-questions §4): an explicit post-commit doc
+  // to persist. `mut()` schedules setDoc while this closure captures the doc
+  // of the CURRENT render — so "commit then save()" would PUT the pre-commit
+  // doc. A caller that just derived the committed doc synchronously passes it
+  // here; we adopt it as state with the SAME reference (no clone), so the
+  // in-flight-edit adoption below (`prev === snapshot`) still holds.
+  const save = useCallback(async (extra = {}, { snapshot: snapshotOverride } = {}) => {
+    const base = snapshotOverride && typeof snapshotOverride === 'object' ? snapshotOverride : doc;
+    if (!base || !campaign?.id || saving) return { ok: false, reason: 'busy' };
+    const drawProblem = drawInvariantProblem(base);
     if (drawProblem) {
       setSaveError({ kind: 'draw-invariant', section: 'form', ...drawProblem });
       return { ok: false, reason: 'draw-invariant', problem: drawProblem };
     }
     setSaving(true);
     setSaveError(null);
-    const snapshot = doc;
+    const snapshot = base;
+    if (snapshotOverride) setDoc(snapshot);
     try {
       const updated = await Campaign.update(campaign.id, { design_config: snapshot, ...extra });
       const serverDoc = updated?.design_config;
