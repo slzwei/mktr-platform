@@ -45,7 +45,10 @@ import {
   resolveMetaPixelId, resolveTikTokPixelId,
   resolveGoogleAdsConversionId, resolveGoogleAdsLeadLabel,
 } from '../lib/pixelIds';
-import { shouldTrackGoogle, initGoogleAds, trackGoogleLead } from '../lib/googleAds';
+import {
+  shouldTrackGoogle, initGoogleAds, trackGoogleLead,
+  setGoogleUserData, clearGoogleUserData,
+} from '../lib/googleAds';
 import { trackFunnelEvent } from '../lib/pixelCustom';
 
 export default function LeadCapture() {
@@ -425,9 +428,17 @@ export default function LeadCapture() {
         const googleId = resolveGoogleAdsConversionId(campaign);
         if (shouldTrackGoogle({ ...trackCtx, conversionId: googleId })) {
           initGoogleAds(googleId);
+          // Enhanced Conversions: plain values, the tag hashes them. `set` is
+          // page-global, so clear right after the conversion queues — later
+          // SPA tag events must not inherit the submitter's PII. formData.phone
+          // is already E.164 here (CampaignSignupForm prepends +65); the
+          // marketplace flow passes the 8-digit local number — toE164Sg
+          // inside setGoogleUserData normalizes both.
+          setGoogleUserData({ email: formData.email, phone: formData.phone });
           trackGoogleLead(googleId, resolveGoogleAdsLeadLabel(campaign), {
             transactionId: leadEventIdRef.current,
           });
+          clearGoogleUserData();
         }
         setSubmitted(true);
         setShareOpen(true);

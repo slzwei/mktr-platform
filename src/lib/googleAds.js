@@ -35,9 +35,11 @@
  * no click history worth banking in advance. Add capture WITH that upload, not
  * before it.
  *
- * Also not handled here: Enhanced Conversions for Leads (needs hashed PII wired
- * through the submit) and the offline outcome upload itself, which belongs with
- * the backend lead-outcome path rather than in a browser tag.
+ * Enhanced Conversions (setGoogleUserData below) hands the tag PLAIN
+ * email/phone via gtag('set','user_data') — the tag normalizes and
+ * SHA-256-hashes user-provided data itself before transmission, so no hashing
+ * code exists here. Still not handled here: the offline outcome upload, which
+ * belongs with the backend lead-outcome path rather than in a browser tag.
  *
  * All functions are SSR-safe (defensive against missing window/document).
  */
@@ -127,6 +129,60 @@ export function trackGoogleConversion(conversionId, label, { value, currency = '
  */
 export function trackGoogleLead(conversionId, label, opts = {}) {
   trackGoogleConversion(conversionId, label, opts);
+}
+
+/**
+ * Idempotent SG E.164 normalizer for the Enhanced Conversions phone field.
+ * The two funnels submit different shapes — the marketplace flow holds the
+ * 8-digit local number (+65 kept separate), while CampaignSignupForm already
+ * submits E.164 and LeadCapture forwards it — so a naive `+65${digits}`
+ * would double-prefix the classic path (+6565…). Anything unrecognizable
+ * returns undefined: never feed a malformed value into Google's hash.
+ */
+export function toE164Sg(phone) {
+  if (!phone || typeof phone !== 'string') return undefined;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10 && digits.startsWith('65')) return `+${digits}`;
+  if (digits.length === 8 && /^[89]/.test(digits)) return `+65${digits}`;
+  return undefined;
+}
+
+/**
+ * Enhanced Conversions: hand the tag PLAIN email/phone via
+ * gtag('set', 'user_data') — the tag normalizes and SHA-256-hashes
+ * user-provided data itself before transmission (no hashing here).
+ *
+ * `set` state is PAGE-GLOBAL: it rides every subsequent gtag event, not just
+ * the next one. Callers MUST pair this with clearGoogleUserData() right
+ * after queueing the conversion so later SPA tag events cannot inherit the
+ * submitter's PII.
+ *
+ * Ships dark behind VITE_GOOGLE_ADS_EC_ENABLED (the account-side Enhanced
+ * Conversions setting must also be on for Google to use the data; the env
+ * flag keeps rollout controlled from our side and greppable in the bundle
+ * for deploy verification).
+ */
+export function setGoogleUserData({ email, phone } = {}) {
+  if (import.meta.env.VITE_GOOGLE_ADS_EC_ENABLED !== 'true') return;
+  if (typeof window === 'undefined' || typeof window.gtag !== 'function') return;
+
+  const userData = {};
+  if (email && typeof email === 'string' && email.trim()) userData.email = email.trim();
+  const phoneNumber = toE164Sg(phone);
+  if (phoneNumber) userData.phone_number = phoneNumber;
+  if (Object.keys(userData).length === 0) return;
+
+  window.gtag('set', 'user_data', userData);
+}
+
+/**
+ * Clear the page-global user_data (see setGoogleUserData). Gated on the same
+ * flag so a dark build queues zero extra gtag commands.
+ */
+export function clearGoogleUserData() {
+  if (import.meta.env.VITE_GOOGLE_ADS_EC_ENABLED !== 'true') return;
+  if (typeof window === 'undefined' || typeof window.gtag !== 'function') return;
+  window.gtag('set', 'user_data', null);
 }
 
 /** Test seam — resets the module-level idempotency state. */

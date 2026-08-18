@@ -4,6 +4,9 @@ import {
   initGoogleAds,
   trackGoogleConversion,
   trackGoogleLead,
+  toE164Sg,
+  setGoogleUserData,
+  clearGoogleUserData,
   __resetGoogleAdsStateForTests,
 } from '../googleAds.js';
 
@@ -223,5 +226,120 @@ describe('trackGoogleLead', () => {
   it('stays silent when the lead label is unconfigured', () => {
     trackGoogleLead(CONVERSION_ID, '', { transactionId: 'lead-1' });
     expect(gtag).not.toHaveBeenCalled();
+  });
+});
+
+describe('toE164Sg', () => {
+  it('normalizes an 8-digit local mobile to +65 E.164', () => {
+    expect(toE164Sg('91234567')).toBe('+6591234567');
+    expect(toE164Sg('81234567')).toBe('+6581234567');
+  });
+
+  it('is idempotent — an already-E.164 number passes through unchanged', () => {
+    expect(toE164Sg('+6591234567')).toBe('+6591234567');
+    expect(toE164Sg(toE164Sg('91234567'))).toBe('+6591234567');
+  });
+
+  it('strips formatting before normalizing', () => {
+    expect(toE164Sg('9123 4567')).toBe('+6591234567');
+    expect(toE164Sg('+65 9123 4567')).toBe('+6591234567');
+  });
+
+  it('returns undefined for unrecognizable input — never a malformed hash input', () => {
+    expect(toE164Sg('')).toBeUndefined();
+    expect(toE164Sg(undefined)).toBeUndefined();
+    expect(toE164Sg(null)).toBeUndefined();
+    expect(toE164Sg('12345')).toBeUndefined();
+    // 6-leading is landline-shaped, not an SG mobile
+    expect(toE164Sg('61234567')).toBeUndefined();
+    expect(toE164Sg('+14155551234')).toBeUndefined();
+    expect(toE164Sg(91234567)).toBeUndefined();
+  });
+});
+
+describe('setGoogleUserData / clearGoogleUserData', () => {
+  let gtag;
+
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.stubEnv('VITE_GOOGLE_ADS_EC_ENABLED', 'true');
+    gtag = vi.fn();
+    window.gtag = gtag;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    delete window.gtag;
+  });
+
+  it('sets plain email + normalized E.164 phone as user_data (marketplace 8-digit shape)', () => {
+    setGoogleUserData({ email: 'jane@example.com', phone: '91234567' });
+    expect(gtag).toHaveBeenCalledWith('set', 'user_data', {
+      email: 'jane@example.com',
+      phone_number: '+6591234567',
+    });
+  });
+
+  it('accepts the classic funnel already-E.164 phone without double-prefixing', () => {
+    setGoogleUserData({ email: 'jane@example.com', phone: '+6591234567' });
+    expect(gtag).toHaveBeenCalledWith('set', 'user_data', {
+      email: 'jane@example.com',
+      phone_number: '+6591234567',
+    });
+  });
+
+  it('drops an unnormalizable phone but still sends the email', () => {
+    setGoogleUserData({ email: 'jane@example.com', phone: '12345' });
+    expect(gtag).toHaveBeenCalledWith('set', 'user_data', { email: 'jane@example.com' });
+  });
+
+  it('trims the email', () => {
+    setGoogleUserData({ email: '  jane@example.com  ' });
+    expect(gtag).toHaveBeenCalledWith('set', 'user_data', { email: 'jane@example.com' });
+  });
+
+  it('no-ops entirely when neither field survives', () => {
+    setGoogleUserData({ email: '   ', phone: 'abc' });
+    setGoogleUserData({});
+    setGoogleUserData();
+    expect(gtag).not.toHaveBeenCalled();
+  });
+
+  it('ships dark: zero gtag commands unless VITE_GOOGLE_ADS_EC_ENABLED === "true"', () => {
+    vi.stubEnv('VITE_GOOGLE_ADS_EC_ENABLED', '');
+    setGoogleUserData({ email: 'jane@example.com', phone: '91234567' });
+    clearGoogleUserData();
+    // any non-"true" value stays dark too — this is not the DEV_MODE any-value gate
+    vi.stubEnv('VITE_GOOGLE_ADS_EC_ENABLED', '1');
+    setGoogleUserData({ email: 'jane@example.com', phone: '91234567' });
+    clearGoogleUserData();
+    expect(gtag).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the gtag stub is absent', () => {
+    delete window.gtag;
+    expect(() => setGoogleUserData({ email: 'jane@example.com' })).not.toThrow();
+    expect(() => clearGoogleUserData()).not.toThrow();
+  });
+
+  it('runs the funnel call order: set precedes the conversion, clear follows it, and no later event re-establishes user_data', () => {
+    // The exact sequence both funnels run on submit success.
+    setGoogleUserData({ email: 'jane@example.com', phone: '91234567' });
+    trackGoogleLead(CONVERSION_ID, LEAD_LABEL, { transactionId: 'lead-1' });
+    clearGoogleUserData();
+    // A later, unrelated tag event in the same SPA session.
+    window.gtag('event', 'page_view');
+
+    const calls = gtag.mock.calls;
+    expect(calls[0]).toEqual([
+      'set', 'user_data', { email: 'jane@example.com', phone_number: '+6591234567' },
+    ]);
+    expect(calls[1][0]).toBe('event');
+    expect(calls[1][1]).toBe('conversion');
+    expect(calls[2]).toEqual(['set', 'user_data', null]);
+    const afterClear = calls.slice(3);
+    expect(
+      afterClear.some((c) => c[0] === 'set' && c[1] === 'user_data' && c[2] !== null)
+    ).toBe(false);
   });
 });
