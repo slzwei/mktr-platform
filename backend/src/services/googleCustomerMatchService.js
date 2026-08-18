@@ -48,7 +48,7 @@ import { contactGrantAllows } from './contactConsent.js';
  * anything these hooks miss.
  */
 
-const MAX_BATCH_MEMBERS = 5000; // ≤2 identifiers/member keeps us under the 10k identifier cap
+const MAX_BATCH_MEMBERS = 10_000; // Data Manager cap: 10k audience members/request (≤10 identifiers each)
 const SYNTHETIC_EMAIL_SUFFIX = '@calls.mktr.sg';
 const TERMINAL_STATUSES = new Set(['SUCCESS', 'PARTIAL_SUCCESS', 'FAILED']);
 
@@ -61,6 +61,7 @@ const defaultDeps = {
   dmRequest,
   dmRequestGet,
   sleep: realSleep,
+  now: Date.now,
 };
 
 /**
@@ -224,44 +225,123 @@ function extractStatus(body) {
 }
 
 /**
- * Poll each unique accepted requestId through requestStatus:retrieve to a
- * terminal state with bounded backoff (10s → 60s cap, GOOGLE_CM_STATUS_MAX_POLLS
- * attempts each, default 6). Ids still non-terminal after the budget count as
- * STUCK. A retrieve call that itself errors marks the id stuck (never throws).
- * Aggregate counts only — never per-person state.
+ * DEFERRED settlement (Codex P2b round 3): Google's diagnostics guidance is
+ * first poll ~30 MINUTES after acceptance, polling up to 24 hours — an
+ * in-run settle would classify every normal request as stuck. Accepted
+ * requestIds therefore join a module-level pending queue; a lightweight
+ * interval (bootstrap, GOOGLE_CM_SETTLE_INTERVAL_MINUTES, default 15) drains
+ * due entries with ~1.3× backoff capped at 1h + jitter, out to a 24h horizon.
+ *
+ * Consequence: sync/removal results report ACCEPTANCE truth in-run
+ * (settlement: 'queued'); OUTCOME truth lands asynchronously here — terminal
+ * FAILED and horizon-expired entries alert + Sentry. A process restart drops
+ * pending ids (accepted loss: accounting is aggregate-only and the nightly
+ * additive re-ingest self-heals; removal is backstopped by the membership TTL).
  */
-export async function settleRequestStatuses(requestIds, deps = {}) {
+const pendingSettles = []; // { requestId, kind: 'ingest'|'remove', acceptedAt, nextPollAt, delayMs }
+
+/** Test seam — clears the pending-settlement queue. */
+export function __resetPendingSettlesForTests() {
+  pendingSettles.length = 0;
+}
+
+function firstPollDelayMs() {
+  return Math.max(1, Number(process.env.GOOGLE_CM_FIRST_POLL_MINUTES) || 30) * 60_000;
+}
+
+const SETTLE_HORIZON_MS = 24 * 60 * 60 * 1000;
+const SETTLE_BACKOFF_FACTOR = 1.3;
+const SETTLE_MAX_DELAY_MS = 60 * 60 * 1000;
+
+function queueSettles(requestIds, kind, now) {
+  for (const id of new Set((requestIds || []).filter(Boolean))) {
+    const delayMs = firstPollDelayMs();
+    pendingSettles.push({
+      requestId: id,
+      kind,
+      acceptedAt: now,
+      nextPollAt: now + delayMs,
+      delayMs,
+    });
+  }
+}
+
+/**
+ * Drain due pending settlements: one poll each; terminal states are counted
+ * and logged; non-terminal entries reschedule with backoff until the 24h
+ * horizon (then counted stuck). FAILED/stuck raise the alert email + Sentry.
+ * Never throws. Exported for the bootstrap interval and tests.
+ */
+export async function settlePendingStatuses(deps = {}) {
   const d = { ...defaultDeps, ...deps };
-  const maxPolls = Math.max(1, Number(process.env.GOOGLE_CM_STATUS_MAX_POLLS) || 6);
-  const summary = { succeeded: 0, partialSuccess: 0, failed: 0, stuck: 0 };
-  const unique = [...new Set((requestIds || []).filter(Boolean))];
-  for (const id of unique) {
-    let settled = false;
-    for (let attempt = 0; attempt < maxPolls && !settled; attempt++) {
-      if (attempt > 0) await d.sleep(Math.min(10_000 * 2 ** (attempt - 1), 60_000));
-      let status = null;
-      try {
-        const body = await d.dmRequestGet(
-          `requestStatus:retrieve?requestId=${encodeURIComponent(id)}`,
-          d
-        );
-        status = extractStatus(body);
-      } catch (err) {
-        logger.warn({ requestId: id, err: err.message }, 'google_cm.status.retrieve_failed');
-        break; // treated as stuck below
-      }
-      if (status && TERMINAL_STATUSES.has(status)) {
-        settled = true;
-        if (status === 'SUCCESS') summary.succeeded += 1;
-        else if (status === 'PARTIAL_SUCCESS') summary.partialSuccess += 1;
-        else summary.failed += 1;
-        logger.info({ requestId: id, status }, 'google_cm.status.terminal');
-      }
+  const now = d.now ? d.now() : Date.now();
+  // removePartial tracked separately: a PARTIAL_SUCCESS *removal* left people
+  // on the list (alert-worthy); a PARTIAL_SUCCESS ingest self-heals nightly.
+  const summary = { polled: 0, succeeded: 0, partialSuccess: 0, removePartial: 0, failed: 0, stuck: 0, pending: 0 };
+  const keep = [];
+  for (const entry of pendingSettles.splice(0)) {
+    if (entry.nextPollAt > now) {
+      keep.push(entry);
+      continue;
     }
-    if (!settled) {
+    summary.polled += 1;
+    let status = null;
+    let retrieveFailed = false;
+    try {
+      const body = await d.dmRequestGet(
+        `requestStatus:retrieve?requestId=${encodeURIComponent(entry.requestId)}`,
+        d
+      );
+      status = extractStatus(body);
+    } catch (err) {
+      retrieveFailed = true;
+      logger.warn({ requestId: entry.requestId, err: err.message }, 'google_cm.status.retrieve_failed');
+    }
+    if (status && TERMINAL_STATUSES.has(status)) {
+      if (status === 'SUCCESS') summary.succeeded += 1;
+      else if (status === 'PARTIAL_SUCCESS') {
+        summary.partialSuccess += 1;
+        if (entry.kind === 'remove') summary.removePartial += 1;
+      } else summary.failed += 1;
+      logger.info({ requestId: entry.requestId, kind: entry.kind, status }, 'google_cm.status.terminal');
+      continue;
+    }
+    if (now - entry.acceptedAt >= SETTLE_HORIZON_MS) {
       summary.stuck += 1;
-      logger.warn({ requestId: id }, 'google_cm.status.stuck');
+      logger.warn({ requestId: entry.requestId, kind: entry.kind, retrieveFailed }, 'google_cm.status.stuck');
+      continue;
     }
+    const nextDelay = Math.min(Math.round(entry.delayMs * SETTLE_BACKOFF_FACTOR), SETTLE_MAX_DELAY_MS);
+    keep.push({
+      ...entry,
+      delayMs: nextDelay,
+      nextPollAt: now + nextDelay + Math.floor(Math.random() * 30_000),
+    });
+  }
+  pendingSettles.push(...keep);
+  summary.pending = pendingSettles.length;
+  if (summary.failed > 0 || summary.stuck > 0 || summary.removePartial > 0) {
+    Sentry.captureMessage('google_cm.settle.troubled', {
+      level: 'warning',
+      tags: { source: 'google_cm_sync' },
+      extra: summary,
+    });
+    await sendBadRunAlert(
+      d,
+      '⚠️ MKTR Google Customer Match — settlement failures',
+      [
+        'Accepted Data Manager requests ended FAILED, partially-removed, or never settled inside 24h.',
+        '',
+        `Summary: ${JSON.stringify(summary)}`,
+        `Time:    ${new Date().toISOString()}`,
+        '',
+        'Ingest coverage self-heals on the nightly additive re-ingest; removals',
+        'are backstopped by the list membership TTL.',
+        'Check Render logs (mktr-backend-jo6r, search "google_cm") + Sentry.',
+      ].join('\n')
+    );
+  } else if (summary.polled > 0) {
+    logger.info(summary, 'google_cm.settle.done');
   }
   return summary;
 }
@@ -307,7 +387,7 @@ export async function syncGoogleCustomerMatch(deps = {}) {
 
     if (rows.length === 0) {
       logger.warn('google_cm.sync.empty (no eligible members)');
-      return { synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, status: null };
+      return { synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null };
     }
 
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
@@ -336,45 +416,37 @@ export async function syncGoogleCustomerMatch(deps = {}) {
       }
     }
 
-    const status = acceptedIds.length ? await settleRequestStatuses(acceptedIds, d) : null;
+    // Acceptance truth in-run; OUTCOME truth arrives via the deferred
+    // settlement queue (Google: first diagnostics poll ~30min out). No
+    // in-run claim of confirmed delivery is made.
+    queueSettles(acceptedIds, 'ingest', d.now ? d.now() : Date.now());
 
-    // Classification derives from TERMINAL OUTCOMES, not HTTP acceptance:
-    // Google can accept every batch and later fail every record.
-    const confirmed = status ? status.succeeded + status.partialSuccess : 0;
-    const wholesale = acceptedIds.length === 0 || (status !== null && confirmed === 0 && status.stuck === 0);
-    const unconfirmed = status !== null && confirmed === 0 && status.stuck > 0;
+    const wholesale = acceptedIds.length === 0;
     const summary = {
-      synced: !wholesale && !unconfirmed,
-      ...(unconfirmed ? { reason: 'unconfirmed' } : {}),
+      synced: !wholesale,
       eligible: rows.length,
       batches: batches.length,
       accepted: acceptedIds.length,
       failedBatches,
-      status,
+      settlement: acceptedIds.length ? 'queued' : null,
     };
     logger.info(summary, 'google_cm.sync.done');
 
-    const troubled = failedBatches > 0 || (status && (status.failed > 0 || status.stuck > 0));
-    if (wholesale || unconfirmed || troubled) {
+    if (wholesale || failedBatches > 0) {
       await sendBadRunAlert(
         d,
         wholesale
           ? '⚠️ MKTR Google Customer Match sync FAILED (nothing uploaded)'
-          : unconfirmed
-            ? '⚠️ MKTR Google Customer Match sync — unconfirmed (status stuck)'
-            : '⚠️ MKTR Google Customer Match sync — partial failure',
+          : '⚠️ MKTR Google Customer Match sync — partial failure',
         [
           wholesale
-            ? 'No batch reached a successful terminal state — treat as nothing uploaded.'
-            : unconfirmed
-              ? 'Accepted batches never reached a terminal state — outcome unknown.'
-              : 'Some batches or request statuses failed; confirmed batches stand.',
+            ? 'Every ingest batch failed at the transport layer — nothing was accepted.'
+            : 'Some batches failed at the transport layer; accepted batches settle asynchronously.',
           '',
           `Eligible:        ${rows.length}`,
           `Batches:         ${batches.length}`,
           `Accepted:        ${acceptedIds.length}`,
           `Failed batches:  ${failedBatches}`,
-          `Status summary:  ${JSON.stringify(status)}`,
           `List:            ${process.env.GOOGLE_CM_USER_LIST_ID}`,
           `Campaign:        ${process.env.GOOGLE_CM_CAMPAIGN_ID}`,
           `Time:            ${new Date().toISOString()}`,
@@ -416,9 +488,9 @@ export async function syncGoogleCustomerMatch(deps = {}) {
  */
 export async function removeAudienceMembers(identifierRows, deps = {}) {
   const d = { ...defaultDeps, ...deps };
-  if (!removalConfigured()) return { removed: false, reason: 'unconfigured' };
+  if (!removalConfigured()) return { accepted: 0, reason: 'unconfigured' };
   const rows = (identifierRows || []).filter((r) => r?.userIdentifiers?.length);
-  if (rows.length === 0) return { removed: false, reason: 'empty' };
+  if (rows.length === 0) return { accepted: 0, reason: 'empty' };
   try {
     // Removal is as asynchronous as ingestion: HTTP accept only returns a
     // requestId. A missing id is a failed batch, and accepted ids are settled
@@ -437,29 +509,33 @@ export async function removeAudienceMembers(identifierRows, deps = {}) {
         logger.error({ err: err.message }, 'google_cm.remove.batch_failed');
       }
     }
-    const status = acceptedIds.length ? await settleRequestStatuses(acceptedIds, d) : null;
-    // Removal demands FULL success: a PARTIAL_SUCCESS removal left people ON
-    // the list, which must never be reported as removed (ingest tolerates
-    // partials — coverage self-heals additively; removal has no such healer,
-    // only the membership TTL).
-    const confirmed = status ? status.succeeded : 0;
-    const removed = failedBatches === 0 && status !== null && confirmed === acceptedIds.length;
-    const summary = { removed, members: rows.length, accepted: acceptedIds.length, failedBatches, status };
-    if (!removed) {
-      Sentry.captureMessage('google_cm.remove.unconfirmed', {
+    // Removal outcomes settle asynchronously like ingests (first poll ~30min
+    // out). In-run we report ACCEPTANCE only — never removed:true — and the
+    // settler alerts on FAILED/stuck (a PARTIAL_SUCCESS or FAILED removal
+    // left people on the list; the membership TTL is the healer). accepted
+    // means "Google took the removal request", nothing stronger.
+    queueSettles(acceptedIds, 'remove', d.now ? d.now() : Date.now());
+    const summary = {
+      accepted: acceptedIds.length,
+      members: rows.length,
+      failedBatches,
+      settlement: acceptedIds.length ? 'queued' : null,
+    };
+    if (failedBatches > 0 || acceptedIds.length === 0) {
+      Sentry.captureMessage('google_cm.remove.transport_failures', {
         level: 'warning',
         tags: { source: 'google_cm_remove' },
-        extra: { members: rows.length, accepted: acceptedIds.length, failedBatches, status },
+        extra: summary,
       });
-      logger.warn(summary, 'google_cm.remove.unconfirmed (membership TTL backstops)');
+      logger.warn(summary, 'google_cm.remove.transport_failures (membership TTL backstops)');
     } else {
-      logger.info(summary, 'google_cm.remove.done');
+      logger.info(summary, 'google_cm.remove.accepted');
     }
     return summary;
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'google_cm_remove' } });
     logger.error({ err: err.message }, 'google_cm.remove.failed');
-    return { removed: false, error: err.message };
+    return { accepted: 0, error: err.message };
   }
 }
 
@@ -471,7 +547,7 @@ export async function removeAudienceMembers(identifierRows, deps = {}) {
 export async function removeByConsumerId(consumerId, deps = {}) {
   const d = { ...defaultDeps, ...deps };
   if (!removalConfigured() || !process.env.GOOGLE_CM_CAMPAIGN_ID || !consumerId) {
-    return { removed: false, reason: 'unconfigured' };
+    return { accepted: 0, reason: 'unconfigured' };
   }
   try {
     const rows = await d.Prospect.findAll({
@@ -483,6 +559,6 @@ export async function removeByConsumerId(consumerId, deps = {}) {
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'google_cm_remove' } });
     logger.error({ err: err.message }, 'google_cm.remove.lookup_failed');
-    return { removed: false, error: err.message };
+    return { accepted: 0, error: err.message };
   }
 }

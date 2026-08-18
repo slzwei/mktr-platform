@@ -287,6 +287,25 @@ export async function bootstrapDatabase() {
       logger.info(`[GoogleCM] periodic sync scheduled (${cmIntervalHours}h interval)`);
     }
 
+    // Settlement drainer for accepted Data Manager requests (ingest AND the
+    // erasure/withdrawal removals) — Google's diagnostics window starts ~30min
+    // after acceptance and runs to 24h, so settling is decoupled from the
+    // sync run. Registered whenever the DM credentials exist: removals must
+    // settle even with the sync switched off.
+    if (process.env.GOOGLE_DM_REFRESH_TOKEN && process.env.GOOGLE_CM_USER_LIST_ID) {
+      const settleMinutes = Math.max(1, Number(process.env.GOOGLE_CM_SETTLE_INTERVAL_MINUTES) || 15);
+      const runGoogleCmSettle = async () => {
+        try {
+          const { settlePendingStatuses } = await import('../services/googleCustomerMatchService.js');
+          await settlePendingStatuses();
+        } catch (err) {
+          logger.warn('[GoogleCM] settle pass failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setInterval(runGoogleCmSettle, settleMinutes * 60 * 1000);
+      logger.info(`[GoogleCM] settlement drainer scheduled (${settleMinutes}m interval)`);
+    }
+
     // Redemption CAPI reconciliation sweep — the no-rescan safety net for
     // VoucherRedeemed sends lost between the redemption commit and the
     // fire-and-forget dispatch (process death). Marker-guarded + Meta event_id

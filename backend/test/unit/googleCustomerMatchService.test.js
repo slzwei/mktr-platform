@@ -63,7 +63,8 @@ const ENV_KEYS = [
   'GOOGLE_CM_CAMPAIGN_ID',
   'GOOGLE_CM_ALERT_EMAIL',
   'REDEEMED_AUDIENCE_ALERT_EMAIL',
-  'GOOGLE_CM_STATUS_MAX_POLLS',
+  'GOOGLE_CM_FIRST_POLL_MINUTES',
+  'GOOGLE_CM_SETTLE_INTERVAL_MINUTES',
 ];
 const saved = {};
 beforeEach(() => {
@@ -75,7 +76,8 @@ beforeEach(() => {
   process.env.GOOGLE_ADS_CUSTOMER_ID = '1829163947';
   process.env.GOOGLE_CM_USER_LIST_ID = '999888777';
   process.env.GOOGLE_CM_CAMPAIGN_ID = 'camp-airpods';
-  process.env.GOOGLE_CM_STATUS_MAX_POLLS = '3';
+  process.env.GOOGLE_CM_FIRST_POLL_MINUTES = '30';
+  svc.__resetPendingSettlesForTests();
   delete process.env.GOOGLE_CM_ALERT_EMAIL;
   delete process.env.REDEEMED_AUDIENCE_ALERT_EMAIL;
   consentMocks.getSuppressedPhoneSet.mockReset().mockResolvedValue(new Set());
@@ -286,39 +288,89 @@ describe('buildIngestBody / buildRemoveBody', () => {
   });
 });
 
-describe('settleRequestStatuses', () => {
-  it('classifies terminal states and dedupes request ids', async () => {
-    const dmRequestGet = jest
-      .fn()
-      .mockResolvedValueOnce({ requestStatusPerDestination: [{ requestStatus: 'SUCCESS' }] })
-      .mockResolvedValueOnce({ requestStatus: 'PARTIAL_SUCCESS' })
-      .mockResolvedValueOnce({ status: 'FAILED' });
-    const res = await svc.settleRequestStatuses(['a', 'a', 'b', 'c', null], {
-      dmRequestGet,
-      sleep: fastSleep,
-    });
-    expect(res).toEqual({ succeeded: 1, partialSuccess: 1, failed: 1, stuck: 0 });
-    expect(dmRequestGet).toHaveBeenCalledTimes(3);
-    expect(dmRequestGet.mock.calls[0][0]).toBe('requestStatus:retrieve?requestId=a');
+describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
+  const T0 = 1_700_000_000_000;
+
+  async function seedIngestRequest(requestId, atMs) {
+    const rows = [eligibleRow()];
+    const d = happyDeps(rows);
+    d.dmRequest = jest.fn().mockResolvedValue({ requestId });
+    d.now = () => atMs;
+    const res = await svc.syncGoogleCustomerMatch(d);
+    expect(res.settlement).toBe('queued');
+    return d;
+  }
+
+  it('does NOT poll before the 30-minute first-poll delay, then settles when due', async () => {
+    await seedIngestRequest('req-a', T0);
+    const dmRequestGet = jest.fn().mockResolvedValue(okStatus);
+
+    const early = await svc.settlePendingStatuses({ dmRequestGet, now: () => T0 + 29 * 60_000 });
+    expect(dmRequestGet).not.toHaveBeenCalled();
+    expect(early.pending).toBe(1);
+
+    const due = await svc.settlePendingStatuses({ dmRequestGet, now: () => T0 + 31 * 60_000 });
+    expect(dmRequestGet).toHaveBeenCalledTimes(1);
+    expect(dmRequestGet.mock.calls[0][0]).toBe('requestStatus:retrieve?requestId=req-a');
+    expect(due.succeeded).toBe(1);
+    expect(due.pending).toBe(0);
   });
 
-  it('polls PROCESSING through to a terminal state', async () => {
-    const dmRequestGet = jest
-      .fn()
-      .mockResolvedValueOnce({ requestStatus: 'PROCESSING' })
-      .mockResolvedValueOnce({ requestStatus: 'PROCESSING' })
-      .mockResolvedValueOnce({ requestStatus: 'SUCCESS' });
-    const res = await svc.settleRequestStatuses(['a'], { dmRequestGet, sleep: fastSleep });
-    expect(res).toEqual({ succeeded: 1, partialSuccess: 0, failed: 0, stuck: 0 });
+  it('reschedules non-terminal entries with backoff and marks them stuck past the 24h horizon (alerting)', async () => {
+    await seedIngestRequest('req-b', T0);
+    const processing = jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' });
+    const sendEmail = jest.fn().mockResolvedValue({});
+    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
+
+    const first = await svc.settlePendingStatuses({ dmRequestGet: processing, sendEmail, now: () => T0 + 31 * 60_000 });
+    expect(first.pending).toBe(1); // rescheduled, not stuck
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    const past = await svc.settlePendingStatuses({ dmRequestGet: processing, sendEmail, now: () => T0 + 25 * 60 * 60_000 });
+    expect(past.stuck).toBe(1);
+    expect(past.pending).toBe(0);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].subject).toMatch(/settlement failures/);
   });
 
-  it('marks an id stuck after the poll budget, and on a retrieve error', async () => {
-    const neverDone = jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' });
-    expect(await svc.settleRequestStatuses(['a'], { dmRequestGet: neverDone, sleep: fastSleep }))
-      .toEqual({ succeeded: 0, partialSuccess: 0, failed: 0, stuck: 1 });
+  it('terminal FAILED alerts + Sentry; a retrieve error only reschedules until the horizon', async () => {
+    await seedIngestRequest('req-c', T0);
+    const failed = jest.fn().mockResolvedValue({ requestStatus: 'FAILED' });
+    const sendEmail = jest.fn().mockResolvedValue({});
+    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
+    const res = await svc.settlePendingStatuses({ dmRequestGet: failed, sendEmail, now: () => T0 + 31 * 60_000 });
+    expect(res.failed).toBe(1);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sentryMocks.captureMessage).toHaveBeenCalled();
+
+    svc.__resetPendingSettlesForTests();
+    await seedIngestRequest('req-d', T0);
     const broken = jest.fn().mockRejectedValue(new Error('boom'));
-    expect(await svc.settleRequestStatuses(['b'], { dmRequestGet: broken, sleep: fastSleep }))
-      .toEqual({ succeeded: 0, partialSuccess: 0, failed: 0, stuck: 1 });
+    const mid = await svc.settlePendingStatuses({ dmRequestGet: broken, sendEmail: jest.fn(), now: () => T0 + 31 * 60_000 });
+    expect(mid.pending).toBe(1); // rescheduled — a flaky retrieve is not yet stuck
+  });
+
+  it('a PARTIAL_SUCCESS *removal* alerts (people stayed on the list); a partial ingest does not', async () => {
+    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-partial' });
+    const acceptance = await svc.removeAudienceMembers(
+      [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
+      { dmRequest, now: () => T0 }
+    );
+    expect(acceptance).toEqual({ accepted: 1, members: 1, failedBatches: 0, settlement: 'queued' });
+    const partial = jest.fn().mockResolvedValue({ requestStatus: 'PARTIAL_SUCCESS' });
+    const sendEmail = jest.fn().mockResolvedValue({});
+    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
+    const res = await svc.settlePendingStatuses({ dmRequestGet: partial, sendEmail, now: () => T0 + 31 * 60_000 });
+    expect(res.removePartial).toBe(1);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+
+    svc.__resetPendingSettlesForTests();
+    await seedIngestRequest('req-e', T0);
+    const sendEmail2 = jest.fn().mockResolvedValue({});
+    const res2 = await svc.settlePendingStatuses({ dmRequestGet: partial, sendEmail: sendEmail2, now: () => T0 + 31 * 60_000 });
+    expect(res2.partialSuccess).toBe(1);
+    expect(res2.removePartial).toBe(0);
+    expect(sendEmail2).not.toHaveBeenCalled();
   });
 });
 
@@ -340,14 +392,16 @@ describe('syncGoogleCustomerMatch', () => {
       batches: 1,
       accepted: 1,
       failedBatches: 0,
-      status: { succeeded: 1, partialSuccess: 0, failed: 0, stuck: 0 },
+      settlement: 'queued',
     });
     expect(d.dmRequest.mock.calls[0][0]).toBe('audienceMembers:ingest');
+    // Settlement is DEFERRED — no in-run status polling.
+    expect(d.dmRequestGet).not.toHaveBeenCalled();
     expect(d.sendEmail).not.toHaveBeenCalled();
   });
 
-  it('splits 5001 members into envelopes of 5000 and 1 (the production cap)', async () => {
-    const rows = Array.from({ length: 5001 }, (_, i) =>
+  it('splits 10001 members into envelopes of 10000 and 1 (the production cap)', async () => {
+    const rows = Array.from({ length: 10001 }, (_, i) =>
       eligibleRow({ phone: `+659${String(1000000 + i).slice(-7)}` })
     );
     const d = happyDeps(rows);
@@ -358,12 +412,12 @@ describe('syncGoogleCustomerMatch', () => {
     const res = await svc.syncGoogleCustomerMatch(d);
     expect(res.batches).toBe(2);
     expect(res.accepted).toBe(2);
-    expect(d.dmRequest.mock.calls[0][1].audienceMembers).toHaveLength(5000);
+    expect(d.dmRequest.mock.calls[0][1].audienceMembers).toHaveLength(10000);
     expect(d.dmRequest.mock.calls[1][1].audienceMembers).toHaveLength(1);
   });
 
   it('partial batch failure: accepted batches stand, alert says partial (not wholesale)', async () => {
-    const rows = Array.from({ length: 5001 }, (_, i) =>
+    const rows = Array.from({ length: 10001 }, (_, i) =>
       eligibleRow({ phone: `+659${String(1000000 + i).slice(-7)}` })
     );
     const d = happyDeps(rows);
@@ -377,7 +431,7 @@ describe('syncGoogleCustomerMatch', () => {
     expect(res.failedBatches).toBe(1);
     expect(d.sendEmail).toHaveBeenCalledTimes(1);
     expect(d.sendEmail.mock.calls[0][0].subject).toMatch(/partial failure/);
-    expect(d.sendEmail.mock.calls[0][0].text).toMatch(/confirmed batches stand/i);
+    expect(d.sendEmail.mock.calls[0][0].text).toMatch(/settle asynchronously/i);
   });
 
   it('a missing requestId on accept counts as a failed batch, never silent success', async () => {
@@ -389,30 +443,8 @@ describe('syncGoogleCustomerMatch', () => {
     expect(res.synced).toBe(false);
     expect(res.failedBatches).toBe(1);
     expect(res.accepted).toBe(0);
+    expect(res.settlement).toBeNull();
     expect(d.sendEmail.mock.calls[0][0].subject).toMatch(/nothing uploaded/);
-  });
-
-  it('every accepted job terminally FAILED = wholesale, never "synced" (outcome-derived)', async () => {
-    const rows = [eligibleRow()];
-    const d = happyDeps(rows);
-    d.dmRequestGet.mockResolvedValue({ requestStatus: 'FAILED' });
-    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
-    const res = await svc.syncGoogleCustomerMatch(d);
-    expect(res.synced).toBe(false);
-    expect(res.status.failed).toBe(1);
-    expect(d.sendEmail.mock.calls[0][0].subject).toMatch(/nothing uploaded/);
-  });
-
-  it('accepted-but-stuck statuses = unconfirmed, never "synced"', async () => {
-    const rows = [eligibleRow()];
-    const d = happyDeps(rows);
-    d.dmRequestGet.mockResolvedValue({ requestStatus: 'PROCESSING' });
-    process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
-    const res = await svc.syncGoogleCustomerMatch(d);
-    expect(res.synced).toBe(false);
-    expect(res.reason).toBe('unconfirmed');
-    expect(res.status.stuck).toBe(1);
-    expect(d.sendEmail.mock.calls[0][0].subject).toMatch(/unconfirmed/);
   });
 
   it('aborts fail-closed (no upload, wholesale alert) when a ledger lookup throws', async () => {
@@ -475,9 +507,9 @@ describe('syncGoogleCustomerMatch', () => {
     const gate = new Promise((r) => {
       release = r;
     });
-    d.dmRequestGet = jest.fn(async () => {
+    d.dmRequest = jest.fn(async () => {
       await gate;
-      return okStatus;
+      return { requestId: 'slow' };
     });
     const first = svc.syncGoogleCustomerMatch(d);
     await new Promise((r) => setTimeout(r, 10));
@@ -492,7 +524,7 @@ describe('syncGoogleCustomerMatch', () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([]) };
     const dmRequest = jest.fn();
     const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest, sleep: fastSleep });
-    expect(res).toEqual({ synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, status: null });
+    expect(res).toEqual({ synced: true, eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null });
     expect(dmRequest).not.toHaveBeenCalled();
   });
 });
@@ -501,49 +533,31 @@ describe('removeAudienceMembers / removeByConsumerId', () => {
   it('no-ops unconfigured, and works with the sync flag OFF', async () => {
     delete process.env.GOOGLE_CM_USER_LIST_ID;
     expect(await svc.removeAudienceMembers([{ userIdentifiers: [{ phoneNumber: 'x' }] }])).toEqual({
-      removed: false,
+      accepted: 0,
       reason: 'unconfigured',
     });
     process.env.GOOGLE_CM_USER_LIST_ID = '999888777';
     process.env.GOOGLE_CM_SYNC_ENABLED = 'false';
     const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-1' });
-    const dmRequestGet = jest.fn().mockResolvedValue(okStatus);
+    const dmRequestGet = jest.fn();
     const res = await svc.removeAudienceMembers(
       [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
-      { dmRequest, dmRequestGet, sleep: fastSleep }
+      { dmRequest, dmRequestGet, sleep: fastSleep, now: () => 1_700_000_000_000 }
     );
-    expect(res.removed).toBe(true);
+    expect(res).toEqual({ accepted: 1, members: 1, failedBatches: 0, settlement: 'queued' });
     expect(dmRequest.mock.calls[0][0]).toBe('audienceMembers:remove');
     expect(dmRequest.mock.calls[0][1].encoding).toBe('HEX');
-    expect(dmRequestGet).toHaveBeenCalled(); // removal is settled, not assumed
+    expect(dmRequestGet).not.toHaveBeenCalled(); // settlement is deferred, never in-run
   });
 
-  it('removal PARTIAL_SUCCESS is NOT removed:true — people stayed on the list', async () => {
-    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-1' });
-    const partialGet = jest.fn().mockResolvedValue({ requestStatus: 'PARTIAL_SUCCESS' });
+  it('a missing requestId on a removal accept is a failed batch (no silent success)', async () => {
     const res = await svc.removeAudienceMembers(
       [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
-      { dmRequest, dmRequestGet: partialGet, sleep: fastSleep }
+      { dmRequest: jest.fn().mockResolvedValue({}), sleep: fastSleep }
     );
-    expect(res.removed).toBe(false);
-    expect(res.status.partialSuccess).toBe(1);
-  });
-
-  it('removal is UNCONFIRMED (removed:false) when the status never settles or FAILs', async () => {
-    const dmRequest = jest.fn().mockResolvedValue({ requestId: 'rm-1' });
-    const stuckGet = jest.fn().mockResolvedValue({ requestStatus: 'PROCESSING' });
-    const stuck = await svc.removeAudienceMembers(
-      [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
-      { dmRequest, dmRequestGet: stuckGet, sleep: fastSleep }
-    );
-    expect(stuck.removed).toBe(false);
-    expect(stuck.status.stuck).toBe(1);
-    const noId = await svc.removeAudienceMembers(
-      [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
-      { dmRequest: jest.fn().mockResolvedValue({}), dmRequestGet: stuckGet, sleep: fastSleep }
-    );
-    expect(noId.removed).toBe(false);
-    expect(noId.failedBatches).toBe(1);
+    expect(res.accepted).toBe(0);
+    expect(res.failedBatches).toBe(1);
+    expect(res.settlement).toBeNull();
   });
 
   it('never throws on a provider failure (erasure must not depend on Google)', async () => {
@@ -552,9 +566,8 @@ describe('removeAudienceMembers / removeByConsumerId', () => {
       [{ userIdentifiers: [{ phoneNumber: 'x' }] }],
       { dmRequest, sleep: fastSleep }
     );
-    expect(res.removed).toBe(false);
-    expect(res.failedBatches).toBe(1);
     expect(res.accepted).toBe(0);
+    expect(res.failedBatches).toBe(1);
     expect(sentryMocks.captureException).toHaveBeenCalled();
   });
 
@@ -574,7 +587,7 @@ describe('removeAudienceMembers / removeByConsumerId', () => {
       where: { consumerId: 'consumer-1', campaignId: 'camp-airpods' },
       raw: true,
     });
-    expect(res.removed).toBe(true);
+    expect(res.accepted).toBe(1);
     expect(res.members).toBe(1);
   });
 });
