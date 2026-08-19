@@ -16,6 +16,7 @@ import { jest } from '@jest/globals';
 import '../setup.js';
 import { makeCreateTxRunner } from '../../src/services/prospectCreateTx.js';
 import { makeDispatchRunner } from '../../src/services/prospectDispatch.js';
+import { dispatchSubmitDeliveries } from '../../src/services/platformDeliveryService.js';
 
 const logger = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
 
@@ -35,6 +36,10 @@ function txDeps(overrides = {}) {
     enqueueMapJobsTx: jest.fn().mockResolvedValue(undefined),
     deductLeadCredit: jest.fn().mockResolvedValue(undefined),
     deductExternalLeadBalance: jest.fn().mockResolvedValue(true),
+    // Platform-delivery planning (ads-centralisation §3.3.1) — default OFF,
+    // mirroring the dark flag.
+    submitPlanningApplies: jest.fn().mockReturnValue(false),
+    planSubmitDeliveriesTx: jest.fn().mockResolvedValue({ planned: true, rows: 2 }),
     AppError: class extends Error {},
     logger,
     ...overrides,
@@ -153,6 +158,36 @@ describe('createProspect PERSIST stage (unit)', () => {
     expect(out.prospect.id).toBe('p-1');
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[enrichment]'), expect.anything());
   });
+
+  it('plans platform deliveries in the txn when planning applies, and reports deliveriesPlanned', async () => {
+    const planSubmitDeliveriesTx = jest.fn().mockResolvedValue({ planned: true, rows: 2 });
+    const { d, m } = txDeps({
+      submitPlanningApplies: jest.fn().mockReturnValue(true),
+      planSubmitDeliveriesTx,
+    });
+
+    const out = await makeCreateTxRunner({ d, m })({
+      ...baseCtx, eventId: 'ev-1', registrationEventId: 'reg-1', registrationEventAt: '2026-08-19T00:00:00.000Z',
+    });
+
+    expect(out.deliveriesPlanned).toBe(true);
+    expect(planSubmitDeliveriesTx).toHaveBeenCalledTimes(1);
+    const [, args] = planSubmitDeliveriesTx.mock.calls[0];
+    expect(args).toMatchObject({ eventId: 'ev-1', registrationEventId: 'reg-1', registrationEventAt: '2026-08-19T00:00:00.000Z' });
+  });
+
+  it('never fails capture when delivery planning throws — deliveriesPlanned=false routes to legacy (§3.3.1)', async () => {
+    const { d, m } = txDeps({
+      submitPlanningApplies: jest.fn().mockReturnValue(true),
+      planSubmitDeliveriesTx: jest.fn().mockRejectedValue(new Error('ledger down')),
+    });
+
+    const out = await makeCreateTxRunner({ d, m })(baseCtx);
+
+    expect(out.prospect.id).toBe('p-1');
+    expect(out.deliveriesPlanned).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[delivery]'), expect.anything());
+  });
 });
 
 function dispatchDeps(overrides = {}) {
@@ -166,6 +201,10 @@ function dispatchDeps(overrides = {}) {
     sendTikTokLeadEvent: jest.fn().mockResolvedValue(undefined),
     sendTikTokCompleteRegistrationEvent: jest.fn().mockResolvedValue(undefined),
     onLeadCaptured: jest.fn().mockResolvedValue({ ok: true }),
+    // The REAL router: with deliveriesPlanned absent (plannedOk=false) it
+    // fires every legacy closure synchronously and touches no database —
+    // exactly the pre-ledger direct-send behaviour these tests assert.
+    dispatchSubmitDeliveries,
     drainMapJobs: jest.fn().mockResolvedValue(undefined),
     getOrCreateProspectShareLink: jest.fn().mockResolvedValue({ url: '/share/abc' }),
     scheduleScreeningAttempt: jest.fn().mockResolvedValue(undefined),

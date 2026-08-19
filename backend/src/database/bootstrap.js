@@ -310,13 +310,10 @@ export async function bootstrapDatabase() {
     // (a) re-send — rows with a durable outcomes fact whose gads marker is
     //     absent or in a due retryWait;
     // (b) settle — due pending markers polled to terminal states (Google's
-    //     diagnostics window: first poll ~30min, up to 24h);
-    // (c) the Lyfe outcome reconciler — the durability net (pg_net never
-    //     retries) that also backfills pre-arc outcomes.
+    //     diagnostics window: first poll ~30min, up to 24h).
     // In-process single-flight; single-instance backend.
     if (process.env.GOOGLE_ADS_UPLOADS_ENABLED === 'true') {
       const workerMinutes = Math.max(1, Number(process.env.GOOGLE_OUTCOMES_WORKER_MINUTES) || 10);
-      const reconcileHours = Math.max(1, Number(process.env.GOOGLE_LYFE_RECONCILE_INTERVAL_HOURS) || 6);
       let outcomesInFlight = false;
       const runOutcomesWorker = async () => {
         if (outcomesInFlight) return;
@@ -331,6 +328,19 @@ export async function bootstrapDatabase() {
           outcomesInFlight = false;
         }
       };
+      setTimeout(runOutcomesWorker, 120_000);
+      setInterval(runOutcomesWorker, workerMinutes * 60 * 1000);
+      logger.info(`[GoogleOutcomes] workers scheduled (${workerMinutes}m worker)`);
+    }
+
+    // Lyfe outcome reconciler — CREDENTIALS-based, un-gated from the Google
+    // flag (ads-centralisation §3.5): it writes durable outcome FACTS
+    // (first-wins) that feed BOTH the Google worker (when enabled) and the
+    // Meta delivery ledger's invariant sweep, and it is the recovery net for
+    // a fully-failed facts+planning transaction (pg_net never retries). Meta
+    // outcome durability must never hang off a Google flag.
+    if (process.env.LYFE_SUPABASE_URL && process.env.LYFE_SUPABASE_SERVICE_ROLE_KEY) {
+      const reconcileHours = Math.max(1, Number(process.env.GOOGLE_LYFE_RECONCILE_INTERVAL_HOURS) || 6);
       let reconcileInFlight = false;
       const runLyfeReconcile = async () => {
         if (reconcileInFlight) return; // a stalled REST pass must not overlap the next tick
@@ -344,13 +354,36 @@ export async function bootstrapDatabase() {
           reconcileInFlight = false;
         }
       };
-      setTimeout(runOutcomesWorker, 120_000);
-      setInterval(runOutcomesWorker, workerMinutes * 60 * 1000);
       setTimeout(runLyfeReconcile, 180_000);
       setInterval(runLyfeReconcile, reconcileHours * 60 * 60 * 1000);
-      logger.info(
-        `[GoogleOutcomes] workers scheduled (${workerMinutes}m worker, ${reconcileHours}h reconcile)`
-      );
+      logger.info(`[GoogleOutcomes] Lyfe reconciler scheduled (${reconcileHours}h, credentials-based)`);
+    }
+
+    // Platform-delivery worker (ads-centralisation §3.3.7): scheduled WHENEVER
+    // THE LEDGER EXISTS — deliberately not provider-flag-gated. With provider
+    // flags off, attempts classify config_blocked and the tick's EXPIRY pass
+    // still runs; PLATFORM_DELIVERY_PAUSED stops send work but never expiry.
+    // Cross-process single-flight via advisory lock 'pd:worker' inside the
+    // service; in-process single-flight here. The §3.5 invariant sweep and
+    // §3.6 retention purge ride the tick on hourly/daily sub-cadences.
+    {
+      const pdMinutes = Math.min(60, Math.max(1, Number(process.env.PLATFORM_DELIVERY_WORKER_MINUTES) || 5));
+      let pdInFlight = false;
+      const runPlatformDeliveryTick = async () => {
+        if (pdInFlight) return;
+        pdInFlight = true;
+        try {
+          const { runDeliveryWorker } = await import('../services/platformDeliveryService.js');
+          await runDeliveryWorker();
+        } catch (err) {
+          logger.warn('[PlatformDelivery] worker tick failed (non-fatal)', { error: err?.message });
+        } finally {
+          pdInFlight = false;
+        }
+      };
+      setTimeout(runPlatformDeliveryTick, 210_000);
+      setInterval(runPlatformDeliveryTick, pdMinutes * 60 * 1000);
+      logger.info(`[PlatformDelivery] worker scheduled (${pdMinutes}m interval, 210s offset)`);
     }
 
     // Redemption CAPI reconciliation sweep — the no-rescan safety net for

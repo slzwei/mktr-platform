@@ -41,6 +41,7 @@ export function makeDispatchRunner({ d, m }) {
    * @param {boolean} ctx.dncHeld The lead was born dnc_pending (block mode).
    * @param {boolean} ctx.dncFlagApplies DNC runs in flag mode for this lead.
    * @param {boolean} ctx.screeningHeld The lead is awaiting an AI screening call.
+   * @param {boolean} ctx.deliveriesPlanned Capture txn planned platform-delivery rows (§3.3.1).
    * @param {string|null} ctx.externalAgentId MKTR Leads buyer, when external.
    * @param {object|null} ctx.sourceCampaign Campaign (pixel overrides, design_config).
    * @param {object|null} ctx.sourceQrTag QR tag, for the webhook payload.
@@ -71,6 +72,7 @@ export function makeDispatchRunner({ d, m }) {
       dncHeld,
       dncFlagApplies,
       screeningHeld,
+      deliveriesPlanned,
       externalAgentId,
       sourceCampaign,
       sourceQrTag,
@@ -187,9 +189,15 @@ export function makeDispatchRunner({ d, m }) {
       });
     }
 
-    // Meta CAPI dispatch (fire-and-forget; post-commit; guard inside sendLeadEvent)
-    d.sendLeadEvent(prospect, {
-      eventId,
+    // Meta + TikTok submit-time dispatch (ads-centralisation §3.3.5), at the
+    // same statement position the four direct sends held. Row-ownership
+    // routing: pairs the capture txn planned into platform_deliveries are
+    // delivered through the ledger (inline claim now, worker later); pairs
+    // WITHOUT rows fire the legacy closures below — exactly the pre-ledger
+    // direct sends, permanently kept for the planning-off / savepoint-failed
+    // path. The whole block is fire-and-forget: zero new awaited work on the
+    // capture path (§3.4). Per-campaign pixel overrides ride as before.
+    const legacyMetaCtx = {
       fbp,
       fbc,
       eventSourceUrl,
@@ -197,34 +205,7 @@ export function makeDispatchRunner({ d, m }) {
       clientUserAgent,
       pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
       marketingConsent: capiMarketingConsent,
-    }).catch((err) => {
-      d.logger.error('[CAPI] sendLeadEvent error', { error: err?.message || String(err) });
-    });
-
-    // Meta CAPI CompleteRegistration (quiz funnel). Fired server-side only when
-    // the browser sent a registrationEventId (the quiz reveal happened), using
-    // that same id so Meta dedups it against the Pixel CompleteRegistration fired
-    // at the reveal. No-op for non-quiz leads. Guard inside sendCompleteRegistrationEvent.
-    if (registrationEventId) {
-      d.sendCompleteRegistrationEvent(prospect, {
-        eventId: registrationEventId,
-        fbp,
-        fbc,
-        eventSourceUrl,
-        clientIp,
-        clientUserAgent,
-        pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
-        marketingConsent: capiMarketingConsent,
-      }).catch((err) => {
-        d.logger.error('[CAPI] sendCompleteRegistrationEvent error', { error: err?.message || String(err) });
-      });
-    }
-
-    // TikTok Events API dispatch (fire-and-forget; post-commit; guard inside the
-    // sender). Mirrors the Meta CAPI pair: a Lead at submit, plus a
-    // CompleteRegistration when the quiz reveal fired one — each deduped against
-    // the browser ttq pixel via the shared event ids. Per-campaign tiktokPixelId
-    // overrides env TIKTOK_PIXEL_ID.
+    };
     const tiktokCtxBase = {
       ttclid,
       ttp,
@@ -234,14 +215,45 @@ export function makeDispatchRunner({ d, m }) {
       pixelIdOverride: sourceCampaign?.tiktokPixelId || undefined,
       marketingConsent: capiMarketingConsent,
     };
-    d.sendTikTokLeadEvent(prospect, { eventId, ...tiktokCtxBase }).catch((err) => {
-      d.logger.error('[TikTok] sendTikTokLeadEvent error', { error: err?.message || String(err) });
+    d.dispatchSubmitDeliveries({
+      prospect,
+      plannedOk: deliveriesPlanned === true,
+      marketingConsent: capiMarketingConsent,
+      legacy: {
+        // Meta CAPI Lead (guard inside sendLeadEvent).
+        metaLead: () => {
+          d.sendLeadEvent(prospect, { eventId, ...legacyMetaCtx }).catch((err) => {
+            d.logger.error('[CAPI] sendLeadEvent error', { error: err?.message || String(err) });
+          });
+        },
+        // Meta CAPI CompleteRegistration — only when the browser sent a
+        // registrationEventId (the quiz reveal happened), with that same id so
+        // Meta dedups it against the Pixel CompleteRegistration fired at the
+        // reveal. No-op closure absent for non-quiz leads.
+        metaCompleteRegistration: registrationEventId
+          ? () => {
+              d.sendCompleteRegistrationEvent(prospect, { eventId: registrationEventId, ...legacyMetaCtx }).catch((err) => {
+                d.logger.error('[CAPI] sendCompleteRegistrationEvent error', { error: err?.message || String(err) });
+              });
+            }
+          : null,
+        // TikTok mirror of the Meta pair, deduped via the shared event ids.
+        tiktokLead: () => {
+          d.sendTikTokLeadEvent(prospect, { eventId, ...tiktokCtxBase }).catch((err) => {
+            d.logger.error('[TikTok] sendTikTokLeadEvent error', { error: err?.message || String(err) });
+          });
+        },
+        tiktokCompleteRegistration: registrationEventId
+          ? () => {
+              d.sendTikTokCompleteRegistrationEvent(prospect, { eventId: registrationEventId, ...tiktokCtxBase }).catch((err) => {
+                d.logger.error('[TikTok] sendTikTokCompleteRegistrationEvent error', { error: err?.message || String(err) });
+              });
+            }
+          : null,
+      },
+    }).catch((err) => {
+      d.logger.error('[delivery] submit dispatch error', { error: err?.message || String(err) });
     });
-    if (registrationEventId) {
-      d.sendTikTokCompleteRegistrationEvent(prospect, { eventId: registrationEventId, ...tiktokCtxBase }).catch((err) => {
-        d.logger.error('[TikTok] sendTikTokCompleteRegistrationEvent error', { error: err?.message || String(err) });
-      });
-    }
 
     // Redeem Ops reward-entitlement hook — post-commit, fire-and-forget (a
     // Redeem Ops failure must never fail or slow lead capture). No-op unless

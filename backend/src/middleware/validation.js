@@ -207,6 +207,10 @@ export const schemas = {
     // CompleteRegistration dedup id — set when a quiz reveal fired the browser
     // CompleteRegistration; the server fires a matching CAPI event with this id.
     registrationEventId: Joi.string().max(64).optional(),
+    // The browser's quiz-reveal timestamp (stamped beside the id) — anchors
+    // the CReg delivery deadline (ads-centralisation §3.3.1). Server-clamped
+    // to ≤ now in prospectService; whitelisted here so stripUnknown keeps it.
+    registrationEventAt: Joi.string().isoDate().optional(),
     // Google Ads click ids (gclid/gbraid/wbraid) + the CAPTURE timestamp —
     // load-bearing for the offline-conversion age guard, which measures from
     // the click (capture lands minutes after it), never the outcome

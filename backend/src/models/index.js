@@ -131,6 +131,12 @@ function defineAssociations() {
   ProspectActivity.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'CASCADE' });
   ProspectActivity.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
 
+  // Platform-delivery outbox (migration 126, ads-centralisation §3) — durable
+  // Meta/TikTok conversion-delivery rows; CASCADE with their prospect.
+  const { PlatformDelivery } = models;
+  Prospect.hasMany(PlatformDelivery, { foreignKey: 'prospectId', as: 'platformDeliveries', onDelete: 'CASCADE' });
+  PlatformDelivery.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'CASCADE' });
+
   // ExternalAgent associations (MKTR Leads buyers — a separate table from `users`,
   // so Lyfe agent-sync can never see them). externalAgentId doubles as the webhook
   // destination signal: set => MKTR Leads subscriber; null => Lyfe subscriber.
@@ -403,7 +409,8 @@ export const {
   WaMessageStatus, WaMessageSend, ConsumerObservation, ConsumerProfile, EnrichmentJob,
   EnrichmentScoringConfig, EnrichmentSweepRun,
   MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection,
-  OutreachAccount, OutreachPersona, OutreachEmail, TimelineHiddenEntry
+  OutreachAccount, OutreachPersona, OutreachEmail, TimelineHiddenEntry,
+  PlatformDelivery
 } = models;
 
 export { sequelize };

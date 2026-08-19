@@ -51,10 +51,14 @@ export function makeCreateTxRunner({ d, m }) {
    * @param {object|null} ctx.externalConsent Third-party-disclosure evidence.
    * @param {object|null} ctx.dncConsent DNC-consent evidence.
    * @param {Array} ctx.acceptedProfileFacts Validated profile-question facts.
+   * @param {string|undefined} ctx.eventId Meta/TikTok Lead dedup id (server-generated when the client omits one).
+   * @param {string|undefined} ctx.registrationEventId Quiz CompleteRegistration dedup id.
+   * @param {string|undefined} ctx.registrationEventAt Browser reveal timestamp (clamped ISO) — the CReg deadline anchor.
    *
    * @returns {Promise<{
    *   prospect: object, quarantined: boolean, heldReason: string|null,
-   *   finalAgentId: string|null, dncHeld: boolean, screeningHeld: boolean
+   *   finalAgentId: string|null, dncHeld: boolean, screeningHeld: boolean,
+   *   deliveriesPlanned: boolean
    * }>} The committed row plus the outcome flags the post-commit stages read.
    */
   return async function runCreateTx(ctx) {
@@ -79,6 +83,9 @@ export function makeCreateTxRunner({ d, m }) {
       externalConsent,
       dncConsent,
       acceptedProfileFacts,
+      eventId,
+      registrationEventId,
+      registrationEventAt,
     } = ctx;
 
     let quarantined = false;
@@ -91,6 +98,9 @@ export function makeCreateTxRunner({ d, m }) {
     let dncAlreadyCharged = false;
     // Screening hold bookkeeping (plan §5.2) — mirrors the DNC shape.
     let screeningHeld = false;
+    // Platform-delivery ledger planning outcome (ads-centralisation §3.3.1) —
+    // false = the legacy direct senders cover this prospect.
+    let deliveriesPlanned = false;
 
     const prospect = await d.sequelize.transaction(async (t) => {
       // The internal quota gate applies ONLY to the internal path. For external
@@ -225,6 +235,31 @@ export function makeCreateTxRunner({ d, m }) {
         });
       }
 
+      // Platform-delivery ledger (ads-centralisation §3.3.1): persist the
+      // submit-time delivery obligations (meta/tiktok × lead/creg) IN THIS
+      // transaction, savepoint-isolated like the enrichment outbox above —
+      // planning must never fail capture. A savepoint failure leaves
+      // deliveriesPlanned=false, and the dispatch stage fires the legacy
+      // direct senders for exactly this prospect instead.
+      if (d.submitPlanningApplies({ prospect: newProspect })) {
+        try {
+          await d.sequelize.transaction({ transaction: t }, async (sp) => {
+            await d.planSubmitDeliveriesTx(sp, {
+              prospect: newProspect,
+              sourceCampaign,
+              eventId,
+              registrationEventId,
+              registrationEventAt,
+            });
+          });
+          deliveriesPlanned = true;
+        } catch (planErr) {
+          d.logger.warn('[delivery] submit planning failed (legacy senders cover this prospect)', {
+            error: planErr?.message || String(planErr),
+          });
+        }
+      }
+
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
       // Source-aware phrase ("via TikTok ad" / "via web form" / "via {name} QR
       // code" …) instead of the old hardcoded "via {qr} QR code", which
@@ -326,6 +361,6 @@ export function makeCreateTxRunner({ d, m }) {
       return newProspect;
     });
 
-    return { prospect, quarantined, heldReason, finalAgentId, dncHeld, screeningHeld };
+    return { prospect, quarantined, heldReason, finalAgentId, dncHeld, screeningHeld, deliveriesPlanned };
   };
 }

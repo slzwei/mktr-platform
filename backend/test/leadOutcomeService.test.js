@@ -52,10 +52,20 @@ function buildDeps(overrides = {}) {
   const dispatchGoogleOutcome = overrides.dispatchGoogleOutcome ?? jest.fn().mockResolvedValue({ sent: true });
   const googleUploadsEnabled = overrides.googleUploadsEnabled ?? jest.fn().mockReturnValue(false);
   const googleActionIdFor = overrides.googleActionIdFor ?? jest.fn().mockReturnValue('act-1');
+  // Platform-delivery ledger seams (ads-centralisation §3.3.2/§3.3.5):
+  // this suite exercises the LEGACY direct-send contract, which is exactly
+  // the ledger's no-row path — so the ledger reports "not owned" and the
+  // facts+planning transaction is a pass-through stub (the fixtures' ids are
+  // not real rows; DB-backed coverage lives in platformDeliveries.test.js).
+  const fakeTransaction = (a, b) => (typeof a === 'function' ? a('t') : b('sp'));
+  const planOutcomeDeliveriesTx = overrides.planOutcomeDeliveriesTx ?? jest.fn().mockResolvedValue({ planned: false });
+  const dispatchOutcomeDelivery = overrides.dispatchOutcomeDelivery ?? jest.fn().mockResolvedValue({ owned: false });
   return {
     deps: {
       models: { Prospect, Campaign }, sendConversionEvent, canMarketTo, setSourceMetadataPath,
       mergeSourceMetadataFirstWins, dispatchGoogleOutcome, googleUploadsEnabled, googleActionIdFor,
+      sequelize: { transaction: fakeTransaction },
+      planOutcomeDeliveriesTx, dispatchOutcomeDelivery,
       logger: silentLogger, sleep, ...overrides.deps,
     },
     mergeSourceMetadataFirstWins,

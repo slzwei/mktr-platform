@@ -29,7 +29,11 @@ beforeAll(async () => {
   prospect = await createTestProspect(campaign.id, {
     assignedAgentId: owner.user.id,
     leadSource: 'call_bot',
-    sourceMetadata: { retellCallId: 'call-p1-4', recordingUrl: RECORDING_URL },
+    // recordingMultiChannelUrl key present = both legs already resolved (the
+    // #470 split-recording contract) — without it the endpoint earns a one-off
+    // live Retell refetch, which 503s in tests (no API). null = "refetched,
+    // Retell had no split file", the cached mono-URL shape.
+    sourceMetadata: { retellCallId: 'call-p1-4', recordingUrl: RECORDING_URL, recordingMultiChannelUrl: null },
   });
 });
 

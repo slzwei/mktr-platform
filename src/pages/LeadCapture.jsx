@@ -62,6 +62,12 @@ export default function LeadCapture() {
   // Pixel, TikTok Pixel, and (threaded into submit) the server-side CAPI so all
   // three dedup against one another.
   const registrationEventIdRef = useRef(null);
+  // When the quiz reveal actually happened (ISO) — stamped in handleQuizReveal
+  // beside the browser CompleteRegistration fire and threaded into submit: the
+  // server anchors the CReg delivery deadline on it (ads-centralisation §3.3.1;
+  // the reveal can precede a slow submit by hours, and retries must stay inside
+  // the provider dedupe window measured from the browser twin's fire time).
+  const registrationEventAtRef = useRef(null);
   const viewContentFiredRef = useRef(false); // Meta ViewContent fire-once
   const ttViewContentFiredRef = useRef(false); // TikTok ViewContent fire-once
   const [campaign, setCampaign] = useState(null);
@@ -182,6 +188,10 @@ export default function LeadCapture() {
   // server-side CAPI CompleteRegistration (fired at submit) dedups against it.
   // Gated by shouldTrack / shouldTrackTikTok, so it never fires on preview pages.
   const handleQuizReveal = (result) => {
+    // Stamp the reveal time once, whether or not any pixel is configured —
+    // it records when the browser twin WOULD have fired, which is the
+    // conservative deadline anchor either way.
+    if (!registrationEventAtRef.current) registrationEventAtRef.current = new Date().toISOString();
     const trackCtx = { campaign, pathname: location.pathname, search: location.search };
     const status = result?.title || result?.profileId || undefined;
 
@@ -384,6 +394,9 @@ export default function LeadCapture() {
         // the server fire a CAPI CompleteRegistration that dedups against the
         // browser Pixel one fired at the reveal.
         registrationEventId: quizResult ? registrationEventIdRef.current : undefined,
+        // The reveal timestamp that anchors the server's CReg delivery
+        // deadline (clamped server-side; absent on legacy cached bundles).
+        registrationEventAt: quizResult ? registrationEventAtRef.current || undefined : undefined,
         // TikTok attribution identifiers (server-side Events API consumes these in
         // Phase 6). Captured from the landing URL / pixel cookie.
         ttclid: readTtclid() || undefined,

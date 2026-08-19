@@ -408,6 +408,20 @@ export function makeErasureService(overrides = {}) {
           report.enrichmentJobs = rowCount(jobsMeta);
         }
 
+        // Platform-delivery ledger rows (ads-centralisation §3.6): pseudonymous
+        // delivery bookkeeping keyed to the person's prospects — hard-deleted
+        // in this transaction. An already-claimed in-flight attempt is fenced
+        // by the service's pre-wire fresh-erased re-check ("no NEW send begins
+        // after the check observes erasure"; an in-flight request can't be
+        // recalled — the Google posture).
+        if (pids.length) {
+          const [, pdMeta] = await d.sequelize.query(
+            `DELETE FROM platform_deliveries WHERE "prospectId" IN (:pids)`,
+            { replacements: { pids }, transaction: t }
+          );
+          report.platformDeliveries = rowCount(pdMeta);
+        }
+
         // The person's browsing records (Codex R1 #9): sessions + attribution
         // rows are deleted outright once no other prospect references them;
         // qr_scans keep only device-level aggregates (no person link left).

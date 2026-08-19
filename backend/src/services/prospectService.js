@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   Prospect,
   User,
@@ -42,8 +42,18 @@ import {
   sendTikTokCompleteRegistrationEvent,
 } from './tiktokEventsService.js';
 // Cycle-safe + graph-neutral: leadOutcomeService imports only models,
-// metaCapiService and consentService — all already in this module's graph.
+// metaCapiService, consentService, outcomeEvents and platformDeliveryService —
+// all already in (or leaves of) this module's graph.
 import { processLeadOutcome, eventKeysForStatus } from './leadOutcomeService.js';
+// Platform-delivery ledger (ads-centralisation §3): capture-time planning,
+// row-ownership submit dispatch, and the shared outcome planner injected into
+// the mutation ops. Leaf-safe: the service imports senders/models/consent only.
+import {
+  submitPlanningApplies,
+  planSubmitDeliveriesTx,
+  dispatchSubmitDeliveries,
+  planOutcomeDeliveriesTx,
+} from './platformDeliveryService.js';
 import {
   mergeFirstWins as mergeSourceMetadataFirstWins,
   removePaths as removeSourceMetadataPaths,
@@ -125,6 +135,10 @@ const defaultDeps = {
   sendTikTokCompleteRegistrationEvent,
   processLeadOutcome,
   eventKeysForStatus,
+  submitPlanningApplies,
+  planSubmitDeliveriesTx,
+  dispatchSubmitDeliveries,
+  planOutcomeDeliveriesTx,
   mergeSourceMetadataFirstWins,
   removeSourceMetadataPaths,
   getOrCreateProspectShareLink,
@@ -185,14 +199,29 @@ export function makeProspectService(overrides = {}) {
     const safeBody = body || {};
     // Prefer controller-supplied meta context; fall back to body fields if any
     // caller posts directly without the controller's extraction step.
-    const eventId = meta?.eventId ?? safeBody.eventId;
+    // A missing client eventId is SERVER-GENERATED (ads-centralisation §3.3.1)
+    // so no submit bypasses delivery-ledger durability — with no browser twin
+    // the id only has to be unique and stable across retries, which a UUID is.
+    const eventId = meta?.eventId ?? safeBody.eventId ?? randomUUID();
     const fbp = meta?.fbp ?? safeBody.fbp;
     const fbc = meta?.fbc ?? safeBody.fbc;
     const eventSourceUrl = meta?.eventSourceUrl ?? safeBody.eventSourceUrl;
     const clientIp = meta?.clientIp;
     const clientUserAgent = meta?.clientUserAgent;
     // Quiz CompleteRegistration dedup id (Meta CAPI) + TikTok attribution ids.
+    // registrationEventId is NEVER server-generated — absent means no quiz
+    // reveal happened, so no CompleteRegistration exists to deliver.
     const registrationEventId = meta?.registrationEventId ?? safeBody.registrationEventId;
+    // Browser reveal timestamp (§3.3.1): stamped at quiz reveal beside the
+    // registration event id; anchors the CReg delivery deadline. CLAMPED to
+    // now — a forged future value must not extend the dedupe horizon
+    // (gclCapturedAt precedent below). Unparseable ⇒ dropped (the ledger then
+    // uses capture time with the conservative fallback horizon).
+    const rawRegistrationEventAt = meta?.registrationEventAt ?? safeBody.registrationEventAt;
+    const regRevealMs = rawRegistrationEventAt ? Date.parse(rawRegistrationEventAt) : NaN;
+    const registrationEventAt = Number.isNaN(regRevealMs)
+      ? undefined
+      : new Date(Math.min(regRevealMs, Date.now())).toISOString();
     const ttclid = meta?.ttclid ?? safeBody.ttclid;
     const ttp = meta?.ttp ?? safeBody.ttp;
     // Google click ids + capture time (plan google-ads-signal-levers §4.1) —
@@ -245,7 +274,7 @@ export function makeProspectService(overrides = {}) {
     // Strip from body so they don't reach Sequelize as bogus Prospect attributes.
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
-      registrationEventId: _re, ttclid: _tc, ttp: _tp,
+      registrationEventId: _re, registrationEventAt: _rea, ttclid: _tc, ttp: _tp,
       gclid: _gc, gbraid: _gb, wbraid: _wb, gclCapturedAt: _gca,
       consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp, consent_dnc: _cd,
       consent_copy_version: _ccv,
@@ -289,6 +318,7 @@ export function makeProspectService(overrides = {}) {
       ...(clientIp ? { clientIp } : {}),
       ...(clientUserAgent ? { clientUserAgent } : {}),
       ...(registrationEventId ? { registrationEventId } : {}),
+      ...(registrationEventAt ? { registrationEventAt } : {}),
       ...(ttclid ? { ttclid } : {}),
       ...(ttp ? { ttp } : {}),
       ...(gclid || gbraid || wbraid
@@ -794,6 +824,9 @@ export function makeProspectService(overrides = {}) {
         externalConsent,
         dncConsent,
         acceptedProfileFacts,
+        eventId,
+        registrationEventId,
+        registrationEventAt,
       });
     } catch (err) {
       // Concurrent same-campaign duplicate: both requests passed the precheck;
@@ -815,7 +848,7 @@ export function makeProspectService(overrides = {}) {
       throw err;
     }
 
-    const { prospect, quarantined, heldReason, finalAgentId, dncHeld, screeningHeld } = txOutcome;
+    const { prospect, quarantined, heldReason, finalAgentId, dncHeld, screeningHeld, deliveriesPlanned } = txOutcome;
 
     // Hot-path signals (P3-5). Every capture lands here exactly once, after the
     // row commits, so these three answer "are leads arriving, and are they
@@ -842,6 +875,7 @@ export function makeProspectService(overrides = {}) {
       dncHeld,
       dncFlagApplies,
       screeningHeld,
+      deliveriesPlanned,
       externalAgentId,
       sourceCampaign,
       sourceQrTag,

@@ -182,6 +182,21 @@ export function makeProspectMutationOps({ d, m }) {
                 Object.fromEntries(factKeys.map((k) => [k, adminOccurredAt])),
                 { transaction: t }
               );
+              // Delivery-ledger planning (ads-centralisation §3.3.2, call
+              // site 1): rows minted from the JUST-PERSISTED facts — the
+              // helper re-reads them in-txn, so a replayed transition can
+              // never retime an earlier fact. Savepoint-isolated: planning
+              // failure must not fail the staff edit (the invariant sweep
+              // heals the missing rows).
+              try {
+                await d.sequelize.transaction({ transaction: t }, async (sp) => {
+                  await d.planOutcomeDeliveriesTx(sp, { prospectId: prospect.id, keys: factKeys });
+                });
+              } catch (planErr) {
+                d.logger.warn('[delivery] outcome planning failed on admin edit (sweep heals)', {
+                  prospectId: prospect.id, error: planErr?.message || String(planErr),
+                });
+              }
             }
           }
           if (!editingDemographics) return;
