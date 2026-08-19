@@ -54,6 +54,10 @@ import {
   dispatchSubmitDeliveries,
   planOutcomeDeliveriesTx,
 } from './platformDeliveryService.js';
+// Audience-removal writers (ads-centralisation §5.5) — the identifier-edit
+// hook in prospectMutationService. Leaf-safe: the removal service imports
+// models/hashing/locks only.
+import { removalWritersEnabled, enqueueEditRemovalsTx } from './audienceRemovalService.js';
 import {
   mergeFirstWins as mergeSourceMetadataFirstWins,
   removePaths as removeSourceMetadataPaths,
@@ -140,6 +144,8 @@ const defaultDeps = {
   planSubmitDeliveriesTx,
   dispatchSubmitDeliveries,
   planOutcomeDeliveriesTx,
+  removalWritersEnabled,
+  enqueueEditRemovalsTx,
   mergeSourceMetadataFirstWins,
   removeSourceMetadataPaths,
   getOrCreateProspectShareLink,

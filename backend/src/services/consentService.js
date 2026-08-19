@@ -62,6 +62,17 @@ const defaultDeps = {
     const m = await import('./googleCustomerMatchService.js');
     return m.removeByConsumerId(consumerId);
   },
+  // Durable removal outbox (ads-centralisation §5.5/§5.7) — the flag-on
+  // branch of the unsubscribe hook. Lazy for the same import-graph reason
+  // (the eligibility engine dynamically imports this module).
+  removalWritersEnabled: async () => {
+    const m = await import('./audienceRemovalService.js');
+    return m.removalWritersEnabled();
+  },
+  enqueueUnsubscribeRemovalsTx: async (t, consumerId) => {
+    const m = await import('./audienceRemovalService.js');
+    return m.enqueueUnsubscribeRemovalsTx(t, consumerId);
+  },
 };
 
 export function makeConsentService(overrides = {}) {
@@ -570,6 +581,10 @@ export function makeConsentService(overrides = {}) {
 
   /** Idempotent global marketing unsubscribe + ledger evidence. */
   async function applyUnsubscribe(consumer, { source = 'unsubscribe_link' } = {}) {
+    // ONE flag read decides the removal branch for this whole event
+    // (ads-centralisation §5.7): outbox writers on ⇒ durable rows inside THIS
+    // transaction; off ⇒ the legacy direct Google call post-commit. Never both.
+    const useRemovalOutbox = await d.removalWritersEnabled();
     const result = await d.sequelize.transaction(async (t) => {
       const [, created] = await d.ConsumerSuppression.findOrCreate({
         where: { consumerId: consumer.id, channel: 'all' },
@@ -586,6 +601,14 @@ export function makeConsentService(overrides = {}) {
           occurredAt: new Date(),
         }, { transaction: t });
       }
+      if (useRemovalOutbox) {
+        // Durable removal rows (§5.5): person-level, one per configured
+        // destination, hashes built from prospect rows LOCKED inside this
+        // transaction (lock order Consumer → Prospects → audience_removals).
+        // Idempotent on sourceKey, so the already-suppressed re-unsubscribe
+        // path is a free healing trigger here too.
+        await d.enqueueUnsubscribeRemovalsTx(t, consumer.id);
+      }
       return { alreadySuppressed: !created };
     });
     // Post-commit, fire-and-forget: project lead.suppressed pairs for the
@@ -600,17 +623,19 @@ export function makeConsentService(overrides = {}) {
         });
       });
     }
-    // Google Customer Match removal (plan google-ads-signal-levers §3):
-    // a global withdrawal also pulls the person off the ad-exclusion list.
-    // Post-commit, fire-and-forget via dynamic import (no static edge — the
-    // CM service dynamically imports THIS module for its ledger gates); the
-    // list's finite membership duration backstops a lost call.
-    (async () => d.googleCmRemoveByConsumerId(consumer.id))()
-      .catch((err) => {
-        d.logger.warn('[consent] google customer match removal failed (membership TTL heals)', {
-          consumerId: consumer.id, error: err?.message || String(err),
+    // LEGACY direct Google Customer Match removal — the flag-OFF branch only
+    // (ads-centralisation §5.7: the dark period never removes today's
+    // compliance path; the flip switches this site atomically to the in-txn
+    // outbox write above). Post-commit, fire-and-forget via dynamic import;
+    // the list's finite membership duration backstops a lost call.
+    if (!useRemovalOutbox) {
+      (async () => d.googleCmRemoveByConsumerId(consumer.id))()
+        .catch((err) => {
+          d.logger.warn('[consent] google customer match removal failed (membership TTL heals)', {
+            consumerId: consumer.id, error: err?.message || String(err),
+          });
         });
-      });
+    }
     return result;
   }
 

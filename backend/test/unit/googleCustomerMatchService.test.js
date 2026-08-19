@@ -111,6 +111,22 @@ function eligibleRow(overrides = {}) {
 function grantAll(rows) {
   return new Map(rows.map((r) => [r.phone, new Map([['*', true]])]));
 }
+
+// §5.1 machinery seams — the real implementations need audience_destination_state
+// + the advisory-lock connection, which this NO-DB unit suite doesn't have.
+// The DB-backed audienceRemovals suite exercises the real ones.
+const engineSeams = () => ({
+  withDestinationLock: async (key, fn) => ({ acquired: true, value: await fn() }),
+  markIngestAccepted: jest.fn(async () => {}),
+  markIngestsSettled: jest.fn(async () => {}),
+  readDestinationState: async () => null,
+  loadEligibilityContext: async ({ requireConsent }) => ({
+    suppressedPhones: await consentMocks.getSuppressedPhoneSet(),
+    grantMap: requireConsent ? await consentMocks.getMarketableGrantMap() : null,
+    editSuppressedProspectIds: new Set(),
+  }),
+});
+
 function happyDeps(rows, dmOverrides = {}) {
   consentMocks.getMarketableGrantMap.mockResolvedValue(grantAll(rows));
   return {
@@ -119,6 +135,7 @@ function happyDeps(rows, dmOverrides = {}) {
     dmRequestGet: jest.fn().mockResolvedValue(okStatus),
     sendEmail: jest.fn().mockResolvedValue({}),
     sleep: fastSleep,
+    ...engineSeams(),
     ...dmOverrides,
   };
 }
@@ -146,10 +163,10 @@ describe('shouldSync / removalConfigured', () => {
   });
 });
 
-describe('selectCampaignProspects', () => {
+describe('__legacySelectCampaignProspects', () => {
   it('pins the exact selector: target campaign, non-bot, minimal attributes', async () => {
     const findAll = jest.fn().mockResolvedValue([]);
-    await svc.selectCampaignProspects({ Prospect: { findAll } });
+    await svc.__legacySelectCampaignProspects({ Prospect: { findAll } });
     expect(findAll).toHaveBeenCalledWith({
       attributes: ['email', 'phone', 'campaignId', 'sourceMetadata'],
       where: {
@@ -161,10 +178,10 @@ describe('selectCampaignProspects', () => {
   });
 });
 
-describe('buildMemberRows', () => {
+describe('__legacyBuildMemberRows', () => {
   it('emits HEX-hashed google-normalized email + E.164 phone identifiers', () => {
     const rows = [eligibleRow()];
-    const out = svc.buildMemberRows(rows, { grantMap: grantAll(rows) });
+    const out = svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) });
     expect(out).toEqual([
       {
         userIdentifiers: [
@@ -177,12 +194,12 @@ describe('buildMemberRows', () => {
 
   it('skips erased skeleton rows', () => {
     const rows = [eligibleRow({ sourceMetadata: { erased: true } })];
-    expect(svc.buildMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
+    expect(svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
   });
 
   it('skips rows without a verification stamp', () => {
     const rows = [eligibleRow({ sourceMetadata: {} })];
-    expect(svc.buildMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
+    expect(svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
   });
 
   it('enforces the phoneVerifiedFor binding: stale hash out, matching hash in, legacy stamp in', () => {
@@ -194,26 +211,26 @@ describe('buildMemberRows', () => {
     });
     const legacy = eligibleRow();
     const rows = [stale, bound, legacy];
-    expect(svc.buildMemberRows(rows, { grantMap: grantAll(rows) })).toHaveLength(2);
+    expect(svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) })).toHaveLength(2);
   });
 
   it('fails closed on consent: no map, no entry, and refused entry are all excluded', () => {
     const row = eligibleRow();
-    expect(svc.buildMemberRows([row], {})).toEqual([]);
-    expect(svc.buildMemberRows([row], { grantMap: new Map() })).toEqual([]);
+    expect(svc.__legacyBuildMemberRows([row], {})).toEqual([]);
+    expect(svc.__legacyBuildMemberRows([row], { grantMap: new Map() })).toEqual([]);
     const refused = new Map([[row.phone, new Map([['*', false]])]]);
-    expect(svc.buildMemberRows([row], { grantMap: refused })).toEqual([]);
+    expect(svc.__legacyBuildMemberRows([row], { grantMap: refused })).toEqual([]);
   });
 
   it('admits a campaign-scoped grant for the row campaign', () => {
     const row = eligibleRow();
     const scoped = new Map([[row.phone, new Map([['camp-airpods', true]])]]);
-    expect(svc.buildMemberRows([row], { grantMap: scoped })).toHaveLength(1);
+    expect(svc.__legacyBuildMemberRows([row], { grantMap: scoped })).toHaveLength(1);
   });
 
   it('drops suppressed phones', () => {
     const rows = [eligibleRow()];
-    const out = svc.buildMemberRows(rows, {
+    const out = svc.__legacyBuildMemberRows(rows, {
       grantMap: grantAll(rows),
       suppressedPhones: new Set(['+6591234567']),
     });
@@ -222,19 +239,19 @@ describe('buildMemberRows', () => {
 
   it('drops the synthetic Retell email but keeps the phone identifier', () => {
     const rows = [eligibleRow({ email: 'retell-abc@calls.mktr.sg' })];
-    const out = svc.buildMemberRows(rows, { grantMap: grantAll(rows) });
+    const out = svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) });
     expect(out).toEqual([{ userIdentifiers: [{ phoneNumber: sha('+6591234567') }] }]);
   });
 
   it('drops rows with neither usable identifier', () => {
     const weird = eligibleRow({ email: 'not-an-email', phone: null });
-    expect(svc.buildMemberRows([weird], { grantMap: grantAll([weird]) })).toEqual([]);
+    expect(svc.__legacyBuildMemberRows([weird], { grantMap: grantAll([weird]) })).toEqual([]);
   });
 });
 
-describe('buildRemovalIdentifiers', () => {
+describe('buildRemovalIdentifiersFromRaw', () => {
   it('builds identifiers with NO consent/verification gate (removal is always permitted)', () => {
-    const out = svc.buildRemovalIdentifiers([
+    const out = svc.buildRemovalIdentifiersFromRaw([
       { email: 'jane.doe@gmail.com', phone: '+6591234567' },
       { email: 'retell-x@calls.mktr.sg', phone: '+6598765432' },
       { email: null, phone: null },
@@ -305,11 +322,11 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
     await seedIngestRequest('req-a', T0);
     const dmRequestGet = jest.fn().mockResolvedValue(okStatus);
 
-    const early = await svc.settlePendingStatuses({ dmRequestGet, now: () => T0 + 29 * 60_000 });
+    const early = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet, now: () => T0 + 29 * 60_000 });
     expect(dmRequestGet).not.toHaveBeenCalled();
     expect(early.pending).toBe(1);
 
-    const due = await svc.settlePendingStatuses({ dmRequestGet, now: () => T0 + 31 * 60_000 });
+    const due = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet, now: () => T0 + 31 * 60_000 });
     expect(dmRequestGet).toHaveBeenCalledTimes(1);
     expect(dmRequestGet.mock.calls[0][0]).toBe('requestStatus:retrieve?requestId=req-a');
     expect(due.succeeded).toBe(1);
@@ -322,11 +339,11 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
     const sendEmail = jest.fn().mockResolvedValue({});
     process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
 
-    const first = await svc.settlePendingStatuses({ dmRequestGet: processing, sendEmail, now: () => T0 + 31 * 60_000 });
+    const first = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: processing, sendEmail, now: () => T0 + 31 * 60_000 });
     expect(first.pending).toBe(1); // rescheduled, not stuck
     expect(sendEmail).not.toHaveBeenCalled();
 
-    const past = await svc.settlePendingStatuses({ dmRequestGet: processing, sendEmail, now: () => T0 + 25 * 60 * 60_000 });
+    const past = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: processing, sendEmail, now: () => T0 + 25 * 60 * 60_000 });
     expect(past.stuck).toBe(1);
     expect(past.pending).toBe(0);
     expect(sendEmail).toHaveBeenCalledTimes(1);
@@ -338,7 +355,7 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
     const failed = jest.fn().mockResolvedValue({ requestStatus: 'FAILED' });
     const sendEmail = jest.fn().mockResolvedValue({});
     process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
-    const res = await svc.settlePendingStatuses({ dmRequestGet: failed, sendEmail, now: () => T0 + 31 * 60_000 });
+    const res = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: failed, sendEmail, now: () => T0 + 31 * 60_000 });
     expect(res.failed).toBe(1);
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sentryMocks.captureMessage).toHaveBeenCalled();
@@ -346,7 +363,7 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
     svc.__resetPendingSettlesForTests();
     await seedIngestRequest('req-d', T0);
     const broken = jest.fn().mockRejectedValue(new Error('boom'));
-    const mid = await svc.settlePendingStatuses({ dmRequestGet: broken, sendEmail: jest.fn(), now: () => T0 + 31 * 60_000 });
+    const mid = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: broken, sendEmail: jest.fn(), now: () => T0 + 31 * 60_000 });
     expect(mid.pending).toBe(1); // rescheduled — a flaky retrieve is not yet stuck
   });
 
@@ -370,11 +387,11 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
       return okStatus;
     });
     // Pass 1 at T0+31min: only req-slow is due; it hangs mid-poll.
-    const pass1 = svc.settlePendingStatuses({ dmRequestGet: slowGet, now: () => T0 + 31 * 60_000 });
+    const pass1 = svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: slowGet, now: () => T0 + 31 * 60_000 });
     await new Promise((r) => setTimeout(r, 10));
     // Pass 2 at T0+36min: req-later is due now — it must be visible and settle
     // even though pass 1 still holds req-slow.
-    const pass2 = await svc.settlePendingStatuses({ dmRequestGet: slowGet, now: () => T0 + 36 * 60_000 });
+    const pass2 = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: slowGet, now: () => T0 + 36 * 60_000 });
     expect(pass2.succeeded).toBe(1);
     expect(pass2.polled).toBe(1);
     releaseSlow();
@@ -393,14 +410,14 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
     const partial = jest.fn().mockResolvedValue({ requestStatus: 'PARTIAL_SUCCESS' });
     const sendEmail = jest.fn().mockResolvedValue({});
     process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
-    const res = await svc.settlePendingStatuses({ dmRequestGet: partial, sendEmail, now: () => T0 + 31 * 60_000 });
+    const res = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: partial, sendEmail, now: () => T0 + 31 * 60_000 });
     expect(res.removePartial).toBe(1);
     expect(sendEmail).toHaveBeenCalledTimes(1);
 
     svc.__resetPendingSettlesForTests();
     await seedIngestRequest('req-e', T0);
     const sendEmail2 = jest.fn().mockResolvedValue({});
-    const res2 = await svc.settlePendingStatuses({ dmRequestGet: partial, sendEmail: sendEmail2, now: () => T0 + 31 * 60_000 });
+    const res2 = await svc.settlePendingStatuses({ ...engineSeams(), dmRequestGet: partial, sendEmail: sendEmail2, now: () => T0 + 31 * 60_000 });
     expect(res2.partialSuccess).toBe(1);
     expect(res2.removePartial).toBe(0);
     expect(sendEmail2).not.toHaveBeenCalled();
@@ -410,7 +427,7 @@ describe('settlePendingStatuses (deferred, Google-recommended timing)', () => {
 describe('syncGoogleCustomerMatch', () => {
   it('returns guarded without touching the ledger when config is missing', async () => {
     delete process.env.GOOGLE_CM_USER_LIST_ID;
-    const res = await svc.syncGoogleCustomerMatch({ dmRequest: jest.fn() });
+    const res = await svc.syncGoogleCustomerMatch({ ...engineSeams(), dmRequest: jest.fn() });
     expect(res).toEqual({ submitted: false, reason: 'guarded' });
     expect(consentMocks.getMarketableGrantMap).not.toHaveBeenCalled();
   });
@@ -485,7 +502,7 @@ describe('syncGoogleCustomerMatch', () => {
     process.env.GOOGLE_CM_ALERT_EMAIL = 'ops@mktr.sg';
     const sendEmail = jest.fn().mockResolvedValue({});
     const dmRequest = jest.fn();
-    const res = await svc.syncGoogleCustomerMatch({ dmRequest, sendEmail, sleep: fastSleep });
+    const res = await svc.syncGoogleCustomerMatch({ ...engineSeams(), dmRequest, sendEmail, sleep: fastSleep });
     expect(res.submitted).toBe(false);
     expect(res.error).toMatch(/ledger down/);
     expect(dmRequest).not.toHaveBeenCalled();
@@ -556,7 +573,7 @@ describe('syncGoogleCustomerMatch', () => {
   it('treats an empty eligible set as a successful no-op', async () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([]) };
     const dmRequest = jest.fn();
-    const res = await svc.syncGoogleCustomerMatch({ Prospect, dmRequest, sleep: fastSleep });
+    const res = await svc.syncGoogleCustomerMatch({ ...engineSeams(), Prospect, dmRequest, sleep: fastSleep });
     expect(res).toEqual({ submitted: false, ok: true, reason: 'empty', eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null });
     expect(dmRequest).not.toHaveBeenCalled();
   });

@@ -1,5 +1,6 @@
 import '../setup.js';
-import { buildUserRows } from '../../src/services/redeemedAudienceService.js';
+import { filterEligible } from '../../src/services/audienceEligibilityService.js';
+import { shapeMetaAudienceRows } from '../../src/services/redeemedAudienceService.js';
 import { unsubTokenFor, unsubTokenHashOf } from '../../src/services/consentService.js';
 import {
   CONTACT_CONSENT_VERSION, CONTACT_CONSENT_COPY, CONTACT_CONSENT_COPY_HASH, CONTACT_CONSENT_CHANNELS,
@@ -10,28 +11,30 @@ import { createHash } from 'crypto';
 
 const CID = '11111111-1111-4111-8111-111111111111';
 
-describe('audience rows — fail-closed suppression BY PHONE (Codex R1 #12)', () => {
+describe('audience rows — fail-closed suppression BY PHONE (Codex R1 #12; engine path since ads-centralisation §5.2)', () => {
   const granted = (phone, email = 'a@b.co') => ({ phone, email, campaignId: CID });
   const grantMapFor = (...phones) =>
     new Map(phones.map((p) => [p, new Map([[CID, true]])]));
+  const metaPolicy = { scope: 'global', requireConsent: true, requireVerifiedBinding: false, checkErased: true };
+  const metaRows = (prospects, ctx) => shapeMetaAudienceRows(filterEligible(prospects, ctx, metaPolicy));
 
   test('suppressed phones are dropped even when the row is spine-unlinked', () => {
-    const suppressed = new Set(['+6591112222']);
-    const rows = buildUserRows(
+    const rows = metaRows(
       [granted('+6591112222'), granted('+6593334444')],
       {
-        requireConsent: true,
-        suppressedPhones: suppressed,
+        suppressedPhones: new Set(['+6591112222']),
         grantMap: grantMapFor('+6591112222', '+6593334444'), // grant beats nothing: suppression still drops
+        editSuppressedProspectIds: new Set(),
       }
     );
     expect(rows).toHaveLength(1); // only the non-suppressed person survives
   });
 
   test('no suppression set → ledger grant alone admits the row (back-compat shape)', () => {
-    const rows = buildUserRows([granted('+6591112222')], {
-      requireConsent: true,
+    const rows = metaRows([granted('+6591112222')], {
+      suppressedPhones: null,
       grantMap: grantMapFor('+6591112222'),
+      editSuppressedProspectIds: new Set(),
     });
     expect(rows).toHaveLength(1);
   });

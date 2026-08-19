@@ -14,7 +14,12 @@ import {
 import {
   THIRD_PARTY_CONSENT_VERSION, AGREE_ALL_THIRD_PARTY_VERSION,
 } from '../../src/services/externalConsent.js';
-import { selectRedeemers, buildUserRows } from '../../src/services/redeemedAudienceService.js';
+import { shapeMetaAudienceRows } from '../../src/services/redeemedAudienceService.js';
+import {
+  AUDIENCE_POLICIES,
+  selectAudiencePopulation,
+  filterEligible,
+} from '../../src/services/audienceEligibilityService.js';
 import { canWhatsAppProspect, makeWhatsappService } from '../../src/services/redeemOps/whatsappService.js';
 import { makeLeadOutcomeService } from '../../src/services/leadOutcomeService.js';
 import { _buildPayload as buildMetaPayload } from '../../src/services/metaCapiService.js';
@@ -490,16 +495,21 @@ describe('3sites — redeemed-audience upload set (grant map + suppression set)'
     expect(map.get(e164(phUnsubbed)).get('*')).toBe(false);
   });
 
-  test('selectRedeemers → buildUserRows keeps ONLY the verified-granted, unsuppressed person', async () => {
+  test('engine selection → filter → Meta shaping keeps ONLY the verified-granted, unsuppressed person', async () => {
     const mine = new Set([e164(phVerified), e164(phUnverified), e164(phUnticked), e164(phUnsubbed)]);
-    const prospects = (await selectRedeemers()).filter((p) => mine.has(p.phone));
+    const prospects = (await selectAudiencePopulation({ scope: 'global' })).filter((p) => mine.has(p.phone));
     expect(prospects).toHaveLength(4);
 
-    const rows = buildUserRows(prospects, {
-      requireConsent: true,
-      suppressedPhones: await getSuppressedPhoneSet(),
-      grantMap: await getMarketableGrantMap(),
-    });
+    const eligible = filterEligible(
+      prospects,
+      {
+        suppressedPhones: await getSuppressedPhoneSet(),
+        grantMap: await getMarketableGrantMap(),
+        editSuppressedProspectIds: new Set(),
+      },
+      AUDIENCE_POLICIES.meta
+    );
+    const rows = shapeMetaAudienceRows(eligible);
     expect(rows).toHaveLength(1);
     expect(rows[0][1]).toBe(hashPhone(e164(phVerified)));
     // …and the unsubscribed phone is ALSO caught by the suppression set alone.

@@ -410,7 +410,8 @@ export const {
   EnrichmentScoringConfig, EnrichmentSweepRun,
   MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection,
   OutreachAccount, OutreachPersona, OutreachEmail, TimelineHiddenEntry,
-  PlatformDelivery, Touchpoint, ErasedSessionSweep
+  PlatformDelivery, Touchpoint, ErasedSessionSweep,
+  AudienceRemoval, AudienceDestinationState
 } = models;
 
 export { sequelize };

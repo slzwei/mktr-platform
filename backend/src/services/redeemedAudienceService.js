@@ -5,6 +5,14 @@ import { hashEmail, hashPhone } from '../utils/piiHashing.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail } from './mailer.js';
 import { contactGrantAllows } from './contactConsent.js';
+import { withAdvisoryLock } from '../utils/advisoryLock.js';
+import {
+  AUDIENCE_POLICIES,
+  loadEligibilityContext,
+  selectAudiencePopulation,
+  filterEligible,
+} from './audienceEligibilityService.js';
+import { markIngestAccepted, markIngestsSettled } from './audienceRemovalService.js';
 
 /**
  * Redeemed-audience sync — pushes redeemers (hashed email + phone) from our own
@@ -33,7 +41,17 @@ const MAX_BATCH = 10000; // Meta cap: ≤10,000 users per /users request
 const AUDIENCE_SCHEMA = ['EMAIL', 'PHONE'];
 const SYNTHETIC_EMAIL_SUFFIX = '@calls.mktr.sg'; // Retell placeholder addresses
 
-const defaultDeps = { Prospect, fetch: globalThis.fetch, sendEmail };
+const defaultDeps = {
+  Prospect,
+  fetch: globalThis.fetch,
+  sendEmail,
+  // Injectable §5.1 seams (unit tests stub these; DB-backed suites hit the
+  // real advisory lock + audience_destination_state).
+  withDestinationLock: withAdvisoryLock,
+  markIngestAccepted,
+  markIngestsSettled,
+  loadEligibilityContext,
+};
 
 /** Read the configured Graph API version at call time (env-overridable). */
 function graphVersion() {
@@ -65,12 +83,13 @@ export function chunk(arr, size) {
 }
 
 /**
- * Select redeemers: every non-bot prospect (form submitters). Consent +
- * synthetic filtering happens in buildUserRows so the SQL stays simple;
- * campaignId rides along because the ledger grant check is campaign-scoped
- * (3sites — the legacy sourceMetadata.consent_contact read is gone).
+ * __LEGACY selection/filter pair (pre-engine) — kept ONLY for the §5.2
+ * differential harness that proves the eligibility engine reproduces them
+ * byte-for-byte (single intended diff: the engine's explicit checkErased).
+ * The name was always a misnomer (§5.3): it selects every non-bot prospect,
+ * not "redeemers". DELETED once the harness has pinned parity.
  */
-export async function selectRedeemers(deps = {}) {
+export async function __legacySelectRedeemers(deps = {}) {
   const d = { ...defaultDeps, ...deps };
   return d.Prospect.findAll({
     attributes: ['email', 'phone', 'campaignId'],
@@ -79,20 +98,8 @@ export async function selectRedeemers(deps = {}) {
   });
 }
 
-/**
- * Turn prospect rows into hashed multi-key audience rows `[emailHash, phoneHash]`.
- * - Drops synthetic Retell emails (@calls.mktr.sg).
- * - When consent is required, keeps ONLY rows whose latest ledger `contact`
- *   event in scope {row's campaign, global} is granted && verified (3sites):
- *   `grantMap` = consentService.getMarketableGrantMap(), keyed BY PHONE so
- *   spine-unlinked rows still enforce. No map / no phone / no entry →
- *   excluded — FAIL CLOSED. (Erased consumers have no map entry either.)
- * - Drops SUPPRESSED people (PR B) unconditionally: matched BY PHONE so rows
- *   the consumer spine failed to link still suppress — fail-closed, never by FK.
- * - Drops rows with neither a usable email nor phone.
- * - Missing key → empty string (Meta multi-key allows blanks).
- */
-export function buildUserRows(
+/** __LEGACY filter+shape (pre-engine) — see __legacySelectRedeemers. */
+export function __legacyBuildUserRows(
   prospects,
   { requireConsent = true, suppressedPhones = null, grantMap = null } = {}
 ) {
@@ -100,6 +107,27 @@ export function buildUserRows(
   for (const p of prospects || []) {
     if (requireConsent && !contactGrantAllows(grantMap?.get(p?.phone), p?.campaignId || null)) continue;
     if (suppressedPhones && p?.phone && suppressedPhones.has(p.phone)) continue;
+    const email =
+      p?.email && !String(p.email).toLowerCase().endsWith(SYNTHETIC_EMAIL_SUFFIX)
+        ? p.email
+        : null;
+    const emHash = hashEmail(email);
+    const phHash = hashPhone(p?.phone);
+    if (!emHash && !phHash) continue;
+    rows.push([emHash || '', phHash || '']);
+  }
+  return rows;
+}
+
+/**
+ * Identifier SHAPING for eligibility-engine output (§5.2): the engine owns
+ * selection + policy filtering; this owns Meta's wire shape — synthetic
+ * Retell emails dropped, hashed multi-key rows `[emailHash, phoneHash]`,
+ * missing key → empty string, neither key → row dropped.
+ */
+export function shapeMetaAudienceRows(prospects) {
+  const rows = [];
+  for (const p of prospects || []) {
     const email =
       p?.email && !String(p.email).toLowerCase().endsWith(SYNTHETIC_EMAIL_SUFFIX)
         ? p.email
@@ -155,6 +183,65 @@ export async function uploadBatch(
 }
 
 /**
+ * Meta removal transport (ads-centralisation §5.5): Graph
+ * `DELETE /{audience_id}/users`, payload/schema mirroring uploadBatch — the
+ * same form-encoded `payload={schema,data}` envelope, hashed multi-key rows.
+ * VERB + SUCCESS PREDICATE ARE PROBE-PINNED (§5.7): the Meta-DELETE probe
+ * runs before the writer flag ever flips, and any probe delta lands here.
+ * Success = 2xx; `num_invalid_entries` is accounted (the add edge exposes the
+ * same counter) but does not fail the call — an invalid entry was never on
+ * the list to begin with.
+ *
+ * Returns a classification for the removal outbox, never throws:
+ *   { ok:true, num_received, num_invalid_entries }
+ * | { ok:false, transient:true|authClass:true|permanent:true, errorCode }
+ */
+export async function metaAudienceRemove({ audienceId, rows }, deps = {}) {
+  const d = { ...defaultDeps, ...deps };
+  const token = process.env.META_ADS_MANAGEMENT_TOKEN;
+  if (!token || !audienceId) return { ok: false, permanent: true, errorCode: 'unconfigured' };
+  const data = (rows || []).filter((r) => Array.isArray(r) && r.some(Boolean));
+  if (data.length === 0) return { ok: false, permanent: true, errorCode: 'empty_identifiers' };
+
+  const url = `https://graph.facebook.com/${graphVersion()}/${audienceId}/users`;
+  const form = new URLSearchParams();
+  form.set('payload', JSON.stringify({ schema: AUDIENCE_SCHEMA, data }));
+
+  let res;
+  let body;
+  try {
+    res = await d.fetch(url, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: form.toString(),
+    });
+    body = await res.json().catch(() => ({}));
+  } catch (err) {
+    return { ok: false, transient: true, errorCode: 'network', message: err?.message };
+  }
+
+  if (res.ok) {
+    logger.info(
+      { audienceId, num_received: body.num_received, num_invalid_entries: body.num_invalid_entries },
+      'redeemed_audience.remove.ok'
+    );
+    return { ok: true, num_received: body.num_received, num_invalid_entries: body.num_invalid_entries };
+  }
+  const code = body?.error?.code;
+  if (res.status >= 500 || res.status === 429) {
+    return { ok: false, transient: true, errorCode: `http_${res.status}` };
+  }
+  if (code === 190 || code === 102 || code === 104) {
+    return { ok: false, authClass: true, errorCode: 'auth' };
+  }
+  // Never attach the body — invalid_entry_samples can carry hashed PII.
+  return { ok: false, permanent: true, errorCode: `meta_${code ?? res.status}` };
+}
+
+/**
  * Email a "bad run" alert (hard failure, or Meta rejected records) to
  * REDEEMED_AUDIENCE_ALERT_EMAIL when configured. Fire-and-forget: never throws,
  * never blocks the sync result. Body carries counts + the error message only —
@@ -191,16 +278,19 @@ export async function syncRedeemedAudience(deps = {}) {
   const requireConsent = requireConsentEnabled();
 
   try {
-    // Fail-closed by construction: if either ledger lookup throws, the sync
-    // run aborts — we never upload while blind to withdrawals (Codex R1 #12).
-    // Inside the try (3sites) so an abort is observable: Sentry + alert email,
-    // not a silent escape into the bootstrap cron's warn.
-    const { getSuppressedPhoneSet, getMarketableGrantMap } = await import('./consentService.js');
-    const suppressedPhones = await getSuppressedPhoneSet();
-    const grantMap = requireConsent ? await getMarketableGrantMap() : null;
-
-    const prospects = await selectRedeemers(d);
-    const rows = buildUserRows(prospects, { requireConsent, suppressedPhones, grantMap });
+    // The sync and the removal drainer share this destination's advisory lock
+    // (ads-centralisation §5.1 layer 1), held from eligibility selection
+    // through acceptance — a removal can never dispatch mid-selection.
+    const lockRes = await d.withDestinationLock(`aud:meta:${audienceId}`, async () => {
+    // Fail-closed by construction: loadEligibilityContext returns a COMPLETE
+    // snapshot or THROWS — the run aborts rather than uploading while blind
+    // to withdrawals (Codex R1 #12; the engine contract, §5.1). Inside the
+    // try (3sites) so an abort is observable: Sentry + alert email.
+    const policy = AUDIENCE_POLICIES.meta;
+    const ctx = await d.loadEligibilityContext({ requireConsent: policy.requireConsent });
+    const prospects = await selectAudiencePopulation({ scope: policy.scope }, d);
+    const eligible = filterEligible(prospects, ctx, policy);
+    const rows = shapeMetaAudienceRows(eligible);
     logger.info(
       { selected: prospects.length, eligible: rows.length, requireConsent, mode },
       'redeemed_audience.sync.start'
@@ -235,6 +325,12 @@ export async function syncRedeemedAudience(deps = {}) {
       );
     }
 
+    // Settlement watermark (§5.1): Meta ingestion is SYNCHRONOUS — each 2xx
+    // is applied — so the accept is recorded and immediately settled. Under
+    // the shared destination lock the drainer can't observe the in-between.
+    await d.markIngestAccepted('meta', audienceId);
+    await d.markIngestsSettled('meta', audienceId);
+
     logger.info(
       { eligible: rows.length, totalReceived, totalInvalid, mode },
       'redeemed_audience.sync.done'
@@ -257,6 +353,12 @@ export async function syncRedeemedAudience(deps = {}) {
       );
     }
     return { synced: true, eligible: rows.length, totalReceived, totalInvalid };
+    });
+    if (!lockRes.acquired) {
+      logger.warn('redeemed_audience.sync.locked (destination busy — drainer or another run holds the lock)');
+      return { synced: false, reason: 'locked' };
+    }
+    return lockRes.value;
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'redeemed_audience_sync' } });
     logger.error({ err: err.message }, 'redeemed_audience.sync.failed');

@@ -16,12 +16,26 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
 // Mock models/index.js so importing the SUT does NOT open a DB connection
 // (the real module has top-level await + Sequelize setup → ECONNREFUSED in CI).
 // ShortLink/ShortLinkClick satisfy mailer → shortLinkService's static imports
-// (the edge PR #205 added via mailer → consentService/shortLinkService).
+// (the edge PR #205 added via mailer → consentService/shortLinkService);
+// Consumer/RewardEntitlement/DrawEntry satisfy the eligibility engine's
+// consumerService edge (ads-centralisation §5.2 — the engine seams below keep
+// the DB paths out of these tests entirely).
 jest.unstable_mockModule('../src/models/index.js', () => ({
   Prospect: { findAll: jest.fn() },
+  Consumer: {},
+  RewardEntitlement: {},
+  DrawEntry: {},
   ShortLink: {},
   ShortLinkClick: {},
   sequelize: { close: jest.fn() },
+}));
+
+// Mock consumerService: the eligibility engine's verified-binding edge pulls
+// consumerService's whole model subtree — a pure stub severs it (Meta's
+// policy never calls the predicate anyway: requireVerifiedBinding=false).
+jest.unstable_mockModule('../src/services/consumerService.js', () => ({
+  phoneVerificationIsCurrent: (p) => Boolean(p?.sourceMetadata?.phoneVerifiedAt),
+  phoneHashOf: (v) => `hash:${String(v)}`,
 }));
 
 // Mock consentService: satisfies mailer's static `ensureUnsubToken` import AND
@@ -34,10 +48,10 @@ jest.unstable_mockModule('../src/services/consentService.js', () => ({
   getMarketableGrantMap: grantMapMock,
 }));
 
-let shouldSync, chunk, selectRedeemers, buildUserRows, uploadBatch, syncRedeemedAudience;
+let shouldSync, chunk, __legacySelectRedeemers, __legacyBuildUserRows, uploadBatch, syncRedeemedAudience;
 
 beforeAll(async () => {
-  ({ shouldSync, chunk, selectRedeemers, buildUserRows, uploadBatch, syncRedeemedAudience } =
+  ({ shouldSync, chunk, __legacySelectRedeemers, __legacyBuildUserRows, uploadBatch, syncRedeemedAudience } =
     await import('../src/services/redeemedAudienceService.js'));
 });
 
@@ -92,6 +106,24 @@ const okFetch = (body = { num_received: 1, num_invalid_entries: 0, session_id: '
 // ============================================================
 // shouldSync
 // ============================================================
+
+// §5.1 machinery seams (see googleCustomerMatchService.test.js) — keep this
+// suite hermetic from audience_destination_state + the advisory lock; the
+// DB-backed audienceRemovals suite exercises the real ones.
+const engineSeams = {
+  withDestinationLock: async (key, fn) => ({ acquired: true, value: await fn() }),
+  markIngestAccepted: async () => {},
+  markIngestsSettled: async () => {},
+  loadEligibilityContext: async ({ requireConsent }) => {
+    const { getSuppressedPhoneSet, getMarketableGrantMap } = await import('../src/services/consentService.js');
+    return {
+      suppressedPhones: await getSuppressedPhoneSet(),
+      grantMap: requireConsent ? await getMarketableGrantMap() : null,
+      editSuppressedProspectIds: new Set(),
+    };
+  },
+};
+
 describe('shouldSync', () => {
   it('returns true with full config', () => {
     expect(shouldSync()).toBe(true);
@@ -126,13 +158,13 @@ describe('chunk', () => {
 });
 
 // ============================================================
-// buildUserRows — consent arm is LEDGER-based (3sites): a row passes only when
+// __legacyBuildUserRows — consent arm is LEDGER-based (3sites): a row passes only when
 // its phone's latest contact event in scope {row's campaign, global} is
 // granted && verified (encoded as `true` in the grantMap by consentService).
 // ============================================================
-describe('buildUserRows', () => {
+describe('__legacyBuildUserRows', () => {
   it('hashes email + phone into a multi-key row (ledger grant present)', () => {
-    const rows = buildUserRows([prospect()], {
+    const rows = __legacyBuildUserRows([prospect()], {
       requireConsent: true,
       grantMap: grantFor('+6581234567'),
     });
@@ -142,7 +174,7 @@ describe('buildUserRows', () => {
   });
 
   it('drops rows whose latest in-scope event is not granted+verified (false entry)', () => {
-    const rows = buildUserRows([prospect()], {
+    const rows = __legacyBuildUserRows([prospect()], {
       requireConsent: true,
       grantMap: grantFor('+6581234567', CID, false), // untick / unverified / withdrawn
     });
@@ -150,7 +182,7 @@ describe('buildUserRows', () => {
   });
 
   it('drops rows with no ledger entry at all (unknown person — fail closed)', () => {
-    const rows = buildUserRows([prospect()], {
+    const rows = __legacyBuildUserRows([prospect()], {
       requireConsent: true,
       grantMap: new Map(),
     });
@@ -158,12 +190,12 @@ describe('buildUserRows', () => {
   });
 
   it('drops everything when requireConsent=true and no grantMap was supplied (fail closed)', () => {
-    const rows = buildUserRows([prospect()], { requireConsent: true, grantMap: null });
+    const rows = __legacyBuildUserRows([prospect()], { requireConsent: true, grantMap: null });
     expect(rows).toHaveLength(0);
   });
 
   it('a grant in a DIFFERENT campaign does not license this row', () => {
-    const rows = buildUserRows([prospect({ campaignId: OTHER_CID })], {
+    const rows = __legacyBuildUserRows([prospect({ campaignId: OTHER_CID })], {
       requireConsent: true,
       grantMap: grantFor('+6581234567', CID, true),
     });
@@ -171,7 +203,7 @@ describe('buildUserRows', () => {
   });
 
   it('a global grant licenses a row with no scoped entry', () => {
-    const rows = buildUserRows([prospect()], {
+    const rows = __legacyBuildUserRows([prospect()], {
       requireConsent: true,
       grantMap: grantFor('+6581234567', '*', true),
     });
@@ -180,7 +212,7 @@ describe('buildUserRows', () => {
 
   it('a scoped false (recency-folded) beats a global true — scope precedence', () => {
     const scopes = new Map([['*', true], [CID, false]]);
-    const rows = buildUserRows([prospect()], {
+    const rows = __legacyBuildUserRows([prospect()], {
       requireConsent: true,
       grantMap: new Map([['+6581234567', scopes]]),
     });
@@ -188,12 +220,12 @@ describe('buildUserRows', () => {
   });
 
   it('keeps ungranted rows when requireConsent=false', () => {
-    const rows = buildUserRows([prospect()], { requireConsent: false });
+    const rows = __legacyBuildUserRows([prospect()], { requireConsent: false });
     expect(rows).toHaveLength(1);
   });
 
   it('drops synthetic Retell emails but keeps the phone (blank email key)', () => {
-    const rows = buildUserRows(
+    const rows = __legacyBuildUserRows(
       [prospect({ email: 'retell-abc@calls.mktr.sg', phone: '+6591112222' })],
       { requireConsent: true, grantMap: grantFor('+6591112222') }
     );
@@ -203,7 +235,7 @@ describe('buildUserRows', () => {
   });
 
   it('drops rows with neither a usable email nor phone', () => {
-    const rows = buildUserRows(
+    const rows = __legacyBuildUserRows(
       [prospect({ email: null, phone: null })],
       { requireConsent: false }
     );
@@ -211,7 +243,7 @@ describe('buildUserRows', () => {
   });
 
   it('phone-less rows are consent-excluded when required (grant is phone-keyed)…', () => {
-    const rows = buildUserRows([prospect({ phone: null })], {
+    const rows = __legacyBuildUserRows([prospect({ phone: null })], {
       requireConsent: true,
       grantMap: grantFor('+6581234567'),
     });
@@ -219,7 +251,7 @@ describe('buildUserRows', () => {
   });
 
   it('…but emit a blank phone key when consent is not required', () => {
-    const rows = buildUserRows([prospect({ phone: null })], { requireConsent: false });
+    const rows = __legacyBuildUserRows([prospect({ phone: null })], { requireConsent: false });
     expect(rows[0][0]).toMatch(/^[a-f0-9]{64}$/);
     expect(rows[0][1]).toBe('');
   });
@@ -282,7 +314,7 @@ describe('syncRedeemedAudience', () => {
     process.env.REDEEMED_AUDIENCE_SYNC_ENABLED = 'false';
     const fetchSpy = okFetch();
     const Prospect = { findAll: jest.fn() };
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect });
     expect(result).toEqual({ synced: false, reason: 'guarded' });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(Prospect.findAll).not.toHaveBeenCalled();
@@ -300,7 +332,7 @@ describe('syncRedeemedAudience', () => {
       ['+6590000001', new Map([[CID, true]])],
       ['+6590000002', new Map([[CID, true]])],
     ]));
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const parsed = new URLSearchParams(fetchSpy.mock.calls[0][1].body);
@@ -314,7 +346,7 @@ describe('syncRedeemedAudience', () => {
   it('uploads nothing and reports zero when nobody has a ledger grant', async () => {
     const fetchSpy = okFetch();
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect }); // default: empty grant map
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect }); // default: empty grant map
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ synced: true, eligible: 0, totalReceived: 0, totalInvalid: 0 });
   });
@@ -324,7 +356,7 @@ describe('syncRedeemedAudience', () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     grantMapMock.mockResolvedValue(grantFor('+6581234567'));
     suppressedMock.mockResolvedValue(new Set(['+6581234567']));
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result.eligible).toBe(0);
   });
@@ -333,7 +365,7 @@ describe('syncRedeemedAudience', () => {
     const fetchSpy = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     grantMapMock.mockResolvedValue(grantFor('+6581234567'));
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect });
     expect(result.synced).toBe(false);
     expect(result.error).toMatch(/HTTP 500/);
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
@@ -345,7 +377,7 @@ describe('syncRedeemedAudience', () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const sendEmail = jest.fn().mockResolvedValue({ success: true });
     grantMapMock.mockRejectedValue(new Error('ledger unreachable'));
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect, sendEmail });
     expect(result).toEqual({ synced: false, error: 'ledger unreachable' });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
@@ -357,7 +389,7 @@ describe('syncRedeemedAudience', () => {
     const fetchSpy = okFetch();
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     suppressedMock.mockRejectedValue(new Error('suppressions unreachable'));
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect });
     expect(result).toEqual({ synced: false, error: 'suppressions unreachable' });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
@@ -367,7 +399,7 @@ describe('syncRedeemedAudience', () => {
     process.env.REDEEMED_AUDIENCE_REQUIRE_CONSENT = 'false';
     const fetchSpy = okFetch({ num_received: 1, num_invalid_entries: 0 });
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(result.eligible).toBe(1);
     expect(grantMapMock).not.toHaveBeenCalled();
@@ -380,7 +412,7 @@ describe('syncRedeemedAudience', () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const sendEmail = jest.fn().mockResolvedValue({ success: true });
     grantMapMock.mockResolvedValue(grantFor('+6581234567'));
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect, sendEmail });
     expect(result.synced).toBe(false);
     expect(sendEmail).toHaveBeenCalledTimes(1);
     const arg = sendEmail.mock.calls[0][0];
@@ -394,7 +426,7 @@ describe('syncRedeemedAudience', () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const sendEmail = jest.fn();
     grantMapMock.mockResolvedValue(grantFor('+6581234567'));
-    await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect, sendEmail });
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
@@ -404,7 +436,7 @@ describe('syncRedeemedAudience', () => {
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const sendEmail = jest.fn().mockResolvedValue({ success: true });
     grantMapMock.mockResolvedValue(grantFor('+6581234567'));
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    const result = await syncRedeemedAudience({ ...engineSeams, fetch: fetchSpy, Prospect, sendEmail });
     expect(result.synced).toBe(true);
     expect(result.totalInvalid).toBe(1);
     expect(sendEmail).toHaveBeenCalledTimes(1);
