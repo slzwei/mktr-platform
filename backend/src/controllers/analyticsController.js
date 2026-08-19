@@ -10,10 +10,25 @@ const allowedOrigins = new Set([
   'http://localhost:5173'
 ]);
 
+function originOf(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
 function assertAllowedOrigin(req) {
-  const origin = req.headers.origin || '';
-  const referer = req.headers.referer || '';
-  const allowed = [...allowedOrigins].some((o) => origin.startsWith(o) || referer.startsWith(o));
+  // EXACT-origin match (ads-centralisation §4.3). The old prefix test
+  // (`origin.startsWith(o)`) accepted lookalike hosts — a page on
+  // https://mktr.sg.evil.example passed a startsWith check against
+  // https://mktr.sg — for /events and /referrals alike. The Referer fallback
+  // compares its PARSED origin, never the raw string.
+  const origin = originOf(req.headers.origin || '');
+  const refererOrigin = originOf(req.headers.referer || '');
+  const allowed =
+    (origin !== null && allowedOrigins.has(origin)) ||
+    (refererOrigin !== null && allowedOrigins.has(refererOrigin));
   if (!allowed) {
     throw new AppError('Origin not allowed', 403);
   }
