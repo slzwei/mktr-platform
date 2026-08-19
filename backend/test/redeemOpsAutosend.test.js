@@ -50,7 +50,16 @@ const mockClient = () => ({
   getThread: async () => ({ messages: google.threadMessages }),
   listMessages: async () => google.sentSearch,
 });
-const sender = makeOutreachSenderService({ makeClient: mockClient });
+// Pin the sender's clock to TODAY 12:00 SGT — inside the 07:00-21:00 send
+// window (the service reschedules outside it, so an unpinned suite goes red
+// on every night-SGT run: the 21:29/23:48/02:42-SGT CI failures). Row claiming
+// compares against DB NOW(), so the pin only steers window/cap/freshness math.
+const noonSgt = () => {
+  const t = new Date();
+  t.setUTCHours(4, 0, 0, 0); // 12:00 SGT
+  return t;
+};
+const sender = makeOutreachSenderService({ makeClient: mockClient, now: noonSgt });
 
 let phoneSeq = 82000000;
 const nextPhone = () => `+65${phoneSeq++}`;
