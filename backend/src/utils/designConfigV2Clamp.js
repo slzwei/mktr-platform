@@ -425,11 +425,19 @@ function clampForm(raw) {
   };
   if (isPlainObject(f.terms)) {
     const html = cleanString(f.terms.html, LIMITS.terms);
-    if (html !== undefined) {
+    const prudentialAd = f.terms.prudentialAd === true;
+    if (html !== undefined || prudentialAd) {
       out.terms = {
         template: cleanEnum(f.terms.template, ['default', 'privacy', 'marketing'], 'default'),
-        html,
+        ...(html !== undefined ? { html } : {}),
+        // Prudential introducer disclosure (Studio "Prudential Ad" toggle) —
+        // flag only; the block text is a frontend constant appended at render.
+        ...(prudentialAd ? { prudentialAd: true } : {}),
       };
+      if (prudentialAd) {
+        const fb = cleanString(f.terms.prudentialFbName, 80);
+        if (fb !== undefined && fb.trim()) out.terms.prudentialFbName = fb.trim();
+      }
     }
   }
   return out;

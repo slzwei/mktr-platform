@@ -213,7 +213,7 @@ export const V1_CONSUMED_KEYS = [
   'formHeadline', 'formSubheadline', 'brandWordmark', 'storyText', 'storyEmphasis',
   'heroCtaLabel', 'ctaText', 'regulatoryFooter', 'brandFooter',
   'imageUrl', 'videoUrl', 'mediaType', 'themeColor', 'heroFont', 'formWidth',
-  'termsContent', 'customerHost', 'otpChannel',
+  'termsContent', 'customerHost', 'otpChannel', 'prudentialAd', 'prudentialFbName',
   'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit', 'screeningCallAtSubmit',
   'visibleFields', 'requiredFields', 'fieldOrder',
   'featuredDrop', 'marketplaceListed',
@@ -591,8 +591,20 @@ export function upgradeDesignConfig(doc) {
       dncCheck: dc.dncCheckAtSubmit === true,
       screeningCall: dc.screeningCallAtSubmit === true,
     },
-    ...(dc.termsContent !== undefined
-      ? { terms: { template: 'default', html: clone(dc.termsContent) } }
+    ...(dc.termsContent !== undefined || dc.prudentialAd === true
+      ? {
+        terms: {
+          template: 'default',
+          ...(dc.termsContent !== undefined ? { html: clone(dc.termsContent) } : {}),
+          // Prudential introducer disclosure flag — the block itself is a
+          // frontend constant appended at RENDER time (never stored in html,
+          // so campaigns can't drift when the template text changes).
+          ...(dc.prudentialAd === true ? { prudentialAd: true } : {}),
+          ...(dc.prudentialAd === true && typeof dc.prudentialFbName === 'string' && dc.prudentialFbName
+            ? { prudentialFbName: clone(dc.prudentialFbName) }
+            : {}),
+        },
+      }
       : {}),
   };
 
@@ -687,6 +699,12 @@ export function downgradeDesignConfig(doc) {
   out.dncCheckAtSubmit = gates.dncCheck === true;
   out.screeningCallAtSubmit = gates.screeningCall === true;
   if (isPlainObject(form.terms) && form.terms.html !== undefined) out.termsContent = clone(form.terms.html);
+  if (isPlainObject(form.terms) && form.terms.prudentialAd === true) {
+    out.prudentialAd = true;
+    if (typeof form.terms.prudentialFbName === 'string' && form.terms.prudentialFbName) {
+      out.prudentialFbName = clone(form.terms.prudentialFbName);
+    }
+  }
 
   const distribution = isPlainObject(doc.distribution) ? doc.distribution : {};
   out.customerHost = distribution.host === 'mktr' ? 'mktr' : 'redeem';
