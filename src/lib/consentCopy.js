@@ -15,14 +15,17 @@
  * Editing ANY user-visible string here means a NEW era: bump the version
  * label AND add a new backend registry entry — never edit in place.
  */
-export const CONSENT_COPY_VERSION = '2026-07-21-agree-all-v1';
+// 2026-08-19-agree-all-v2: byte-identical to v1 except the legal-entity
+// casing in the contact clause ("MKTR Pte. Ltd." → "MKTR PTE. LTD.") —
+// consistent with the campaign T&Cs and the Prudential introducer clause.
+export const CONSENT_COPY_VERSION = '2026-08-19-agree-all-v2';
 
 export const CONSENT_COPY = Object.freeze({
   heading: 'One agreement — read once',
   intro: "By submitting this form, you agree to the following. It's short, and it's everything:",
   clauseContactHeadline: 'Contact from Redeem — this offer and future ones.',
   clauseContactBody:
-    "MKTR Pte. Ltd. (the company behind Redeem) may contact you by phone call, text message (SMS or WhatsApp) or email about your signup and reward, and about other Redeem offers, rewards and lucky draws. You can opt out anytime — every marketing email includes an unsubscribe link, or contact us using the details in our Personal Data Policy. Opting out later won't affect a reward you've already claimed.",
+    "MKTR PTE. LTD. (the company behind Redeem) may contact you by phone call, text message (SMS or WhatsApp) or email about your signup and reward, and about other Redeem offers, rewards and lucky draws. You can opt out anytime — every marketing email includes an unsubscribe link, or contact us using the details in our Personal Data Policy. Opting out later won't affect a reward you've already claimed.",
   // The terms clause body interleaves the T&C-modal link, so it ships in parts.
   clauseTermsHeadline: "This campaign's terms.",
   clauseTermsPrefix: "You agree to the campaign's ",

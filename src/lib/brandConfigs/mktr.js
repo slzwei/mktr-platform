@@ -30,7 +30,7 @@ export default {
   contactWhatsapp: '',
   // Lead-capture defaults used by LeadCapture.jsx / LeadCaptureDemo.jsx.
   defaultRegulatory:
-    'MKTR Pte. Ltd. (UEN: 202507548M) operates this referral platform. Submitting this form does not establish any advisory relationship and is not a recommendation of any product. By submitting, you agree to be contacted using the particulars provided.',
+    'MKTR PTE. LTD. (UEN: 202507548M) operates this referral platform. Submitting this form does not establish any advisory relationship and is not a recommendation of any product. By submitting, you agree to be contacted using the particulars provided.',
   defaultPoweredBy: 'Powered by MKTR',
   // Marketing consent dialog references.
   partnersTerm: 'MKTR Partners',

@@ -85,10 +85,19 @@ export const AGREE_ALL_THIRD_PARTY_VERSION = '2026-07-21-agree-all-v1';
 export const AGREE_ALL_THIRD_PARTY_COPY =
   "Sharing with this campaign's sponsor. This campaign is sponsored: your name, contact details and form responses will be shared with the sponsoring licensed financial advisory representative (named on this page), who may contact you about your reward and relevant financial products and services.";
 
+/**
+ * AGREE-ALL v2 era label (2026-08-19): the casing era only changed the CONTACT
+ * clause ("MKTR Pte. Ltd." → "MKTR PTE. LTD."); this third-party clause is
+ * byte-identical across v1/v2 — the label exists so v2 captures stamp their
+ * own era instead of falling back to the legacy default.
+ */
+export const AGREE_ALL_THIRD_PARTY_VERSION_V2 = '2026-08-19-agree-all-v2';
+
 /** Version labels buildExternalConsentEvidence may stamp (unknown => default). */
 const KNOWN_THIRD_PARTY_VERSIONS = Object.freeze([
   THIRD_PARTY_CONSENT_VERSION,
   AGREE_ALL_THIRD_PARTY_VERSION,
+  AGREE_ALL_THIRD_PARTY_VERSION_V2,
 ]);
 
 /**
