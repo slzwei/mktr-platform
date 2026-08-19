@@ -12,9 +12,12 @@ import {
   CONTACT_CONSENT_VERSIONS,
   AGREE_ALL_CONSENT_VERSION,
   AGREE_ALL_CONTACT_COPY,
+  AGREE_ALL_CONSENT_VERSION_V2,
+  AGREE_ALL_CONTACT_COPY_V2,
 } from '../../../backend/src/services/contactConsent.js';
 import {
   AGREE_ALL_THIRD_PARTY_VERSION,
+  AGREE_ALL_THIRD_PARTY_VERSION_V2,
   AGREE_ALL_THIRD_PARTY_COPY,
 } from '../../../backend/src/services/externalConsent.js';
 
@@ -22,14 +25,25 @@ const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
 describe('agree-all consent copy — frontend/backend lock-step', () => {
   it('one era, one label: frontend version === both backend era labels', () => {
-    expect(CONSENT_COPY_VERSION).toBe(AGREE_ALL_CONSENT_VERSION);
-    expect(CONSENT_COPY_VERSION).toBe(AGREE_ALL_THIRD_PARTY_VERSION);
+    expect(CONSENT_COPY_VERSION).toBe(AGREE_ALL_CONSENT_VERSION_V2);
+    expect(CONSENT_COPY_VERSION).toBe(AGREE_ALL_THIRD_PARTY_VERSION_V2);
+  });
+
+  it('the CLOSED v1 era is still registered, byte-untouched (evidence keeps meaning)', () => {
+    const v1 = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION];
+    expect(v1.copy).toBe(AGREE_ALL_CONTACT_COPY);
+    expect(v1.copy).toContain('MKTR Pte. Ltd.');
+    expect(AGREE_ALL_THIRD_PARTY_VERSION).toBe('2026-07-21-agree-all-v1');
+  });
+
+  it('v2 changed ONLY the entity casing in the contact clause', () => {
+    expect(AGREE_ALL_CONTACT_COPY_V2).toBe(AGREE_ALL_CONTACT_COPY.replace('MKTR Pte. Ltd.', 'MKTR PTE. LTD.'));
   });
 
   it('contact clause (headline + body) is BYTE-IDENTICAL to the ledger-pinned backend copy', () => {
     const onScreen = `${CONSENT_COPY.clauseContactHeadline} ${CONSENT_COPY.clauseContactBody}`;
-    expect(AGREE_ALL_CONTACT_COPY).toBe(onScreen);
-    const era = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION];
+    expect(AGREE_ALL_CONTACT_COPY_V2).toBe(onScreen);
+    const era = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION_V2];
     expect(era.copy).toBe(onScreen);
     expect(era.copyHash).toBe(sha256(onScreen));
     expect(era.scope).toBe('brand');

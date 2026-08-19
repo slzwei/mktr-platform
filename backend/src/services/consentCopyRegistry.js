@@ -1,6 +1,7 @@
 import { CONTACT_CONSENT_VERSIONS } from './contactConsent.js';
 import {
-  AGREE_ALL_THIRD_PARTY_VERSION, AGREE_ALL_THIRD_PARTY_COPY, THIRD_PARTY_CONSENT_CHANNELS,
+  AGREE_ALL_THIRD_PARTY_VERSION, AGREE_ALL_THIRD_PARTY_VERSION_V2,
+  AGREE_ALL_THIRD_PARTY_COPY, THIRD_PARTY_CONSENT_CHANNELS,
 } from './externalConsent.js';
 import DrawTermsVersion from '../models/DrawTermsVersion.js';
 
@@ -32,7 +33,7 @@ export async function resolveConsentCopy(version, deps = {}) {
       scope: contact.scope,
     });
   }
-  if (v === AGREE_ALL_THIRD_PARTY_VERSION) {
+  if (v === AGREE_ALL_THIRD_PARTY_VERSION || v === AGREE_ALL_THIRD_PARTY_VERSION_V2) {
     clauses.push({
       kind: 'third_party',
       label: 'Sponsor sharing',

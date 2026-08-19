@@ -208,7 +208,7 @@ export default function ScreeningCallback() {
         ))}
       </div>
       <p className="mt-4 text-[11px] leading-relaxed text-[#6B6558]">
-        By picking a time you&apos;re agreeing to a call from the Redeem draw team (MKTR Pte. Ltd.) about your
+        By picking a time you&apos;re agreeing to a call from the Redeem draw team (MKTR PTE. LTD.) about your
         entry — 10am–8pm Singapore time.
       </p>
     </>
