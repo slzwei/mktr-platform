@@ -28,6 +28,8 @@ const PUBLIC_PASSTHROUGH_KEYS = [
   // Flow gates + channel (thirdPartyDisclosure: agree-all consent block's
   // sponsored-campaign clause toggle — default ON, so only `false` matters)
   'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit', 'otpChannel', 'thirdPartyDisclosure',
+  // Prudential introducer disclosure (rendered into the agreement dialog)
+  'prudentialAd', 'prudentialFbName',
   // Funnel variants (public quiz/guided-review campaigns render from these)
   'quiz', 'guidedReview',
   // Marketplace content (clamped on save by normalizeMarketplaceContent)
@@ -152,7 +154,7 @@ function buildPublicDesignConfigV2(dc) {
   }
   const gates = pick(dc.form?.gates, ['sgPr', 'advisorExclusion', 'dncCheck']);
   if (gates) form.gates = gates;
-  const terms = pick(dc.form?.terms, ['template', 'html']);
+  const terms = pick(dc.form?.terms, ['template', 'html', 'prudentialAd', 'prudentialFbName']);
   if (terms) form.terms = terms;
   if (Object.keys(form).length) out.form = form;
 

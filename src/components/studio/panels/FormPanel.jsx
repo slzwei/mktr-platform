@@ -394,6 +394,32 @@ export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured, ca
           }
         />
         <TextAreaField id="studio-terms-html" label="Campaign T&Cs (HTML)" bind={bind('form.terms.html', 10000)} rows={7} />
+        {/* Prudential introducer disclosure — appends the compliance block
+            (one frontend constant) to the rendered T&Cs. No extra checkbox. */}
+        <ToggleRow
+          id="studio-prudential-ad"
+          label="Prudential Ad"
+          hint="Appends the Prudential introducer & consent disclosure to the campaign T&Cs — same agreement, no extra checkbox"
+          checked={doc.form?.terms?.prudentialAd === true}
+          onChange={(v) =>
+            mut((d) => {
+              const t = d.form.terms && typeof d.form.terms === 'object' ? d.form.terms : {};
+              d.form.terms = { template: t.template || 'default', html: t.html ?? '' };
+              if (v) {
+                d.form.terms.prudentialAd = true;
+                if (t.prudentialFbName) d.form.terms.prudentialFbName = t.prudentialFbName;
+              }
+            })
+          }
+        />
+        {doc.form?.terms?.prudentialAd === true ? (
+          <TextField
+            id="studio-prudential-fbname"
+            label="Facebook Business Name"
+            bind={bind('form.terms.prudentialFbName', 80)}
+            placeholder="Page the ad runs under — renders as “… belongs to MKTR PTE. LTD.”"
+          />
+        ) : null}
         {doc.luckyDraw?.enabled === true && !(doc.form?.terms?.html || '').trim() ? (
           <WarnNote tone="bad">Lucky-draw campaigns cannot save without T&Cs (server invariant).</WarnNote>
         ) : null}

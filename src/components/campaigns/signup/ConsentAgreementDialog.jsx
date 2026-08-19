@@ -3,6 +3,7 @@ import DOMPurify from 'dompurify';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import DefaultTermsCopy from '@/components/legal/DefaultTermsCopy';
+import PrudentialIntroducerClause from '@/components/legal/PrudentialIntroducerClause';
 import {
   CONSENT_COPY, CONSENT_INLINE, isSponsoredCampaign, sponsorNameLine,
 } from '@/lib/consentCopy';
@@ -152,6 +153,12 @@ export default function ConsentAgreementDialog({
               <div dangerouslySetInnerHTML={{ __html: sanitized }} />
             ) : (
               <DefaultTermsCopy />
+            )}
+            {/* Prudential introducer disclosure — APPENDED to the campaign
+                T&Cs when the Studio "Prudential Ad" toggle is on. Part of the
+                same agreement, never a second checkbox. */}
+            {designConfig?.prudentialAd === true && (
+              <PrudentialIntroducerClause fbName={designConfig?.prudentialFbName} />
             )}
           </div>
         </div>

@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { clampDesignConfigV2 } from '../src/utils/designConfigV2Clamp.js';
-import { upgradeDesignConfig } from '../src/utils/designConfigV2.js';
+import { upgradeDesignConfig, readLegacyView } from '../src/utils/designConfigV2.js';
 
 // A Studio-authored doc: migrated v1 base + edits across every rail section,
 // plus admin subtrees and a future unknown key.
@@ -343,5 +343,50 @@ describe('clampProfileQuestions — custom questions (studio-custom-questions §
     const once = clampDesignConfigV2(doc, undefined, 'admin');
     const twice = clampDesignConfigV2(once, undefined, 'admin');
     expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+  });
+});
+
+describe('form.terms.prudentialAd — Prudential introducer disclosure toggle', () => {
+  const v2terms = (terms) => ({
+    version: 2,
+    template: { id: 'express', params: {} },
+    theme: { preset: 'warm-cream' },
+    content: {},
+    form: { terms },
+  });
+
+  it('survives the clamp with a trimmed, capped Facebook Business Name', () => {
+    const out = clampDesignConfigV2(
+      v2terms({ template: 'marketing', html: '<p>T</p>', prudentialAd: true, prudentialFbName: `  Redeem SG${'x'.repeat(200)}  ` }),
+      undefined, 'admin'
+    );
+    expect(out.form.terms.prudentialAd).toBe(true);
+    expect(out.form.terms.prudentialFbName.length).toBeLessThanOrEqual(80);
+    expect(out.form.terms.prudentialFbName.startsWith('Redeem SG')).toBe(true);
+    expect(out.form.terms.html).toBe('<p>T</p>');
+  });
+
+  it('OFF (or junk) strips both keys — fbName never rides without the flag', () => {
+    const out = clampDesignConfigV2(
+      v2terms({ template: 'default', html: '<p>T</p>', prudentialAd: 'yes', prudentialFbName: 'Redeem SG' }),
+      undefined, 'admin'
+    );
+    expect(out.form.terms.prudentialAd).toBeUndefined();
+    expect(out.form.terms.prudentialFbName).toBeUndefined();
+  });
+
+  it('keeps terms alive when the flag is on with NO custom html', () => {
+    const out = clampDesignConfigV2(v2terms({ prudentialAd: true }), undefined, 'admin');
+    expect(out.form.terms).toEqual({ template: 'default', prudentialAd: true });
+  });
+
+  it('round-trips v1 → v2 → v1 (legacy view feeds the funnel dialog)', () => {
+    const doc = upgradeDesignConfig({ termsContent: '<p>T</p>', prudentialAd: true, prudentialFbName: 'Redeem SG' });
+    expect(doc.form.terms).toMatchObject({ html: '<p>T</p>', prudentialAd: true, prudentialFbName: 'Redeem SG' });
+    expect(doc.prudentialAd).toBeUndefined(); // consumed, not top-level residue
+    const legacy = readLegacyView(doc);
+    expect(legacy.prudentialAd).toBe(true);
+    expect(legacy.prudentialFbName).toBe('Redeem SG');
+    expect(readLegacyView(upgradeDesignConfig({ termsContent: '<p>T</p>' })).prudentialAd).toBeUndefined();
   });
 });
