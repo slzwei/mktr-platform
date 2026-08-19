@@ -26,6 +26,7 @@ import {
   captureGclFromUrl, readGcl,
 } from '@/lib/googleAds';
 import { shouldTrackAdRoll, initAdRoll, trackAdRollPageView } from '@/lib/adroll';
+import { beaconTouch, sessionSubmitHeaders } from '@/lib/touch';
 import { trackFunnelEvent } from '@/lib/pixelCustom';
 import {
   shouldTrackTikTok, captureTtclidFromUrl, readTtclid, readTtp,
@@ -205,6 +206,10 @@ export default function MarketplaceFlow() {
       initAdRoll();
       trackAdRollPageView();
     }
+
+    // Durable touchpoint (ads-centralisation §4.4) — campaign-aware like the
+    // AdRoll fire above; own throttle; dark unless VITE_TOUCH_ENABLED.
+    beaconTouch({ campaign, campaignId: campaign.id, surface: 'flow' });
   }, [campaign]);
 
   // OTP resend cooldown tick
@@ -409,7 +414,9 @@ export default function MarketplaceFlow() {
         })
       );
 
-      const resp = await apiClient.post('/prospects', payload, { skipAuth: true });
+      // X-Session-Id (ads-centralisation §4.2): the boot id rides the submit so
+      // even the fastest capture binds a session — empty until the touch flags flip.
+      const resp = await apiClient.post('/prospects', payload, { skipAuth: true, headers: await sessionSubmitHeaders() });
       if (resp?.success) {
         const trackCtx = { campaign, pathname: window.location.pathname, search: window.location.search };
         if (shouldTrack({ ...trackCtx, pixelId: resolveMetaPixelId(campaign) })) {

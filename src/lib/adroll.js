@@ -83,7 +83,12 @@ const BROWSE_PATTERNS = [
   /^\/legal\/[^/]+$/, // marketplace legal docs
 ];
 
-/** Every route AdRoll is allowed on: campaign funnel ∪ public browse. */
+/**
+ * Every route AdRoll is allowed on: campaign funnel ∪ public browse.
+ * ALSO the touchpoint-beacon allow-list (TouchRouteTracker + lib/touch,
+ * ads-centralisation §4.4) — the two features deliberately share ONE surface
+ * definition, so a route added or removed here changes both.
+ */
 export function isAdRollSurface(pathname) {
   const path = (pathname || '').toLowerCase();
   if (isAdRollCampaignSurface(path)) return true;

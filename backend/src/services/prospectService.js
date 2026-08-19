@@ -77,6 +77,7 @@ import {
   getProspectOutcomes,
 } from './leadProfileService.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import { validSid } from '../utils/sessionId.js';
 import { sgtDayEndExclusiveMs, cleanYmd, sgtAgeFromDob } from '../utils/sgtTime.js';
 
 // Redeem Ops capture hook (docs/redeem-ops/MKTR_INTEGRATION.md §2): a
@@ -367,11 +368,18 @@ export function makeProspectService(overrides = {}) {
     // /LeadCapture?campaign_id=X link) BEFORE we derive one from a QR tag.
     const explicitCampaignId = incoming.campaignId != null ? incoming.campaignId : null;
 
-    // Bind attribution by session cookie (sid). Most-recently-touched wins
-    // (last-touch); createdAt then id DESC are deterministic tiebreakers for a
-    // same-millisecond lastTouchAt tie.
-    const sid = cookies?.sid || headers?.['x-session-id'];
+    // One session id (ads-centralisation §4.5): the controller resolves/mints
+    // the sid (validated cookie → validated X-Session-Id header → mint) and
+    // passes it as meta.sessionId; direct service callers fall back to the
+    // same validated raw sources. The prospect binds the sid WHENEVER one
+    // exists — first/last-touch joins need every web prospect session-keyed,
+    // even on the fastest submit. Attribution rows only add QR/campaign
+    // context on top (most-recently-touched wins; createdAt then id DESC are
+    // deterministic tiebreakers for a same-millisecond lastTouchAt tie).
+    // The sid is never authorization material.
+    const sid = meta?.sessionId ?? (validSid(cookies?.sid) || validSid(headers?.['x-session-id']));
     if (sid) {
+      incoming.sessionId = sid;
       const attribution = await m.Attribution.findOne({
         where: { sessionId: sid },
         order: [['lastTouchAt', 'DESC'], ['createdAt', 'DESC'], ['id', 'DESC']],
@@ -379,7 +387,6 @@ export function makeProspectService(overrides = {}) {
       if (attribution) {
         incoming.attributionId = attribution.id;
         incoming.qrTagId = attribution.qrTagId || incoming.qrTagId;
-        incoming.sessionId = sid;
       }
     }
 
@@ -405,9 +412,12 @@ export function makeProspectService(overrides = {}) {
         boundQr.campaignId != null &&
         String(boundQr.campaignId) === String(explicitCampaignId);
       if (!qrBelongsToExplicitCampaign) {
+        // Drop the foreign QR + its attribution — but KEEP the sessionId
+        // (ads-centralisation §4.5): the session is the person's browsing
+        // identity for touchpoint joins, not a routing input; only the
+        // qr/attribution pair could skew agent routing.
         delete incoming.qrTagId;
         delete incoming.attributionId;
-        delete incoming.sessionId;
         incoming.campaignId = explicitCampaignId;
       }
     }

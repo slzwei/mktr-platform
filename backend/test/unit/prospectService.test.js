@@ -265,40 +265,43 @@ describe('prospectService (unit)', () => {
       }
     });
 
+    // Fixture sids are 32-hex — the shape every real mint site has always
+    // produced, and since ads-centralisation §4.2 the shape both sid sources
+    // are VALIDATED against (invalid values are ignored, not bound).
     it('resolves attribution from session ID (cookie sid)', async () => {
       const mockAttribution = {
         id: 'attr-1',
-        sessionId: 'sess-abc',
+        sessionId: 'abababababababababababababababab',
         qrTagId: 'qr-attr',
       };
       mocks.models.Attribution.findOne.mockResolvedValue(mockAttribution);
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
-      const cookies = { sid: 'sess-abc' };
+      const cookies = { sid: 'abababababababababababababababab' };
 
       await service.createProspect(body, user, { cookies });
 
       expect(mocks.models.Attribution.findOne).toHaveBeenCalledWith({
-        where: { sessionId: 'sess-abc' },
+        where: { sessionId: 'abababababababababababababababab' },
         order: [['lastTouchAt', 'DESC'], ['createdAt', 'DESC'], ['id', 'DESC']],
       });
 
       const createArg = mocks.models.Prospect.create.mock.calls[0][0];
       expect(createArg.attributionId).toBe('attr-1');
-      expect(createArg.sessionId).toBe('sess-abc');
+      expect(createArg.sessionId).toBe('abababababababababababababababab');
     });
 
     it('resolves attribution from x-session-id header when no cookie', async () => {
-      const mockAttribution = { id: 'attr-2', sessionId: 'sess-xyz', qrTagId: null };
+      const mockAttribution = { id: 'attr-2', sessionId: 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd', qrTagId: null };
       mocks.models.Attribution.findOne.mockResolvedValue(mockAttribution);
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
-      const headers = { 'x-session-id': 'sess-xyz' };
+      const headers = { 'x-session-id': 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd' };
 
       await service.createProspect(body, user, { headers });
 
       expect(mocks.models.Attribution.findOne).toHaveBeenCalledWith({
-        where: { sessionId: 'sess-xyz' },
+        where: { sessionId: 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd' },
         order: [['lastTouchAt', 'DESC'], ['createdAt', 'DESC'], ['id', 'DESC']],
       });
     });
@@ -348,13 +351,13 @@ describe('prospectService (unit)', () => {
       it('binds a signup to the most recently scanned campaign (A then B -> B)', async () => {
         wireTwoCampaignQrTags();
         // A scanned first (older lastTouchAt), B scanned second (newer).
-        const attrA = { id: 'attr-A', sessionId: 'sess-1', qrTagId: 'qr-A', lastTouchAt: new Date('2026-05-29T10:00:00Z') };
-        const attrB = { id: 'attr-B', sessionId: 'sess-1', qrTagId: 'qr-B', lastTouchAt: new Date('2026-05-29T10:05:00Z') };
+        const attrA = { id: 'attr-A', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-A', lastTouchAt: new Date('2026-05-29T10:00:00Z') };
+        const attrB = { id: 'attr-B', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-B', lastTouchAt: new Date('2026-05-29T10:05:00Z') };
         mocks.models.Attribution.findOne = orderedFindOne([attrA, attrB]);
 
         // No campaignId in body — it must be derived from the bound attribution's QR tag.
         const body = { firstName: 'Test', phone: '91234567' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.attributionId).toBe('attr-B');
@@ -368,12 +371,12 @@ describe('prospectService (unit)', () => {
         wireTwoCampaignQrTags();
         // Equal lastTouchAt; the more recently created attribution must win.
         const sameTs = new Date('2026-05-29T10:00:00Z');
-        const attrOld = { id: 'attr-A', sessionId: 'sess-1', qrTagId: 'qr-A', lastTouchAt: sameTs, createdAt: new Date('2026-05-29T09:00:00Z') };
-        const attrNew = { id: 'attr-B', sessionId: 'sess-1', qrTagId: 'qr-B', lastTouchAt: sameTs, createdAt: new Date('2026-05-29T09:30:00Z') };
+        const attrOld = { id: 'attr-A', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-A', lastTouchAt: sameTs, createdAt: new Date('2026-05-29T09:00:00Z') };
+        const attrNew = { id: 'attr-B', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-B', lastTouchAt: sameTs, createdAt: new Date('2026-05-29T09:30:00Z') };
         mocks.models.Attribution.findOne = orderedFindOne([attrOld, attrNew]);
 
         const body = { firstName: 'Test', phone: '91234569' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.attributionId).toBe('attr-B');
@@ -385,13 +388,13 @@ describe('prospectService (unit)', () => {
         // Identical lastTouchAt AND createdAt; the id DESC final key must decide.
         const sameTs = new Date('2026-05-29T10:00:00Z');
         const sameCreated = new Date('2026-05-29T09:00:00Z');
-        const attrLow = { id: 'attr-aaa', sessionId: 'sess-1', qrTagId: 'qr-A', lastTouchAt: sameTs, createdAt: sameCreated };
-        const attrHigh = { id: 'attr-bbb', sessionId: 'sess-1', qrTagId: 'qr-B', lastTouchAt: sameTs, createdAt: sameCreated };
+        const attrLow = { id: 'attr-aaa', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-A', lastTouchAt: sameTs, createdAt: sameCreated };
+        const attrHigh = { id: 'attr-bbb', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-B', lastTouchAt: sameTs, createdAt: sameCreated };
         // Low id inserted first: without the id tiebreaker a stable sort would pick A.
         mocks.models.Attribution.findOne = orderedFindOne([attrLow, attrHigh]);
 
         const body = { firstName: 'Test', phone: '91234568' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.attributionId).toBe('attr-bbb');
@@ -411,27 +414,29 @@ describe('prospectService (unit)', () => {
 
       it('ignores a stale session attribution when body campaignId names a different campaign', async () => {
         // Session bound to campaign Y's QR; submit explicitly targets campaign X.
-        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-Y', sessionId: 'sess-1', qrTagId: 'qr-Y' });
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-Y', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-Y' });
         mocks.models.QrTag.findByPk.mockImplementation(async (id) =>
           id === 'qr-Y' ? wireQrTag('qr-Y', 'camp-Y') : wireQrTag(id, 'camp-X')
         );
 
         const body = { firstName: 'Test', phone: '91234500', campaignId: 'camp-X' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.campaignId).toBe('camp-X');      // explicit campaign stands
         expect(createArg.attributionId).toBeUndefined();  // stale attribution not bound
         expect(createArg.qrTagId).toBeUndefined();         // no stale QR -> campaign-level routing
-        expect(createArg.sessionId).toBeUndefined();
+        // sessionId SURVIVES the guard (ads-centralisation §4.5): the session
+        // is browsing identity for touchpoint joins, not a routing input.
+        expect(createArg.sessionId).toBe('e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1');
       });
 
       it('still binds the session attribution when its campaign matches the explicit body campaignId', async () => {
-        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-X', sessionId: 'sess-1', qrTagId: 'qr-X' });
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-X', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-X' });
         mocks.models.QrTag.findByPk.mockImplementation(async (id) => wireQrTag(id, 'camp-X'));
 
         const body = { firstName: 'Test', phone: '91234501', campaignId: 'camp-X' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.attributionId).toBe('attr-X');
@@ -442,19 +447,20 @@ describe('prospectService (unit)', () => {
       it('drops a stale body qrTagId (and session linkage) that names a different campaign', async () => {
         // Direct/partial payload: body explicitly targets camp-X but carries a
         // stale qrTagId for camp-Y, and the session is also bound to camp-Y.
-        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-Y', sessionId: 'sess-1', qrTagId: 'qr-Y' });
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-Y', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-Y' });
         mocks.models.QrTag.findByPk.mockImplementation(async (id) =>
           id === 'qr-Y' ? wireQrTag('qr-Y', 'camp-Y') : wireQrTag(id, 'camp-X')
         );
 
         const body = { firstName: 'Test', phone: '91234502', campaignId: 'camp-X', qrTagId: 'qr-Y' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.campaignId).toBe('camp-X');
         expect(createArg.qrTagId).toBeUndefined();
         expect(createArg.attributionId).toBeUndefined();
-        expect(createArg.sessionId).toBeUndefined();
+        // Kept since ads-centralisation §4.5 — session ≠ routing input.
+        expect(createArg.sessionId).toBe('e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1');
         // Agent routing must use campaign X, not Y's QR.
         expect(mocks.resolveLeadRouting).toHaveBeenCalledWith(
           expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
@@ -464,19 +470,20 @@ describe('prospectService (unit)', () => {
       it('drops a stale session QR whose campaignId is null when an explicit campaign is given', async () => {
         // Prior scan of a no-campaign QR; a bare submit explicitly targets camp-X.
         // A null-campaign QR does not belong to camp-X, so it must not skew routing.
-        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-null', sessionId: 'sess-1', qrTagId: 'qr-null' });
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-null', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-null' });
         mocks.models.QrTag.findByPk.mockImplementation(async (id) =>
           id === 'qr-null' ? wireQrTag('qr-null', null) : wireQrTag(id, 'camp-X')
         );
 
         const body = { firstName: 'Test', phone: '91234503', campaignId: 'camp-X' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.campaignId).toBe('camp-X');
         expect(createArg.qrTagId).toBeUndefined();
         expect(createArg.attributionId).toBeUndefined();
-        expect(createArg.sessionId).toBeUndefined();
+        // Kept since ads-centralisation §4.5 — session ≠ routing input.
+        expect(createArg.sessionId).toBe('e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1');
         expect(mocks.resolveLeadRouting).toHaveBeenCalledWith(
           expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
         );
@@ -501,11 +508,11 @@ describe('prospectService (unit)', () => {
       });
 
       it('keeps the QR and attribution (and routes by QR) when the bound QR campaign matches', async () => {
-        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-X', sessionId: 'sess-1', qrTagId: 'qr-X' });
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-X', sessionId: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1', qrTagId: 'qr-X' });
         mocks.models.QrTag.findByPk.mockImplementation(async (id) => wireQrTag(id, 'camp-X'));
 
         const body = { firstName: 'Test', phone: '91234505', campaignId: 'camp-X' };
-        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+        await service.createProspect(body, user, { cookies: { sid: 'e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1' } });
 
         const createArg = mocks.models.Prospect.create.mock.calls[0][0];
         expect(createArg.campaignId).toBe('camp-X');

@@ -433,6 +433,30 @@ export function makeErasureService(overrides = {}) {
             { replacements: { sessionIds }, transaction: t }
           );
           report.sessionVisits = rowCount(svMeta);
+
+          // Touchpoints (ads-centralisation §4.6): guarded delete NOW, plus a
+          // durable 24h sweep row per sid — the maintenance tick re-applies
+          // the delete under the same per-sid advisory lock the beacon insert
+          // takes, so a beacon racing this transaction cannot outlive the
+          // erasure. The shared-session guard mirrors session_visits: a sid
+          // shared with a SURVIVING prospect is never swept.
+          const [, tpMeta] = await d.sequelize.query(
+            `DELETE FROM touchpoints tp
+              WHERE tp."sessionId" IN (:sessionIds)
+                AND NOT EXISTS (SELECT 1 FROM prospects p2 WHERE p2."sessionId" = tp."sessionId")`,
+            { replacements: { sessionIds }, transaction: t }
+          );
+          report.touchpoints = rowCount(tpMeta);
+          await d.sequelize.query(
+            `INSERT INTO erased_session_sweeps ("sessionId", "sweepUntil", "createdAt", "updatedAt")
+             SELECT sid, now() + interval '24 hours', now(), now()
+               FROM unnest(ARRAY[:sessionIds]::text[]) AS sid
+             ON CONFLICT ("sessionId") DO UPDATE
+               SET "sweepUntil" = GREATEST(erased_session_sweeps."sweepUntil", excluded."sweepUntil"),
+                   "updatedAt" = now()`,
+            { replacements: { sessionIds }, transaction: t }
+          );
+          report.erasedSessionSweeps = sessionIds.length;
         }
         if (attributionIds.length) {
           const [, atMeta] = await d.sequelize.query(

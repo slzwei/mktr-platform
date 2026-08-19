@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import RedeemOpsLayout from '@/components/redeemops/RedeemOpsLayout';
 import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 import AdRollRouteTracker from '@/components/AdRollRouteTracker';
+import TouchRouteTracker from '@/components/TouchRouteTracker';
 import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import { brand } from '@/lib/brand';
@@ -220,6 +221,9 @@ function PagesContent() {
  {/* AdRoll retargeting pageViews on the public browse surfaces. No-op unless
      the build carries the AdRoll ids; never mounted on the ops surface. */}
  {!IS_OPS_SURFACE && <AdRollRouteTracker />}
+ {/* Durable touchpoint beacons on the same browse allow-list (ads-centralisation §4.4).
+     Dark unless VITE_TOUCH_ENABLED; never mounted on the ops surface. */}
+ {!IS_OPS_SURFACE && <TouchRouteTracker />}
  <Suspense
  fallback={
  <div className="min-h-screen flex items-center justify-center">

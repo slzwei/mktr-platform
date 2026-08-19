@@ -386,6 +386,31 @@ export async function bootstrapDatabase() {
       logger.info(`[PlatformDelivery] worker scheduled (${pdMinutes}m interval, 210s offset)`);
     }
 
+    // Touchpoint maintenance (ads-centralisation §4.6): consumes the durable
+    // erased-session sweeps + the daily retention purge. Scheduled whenever
+    // the tables exist — NOT behind TOUCHPOINTS_ENABLED, because erasure
+    // sweeps must drain and retention must purge even after a rollback flip
+    // (§4.8: rows inert + purged). Advisory-locked in the service; offset
+    // 330s (§0 house cadences), then daily.
+    {
+      let tpInFlight = false;
+      const runTouchpointMaintenanceTick = async () => {
+        if (tpInFlight) return;
+        tpInFlight = true;
+        try {
+          const { runTouchpointMaintenance } = await import('../services/touchpointService.js');
+          await runTouchpointMaintenance();
+        } catch (err) {
+          logger.warn('[Touchpoints] maintenance tick failed (non-fatal)', { error: err?.message });
+        } finally {
+          tpInFlight = false;
+        }
+      };
+      setTimeout(runTouchpointMaintenanceTick, 330_000);
+      setInterval(runTouchpointMaintenanceTick, 24 * 60 * 60 * 1000);
+      logger.info('[Touchpoints] maintenance scheduled (330s offset, then daily)');
+    }
+
     // Redemption CAPI reconciliation sweep — the no-rescan safety net for
     // VoucherRedeemed sends lost between the redemption commit and the
     // fire-and-forget dispatch (process death). Marker-guarded + Meta event_id

@@ -1,6 +1,8 @@
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import * as analyticsService from '../services/analyticsService.js';
 import * as prospectService from '../services/prospectService.js';
+import * as touchpointService from '../services/touchpointService.js';
+import { resolveSid, setSidCookie } from '../utils/sessionId.js';
 
 const allowedOrigins = new Set([
   'https://mktr.sg',
@@ -49,6 +51,45 @@ export const trackEvent = asyncHandler(async (req, res) => {
   const sid = getSessionId(req);
   await analyticsService.trackEvent(sid, type, meta);
   res.json({ success: true });
+});
+
+/**
+ * POST /touch — durable touchpoint beacon (ads-centralisation §4.3). Public
+ * + rate-limited; Joi-validated with stripUnknown at the route. Never 4xxes
+ * on session problems — the beacon is intentionally lossy, so gate misses
+ * degrade to a 200 with a `skipped` marker.
+ *
+ * Session contract (§4.2): validated cookie wins → validated X-Session-Id
+ * header adopts (the client can't read the httpOnly cookie) → no valid sid
+ * skips. Every hit re-issues the 90d cookie (rolling window).
+ */
+export const trackTouch = asyncHandler(async (req, res) => {
+  assertAllowedOrigin(req);
+  if (!touchpointService.touchpointsEnabled()) {
+    return res.json({ success: true, skipped: true });
+  }
+  const sid = resolveSid(req);
+  if (!sid) {
+    return res.json({ success: true, skipped: 'no_session' });
+  }
+  setSidCookie(req, res, sid);
+  const b = req.body || {};
+  const result = await touchpointService.recordTouch({
+    sid,
+    surface: b.surface,
+    landingPath: b.path || null,
+    referrer: b.referrer || null,
+    campaignId: b.campaignId || null,
+    utm: {
+      utmSource: b.utm_source,
+      utmMedium: b.utm_medium,
+      utmCampaign: b.utm_campaign,
+      utmTerm: b.utm_term,
+      utmContent: b.utm_content,
+    },
+    clickIds: { fbclid: b.fbclid, ttclid: b.ttclid, gclid: b.gclid, gbraid: b.gbraid, wbraid: b.wbraid },
+  });
+  return res.json(result.recorded ? { success: true } : { success: true, skipped: result.skipped });
 });
 
 export const trackReferral = asyncHandler(async (req, res) => {

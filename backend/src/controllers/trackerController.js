@@ -2,6 +2,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import * as trackerService from '../services/trackerService.js';
 import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publicHost.js';
 import { frontendBaseForHost } from '../utils/frontendBase.js';
+import { SID_COOKIE_MAX_AGE_MS } from '../utils/sessionId.js';
 import { Campaign } from '../models/index.js';
 import { passesStaticGate } from '../services/marketplaceService.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
@@ -78,12 +79,13 @@ export const trackSlug = asyncHandler(async (req, res) => {
   });
 
   if (isNewSid) {
+    // 90d — the one session horizon (ads-centralisation §4.2).
     res.cookie('sid', sid, {
       httpOnly: true,
       sameSite: 'lax',
       secure: isProd,
       domain: cookieDomain,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: SID_COOKIE_MAX_AGE_MS,
       path: '/'
     });
   }

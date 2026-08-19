@@ -18,7 +18,7 @@ import {
   RewardEntitlement, RedemptionEvent, Redemption, Draw, DrawEntry, DrawAttempt,
   ShortLink, WebhookSubscriber, WebhookDelivery, Verification, WaitlistSignup,
   ConsentEvent, ConsumerSuppression, PartnerOrganisation, RewardOffer, Activation,
-  SessionVisit, IdempotencyKey, PlatformDelivery,
+  SessionVisit, IdempotencyKey, PlatformDelivery, Touchpoint, ErasedSessionSweep,
 } from '../../src/models/index.js';
 import { markPhoneVerified, isPhoneRecentlyVerified } from '../../src/services/verifiedPhoneStore.js';
 import { phoneHashOf } from '../../src/services/consumerService.js';
@@ -155,6 +155,16 @@ describe('PDPA erasure — full matrix', () => {
     sessionVisit = await SessionVisit.create({
       sessionId: `sess-${RUN}`, landingPath: '/lead-capture', utmSource: 'fb',
       eventsJson: [{ type: 'form_view', ts: new Date().toISOString() }],
+    });
+    // Touchpoint rows on the same session (ads-centralisation §4.6): both must
+    // be deleted in the erasure txn, and a durable sweep row must be minted so
+    // the maintenance tick re-deletes in-flight stragglers.
+    await Touchpoint.create({
+      sessionId: `sess-${RUN}`, occurredAt: new Date(), surface: 'browse', landingPath: '/explore',
+    });
+    await Touchpoint.create({
+      sessionId: `sess-${RUN}`, occurredAt: new Date(), surface: 'leadcapture',
+      landingPath: '/leadcapture', campaignId: campaign1.id, utmSource: 'fb',
     });
     attribution = await createTestAttribution(qrTag.id, `sess-${RUN}`);
     await sequelize.query(
@@ -372,6 +382,12 @@ describe('PDPA erasure — full matrix', () => {
     expect(report.referralCopiesScrubbed).toBe(1);
     expect(report.sessionVisits).toBe(1);
     expect(report.attributions).toBe(1);
+    expect(report.touchpoints).toBe(2);
+    expect(await Touchpoint.count({ where: { sessionId: `sess-${RUN}` } })).toBe(0);
+    // The durable 24h sweep row exists for the maintenance tick to consume.
+    const sweep = await ErasedSessionSweep.findByPk(`sess-${RUN}`);
+    expect(sweep).not.toBeNull();
+    expect(new Date(sweep.sweepUntil).getTime()).toBeGreaterThan(Date.now());
     expect(report.platformDeliveries).toBe(2);
     expect(await PlatformDelivery.count({ where: { prospectId: [prospect1.id, prospect2.id] } })).toBe(0);
     expect(report.idempotencyKeys).toBe(1);
