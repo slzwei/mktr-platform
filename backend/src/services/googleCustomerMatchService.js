@@ -1,12 +1,9 @@
 import * as Sentry from '@sentry/node';
-import { Op } from 'sequelize';
 import { Prospect, sequelize } from '../models/index.js';
 import { hashEmailGoogle, hashPhoneE164 } from '../utils/piiHashing.js';
 import { dmRequest, dmRequestGet } from '../utils/googleDataManagerClient.js';
-import { phoneVerificationIsCurrent } from './consumerService.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail } from './mailer.js';
-import { contactGrantAllows } from './contactConsent.js';
 import { withAdvisoryLock } from '../utils/advisoryLock.js';
 import {
   AUDIENCE_POLICIES,
@@ -111,24 +108,6 @@ export function chunk(arr, size) {
   return out;
 }
 
-/**
- * __LEGACY selection (pre-engine) — kept ONLY for the §5.2 differential
- * harness proving the eligibility engine reproduces it; DELETED once parity
- * is pinned. (The engine's selectAudiencePopulation adds `id` for the
- * edit-suppression anti-join; the harness compares on the shared columns.)
- */
-export async function __legacySelectCampaignProspects(deps = {}) {
-  const d = { ...defaultDeps, ...deps };
-  return d.Prospect.findAll({
-    attributes: ['email', 'phone', 'campaignId', 'sourceMetadata'],
-    where: {
-      campaignId: process.env.GOOGLE_CM_CAMPAIGN_ID,
-      leadSource: { [Op.ne]: 'call_bot' },
-    },
-    raw: true,
-  });
-}
-
 /** email/phone → HEX-hash identifier array (shared by ingest + removal). */
 function identifiersFor(email, phone) {
   const usableEmail =
@@ -142,7 +121,8 @@ function identifiersFor(email, phone) {
 }
 
 /**
- * Prospect rows → Data Manager audience members. Every filter fails CLOSED:
+ * (Filtering lives in the eligibility engine now — ads-centralisation §5.2.
+ * The historical fail-closed rules, in engine order:
  *  - erased skeletons out
  *  - unverified / stale-binding phones out (phoneVerificationIsCurrent)
  *  - no ledger contact grant in scope {row campaign, global} → out (no hatch;
@@ -152,20 +132,6 @@ function identifiersFor(email, phone) {
  *  - synthetic Retell emails dropped from the email key
  *  - neither usable identifier → out
  */
-export function __legacyBuildMemberRows(prospects, { suppressedPhones = null, grantMap = null } = {}) {
-  const rows = [];
-  for (const p of prospects || []) {
-    if (p?.sourceMetadata?.erased === true) continue;
-    if (!phoneVerificationIsCurrent(p)) continue;
-    if (!contactGrantAllows(grantMap?.get(p?.phone), p?.campaignId || null)) continue;
-    if (suppressedPhones && p?.phone && suppressedPhones.has(p.phone)) continue;
-    const userIdentifiers = identifiersFor(p?.email, p?.phone);
-    if (userIdentifiers.length === 0) continue;
-    rows.push({ userIdentifiers });
-  }
-  return rows;
-}
-
 /**
  * Identifier SHAPING for eligibility-engine output (§5.2): the engine owns
  * selection + policy filtering (erased / edit-suppressed / verified-binding /

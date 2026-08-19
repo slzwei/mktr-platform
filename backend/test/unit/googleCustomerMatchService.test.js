@@ -140,6 +140,23 @@ function happyDeps(rows, dmOverrides = {}) {
   };
 }
 
+
+// Engine-path equivalent of the deleted legacy filter (§5.2): parity was
+// pinned by the differential harness in the previous commit; these tests now
+// guard the production composition under the google policy.
+let elig;
+beforeAll(async () => {
+  elig = await import('../../src/services/audienceEligibilityService.js');
+});
+const engineMemberRows = (rows, { suppressedPhones = null, grantMap = null } = {}) =>
+  svc.shapeGoogleMemberRows(
+    elig.filterEligible(
+      rows,
+      { suppressedPhones, grantMap, editSuppressedProspectIds: new Set() },
+      elig.AUDIENCE_POLICIES.google
+    )
+  );
+
 describe('shouldSync / removalConfigured', () => {
   it('shouldSync is true only with the full config set', () => {
     expect(svc.shouldSync()).toBe(true);
@@ -163,12 +180,15 @@ describe('shouldSync / removalConfigured', () => {
   });
 });
 
-describe('__legacySelectCampaignProspects', () => {
-  it('pins the exact selector: target campaign, non-bot, minimal attributes', async () => {
+describe('engine selectAudiencePopulation (campaign scope)', () => {
+  it('pins the selector: target campaign, non-bot, engine attributes (id feeds the §5.1 anti-join)', async () => {
     const findAll = jest.fn().mockResolvedValue([]);
-    await svc.__legacySelectCampaignProspects({ Prospect: { findAll } });
+    await elig.selectAudiencePopulation(
+      { scope: 'campaign', campaignId: 'camp-airpods' },
+      { Prospect: { findAll } }
+    );
     expect(findAll).toHaveBeenCalledWith({
-      attributes: ['email', 'phone', 'campaignId', 'sourceMetadata'],
+      attributes: ['id', 'email', 'phone', 'campaignId', 'sourceMetadata'],
       where: {
         campaignId: 'camp-airpods',
         leadSource: { [Op.ne]: 'call_bot' },
@@ -176,12 +196,18 @@ describe('__legacySelectCampaignProspects', () => {
       raw: true,
     });
   });
+
+  it('returns [] without a campaignId instead of silently going global', async () => {
+    const findAll = jest.fn();
+    expect(await elig.selectAudiencePopulation({ scope: 'campaign' }, { Prospect: { findAll } })).toEqual([]);
+    expect(findAll).not.toHaveBeenCalled();
+  });
 });
 
-describe('__legacyBuildMemberRows', () => {
+describe('engine member rows (filterEligible → shapeGoogleMemberRows)', () => {
   it('emits HEX-hashed google-normalized email + E.164 phone identifiers', () => {
     const rows = [eligibleRow()];
-    const out = svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) });
+    const out = engineMemberRows(rows, { grantMap: grantAll(rows) });
     expect(out).toEqual([
       {
         userIdentifiers: [
@@ -194,12 +220,12 @@ describe('__legacyBuildMemberRows', () => {
 
   it('skips erased skeleton rows', () => {
     const rows = [eligibleRow({ sourceMetadata: { erased: true } })];
-    expect(svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
+    expect(engineMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
   });
 
   it('skips rows without a verification stamp', () => {
     const rows = [eligibleRow({ sourceMetadata: {} })];
-    expect(svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
+    expect(engineMemberRows(rows, { grantMap: grantAll(rows) })).toEqual([]);
   });
 
   it('enforces the phoneVerifiedFor binding: stale hash out, matching hash in, legacy stamp in', () => {
@@ -211,26 +237,26 @@ describe('__legacyBuildMemberRows', () => {
     });
     const legacy = eligibleRow();
     const rows = [stale, bound, legacy];
-    expect(svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) })).toHaveLength(2);
+    expect(engineMemberRows(rows, { grantMap: grantAll(rows) })).toHaveLength(2);
   });
 
   it('fails closed on consent: no map, no entry, and refused entry are all excluded', () => {
     const row = eligibleRow();
-    expect(svc.__legacyBuildMemberRows([row], {})).toEqual([]);
-    expect(svc.__legacyBuildMemberRows([row], { grantMap: new Map() })).toEqual([]);
+    expect(engineMemberRows([row], {})).toEqual([]);
+    expect(engineMemberRows([row], { grantMap: new Map() })).toEqual([]);
     const refused = new Map([[row.phone, new Map([['*', false]])]]);
-    expect(svc.__legacyBuildMemberRows([row], { grantMap: refused })).toEqual([]);
+    expect(engineMemberRows([row], { grantMap: refused })).toEqual([]);
   });
 
   it('admits a campaign-scoped grant for the row campaign', () => {
     const row = eligibleRow();
     const scoped = new Map([[row.phone, new Map([['camp-airpods', true]])]]);
-    expect(svc.__legacyBuildMemberRows([row], { grantMap: scoped })).toHaveLength(1);
+    expect(engineMemberRows([row], { grantMap: scoped })).toHaveLength(1);
   });
 
   it('drops suppressed phones', () => {
     const rows = [eligibleRow()];
-    const out = svc.__legacyBuildMemberRows(rows, {
+    const out = engineMemberRows(rows, {
       grantMap: grantAll(rows),
       suppressedPhones: new Set(['+6591234567']),
     });
@@ -239,13 +265,13 @@ describe('__legacyBuildMemberRows', () => {
 
   it('drops the synthetic Retell email but keeps the phone identifier', () => {
     const rows = [eligibleRow({ email: 'retell-abc@calls.mktr.sg' })];
-    const out = svc.__legacyBuildMemberRows(rows, { grantMap: grantAll(rows) });
+    const out = engineMemberRows(rows, { grantMap: grantAll(rows) });
     expect(out).toEqual([{ userIdentifiers: [{ phoneNumber: sha('+6591234567') }] }]);
   });
 
   it('drops rows with neither usable identifier', () => {
     const weird = eligibleRow({ email: 'not-an-email', phone: null });
-    expect(svc.__legacyBuildMemberRows([weird], { grantMap: grantAll([weird]) })).toEqual([]);
+    expect(engineMemberRows([weird], { grantMap: grantAll([weird]) })).toEqual([]);
   });
 });
 

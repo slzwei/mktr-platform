@@ -48,11 +48,13 @@ jest.unstable_mockModule('../src/services/consentService.js', () => ({
   getMarketableGrantMap: grantMapMock,
 }));
 
-let shouldSync, chunk, __legacySelectRedeemers, __legacyBuildUserRows, uploadBatch, syncRedeemedAudience;
+let shouldSync, chunk, shapeMetaAudienceRows, uploadBatch, syncRedeemedAudience;
+let filterEligible;
 
 beforeAll(async () => {
-  ({ shouldSync, chunk, __legacySelectRedeemers, __legacyBuildUserRows, uploadBatch, syncRedeemedAudience } =
+  ({ shouldSync, chunk, shapeMetaAudienceRows, uploadBatch, syncRedeemedAudience } =
     await import('../src/services/redeemedAudienceService.js'));
+  ({ filterEligible } = await import('../src/services/audienceEligibilityService.js'));
 });
 
 // ---------- env snapshot ----------
@@ -157,14 +159,28 @@ describe('chunk', () => {
   });
 });
 
+
+// Engine-path equivalent of the deleted legacy filter+shape (ads-centralisation
+// §5.2): the differential harness pinned parity in the previous commit; these
+// tests now guard the PRODUCTION composition — filterEligible under the Meta
+// policy shape, then Meta wire shaping.
+const engineUserRows = (prospects, { requireConsent = true, suppressedPhones = null, grantMap = null } = {}) =>
+  shapeMetaAudienceRows(
+    filterEligible(
+      prospects,
+      { suppressedPhones, grantMap, editSuppressedProspectIds: new Set() },
+      { scope: 'global', requireConsent, requireVerifiedBinding: false, checkErased: true }
+    )
+  );
+
 // ============================================================
-// __legacyBuildUserRows — consent arm is LEDGER-based (3sites): a row passes only when
+// engineUserRows — consent arm is LEDGER-based (3sites): a row passes only when
 // its phone's latest contact event in scope {row's campaign, global} is
 // granted && verified (encoded as `true` in the grantMap by consentService).
 // ============================================================
-describe('__legacyBuildUserRows', () => {
+describe('engine user rows (filterEligible → shapeMetaAudienceRows)', () => {
   it('hashes email + phone into a multi-key row (ledger grant present)', () => {
-    const rows = __legacyBuildUserRows([prospect()], {
+    const rows = engineUserRows([prospect()], {
       requireConsent: true,
       grantMap: grantFor('+6581234567'),
     });
@@ -174,7 +190,7 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('drops rows whose latest in-scope event is not granted+verified (false entry)', () => {
-    const rows = __legacyBuildUserRows([prospect()], {
+    const rows = engineUserRows([prospect()], {
       requireConsent: true,
       grantMap: grantFor('+6581234567', CID, false), // untick / unverified / withdrawn
     });
@@ -182,7 +198,7 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('drops rows with no ledger entry at all (unknown person — fail closed)', () => {
-    const rows = __legacyBuildUserRows([prospect()], {
+    const rows = engineUserRows([prospect()], {
       requireConsent: true,
       grantMap: new Map(),
     });
@@ -190,12 +206,12 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('drops everything when requireConsent=true and no grantMap was supplied (fail closed)', () => {
-    const rows = __legacyBuildUserRows([prospect()], { requireConsent: true, grantMap: null });
+    const rows = engineUserRows([prospect()], { requireConsent: true, grantMap: null });
     expect(rows).toHaveLength(0);
   });
 
   it('a grant in a DIFFERENT campaign does not license this row', () => {
-    const rows = __legacyBuildUserRows([prospect({ campaignId: OTHER_CID })], {
+    const rows = engineUserRows([prospect({ campaignId: OTHER_CID })], {
       requireConsent: true,
       grantMap: grantFor('+6581234567', CID, true),
     });
@@ -203,7 +219,7 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('a global grant licenses a row with no scoped entry', () => {
-    const rows = __legacyBuildUserRows([prospect()], {
+    const rows = engineUserRows([prospect()], {
       requireConsent: true,
       grantMap: grantFor('+6581234567', '*', true),
     });
@@ -212,7 +228,7 @@ describe('__legacyBuildUserRows', () => {
 
   it('a scoped false (recency-folded) beats a global true — scope precedence', () => {
     const scopes = new Map([['*', true], [CID, false]]);
-    const rows = __legacyBuildUserRows([prospect()], {
+    const rows = engineUserRows([prospect()], {
       requireConsent: true,
       grantMap: new Map([['+6581234567', scopes]]),
     });
@@ -220,12 +236,12 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('keeps ungranted rows when requireConsent=false', () => {
-    const rows = __legacyBuildUserRows([prospect()], { requireConsent: false });
+    const rows = engineUserRows([prospect()], { requireConsent: false });
     expect(rows).toHaveLength(1);
   });
 
   it('drops synthetic Retell emails but keeps the phone (blank email key)', () => {
-    const rows = __legacyBuildUserRows(
+    const rows = engineUserRows(
       [prospect({ email: 'retell-abc@calls.mktr.sg', phone: '+6591112222' })],
       { requireConsent: true, grantMap: grantFor('+6591112222') }
     );
@@ -235,7 +251,7 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('drops rows with neither a usable email nor phone', () => {
-    const rows = __legacyBuildUserRows(
+    const rows = engineUserRows(
       [prospect({ email: null, phone: null })],
       { requireConsent: false }
     );
@@ -243,7 +259,7 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('phone-less rows are consent-excluded when required (grant is phone-keyed)…', () => {
-    const rows = __legacyBuildUserRows([prospect({ phone: null })], {
+    const rows = engineUserRows([prospect({ phone: null })], {
       requireConsent: true,
       grantMap: grantFor('+6581234567'),
     });
@@ -251,7 +267,7 @@ describe('__legacyBuildUserRows', () => {
   });
 
   it('…but emit a blank phone key when consent is not required', () => {
-    const rows = __legacyBuildUserRows([prospect({ phone: null })], { requireConsent: false });
+    const rows = engineUserRows([prospect({ phone: null })], { requireConsent: false });
     expect(rows[0][0]).toMatch(/^[a-f0-9]{64}$/);
     expect(rows[0][1]).toBe('');
   });

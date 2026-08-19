@@ -1,10 +1,8 @@
 import * as Sentry from '@sentry/node';
-import { Op } from 'sequelize';
 import { Prospect } from '../models/index.js';
 import { hashEmail, hashPhone } from '../utils/piiHashing.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail } from './mailer.js';
-import { contactGrantAllows } from './contactConsent.js';
 import { withAdvisoryLock } from '../utils/advisoryLock.js';
 import {
   AUDIENCE_POLICIES,
@@ -80,43 +78,6 @@ export function chunk(arr, size) {
   const out = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
-}
-
-/**
- * __LEGACY selection/filter pair (pre-engine) — kept ONLY for the §5.2
- * differential harness that proves the eligibility engine reproduces them
- * byte-for-byte (single intended diff: the engine's explicit checkErased).
- * The name was always a misnomer (§5.3): it selects every non-bot prospect,
- * not "redeemers". DELETED once the harness has pinned parity.
- */
-export async function __legacySelectRedeemers(deps = {}) {
-  const d = { ...defaultDeps, ...deps };
-  return d.Prospect.findAll({
-    attributes: ['email', 'phone', 'campaignId'],
-    where: { leadSource: { [Op.ne]: 'call_bot' } },
-    raw: true,
-  });
-}
-
-/** __LEGACY filter+shape (pre-engine) — see __legacySelectRedeemers. */
-export function __legacyBuildUserRows(
-  prospects,
-  { requireConsent = true, suppressedPhones = null, grantMap = null } = {}
-) {
-  const rows = [];
-  for (const p of prospects || []) {
-    if (requireConsent && !contactGrantAllows(grantMap?.get(p?.phone), p?.campaignId || null)) continue;
-    if (suppressedPhones && p?.phone && suppressedPhones.has(p.phone)) continue;
-    const email =
-      p?.email && !String(p.email).toLowerCase().endsWith(SYNTHETIC_EMAIL_SUFFIX)
-        ? p.email
-        : null;
-    const emHash = hashEmail(email);
-    const phHash = hashPhone(p?.phone);
-    if (!emHash && !phHash) continue;
-    rows.push([emHash || '', phHash || '']);
-  }
-  return rows;
 }
 
 /**

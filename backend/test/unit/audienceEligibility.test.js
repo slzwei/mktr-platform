@@ -1,28 +1,18 @@
 /**
- * The audience eligibility engine (ads-centralisation §5.1/§5.2):
- *  1. DIFFERENTIAL HARNESS — the same fixture set through the kept __legacy
- *     select/filter exports vs the engine + per-platform shaping. Outputs are
- *     IDENTICAL, including Meta's REQUIRE_CONSENT=false no-grant-map path,
- *     with exactly ONE intended diff asserted: the engine's explicit Meta
- *     checkErased (legacy Meta only excluded erased rows incidentally via
- *     their missing grant entries, so the consent escape hatch re-admitted
- *     them). Once this harness has pinned parity the __legacy exports die.
- *  2. Engine policy matrix — the fixed filter order, the edit-suppression
- *     anti-join, and the env-driven Meta consent posture.
+ * The audience eligibility engine (ads-centralisation §5.1/§5.2): policy
+ * matrix, the fixed filter order, the edit-suppression anti-join, the
+ * env-driven Meta consent posture, and shaping smoke over engine output.
+ * The §5.2 DIFFERENTIAL HARNESS — engine ≡ legacy with the single intended
+ * diff (Meta checkErased) — ran against the since-deleted __legacy exports
+ * in the previous commit; the PR's history carries the pinned parity proof.
  */
 import '../setup.js';
 import {
   AUDIENCE_POLICIES,
   filterEligible,
 } from '../../src/services/audienceEligibilityService.js';
-import {
-  __legacyBuildUserRows,
-  shapeMetaAudienceRows,
-} from '../../src/services/redeemedAudienceService.js';
-import {
-  __legacyBuildMemberRows,
-  shapeGoogleMemberRows,
-} from '../../src/services/googleCustomerMatchService.js';
+import { shapeMetaAudienceRows } from '../../src/services/redeemedAudienceService.js';
+import { shapeGoogleMemberRows } from '../../src/services/googleCustomerMatchService.js';
 import { phoneHashOf } from '../../src/services/consumerService.js';
 
 const CID = '22222222-2222-4222-8222-222222222222';
@@ -67,62 +57,27 @@ function ctxOf({ requireConsent }) {
 afterEach(() => {
   delete process.env.REDEEMED_AUDIENCE_REQUIRE_CONSENT;
 });
-
-describe('§5.2 differential harness — Meta', () => {
-  it('requireConsent=true: legacy and engine produce IDENTICAL rows', () => {
-    const ctx = ctxOf({ requireConsent: true });
-    const legacy = __legacyBuildUserRows(fixtures(), {
-      requireConsent: true,
-      suppressedPhones: ctx.suppressedPhones,
-      grantMap: ctx.grantMap,
-    });
-    const policy = { scope: 'global', requireConsent: true, requireVerifiedBinding: false, checkErased: true };
-    const engine = shapeMetaAudienceRows(filterEligible(fixtures(), ctx, policy));
-    // The grantMap fixture deliberately grants the ERASED row too — in
-    // production an erased consumer has no grant entry, which is precisely
-    // why legacy Meta's missing erased-check went unnoticed. With the grant
-    // present, the single intended diff (engine checkErased) surfaces on the
-    // consent path as well: engine ≡ legacy-without-the-erased-row.
-    const legacyWithoutErased = __legacyBuildUserRows(
-      fixtures().filter((p) => p.sourceMetadata?.erased !== true),
-      { requireConsent: true, suppressedPhones: ctx.suppressedPhones, grantMap: ctx.grantMap }
-    );
-    expect(engine).toEqual(legacyWithoutErased);
-    expect(legacy.length).toBe(engine.length + 1); // legacy carried exactly the erased row
-  });
-
-  it('REQUIRE_CONSENT=false (no grant map): identical EXCEPT the ONE intended diff — the engine drops erased skeletons', () => {
+describe('shaping over engine output (§5.2 split of duties)', () => {
+  it('Meta shaping: synthetic email dropped, hashes only, empty-identifier rows removed', () => {
     const ctx = ctxOf({ requireConsent: false });
-    const legacy = __legacyBuildUserRows(fixtures(), {
-      requireConsent: false,
-      suppressedPhones: ctx.suppressedPhones,
-      grantMap: null,
-    });
     const policy = { scope: 'global', requireConsent: false, requireVerifiedBinding: false, checkErased: true };
-    const engine = shapeMetaAudienceRows(filterEligible(fixtures(), ctx, policy));
-    // Legacy re-admits the erased-with-identifiers row on this path; the
-    // engine's checkErased is the single intended diff (§5.2).
-    const legacyMinusErased = __legacyBuildUserRows(
-      fixtures().filter((p) => p.sourceMetadata?.erased !== true),
-      { requireConsent: false, suppressedPhones: ctx.suppressedPhones, grantMap: null }
-    );
-    expect(engine).toEqual(legacyMinusErased);
-    expect(legacy.length).toBe(engine.length + 1); // exactly the erased row
+    const rows = shapeMetaAudienceRows(filterEligible(fixtures(), ctx, policy));
+    // Eligible on this path: p-ok, p-nogrant (no consent required), p-unver
+    // (meta has no binding requirement), p-synth (email dropped, phone
+    // rides); p-erased and p-sup filtered; p-empty dropped at shaping.
+    expect(rows).toHaveLength(4);
+    for (const [em, ph] of rows) {
+      expect(em).toMatch(/^$|^[a-f0-9]{64}$/);
+      expect(ph).toMatch(/^$|^[a-f0-9]{64}$/);
+    }
+    expect(rows.some(([em, ph]) => em === '' && ph !== '')).toBe(true); // the synthetic-email person kept phone-only
   });
-});
 
-describe('§5.2 differential harness — Google', () => {
-  it('legacy and engine produce IDENTICAL member rows (no intended diff)', () => {
+  it('Google shaping: identifier objects, synthetic email dropped, empty rows removed', () => {
     const ctx = ctxOf({ requireConsent: true });
-    const legacy = __legacyBuildMemberRows(fixtures(), {
-      suppressedPhones: ctx.suppressedPhones,
-      grantMap: ctx.grantMap,
-    });
-    const engine = shapeGoogleMemberRows(filterEligible(fixtures(), ctx, AUDIENCE_POLICIES.google));
-    expect(engine).toEqual(legacy);
-    // Sanity: the harness is not vacuous — the eligible + synthetic-email
-    // rows survive on both sides.
-    expect(engine.length).toBe(2);
+    const rows = shapeGoogleMemberRows(filterEligible(fixtures(), ctx, AUDIENCE_POLICIES.google));
+    expect(rows).toHaveLength(2); // p-ok (em+ph) and p-synth (ph only)
+    expect(rows.every((r) => r.userIdentifiers.length >= 1)).toBe(true);
   });
 });
 
