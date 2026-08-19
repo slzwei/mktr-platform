@@ -56,6 +56,28 @@ export const validate = (schema, options = {}) => {
 
 // Common validation schemas
 export const schemas = {
+  // Touchpoint beacon (ads-centralisation §4.3). Client timestamps are
+  // ignored BY CONSTRUCTION — no time field exists here and the route runs
+  // stripUnknown, so occurredAt can only ever be the server clock. The full
+  // referrer comes in; only its ORIGIN is stored. utm/click-id bounds mirror
+  // prospectCreate (and the touchpoints column widths).
+  analyticsTouch: Joi.object({
+    surface: Joi.string().valid('leadcapture', 'offer', 'flow', 'browse').required(),
+    path: Joi.string().max(512).allow('').optional(),
+    referrer: Joi.string().max(2048).allow('').optional(),
+    campaignId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
+    utm_source: Joi.string().max(128).optional(),
+    utm_medium: Joi.string().max(128).optional(),
+    utm_campaign: Joi.string().max(190).optional(),
+    utm_term: Joi.string().max(190).optional(),
+    utm_content: Joi.string().max(190).optional(),
+    fbclid: Joi.string().max(512).optional(),
+    ttclid: Joi.string().max(512).optional(),
+    gclid: Joi.string().max(512).optional(),
+    gbraid: Joi.string().max(512).optional(),
+    wbraid: Joi.string().max(512).optional(),
+  }),
+
   // User schemas
   userRegister: Joi.object({
     email: Joi.string().email().required(),

@@ -12,6 +12,7 @@ import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
 import { resolveMetaPixelId, resolveTikTokPixelId, resolveGoogleAdsConversionId } from '@/lib/pixelIds';
 import { shouldTrackGoogle, initGoogleAds, captureGclFromUrl } from '@/lib/googleAds';
 import { shouldTrackAdRoll, initAdRoll, trackAdRollPageView } from '@/lib/adroll';
+import { beaconTouch } from '@/lib/touch';
 
 /**
  * Offer detail (/offers/:slug) — the FIRST public content surface for
@@ -100,6 +101,10 @@ export default function MarketplaceOffer() {
       initAdRoll();
       trackAdRollPageView();
     }
+
+    // Durable touchpoint (ads-centralisation §4.4) — campaign-aware like the
+    // AdRoll fire above; own throttle; dark unless VITE_TOUCH_ENABLED.
+    beaconTouch({ campaign, campaignId: campaign.id, surface: 'offer' });
   }, [campaign]);
 
   if (campaign === undefined) {

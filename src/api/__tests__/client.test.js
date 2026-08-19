@@ -158,3 +158,36 @@ describe('APIClient 401 handling', () => {
  expect(localStorageMock.removeItem).toHaveBeenCalledWith('mktr_user');
  });
 });
+
+describe('APIClient custom headers EXTEND the defaults (ads-centralisation P3 review #1)', () => {
+ beforeEach(() => {
+ localStorageMock.clear();
+ vi.clearAllMocks();
+ });
+
+ it('keeps Content-Type when options.headers is passed (the X-Session-Id submit shape)', async () => {
+ fetchMock.mockResolvedValueOnce(fakeResponse({ success: true }));
+
+ await apiClient.post('/prospects', { firstName: 'A' }, {
+ skipAuth: true,
+ headers: { 'X-Session-Id': 'ab12ab12ab12ab12ab12ab12ab12ab12' },
+ });
+
+ const [, requestInit] = fetchMock.mock.calls[0];
+ // The old trailing `...options` spread REPLACED the whole headers object,
+ // dropping Content-Type and breaking body parsing for every such submit.
+ expect(requestInit.headers['Content-Type']).toBe('application/json');
+ expect(requestInit.headers['X-Session-Id']).toBe('ab12ab12ab12ab12ab12ab12ab12ab12');
+ expect(requestInit.method).toBe('POST');
+ });
+
+ it('an EMPTY headers object (touch flag off) leaves the defaults fully intact', async () => {
+ fetchMock.mockResolvedValueOnce(fakeResponse({ success: true }));
+
+ await apiClient.post('/prospects', { firstName: 'A' }, { skipAuth: true, headers: {} });
+
+ const [, requestInit] = fetchMock.mock.calls[0];
+ expect(requestInit.headers['Content-Type']).toBe('application/json');
+ expect(requestInit.headers['X-Session-Id']).toBeUndefined();
+ });
+});

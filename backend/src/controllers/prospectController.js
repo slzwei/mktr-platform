@@ -2,6 +2,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { sendLeadAssignmentEmail, sendLeadConfirmationEmail } from '../services/mailer.js';
 import * as prospectService from '../services/prospectService.js';
 import { publicHostFromRequest } from '../utils/publicHost.js';
+import { resolveSid, mintSid, setSidCookie } from '../utils/sessionId.js';
 
 // Build a sensible CAPI event_source_url fallback when the SPA omits it.
 // Aggregated Event Measurement requires the URL to match where the Pixel
@@ -35,7 +36,14 @@ export const listHeldProspects = asyncHandler(async (req, res) => {
 
 export const createProspect = asyncHandler(async (req, res) => {
   const publicHost = publicHostFromRequest(req);
+  // One session id (ads-centralisation §4.5): validated cookie → validated
+  // X-Session-Id header (the client's boot id — it can't read the httpOnly
+  // cookie) → mint. Adopted/rolled on THIS response so even the fastest
+  // submit leaves the browser and the prospect on one converged sid.
+  const sid = resolveSid(req) || mintSid();
+  setSidCookie(req, res, sid);
   const meta = {
+    sessionId: sid,
     clientIp: req.ip,
     clientUserAgent: req.get('user-agent') || undefined,
     eventId: req.body?.eventId,

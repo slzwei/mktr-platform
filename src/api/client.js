@@ -68,15 +68,21 @@ class APIClient {
  const url = `${this.baseURL}${endpoint}`;
  const token = this.getToken();
 
+ // Caller-supplied headers EXTEND the defaults. The old shape spread
+ // `...options` AFTER the headers object, so an options.headers REPLACED the
+ // whole thing — silently dropping Content-Type (and Authorization) for any
+ // caller that passed one (ads-centralisation P3 review #1; the X-Session-Id
+ // submit header was the first such caller).
+ const { headers: optionHeaders, ...restOptions } = options;
  const config = {
  method: 'GET',
+ credentials: 'include',
+ ...restOptions,
  headers: {
  'Content-Type': 'application/json',
  ...(token && !options.skipAuth && { Authorization: `Bearer ${token}` }),
- ...options.headers,
+ ...optionHeaders,
  },
- credentials: 'include',
- ...options,
  };
 
  // Add body for POST/PUT/PATCH requests

@@ -1,6 +1,8 @@
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import * as analyticsService from '../services/analyticsService.js';
 import * as prospectService from '../services/prospectService.js';
+import * as touchpointService from '../services/touchpointService.js';
+import { resolveSid, setSidCookie } from '../utils/sessionId.js';
 
 const allowedOrigins = new Set([
   'https://mktr.sg',
@@ -10,10 +12,25 @@ const allowedOrigins = new Set([
   'http://localhost:5173'
 ]);
 
+function originOf(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
 function assertAllowedOrigin(req) {
-  const origin = req.headers.origin || '';
-  const referer = req.headers.referer || '';
-  const allowed = [...allowedOrigins].some((o) => origin.startsWith(o) || referer.startsWith(o));
+  // EXACT-origin match (ads-centralisation §4.3). The old prefix test
+  // (`origin.startsWith(o)`) accepted lookalike hosts — a page on
+  // https://mktr.sg.evil.example passed a startsWith check against
+  // https://mktr.sg — for /events and /referrals alike. The Referer fallback
+  // compares its PARSED origin, never the raw string.
+  const origin = originOf(req.headers.origin || '');
+  const refererOrigin = originOf(req.headers.referer || '');
+  const allowed =
+    (origin !== null && allowedOrigins.has(origin)) ||
+    (refererOrigin !== null && allowedOrigins.has(refererOrigin));
   if (!allowed) {
     throw new AppError('Origin not allowed', 403);
   }
@@ -34,6 +51,45 @@ export const trackEvent = asyncHandler(async (req, res) => {
   const sid = getSessionId(req);
   await analyticsService.trackEvent(sid, type, meta);
   res.json({ success: true });
+});
+
+/**
+ * POST /touch — durable touchpoint beacon (ads-centralisation §4.3). Public
+ * + rate-limited; Joi-validated with stripUnknown at the route. Never 4xxes
+ * on session problems — the beacon is intentionally lossy, so gate misses
+ * degrade to a 200 with a `skipped` marker.
+ *
+ * Session contract (§4.2): validated cookie wins → validated X-Session-Id
+ * header adopts (the client can't read the httpOnly cookie) → no valid sid
+ * skips. Every hit re-issues the 90d cookie (rolling window).
+ */
+export const trackTouch = asyncHandler(async (req, res) => {
+  assertAllowedOrigin(req);
+  if (!touchpointService.touchpointsEnabled()) {
+    return res.json({ success: true, skipped: true });
+  }
+  const sid = resolveSid(req);
+  if (!sid) {
+    return res.json({ success: true, skipped: 'no_session' });
+  }
+  setSidCookie(req, res, sid);
+  const b = req.body || {};
+  const result = await touchpointService.recordTouch({
+    sid,
+    surface: b.surface,
+    landingPath: b.path || null,
+    referrer: b.referrer || null,
+    campaignId: b.campaignId || null,
+    utm: {
+      utmSource: b.utm_source,
+      utmMedium: b.utm_medium,
+      utmCampaign: b.utm_campaign,
+      utmTerm: b.utm_term,
+      utmContent: b.utm_content,
+    },
+    clickIds: { fbclid: b.fbclid, ttclid: b.ttclid, gclid: b.gclid, gbraid: b.gbraid, wbraid: b.wbraid },
+  });
+  return res.json(result.recorded ? { success: true } : { success: true, skipped: result.skipped });
 });
 
 export const trackReferral = asyncHandler(async (req, res) => {

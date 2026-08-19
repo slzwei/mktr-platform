@@ -134,21 +134,32 @@ describe('GET /lead-capture', () => {
     expect(res.status).toBe(302)
   })
 
-  it('reuses sid cookie when already present', async () => {
-    const existingSid = 'existing-session-id-12345678'
+  it('reuses a VALID sid cookie when already present (no re-mint)', async () => {
+    // 32-hex — the validated sid shape (ads-centralisation §4.2).
+    const existingSid = 'ab12ab12ab12ab12ab12ab12ab12ab12'
     const res = await request(app)
       .get('/lead-capture')
       .set('Cookie', `sid=${existingSid}`)
 
     expect(res.status).toBe(302)
-    // Should NOT set a new sid cookie since one already exists
+    // A valid sid is reused as-is — the mint branch (and its Set-Cookie) is skipped.
     const cookies = res.headers['set-cookie'] || []
     const cookieArr = Array.isArray(cookies) ? cookies : [cookies]
-    const newSid = cookieArr.find(c => c.startsWith('sid='))
-    // Either no sid cookie set, or it should not override
-    if (newSid) {
-      // If framework re-sets it, that is okay as long as it does not crash
-      expect(res.status).toBe(302)
-    }
+    expect(cookieArr.find(c => c.startsWith('sid='))).toBeUndefined()
+  })
+
+  it('REPLACES a malformed sid cookie with a fresh 32-hex mint (§4.2 validation)', async () => {
+    // /touch and /prospects ignore invalid sids, so propagating one here would
+    // bind attribution to an identity nothing else can ever converge on.
+    const res = await request(app)
+      .get('/lead-capture')
+      .set('Cookie', 'sid=existing-session-id-12345678')
+
+    expect(res.status).toBe(302)
+    const cookies = res.headers['set-cookie'] || []
+    const cookieArr = Array.isArray(cookies) ? cookies : [cookies]
+    const minted = cookieArr.find(c => c.startsWith('sid='))
+    expect(minted).toBeTruthy()
+    expect(minted).toMatch(/^sid=[a-f0-9]{32};/)
   })
 })

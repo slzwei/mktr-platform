@@ -74,6 +74,12 @@ const defaultDeps = {
     const m = await import('./googleCustomerMatchService.js');
     return m.removeAudienceMembers(m.buildRemovalIdentifiers(pairs));
   },
+  // Touchpoint sweep upsert (ads-centralisation §4.6) — lazy for the same
+  // import-graph reason; the maintenance tick consumes what this writes.
+  upsertErasedSessionSweepsTx: async (t, sids) => {
+    const m = await import('./touchpointService.js');
+    return m.upsertErasedSessionSweepsTx(t, sids);
+  },
 };
 
 export function makeErasureService(overrides = {}) {
@@ -433,6 +439,21 @@ export function makeErasureService(overrides = {}) {
             { replacements: { sessionIds }, transaction: t }
           );
           report.sessionVisits = rowCount(svMeta);
+
+          // Touchpoints (ads-centralisation §4.6): guarded delete NOW, plus a
+          // durable 24h sweep row per sid — the maintenance tick re-applies
+          // the delete under the same per-sid advisory lock the beacon insert
+          // takes, so a beacon racing this transaction cannot outlive the
+          // erasure. The shared-session guard mirrors session_visits: a sid
+          // shared with a SURVIVING prospect is never swept.
+          const [, tpMeta] = await d.sequelize.query(
+            `DELETE FROM touchpoints tp
+              WHERE tp."sessionId" IN (:sessionIds)
+                AND NOT EXISTS (SELECT 1 FROM prospects p2 WHERE p2."sessionId" = tp."sessionId")`,
+            { replacements: { sessionIds }, transaction: t }
+          );
+          report.touchpoints = rowCount(tpMeta);
+          report.erasedSessionSweeps = await d.upsertErasedSessionSweepsTx(t, sessionIds);
         }
         if (attributionIds.length) {
           const [, atMeta] = await d.sequelize.query(

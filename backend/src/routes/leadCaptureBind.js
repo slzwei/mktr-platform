@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { Attribution } from '../models/index.js';
 import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publicHost.js';
 import { frontendBaseForHost } from '../utils/frontendBase.js';
+import { SID_COOKIE_MAX_AGE_MS, validSid } from '../utils/sessionId.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 if (isProd && !process.env.ATTRIB_SECRET) {
@@ -19,8 +20,11 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
   const isProdReq = process.env.NODE_ENV === 'production';
   const publicHost = publicHostFromRequest(req);
   const cookieDomain = isProdReq ? cookieDomainForPublicHost(publicHost) : undefined;
-  // Ensure sid cookie exists
-  let sid = req.cookies?.sid;
+  // Ensure a VALID sid cookie exists (90d — the one session horizon, §4.2).
+  // A malformed cookie is replaced, not propagated: /touch and /prospects
+  // validate both sid sources, so binding attribution to a garbage sid would
+  // split the identity they converge on.
+  let sid = validSid(req.cookies?.sid);
   if (!sid) {
     sid = crypto.randomBytes(16).toString('hex');
     res.cookie('sid', sid, {
@@ -28,7 +32,7 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
       sameSite: 'lax',
       secure: isProdReq,
       domain: cookieDomain,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: SID_COOKIE_MAX_AGE_MS,
       path: '/'
     });
   }

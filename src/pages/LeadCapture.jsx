@@ -51,6 +51,7 @@ import {
   captureGclFromUrl, readGcl,
 } from '../lib/googleAds';
 import { shouldTrackAdRoll, initAdRoll, trackAdRollPageView } from '../lib/adroll';
+import { beaconTouch, sessionSubmitHeaders } from '../lib/touch';
 import { trackFunnelEvent } from '../lib/pixelCustom';
 
 export default function LeadCapture() {
@@ -181,6 +182,13 @@ export default function LeadCapture() {
       initAdRoll();
       trackAdRollPageView();
     }
+
+    // Durable touchpoint (ads-centralisation §4.4): fires here (not in
+    // TouchRouteTracker) for the same reason AdRoll does — the loaded
+    // campaign feeds the test-data suppression gate and rides as campaignId.
+    // Own 30-min URL throttle; intentionally lossy; dark unless
+    // VITE_TOUCH_ENABLED.
+    beaconTouch({ campaign, campaignId: campaign.id, surface: 'leadcapture' });
   }, [campaign, location.pathname, location.search]);
 
   // Quiz result reveal → fire CompleteRegistration on both platforms (strongest
@@ -411,7 +419,9 @@ export default function LeadCapture() {
         })
       );
 
-      const result = await apiClient.post('/prospects', payload, { skipAuth: true });
+      // X-Session-Id (ads-centralisation §4.2): the boot id rides the submit so
+      // even the fastest capture binds a session — empty until the touch flags flip.
+      const result = await apiClient.post('/prospects', payload, { skipAuth: true, headers: await sessionSubmitHeaders() });
       if (result?.success) {
         // Keep the new prospect's id so this submitter's share links carry
         // their identity (?ref={id}) instead of the anonymous ref=1.

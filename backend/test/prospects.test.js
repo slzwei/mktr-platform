@@ -715,7 +715,9 @@ describe('Attribution binding', () => {
   })
 
   it('binds attributionId and qrTagId from x-session-id header', async () => {
-    const sessionId = `test-session-${Date.now()}`
+    // 32-hex — the shape every mint site produces and both sid sources are
+    // validated against since ads-centralisation §4.2.
+    const sessionId = Date.now().toString(16).padStart(32, 'f').slice(-32)
     const attribution = await createTestAttribution(qrTag.id, sessionId)
 
     const res = await request(app)

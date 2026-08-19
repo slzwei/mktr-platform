@@ -93,7 +93,10 @@ export const init = async (app) => {
       origin: corsOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      // X-Session-Id: the client-side boot session id ridden by the /touch
+      // beacon and the prospect submit (ads-centralisation §4.2) — the SPA
+      // can't read the httpOnly sid cookie, so the header carries it.
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Session-Id'],
       preflightContinue: false,
       optionsSuccessStatus: 204,
     })

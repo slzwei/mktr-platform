@@ -94,6 +94,35 @@ describe('POST /api/analytics/events', () => {
 
     expect(res.status).toBe(403)
   })
+
+  // Exact-origin matrix (ads-centralisation §4.3): the old prefix match let a
+  // lookalike host through — https://mktr.sg.evil.example startsWith
+  // https://mktr.sg. Origin AND the Referer fallback must both compare exactly.
+  it('rejects lookalike-host origins the old prefix match accepted', async () => {
+    for (const evil of ['https://mktr.sg.evil.example', 'https://redeem.sg.evil.example']) {
+      const res = await request(app)
+        .post('/api/analytics/events')
+        .set('Origin', evil)
+        .set('x-session-id', 'test-sid-lookalike')
+        .send({ type: 'page_view' })
+      expect(res.status).toBe(403)
+    }
+    const viaReferer = await request(app)
+      .post('/api/analytics/events')
+      .set('Referer', 'https://redeem.sg.evil.example/offers/x')
+      .set('x-session-id', 'test-sid-lookalike')
+      .send({ type: 'page_view' })
+    expect(viaReferer.status).toBe(403)
+  })
+
+  it('still accepts a genuine Referer-only request (no Origin header)', async () => {
+    const res = await request(app)
+      .post('/api/analytics/events')
+      .set('Referer', 'https://redeem.sg/offers/airpods')
+      .set('x-session-id', 'test-sid-referer-ok')
+      .send({ type: 'page_view' })
+    expect(res.status).toBe(200)
+  })
 })
 
 describe('POST /api/analytics/referrals', () => {
