@@ -1,12 +1,17 @@
 import * as Sentry from '@sentry/node';
-import { Op } from 'sequelize';
-import { Prospect } from '../models/index.js';
+import { Prospect, sequelize } from '../models/index.js';
 import { hashEmailGoogle, hashPhoneE164 } from '../utils/piiHashing.js';
 import { dmRequest, dmRequestGet } from '../utils/googleDataManagerClient.js';
-import { phoneVerificationIsCurrent } from './consumerService.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail } from './mailer.js';
-import { contactGrantAllows } from './contactConsent.js';
+import { withAdvisoryLock } from '../utils/advisoryLock.js';
+import {
+  AUDIENCE_POLICIES,
+  loadEligibilityContext,
+  selectAudiencePopulation,
+  filterEligible,
+} from './audienceEligibilityService.js';
+import { markIngestAccepted, markIngestsSettled, hasUnsettledIngests } from './audienceRemovalService.js';
 
 /**
  * Google Customer Match exclusion sync — the Google counterpart of
@@ -62,6 +67,13 @@ const defaultDeps = {
   dmRequestGet,
   sleep: realSleep,
   now: Date.now,
+  // Injectable seams for the §5.1 machinery (unit tests stub these; the
+  // DB-backed suites exercise the real table + lock).
+  withDestinationLock: withAdvisoryLock,
+  markIngestAccepted,
+  markIngestsSettled,
+  hasUnsettledIngests,
+  loadEligibilityContext,
 };
 
 /**
@@ -97,22 +109,6 @@ export function chunk(arr, size) {
   return out;
 }
 
-/**
- * Select the target campaign's non-bot prospects. sourceMetadata rides along
- * for the erased flag + the verified-phone binding check in buildMemberRows.
- */
-export async function selectCampaignProspects(deps = {}) {
-  const d = { ...defaultDeps, ...deps };
-  return d.Prospect.findAll({
-    attributes: ['email', 'phone', 'campaignId', 'sourceMetadata'],
-    where: {
-      campaignId: process.env.GOOGLE_CM_CAMPAIGN_ID,
-      leadSource: { [Op.ne]: 'call_bot' },
-    },
-    raw: true,
-  });
-}
-
 /** email/phone → HEX-hash identifier array (shared by ingest + removal). */
 function identifiersFor(email, phone) {
   const usableEmail =
@@ -126,7 +122,8 @@ function identifiersFor(email, phone) {
 }
 
 /**
- * Prospect rows → Data Manager audience members. Every filter fails CLOSED:
+ * (Filtering lives in the eligibility engine now — ads-centralisation §5.2.
+ * The historical fail-closed rules, in engine order:
  *  - erased skeletons out
  *  - unverified / stale-binding phones out (phoneVerificationIsCurrent)
  *  - no ledger contact grant in scope {row campaign, global} → out (no hatch;
@@ -136,13 +133,14 @@ function identifiersFor(email, phone) {
  *  - synthetic Retell emails dropped from the email key
  *  - neither usable identifier → out
  */
-export function buildMemberRows(prospects, { suppressedPhones = null, grantMap = null } = {}) {
+/**
+ * Identifier SHAPING for eligibility-engine output (§5.2): the engine owns
+ * selection + policy filtering (erased / edit-suppressed / verified-binding /
+ * grant / suppression); this owns the Data Manager wire shape.
+ */
+export function shapeGoogleMemberRows(prospects) {
   const rows = [];
   for (const p of prospects || []) {
-    if (p?.sourceMetadata?.erased === true) continue;
-    if (!phoneVerificationIsCurrent(p)) continue;
-    if (!contactGrantAllows(grantMap?.get(p?.phone), p?.campaignId || null)) continue;
-    if (suppressedPhones && p?.phone && suppressedPhones.has(p.phone)) continue;
     const userIdentifiers = identifiersFor(p?.email, p?.phone);
     if (userIdentifiers.length === 0) continue;
     rows.push({ userIdentifiers });
@@ -151,12 +149,15 @@ export function buildMemberRows(prospects, { suppressedPhones = null, grantMap =
 }
 
 /**
- * Raw {email, phone} pairs → identifier rows for REMOVAL. No consent /
+ * RAW {email, phone} pairs → identifier rows for REMOVAL. No consent /
  * verification gates: removing someone from an ad audience is always
  * permitted and erasure-time callers hold pre-scrub values that are about to
  * be destroyed. Synthetic emails still dropped (they never matched anyway).
+ * Renamed from `buildRemovalIdentifiers` (ads-centralisation §5.5): the name
+ * now says what it consumes — the HASH-accepting entry point for the durable
+ * removal outbox is removeHashedIdentifiers below.
  */
-export function buildRemovalIdentifiers(pairs) {
+export function buildRemovalIdentifiersFromRaw(pairs) {
   const rows = [];
   for (const p of pairs || []) {
     const userIdentifiers = identifiersFor(p?.email, p?.phone);
@@ -164,6 +165,40 @@ export function buildRemovalIdentifiers(pairs) {
     rows.push({ userIdentifiers });
   }
   return rows;
+}
+
+/**
+ * HASH-accepting removal transport for the durable outbox (§5.5): ONE
+ * request for one person's already-normalized identifier rows. Unlike the
+ * legacy removeAudienceMembers it reports a classification instead of
+ * queueing an in-memory settle — the OUTBOX row is the durable settle state
+ * (the drainer polls requestStatus:retrieve until confirmed).
+ *
+ * Returns { ok:true, requestId } | { ok:false, transient|authClass|permanent, errorCode }.
+ */
+export async function removeHashedIdentifiers(identifierRows, deps = {}) {
+  const d = { ...defaultDeps, ...deps };
+  if (!removalConfigured()) return { ok: false, permanent: true, errorCode: 'unconfigured' };
+  const rows = (identifierRows || []).filter((r) => r?.userIdentifiers?.length);
+  if (rows.length === 0) return { ok: false, permanent: true, errorCode: 'empty_identifiers' };
+  try {
+    // ONE wire attempt per outbox reservation (Codex P4 review #10): the DM
+    // client's internal 429/5xx retry loop is disabled here — the outbox row's
+    // submitAttempts IS the retry accounting, and its backoff ladder governs.
+    // (The DM client's own GOOGLE_DM_TIMEOUT_MS bounds the exchange; at 30s
+    // default it sits far under the 10-minute claim lease.)
+    const res = await d.dmRequest('audienceMembers:remove', buildRemoveBody(rows), { ...d, attempts: 1 });
+    if (res?.requestId) return { ok: true, requestId: res.requestId };
+    // An accept without a requestId cannot be settled — retry it.
+    return { ok: false, transient: true, errorCode: 'missing_request_id' };
+  } catch (err) {
+    const status = err?.status ?? err?.statusCode;
+    if (status === 401 || status === 403) return { ok: false, authClass: true, errorCode: 'auth' };
+    if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+      return { ok: false, permanent: true, errorCode: `http_${status}` };
+    }
+    return { ok: false, transient: true, errorCode: 'network', message: err?.message };
+  }
 }
 
 function destinations() {
@@ -240,9 +275,17 @@ function extractStatus(body) {
  */
 const pendingSettles = []; // { requestId, kind: 'ingest'|'remove', acceptedAt, nextPollAt, delayMs }
 
+// Ingest entries a pass has SPLICED OUT and is currently polling. The
+// watermark close must count these as unsettled — the due-splice makes them
+// invisible to the queue scan, and an overlapping pass (or the same pass's
+// own tail) closing on an "empty" queue while a poll is in flight would
+// dispatch removals into an unsettled ingest (Codex P4 review #1).
+let inFlightIngestPolls = 0;
+
 /** Test seam — clears the pending-settlement queue. */
 export function __resetPendingSettlesForTests() {
   pendingSettles.length = 0;
+  inFlightIngestPolls = 0;
 }
 
 function firstPollDelayMs() {
@@ -287,6 +330,12 @@ export async function settlePendingStatuses(deps = {}) {
   for (let i = pendingSettles.length - 1; i >= 0; i--) {
     if (pendingSettles[i].nextPollAt <= now) due.push(...pendingSettles.splice(i, 1));
   }
+  // Spliced-out ingest entries are still UNSETTLED until their poll resolves —
+  // count them so the watermark close (here and in any overlapping pass) can
+  // never mistake in-flight for empty (Codex P4 review #1).
+  const ingestInFlightHere = due.filter((e) => e.kind === 'ingest').length;
+  inFlightIngestPolls += ingestInFlightHere;
+  let ingestSettledThisPass = 0;
   const keep = [];
   for (const entry of due) {
     summary.polled += 1;
@@ -308,11 +357,22 @@ export async function settlePendingStatuses(deps = {}) {
         summary.partialSuccess += 1;
         if (entry.kind === 'remove') summary.removePartial += 1;
       } else summary.failed += 1;
+      if (entry.kind === 'ingest') {
+        inFlightIngestPolls -= 1;
+        ingestSettledThisPass += 1;
+      }
       logger.info({ requestId: entry.requestId, kind: entry.kind, status }, 'google_cm.status.terminal');
       continue;
     }
     if (now - entry.acceptedAt >= SETTLE_HORIZON_MS) {
       summary.stuck += 1;
+      if (entry.kind === 'ingest') {
+        // Past Google's own 24h processing window: settled server-side
+        // whether we could observe it or not — the entry leaves the queue
+        // (already alerted above) and stops counting as unsettled.
+        inFlightIngestPolls -= 1;
+        ingestSettledThisPass += 1;
+      }
       logger.warn({ requestId: entry.requestId, kind: entry.kind, retrieveFailed }, 'google_cm.status.stuck');
       continue;
     }
@@ -324,7 +384,57 @@ export async function settlePendingStatuses(deps = {}) {
     });
   }
   pendingSettles.push(...keep);
+  // Kept (rescheduled) ingest entries are visible in the queue again — they
+  // stop counting as in-flight.
+  inFlightIngestPolls -= keep.filter((e) => e.kind === 'ingest').length;
   summary.pending = pendingSettles.length;
+
+  // Settlement watermark (ads-centralisation §5.1): close it on settlement
+  // EVIDENCE, never hope. Preconditions: no ingest entries queued AND none
+  // in flight in ANY pass (Codex P4 review #1 — the due-splice hides polled
+  // entries from the queue scan). Then two evidence branches:
+  //  (a) positive knowledge — THIS pass settled ingest entries and none
+  //      remain: every accepted ingest we watched reached a terminal status
+  //      (or its 24h stuck horizon — beyond Google's own processing window,
+  //      already alerted);
+  //  (b) the provider bound — a redeploy drops this in-memory queue, and an
+  //      open watermark with nothing left to poll would otherwise hold every
+  //      removal until the 30d escalation. Google's diagnostics window caps
+  //      processing at 24h, so once the NEWEST accept
+  //      (lastIngestAcceptedAt, NOT the oldest — an old stuck ingest must
+  //      never vouch for a fresh one, Codex P4 review #2) is >25h old, every
+  //      accepted ingest has settled server-side whether we watched or not.
+  if (process.env.GOOGLE_CM_USER_LIST_ID) {
+    const ingestStillPending = pendingSettles.some((e) => e.kind === 'ingest') || inFlightIngestPolls > 0;
+    if (!ingestStillPending) {
+      try {
+        const readState =
+          d.readDestinationState ||
+          (async (platform, dest) => {
+            const [state] = await sequelize.query(
+              `SELECT "oldestUnsettledAcceptAt", "lastIngestAcceptedAt" FROM audience_destination_state
+                WHERE platform = :platform AND "destinationId" = :dest`,
+              { replacements: { platform, dest } }
+            );
+            return state?.[0] || null;
+          });
+        const state = await readState('google', process.env.GOOGLE_CM_USER_LIST_ID);
+        const openSince = state?.oldestUnsettledAcceptAt;
+        if (openSince) {
+          const watchedDrain = ingestSettledThisPass > 0; // (a)
+          const lastAccept = state?.lastIngestAcceptedAt ? new Date(state.lastIngestAcceptedAt).getTime() : null;
+          const beyondBound =
+            lastAccept !== null && (d.now ? d.now() : Date.now()) - lastAccept > 25 * 3600_000; // (b)
+          if (watchedDrain || beyondBound) {
+            await d.markIngestsSettled('google', process.env.GOOGLE_CM_USER_LIST_ID);
+            logger.info({ watchedDrain, beyondBound }, 'google_cm.watermark_closed');
+          }
+        }
+      } catch (err) {
+        logger.warn({ err: err?.message }, 'google_cm.watermark_close_failed');
+      }
+    }
+  }
   if (summary.failed > 0 || summary.stuck > 0 || summary.removePartial > 0) {
     Sentry.captureMessage('google_cm.settle.troubled', {
       level: 'warning',
@@ -377,14 +487,22 @@ export async function syncGoogleCustomerMatch(deps = {}) {
   syncInFlight = true;
 
   try {
-    // Fail-closed by construction: if either ledger lookup throws, the run
-    // aborts — never upload while blind to withdrawals/suppressions.
-    const { getSuppressedPhoneSet, getMarketableGrantMap } = await import('./consentService.js');
-    const suppressedPhones = await getSuppressedPhoneSet();
-    const grantMap = await getMarketableGrantMap();
-
-    const prospects = await selectCampaignProspects(d);
-    const rows = buildMemberRows(prospects, { suppressedPhones, grantMap });
+    // The sync and the removal drainer share this destination's advisory lock
+    // (ads-centralisation §5.1 layer 1), held from eligibility selection
+    // through acceptance.
+    const lockRes = await d.withDestinationLock(
+      `aud:google:${process.env.GOOGLE_CM_USER_LIST_ID}`,
+      async () => {
+    // Fail-closed by construction: loadEligibilityContext returns a COMPLETE
+    // snapshot or THROWS — never upload while blind to withdrawals (§5.1).
+    const policy = AUDIENCE_POLICIES.google;
+    const ctx = await d.loadEligibilityContext({ requireConsent: policy.requireConsent });
+    const prospects = await selectAudiencePopulation(
+      { scope: policy.scope, campaignId: process.env.GOOGLE_CM_CAMPAIGN_ID },
+      d
+    );
+    const eligible = filterEligible(prospects, ctx, policy);
+    const rows = shapeGoogleMemberRows(eligible);
     logger.info(
       { selected: prospects.length, eligible: rows.length, campaignId: process.env.GOOGLE_CM_CAMPAIGN_ID },
       'google_cm.sync.start'
@@ -396,6 +514,18 @@ export async function syncGoogleCustomerMatch(deps = {}) {
       // acceptance-only (zero requests were made).
       return { submitted: false, ok: true, reason: 'empty', eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null };
     }
+
+    // Settlement watermark (§5.1): opened BEFORE the first wire attempt —
+    // an accept followed by a crash/DB error must never leave an unsettled
+    // ingest with the removal gate reading closed (Codex P4 review #3). If
+    // nothing ends up accepted AND the watermark was closed before this run,
+    // we close it again (safe: we hold the destination lock, and no accept
+    // happened). A pre-existing open watermark is NEVER cleared here.
+    const watermarkWasOpen = await d.hasUnsettledIngests(
+      'google',
+      process.env.GOOGLE_CM_USER_LIST_ID
+    );
+    await d.markIngestAccepted('google', process.env.GOOGLE_CM_USER_LIST_ID);
 
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
     const acceptedIds = [];
@@ -427,6 +557,19 @@ export async function syncGoogleCustomerMatch(deps = {}) {
     // settlement queue (Google: first diagnostics poll ~30min out). No
     // in-run claim of confirmed delivery is made.
     queueSettles(acceptedIds, 'ingest', d.now ? d.now() : Date.now());
+
+    // Zero accepts does NOT close the pre-opened watermark: a timed-out or
+    // transport-errored ingest attempt is an AMBIGUOUS accept (Google may
+    // have taken it without us seeing the requestId), so the gate stays
+    // conservatively open and heals via the settle pass — positive drain
+    // knowledge or the 25h provider bound. `watermarkWasOpen` is kept for
+    // observability of that ambiguity.
+    if (acceptedIds.length === 0 && !watermarkWasOpen) {
+      logger.warn(
+        { failedBatches },
+        'google_cm.sync.watermark_held_on_ambiguous_accept (settle pass / 25h bound heals)'
+      );
+    }
 
     const wholesale = acceptedIds.length === 0;
     // "submitted", not "synced": acceptance-only truth. Whether the accepted
@@ -466,6 +609,13 @@ export async function syncGoogleCustomerMatch(deps = {}) {
       );
     }
     return summary;
+      }
+    );
+    if (!lockRes.acquired) {
+      logger.warn('google_cm.sync.locked (destination busy — drainer or another run holds the lock)');
+      return { submitted: false, reason: 'locked' };
+    }
+    return lockRes.value;
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'google_cm_sync' } });
     logger.error({ err: err.message }, 'google_cm.sync.failed');
@@ -564,7 +714,7 @@ export async function removeByConsumerId(consumerId, deps = {}) {
       where: { consumerId, campaignId: process.env.GOOGLE_CM_CAMPAIGN_ID },
       raw: true,
     });
-    return removeAudienceMembers(buildRemovalIdentifiers(rows), d);
+    return removeAudienceMembers(buildRemovalIdentifiersFromRaw(rows), d);
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'google_cm_remove' } });
     logger.error({ err: err.message }, 'google_cm.remove.lookup_failed');

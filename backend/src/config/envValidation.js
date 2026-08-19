@@ -150,7 +150,7 @@ export function validateEnv() {
     'META_LEAD_ADS_ENABLED', 'META_OAUTH_ENABLED',
     'GOOGLE_ADS_UPLOADS_ENABLED', 'GOOGLE_CM_SYNC_ENABLED',
     'PLATFORM_DELIVERY_PLANNING_ENABLED', 'PLATFORM_DELIVERY_PAUSED',
-    'TOUCHPOINTS_ENABLED',
+    'TOUCHPOINTS_ENABLED', 'AUDIENCE_REMOVAL_WRITERS_ENABLED',
   ];
   const mistyped = booleanFlags.filter((k) => {
     const v = process.env[k];
@@ -174,6 +174,10 @@ export function validateEnv() {
     ['PLATFORM_DELIVERY_RETENTION_DAYS', 7, 365],
     ['TOUCHPOINT_RETENTION_DAYS', 7, 730],
     ['TOUCHPOINTS_MAX_PER_SESSION_DAY', 5, 500],
+    ['AUDIENCE_REMOVAL_DRAIN_MINUTES', 5, 120],
+    ['AUDIENCE_REMOVAL_MAX_ATTEMPTS', 1, 30],
+    ['AUDIENCE_REMOVAL_HTTP_TIMEOUT_MS', 1000, 120000],
+    ['AUDIENCE_REMOVAL_MAX_DAYS', 7, 90],
   ];
   const badNumerics = numericBounds.filter(([k, min, max]) => {
     const v = process.env[k];

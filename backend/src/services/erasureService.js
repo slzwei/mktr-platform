@@ -72,13 +72,23 @@ const defaultDeps = {
   // unchanged and a config-less environment costs nothing.
   googleCmRemove: async (pairs) => {
     const m = await import('./googleCustomerMatchService.js');
-    return m.removeAudienceMembers(m.buildRemovalIdentifiers(pairs));
+    return m.removeAudienceMembers(m.buildRemovalIdentifiersFromRaw(pairs));
   },
   // Touchpoint sweep upsert (ads-centralisation §4.6) — lazy for the same
   // import-graph reason; the maintenance tick consumes what this writes.
   upsertErasedSessionSweepsTx: async (t, sids) => {
     const m = await import('./touchpointService.js');
     return m.upsertErasedSessionSweepsTx(t, sids);
+  },
+  // Durable removal outbox (ads-centralisation §5.5/§5.7) — the flag-on
+  // branch of the erasure hook; lazy, injectable seam.
+  removalWritersEnabled: async () => {
+    const m = await import('./audienceRemovalService.js');
+    return m.removalWritersEnabled();
+  },
+  enqueueErasureRemovalsTx: async (t, args) => {
+    const m = await import('./audienceRemovalService.js');
+    return m.enqueueErasureRemovalsTx(t, args);
   },
 };
 
@@ -192,12 +202,23 @@ export function makeErasureService(overrides = {}) {
         lock: Transaction.LOCK.UPDATE,
       });
       const pids = prospects.map((p) => p.id);
-      // Google Customer Match removal (plan google-ads-signal-levers §3):
-      // capture the raw pairs BEFORE the scrub destroys them — after commit
-      // no identifier survives to remove the external list membership.
-      // Collection is pure string-copying; the actual removal call runs
-      // post-commit (never inside the row-locked transaction).
-      if (process.env.GOOGLE_CM_CAMPAIGN_ID) {
+      // Audience removal — ONE flag read decides the branch for this erasure
+      // (ads-centralisation §5.7):
+      //  ON  ⇒ durable outbox rows written IN this transaction from the
+      //        locked pre-scrub raw values (per configured destination; the
+      //        Google row keeps its campaign scoping, Meta is global — §5.5);
+      //        the drainer delivers post-commit.
+      //  OFF ⇒ the legacy direct Google path: capture the raw pairs BEFORE
+      //        the scrub destroys them; the removal call runs post-commit
+      //        (never inside the row-locked transaction). The dark period
+      //        never removes today's compliance path.
+      if (await d.removalWritersEnabled()) {
+        const erasurePairs = prospects
+          .filter((p) => p.email || p.phone)
+          .map((p) => ({ email: p.email, phone: p.phone, campaignId: p.campaignId }));
+        const enqueued = await d.enqueueErasureRemovalsTx(t, { consumerId, pairs: erasurePairs });
+        report.audienceRemovalIds = enqueued.map((r) => r.id);
+      } else if (process.env.GOOGLE_CM_CAMPAIGN_ID) {
         for (const p of prospects) {
           if (p.campaignId === process.env.GOOGLE_CM_CAMPAIGN_ID && (p.email || p.phone)) {
             googleCmRemovalPairs.push({ email: p.email, phone: p.phone });

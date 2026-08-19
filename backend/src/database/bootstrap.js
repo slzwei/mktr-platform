@@ -411,6 +411,32 @@ export async function bootstrapDatabase() {
       logger.info('[Touchpoints] maintenance scheduled (330s offset, then daily)');
     }
 
+    // Audience-removal drainer + settle poller (ads-centralisation §5.5/§5.7):
+    // runs whenever ANY platform is removal-configured — deliberately
+    // independent of AUDIENCE_REMOVAL_WRITERS_ENABLED, so a writer rollback
+    // keeps draining the rows that already exist (never revert with undrained
+    // rows). Offset 300s; per-destination advisory locks are shared with each
+    // destination's additive sync inside the service.
+    {
+      const drainMinutes = Math.min(120, Math.max(5, Number(process.env.AUDIENCE_REMOVAL_DRAIN_MINUTES) || 15));
+      let arInFlight = false;
+      const runRemovalDrainerTick = async () => {
+        if (arInFlight) return;
+        arInFlight = true;
+        try {
+          const { anyRemovalConfigured, runRemovalDrainer } = await import('../services/audienceRemovalService.js');
+          if (anyRemovalConfigured()) await runRemovalDrainer();
+        } catch (err) {
+          logger.warn('[AudienceRemoval] drainer tick failed (non-fatal)', { error: err?.message });
+        } finally {
+          arInFlight = false;
+        }
+      };
+      setTimeout(runRemovalDrainerTick, 300_000);
+      setInterval(runRemovalDrainerTick, drainMinutes * 60 * 1000);
+      logger.info(`[AudienceRemoval] drainer scheduled (${drainMinutes}m interval, 300s offset)`);
+    }
+
     // Redemption CAPI reconciliation sweep — the no-rescan safety net for
     // VoucherRedeemed sends lost between the redemption commit and the
     // fire-and-forget dispatch (process death). Marker-guarded + Meta event_id

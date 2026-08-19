@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Op, Transaction } from 'sequelize';
 import { PROSPECT_UPDATE_FIELDS } from './prospectShared.js';
 import {
@@ -41,6 +42,10 @@ export function makeProspectMutationOps({ d, m }) {
     const oldStatus = prospect.leadStatus;
     const oldAssignedAgentId = prospect.assignedAgentId;
     const oldAssignedAgent = prospect.assignedAgent;
+    // Minted PRE-transaction (ads-centralisation §5.5): the edit-removal
+    // sourceKey `edit:{prospectId}:{requestUuid}` — each staff edit request
+    // converges independently, and a retried transaction reuses one key.
+    const editRequestUuid = randomUUID();
 
     const safeUpdates = Object.fromEntries(Object.entries(body).filter(([k]) => PROSPECT_UPDATE_FIELDS.includes(k)));
 
@@ -161,6 +166,12 @@ export function makeProspectMutationOps({ d, m }) {
           if (locked.sourceMetadata?.erased === true) {
             throw new d.AppError('This lead was erased (PDPA) and can no longer be edited', 410);
           }
+          // Old identifiers from the LOCK-RELOADED row, captured before the
+          // write — never the pre-transaction snapshot, which a concurrent
+          // edit could have outdated (ads-centralisation §5.5).
+          const lockedOldPhone = locked.phone;
+          const lockedOldEmail = locked.email;
+          const lockedCampaignId = locked.campaignId;
           await applyProspectWrite(t);
           if (strippingVerification) {
             await d.removeSourceMetadataPaths(
@@ -168,6 +179,26 @@ export function makeProspectMutationOps({ d, m }) {
               [['phoneVerifiedAt'], ['phoneVerifiedFor']],
               { transaction: t }
             );
+          }
+          // Durable identifier-edit removals (ads-centralisation §5.1/§5.5):
+          // CHANGED identifiers only — provider audiences are member-sets
+          // matched by ANY identifier, so removing an unchanged one would
+          // delete the freshly re-added member. IN this transaction (a
+          // compliance write that must not be losable once the identifiers
+          // change); subjectProspectId keeps the person OUT of additive
+          // selection until the removal settles; one flag read per event.
+          const lockedPhoneChanged = safeUpdates.phone !== undefined && safeUpdates.phone !== lockedOldPhone;
+          const lockedEmailChanged = safeUpdates.email !== undefined && safeUpdates.email !== lockedOldEmail;
+          if ((lockedPhoneChanged || lockedEmailChanged) && (await d.removalWritersEnabled())) {
+            await d.enqueueEditRemovalsTx(t, {
+              prospectId: prospect.id,
+              requestUuid: editRequestUuid,
+              oldEmail: lockedOldEmail,
+              oldPhone: lockedOldPhone,
+              campaignId: lockedCampaignId,
+              emailChanged: lockedEmailChanged,
+              phoneChanged: lockedPhoneChanged,
+            });
           }
           if (mappedStatusTransition) {
             // Durable outcome facts land IN the status transaction (write-once,
