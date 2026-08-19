@@ -407,3 +407,25 @@ describe('watermark bookkeeping', () => {
     expect(closed.lastIngestAcceptedAt).not.toBeNull();
   });
 });
+
+describe('erasure writer (flag ON) — the third §5.5 transaction', () => {
+  it('writes per-destination rows IN the erasure txn, hashes only, ids recorded in the report', async () => {
+    process.env.AUDIENCE_REMOVAL_WRITERS_ENABLED = 'true';
+    const { ensureRetiredTables } = await import('./helpers.js');
+    await ensureRetiredTables();
+    const phone = freshPhone();
+    const email = 'erase-me@example.com';
+    const consumer = await Consumer.create({ phone, firstSeenAt: new Date(), lastSeenAt: new Date() });
+    await createTestProspect(campaign.id, { leadSource: 'website', phone, email, consumerId: consumer.id });
+    const { eraseConsumer } = await import('../src/services/erasureService.js');
+    const report = await eraseConsumer(consumer.id, { actorUser: admin, reason: 'p4 writer test' });
+    expect(report.audienceRemovalIds?.length).toBeGreaterThanOrEqual(2);
+    const rows = await AudienceRemoval.findAll({ where: { sourceKey: `erasure:${consumer.id}` }, raw: true });
+    expect(rows.map((r) => r.platform).sort()).toEqual(['google', 'meta']);
+    // Hash-only content: the pre-scrub raw identifiers never persist here.
+    const raw = JSON.stringify(rows.map((r) => r.identifiers));
+    expect(raw).not.toContain(email);
+    expect(raw).not.toContain(phone);
+    expect(raw).not.toContain('@');
+  });
+});
