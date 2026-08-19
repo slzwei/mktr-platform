@@ -2,7 +2,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import * as trackerService from '../services/trackerService.js';
 import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publicHost.js';
 import { frontendBaseForHost } from '../utils/frontendBase.js';
-import { SID_COOKIE_MAX_AGE_MS } from '../utils/sessionId.js';
+import { SID_COOKIE_MAX_AGE_MS, validSid } from '../utils/sessionId.js';
 import { Campaign } from '../models/index.js';
 import { passesStaticGate } from '../services/marketplaceService.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
@@ -63,7 +63,10 @@ export const trackSlug = asyncHandler(async (req, res) => {
   // is correct — it's one session — but the latest scan must (re)bind it,
   // otherwise a subsequent scan of a different campaign is ignored and the
   // lead is mis-attributed to the first campaign ever scanned.
-  let sid = req.cookies?.sid;
+  // VALIDATED (§4.2): a malformed cookie is replaced with a fresh mint —
+  // /touch and /prospects ignore invalid sids, so an attribution bound to a
+  // garbage value could never converge with the session they key.
+  let sid = validSid(req.cookies?.sid);
   const isNewSid = !sid;
   if (isNewSid) sid = trackerService.generateSessionId();
 

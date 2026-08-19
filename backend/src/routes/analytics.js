@@ -34,6 +34,11 @@ const touchLimit = makeLimiter({
 
 router.post('/events', analyticsLimit, ctrl.trackEvent);
 router.post('/referrals', analyticsLimit, ctrl.trackReferral);
-router.post('/touch', touchLimit, validate(schemas.analyticsTouch, { stripUnknown: true }), ctrl.trackTouch);
+// The feature gate runs BEFORE Joi (§4.3): with TOUCHPOINTS_ENABLED off the
+// beacon is a pure {skipped:true} no-op whatever the body looks like — a
+// schema-skewed cached bundle must not turn a dark feature into 400 noise.
+const touchGate = (req, res, next) =>
+  (process.env.TOUCHPOINTS_ENABLED !== 'true' ? res.json({ success: true, skipped: true }) : next());
+router.post('/touch', touchLimit, touchGate, validate(schemas.analyticsTouch, { stripUnknown: true }), ctrl.trackTouch);
 
 export default router;

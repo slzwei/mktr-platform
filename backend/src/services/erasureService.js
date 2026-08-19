@@ -74,6 +74,12 @@ const defaultDeps = {
     const m = await import('./googleCustomerMatchService.js');
     return m.removeAudienceMembers(m.buildRemovalIdentifiers(pairs));
   },
+  // Touchpoint sweep upsert (ads-centralisation §4.6) — lazy for the same
+  // import-graph reason; the maintenance tick consumes what this writes.
+  upsertErasedSessionSweepsTx: async (t, sids) => {
+    const m = await import('./touchpointService.js');
+    return m.upsertErasedSessionSweepsTx(t, sids);
+  },
 };
 
 export function makeErasureService(overrides = {}) {
@@ -447,16 +453,7 @@ export function makeErasureService(overrides = {}) {
             { replacements: { sessionIds }, transaction: t }
           );
           report.touchpoints = rowCount(tpMeta);
-          await d.sequelize.query(
-            `INSERT INTO erased_session_sweeps ("sessionId", "sweepUntil", "createdAt", "updatedAt")
-             SELECT sid, now() + interval '24 hours', now(), now()
-               FROM unnest(ARRAY[:sessionIds]::text[]) AS sid
-             ON CONFLICT ("sessionId") DO UPDATE
-               SET "sweepUntil" = GREATEST(erased_session_sweeps."sweepUntil", excluded."sweepUntil"),
-                   "updatedAt" = now()`,
-            { replacements: { sessionIds }, transaction: t }
-          );
-          report.erasedSessionSweeps = sessionIds.length;
+          report.erasedSessionSweeps = await d.upsertErasedSessionSweepsTx(t, sessionIds);
         }
         if (attributionIds.length) {
           const [, atMeta] = await d.sequelize.query(

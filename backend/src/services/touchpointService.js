@@ -102,6 +102,25 @@ export async function recordTouch({ sid, surface, landingPath, referrer, campaig
 }
 
 /**
+ * Upsert the durable erased-session sweep rows (§4.6) — called INSIDE the
+ * erasure transaction. `GREATEST` on conflict: a repeat erasure (repair run)
+ * EXTENDS an open window and can never shrink one another erasure set later.
+ */
+export async function upsertErasedSessionSweepsTx(t, sessionIds) {
+  if (!sessionIds?.length) return 0;
+  await sequelize.query(
+    `INSERT INTO erased_session_sweeps ("sessionId", "sweepUntil", "createdAt", "updatedAt")
+     SELECT sid, now() + interval '24 hours', now(), now()
+       FROM unnest(ARRAY[:sessionIds]::text[]) AS sid
+     ON CONFLICT ("sessionId") DO UPDATE
+       SET "sweepUntil" = GREATEST(erased_session_sweeps."sweepUntil", excluded."sweepUntil"),
+           "updatedAt" = now()`,
+    { replacements: { sessionIds }, transaction: t }
+  );
+  return sessionIds.length;
+}
+
+/**
  * Consume the durable erased-session sweeps (§4.6): per sid, one transaction
  * taking the SAME per-sid lock the beacon insert holds, re-applying the
  * shared-session guard (a session shared with a SURVIVING prospect is never

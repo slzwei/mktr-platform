@@ -12,7 +12,8 @@ import { jest } from '@jest/globals';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect } from './helpers.js';
 import { sequelize, Touchpoint, ErasedSessionSweep, Prospect } from '../src/models/index.js';
-import { recordTouch, consumeErasedSessionSweeps, purgeOldTouchpoints } from '../src/services/touchpointService.js';
+import { recordTouch, consumeErasedSessionSweeps, purgeOldTouchpoints, upsertErasedSessionSweepsTx } from '../src/services/touchpointService.js';
+import { advisoryXactLock } from '../src/utils/advisoryLock.js';
 import { makeProspectService } from '../src/services/prospectService.js';
 
 const silentLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
@@ -136,6 +137,24 @@ describe('POST /api/analytics/touch', () => {
 });
 
 describe('the per-sid locked cap (§4.3)', () => {
+  it('a beacon insert WAITS for a held per-sid lock (stamp-vs-sweep serialization)', async () => {
+    const sid = sidOf(0xb0);
+    let resolvedWhileHeld = false;
+    let touchPromise;
+    await sequelize.transaction(async (t) => {
+      await advisoryXactLock(t, `tp:${sid}`);
+      touchPromise = recordTouch({ sid, surface: 'browse', landingPath: '/blocked' }).then((r) => {
+        resolvedWhileHeld = true;
+        return r;
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(resolvedWhileHeld).toBe(false); // serialized behind our lock
+    });
+    const result = await touchPromise; // lock released at commit ⇒ proceeds
+    expect(result.recorded).toBe(true);
+    expect(await Touchpoint.count({ where: { sessionId: sid } })).toBe(1);
+  });
+
   it('holds the 24h cap exactly under concurrency', async () => {
     process.env.TOUCHPOINTS_MAX_PER_SESSION_DAY = '5';
     const sid = sidOf(0xb1);
@@ -149,6 +168,27 @@ describe('the per-sid locked cap (§4.3)', () => {
 });
 
 describe('erased-session sweeps (§4.6)', () => {
+  it('the upsert EXTENDS an open window on repeat erasure and never shrinks one (GREATEST)', async () => {
+    const sid = sidOf(0xc0);
+    await sequelize.transaction(async (t) => upsertErasedSessionSweepsTx(t, [sid]));
+    // Shrink the row by hand, re-upsert ⇒ back out to ~now+24h.
+    await sequelize.query(
+      `UPDATE erased_session_sweeps SET "sweepUntil" = now() + interval '1 hour' WHERE "sessionId" = :sid`,
+      { replacements: { sid } }
+    );
+    await sequelize.transaction(async (t) => upsertErasedSessionSweepsTx(t, [sid]));
+    let row = await ErasedSessionSweep.findByPk(sid);
+    expect(new Date(row.sweepUntil).getTime()).toBeGreaterThan(Date.now() + 23 * 3600_000);
+    // Widen it beyond 24h, re-upsert ⇒ GREATEST keeps the wider window.
+    await sequelize.query(
+      `UPDATE erased_session_sweeps SET "sweepUntil" = now() + interval '48 hours' WHERE "sessionId" = :sid`,
+      { replacements: { sid } }
+    );
+    await sequelize.transaction(async (t) => upsertErasedSessionSweepsTx(t, [sid]));
+    row = await ErasedSessionSweep.findByPk(sid);
+    expect(new Date(row.sweepUntil).getTime()).toBeGreaterThan(Date.now() + 47 * 3600_000);
+  });
+
   it('deletes only in-window rows for swept sids, honours the shared-session guard, and drops rows past the window', async () => {
     const sweptSid = sidOf(0xc1);
     const sharedSid = sidOf(0xc2);
@@ -194,6 +234,20 @@ describe('retention purge (§4.6)', () => {
     expect(await Touchpoint.findByPk(old.id)).toBeNull();
     expect(await Touchpoint.count({ where: { sessionId: sid } })).toBe(1);
   });
+
+  it('drains MORE than one 1000-row batch in a single pass', async () => {
+    const sid = sidOf(0xd2);
+    // 1500 past-retention rows in one INSERT — two purge batches.
+    await sequelize.query(
+      `INSERT INTO touchpoints (id, "sessionId", "occurredAt", surface, "createdAt", "updatedAt")
+       SELECT gen_random_uuid(), :sid, now() - interval '200 days', 'browse', now(), now()
+         FROM generate_series(1, 1500)`,
+      { replacements: { sid } }
+    );
+    const purged = await purgeOldTouchpoints();
+    expect(purged).toBeGreaterThanOrEqual(1500);
+    expect(await Touchpoint.count({ where: { sessionId: sid } })).toBe(0);
+  });
 });
 
 describe('§4.5 binding — every web submit carries the session', () => {
@@ -224,6 +278,29 @@ describe('§4.5 binding — every web submit carries the session', () => {
     const fresh = await Prospect.findByPk(prospect.id, { raw: true });
     expect(fresh.sessionId).toBe(sid);
     expect(await Touchpoint.count({ where: { sessionId: sid } })).toBe(1); // same key joins them
+  });
+
+  it('CONCURRENT touch + submit on the same boot header converge on one sid (§4.8)', async () => {
+    touchOn();
+    const sid = sidOf(0xe8);
+    const svc = captureService();
+    const [touchRes, submitRes] = await Promise.all([
+      postTouch({ path: '/leadcapture' }, { 'X-Session-Id': sid }),
+      svc.createProspect(body(), null, { headers: { 'x-session-id': sid } }),
+    ]);
+    expect(touchRes.status).toBe(200);
+    const fresh = await Prospect.findByPk(submitRes.prospect.id, { raw: true });
+    expect(fresh.sessionId).toBe(sid);
+    const tps = await Touchpoint.findAll({ where: { sessionId: sid }, raw: true });
+    expect(tps).toHaveLength(1);
+    // §4.7 works by construction: the prospect and the touch share one key.
+    const [joined] = await sequelize.query(
+      `SELECT count(*)::int AS n FROM prospects p
+         JOIN touchpoints t ON t."sessionId" = p."sessionId"
+        WHERE p.id = :pid`,
+      { replacements: { pid: submitRes.prospect.id } }
+    );
+    expect(joined[0].n).toBe(1);
   });
 
   it('ignores an INVALID raw header sid (validation is the §4.2 contract)', async () => {
