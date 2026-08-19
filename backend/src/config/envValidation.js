@@ -148,6 +148,8 @@ export function validateEnv() {
     'LYFE_LEAD_SUPPRESSED_ENABLED', 'MKTR_LEADS_LEAD_SUPPRESSED_ENABLED',
     'SYNC_AGENT_CRON', 'WHATSAPP_QR_HEADER', 'ENABLE_AUTH_MAPPING',
     'META_LEAD_ADS_ENABLED', 'META_OAUTH_ENABLED',
+    'GOOGLE_ADS_UPLOADS_ENABLED', 'GOOGLE_CM_SYNC_ENABLED',
+    'PLATFORM_DELIVERY_PLANNING_ENABLED', 'PLATFORM_DELIVERY_PAUSED',
   ];
   const mistyped = booleanFlags.filter((k) => {
     const v = process.env[k];
@@ -155,6 +157,29 @@ export function validateEnv() {
   });
   if (mistyped.length > 0) {
     console.warn(`⚠️ Boolean flags with non-boolean values (treated as FALSE by === 'true' checks): ${mistyped.map((k) => `${k}="${process.env[k]}"`).join(', ')}`);
+  }
+
+  // Bounded numerics (ads-centralisation §8): consumers clamp out-of-bounds
+  // values into range at runtime, so a typo can't break delivery — but it CAN
+  // silently give you a different cadence/horizon than you wrote. Warn.
+  const numericBounds = [
+    ['PLATFORM_DELIVERY_WORKER_MINUTES', 1, 60],
+    ['PLATFORM_DELIVERY_MAX_ATTEMPTS', 1, 20],
+    ['PLATFORM_DELIVERY_HTTP_TIMEOUT_MS', 1000, 120000],
+    ['PLATFORM_DELIVERY_LEAD_HORIZON_HOURS', 1, 47],
+    ['PLATFORM_DELIVERY_CREG_HORIZON_HOURS', 1, 47],
+    ['PLATFORM_DELIVERY_CREG_FALLBACK_HORIZON_HOURS', 1, 24],
+    ['PLATFORM_DELIVERY_OUTCOME_HORIZON_HOURS', 1, 160],
+    ['PLATFORM_DELIVERY_RETENTION_DAYS', 7, 365],
+  ];
+  const badNumerics = numericBounds.filter(([k, min, max]) => {
+    const v = process.env[k];
+    if (v === undefined || v === '') return false;
+    const n = Number(v);
+    return !Number.isFinite(n) || n < min || n > max;
+  });
+  if (badNumerics.length > 0) {
+    console.warn(`⚠️ Numeric env vars out of bounds (runtime clamps into range): ${badNumerics.map(([k, min, max]) => `${k}="${process.env[k]}" (allowed ${min}–${max})`).join(', ')}`);
   }
 
   // ENABLE_AUTH_MAPPING auto-creates a local account (emailVerified: true) for

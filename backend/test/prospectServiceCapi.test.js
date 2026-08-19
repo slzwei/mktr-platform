@@ -151,18 +151,22 @@ describe('prospectService.createProspect → CAPI wire-up (Phase 2)', () => {
     );
 
     const created = deps.models.Prospect.create.mock.calls[0][0];
-    expect(created.sourceMetadata).toEqual({ keep: 'me', clientIp: '1.2.3.4' });
+    // eventId is always present now — server-generated when the client omits
+    // one, so no submit bypasses delivery-ledger durability (ads-centralisation §3.3.1).
+    expect(created.sourceMetadata).toEqual({ keep: 'me', clientIp: '1.2.3.4', eventId: expect.any(String) });
   });
 
-  it('does NOT touch sourceMetadata when no meta-fields are present (no empty object pollution)', async () => {
+  it('writes only the server-generated eventId when no meta-fields are present (§3.3.1)', async () => {
     const deps = buildDeps();
     const svc = makeProspectService(deps);
 
     await svc.createProspect({ ...baseBody }, { id: 'admin-1', role: 'admin' }, {});
 
     const created = deps.models.Prospect.create.mock.calls[0][0];
-    // incoming.sourceMetadata is left untouched (undefined here, since not set)
-    expect(created.sourceMetadata).toBeUndefined();
+    // The one deliberate addition: a UUID eventId (delivery-ledger dedup key).
+    // Everything else stays untouched — no empty-object pollution beyond it.
+    expect(created.sourceMetadata).toEqual({ eventId: expect.any(String) });
+    expect(created.sourceMetadata.eventId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('calls sendLeadEvent post-commit with the created prospect and ctx', async () => {
@@ -233,7 +237,8 @@ describe('prospectService.createProspect → CAPI wire-up (Phase 2)', () => {
     expect(deps.sendLeadEvent).toHaveBeenCalledTimes(1);
     const [, ctxArg] = deps.sendLeadEvent.mock.calls[0];
     expect(ctxArg).toEqual({
-      eventId: undefined,
+      // Server-generated when the client sends none (ads-centralisation §3.3.1).
+      eventId: expect.any(String),
       fbp: undefined,
       fbc: undefined,
       eventSourceUrl: undefined,
@@ -266,6 +271,7 @@ describe('createProspect → consent persistence (Phase 4 step 1b)', () => {
     expect(created.sourceMetadata).toEqual({
       consent_contact: true,
       consent_terms: true,
+      eventId: expect.any(String), // always present since ads-centralisation §3.3.1
     });
   });
 
@@ -283,6 +289,7 @@ describe('createProspect → consent persistence (Phase 4 step 1b)', () => {
     expect(created.sourceMetadata).toEqual({
       consent_contact: false,
       consent_terms: true,
+      eventId: expect.any(String), // always present since ads-centralisation §3.3.1
     });
   });
 
@@ -293,7 +300,8 @@ describe('createProspect → consent persistence (Phase 4 step 1b)', () => {
     await svc.createProspect({ ...baseBody }, { id: 'admin-1', role: 'admin' }, {});
 
     const created = deps.models.Prospect.create.mock.calls[0][0];
-    expect(created.sourceMetadata).toBeUndefined();
+    // Only the always-present server-generated eventId — no consent keys.
+    expect(created.sourceMetadata).toEqual({ eventId: expect.any(String) });
   });
 
   it('strips consent fields from Prospect attributes (no Sequelize attribute leakage)', async () => {

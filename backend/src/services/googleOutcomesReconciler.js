@@ -38,7 +38,12 @@ const KEYS = { CR: 'confirmed_resident', CW: 'closed_won' };
 const defaultDeps = { Prospect, fetch: globalThis.fetch, mergeFirstWins };
 
 export function reconcilerConfigured() {
-  if (process.env.GOOGLE_ADS_UPLOADS_ENABLED !== 'true') return false;
+  // CREDENTIALS-based, deliberately NOT Google-flag-based (ads-centralisation
+  // §3.5): the reconciler writes durable outcome FACTS (first-wins) consumed
+  // by Google's worker AND the Meta delivery ledger's invariant sweep — Meta
+  // outcome durability must never hang off a Google flag. It is also the
+  // recovery net for a fully-failed facts+planning transaction (no fact, no
+  // row): it re-writes the fact, which the sweep then plans from.
   if (!process.env.LYFE_SUPABASE_URL) return false;
   if (!process.env.LYFE_SUPABASE_SERVICE_ROLE_KEY) return false;
   return true;

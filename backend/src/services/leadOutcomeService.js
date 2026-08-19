@@ -38,7 +38,7 @@
  * override, and that consent flag.
  */
 
-import { Prospect, Campaign } from '../models/index.js';
+import { Prospect, Campaign, sequelize } from '../models/index.js';
 import { setPath as setSourceMetadataPath, mergeFirstWins as mergeSourceMetadataFirstWins } from '../utils/prospectJsonPatch.js';
 import {
   dispatchOutcome as dispatchGoogleOutcome,
@@ -47,39 +47,27 @@ import {
 } from './googleOfflineConversionsService.js';
 import { sendConversionEvent as metaSendConversionEvent } from './metaCapiService.js';
 import { canMarketTo as ledgerCanMarketTo } from './consentService.js';
+import { planOutcomeDeliveriesTx, dispatchOutcomeDelivery } from './platformDeliveryService.js';
+import { OUTCOME_EVENTS as EVENTS, eventNameFor, eventKeysForStatus } from './outcomeEvents.js';
 import { logger } from '../utils/logger.js';
 
 // CAPI events keyed by a stable internal id (NOT the Lyfe status), so event_id +
-// marker are consistent across the qualified/won triggers.
-const EVENTS = {
-  confirmed_resident: { envVar: 'META_EVENT_QUALIFIED', defaultName: 'ConfirmedResident', markerKey: 'confirmedResidentAt' },
-  closed_won: { envVar: 'META_EVENT_WON', defaultName: 'ClosedWon', markerKey: 'closedWonAt' },
-};
-
-/** Resolve the configured CAPI event_name for an internal event key (env-overridable). */
-export function eventNameFor(key) {
-  const e = EVENTS[key];
-  return e ? process.env[e.envVar] || e.defaultName : null;
-}
-
-/**
- * Ordered list of internal event keys a Lyfe status should emit.
- *   - qualified ("agent confirmed SC/PR") → ConfirmedResident
- *   - won (bought a policy; implies SC/PR) → ConfirmedResident (if new) + ClosedWon
- */
-export function eventKeysForStatus(status) {
-  if (status === 'qualified') return ['confirmed_resident'];
-  if (status === 'won') return ['confirmed_resident', 'closed_won'];
-  return [];
-}
+// marker are consistent across the qualified/won triggers. The vocabulary
+// (EVENTS map + eventNameFor + eventKeysForStatus) lives in outcomeEvents.js so
+// the platform-delivery ledger shares it without a static import cycle; the
+// re-exports below keep this module's public surface unchanged.
+export { eventNameFor, eventKeysForStatus };
 
 const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const defaultDeps = {
   models: { Prospect, Campaign },
+  sequelize,
   sendConversionEvent: metaSendConversionEvent,
   setSourceMetadataPath,
   mergeSourceMetadataFirstWins,
+  planOutcomeDeliveriesTx,
+  dispatchOutcomeDelivery,
   dispatchGoogleOutcome,
   googleUploadsEnabled,
   googleActionIdFor,
@@ -145,31 +133,48 @@ export function makeLeadOutcomeService(overrides = {}) {
     // never lose the outcome, and a later `won` can never rewrite an earlier
     // qualified timestamp. (The admin path writes the same facts inside its
     // edit transaction; this merge is idempotent against that.)
+    // The merge and the delivery-ledger planning share ONE managed transaction
+    // (ads-centralisation §3.3.2): the planner re-reads the PERSISTED facts
+    // in-txn, so rows and facts commit together — a row can never exist
+    // without its fact, and a replayed `won` can never retime an earlier
+    // confirmed_resident (the first-wins fact is the row's eventTime).
+    let erasedMidFlight = false;
     try {
-      const factRows = await d.mergeSourceMetadataFirstWins(
-        prospect.id,
-        ['outcomes'],
-        Object.fromEntries(keys.map((k) => [k, canonicalOccurredAt]))
-      );
-      if (factRows === 0) {
-        // The erased guard is the only thing that blocks a plain merge — a
-        // concurrent erasure won between our load and this write. Nothing
-        // may dispatch from the stale pre-erasure row (B2).
-        const fresh = await m.Prospect.findByPk(prospect.id, { raw: true });
-        if (!fresh || fresh.sourceMetadata?.erased === true) {
-          d.logger.warn('[lead-outcome] row erased mid-flight — dispatch aborted', {
-            prospectId: prospect.id,
-          });
-          return { skipped: 'erased' };
+      await d.sequelize.transaction(async (t) => {
+        const factRows = await d.mergeSourceMetadataFirstWins(
+          prospect.id,
+          ['outcomes'],
+          Object.fromEntries(keys.map((k) => [k, canonicalOccurredAt])),
+          { transaction: t }
+        );
+        if (factRows === 0) {
+          // The erased guard is the only thing that blocks a plain merge — a
+          // concurrent erasure won between our load and this write. Nothing
+          // may dispatch from the stale pre-erasure row (B2).
+          const fresh = await m.Prospect.findByPk(prospect.id, { raw: true, transaction: t });
+          if (!fresh || fresh.sourceMetadata?.erased === true) {
+            erasedMidFlight = true;
+            return;
+          }
         }
-      }
+        // Idempotent row planning from the persisted facts. A planning
+        // failure rolls the whole txn back into the catch below — today's
+        // error path (webhook still 200s); the durability net for a fully-
+        // failed txn (no fact, no row) is the credentials-based Lyfe
+        // reconciler (§3.5), which re-writes the fact for the invariant
+        // sweep to plan from.
+        await d.planOutcomeDeliveriesTx(t, { prospectId: prospect.id, keys });
+      });
     } catch (factErr) {
-      // A fact-write failure is the ONLY unrecoverable branch on the Lyfe
-      // path (pg_net never retries) — the Lyfe reconciler is the durability
-      // net. Loudly logged; dispatch still proceeds with in-memory values.
-      d.logger.error('[lead-outcome] outcome fact write failed (reconciler heals)', {
+      d.logger.error('[lead-outcome] outcome facts+planning transaction failed (reconciler heals)', {
         prospectId: prospect.id, error: factErr?.message || String(factErr),
       });
+    }
+    if (erasedMidFlight) {
+      d.logger.warn('[lead-outcome] row erased mid-flight — dispatch aborted', {
+        prospectId: prospect.id,
+      });
+      return { skipped: 'erased' };
     }
 
     // Send-time em/ph gate (3sites, supersedes the PR B clone hack): derived
@@ -222,21 +227,39 @@ export function makeLeadOutcomeService(overrides = {}) {
       const metaDuplicate = Boolean(prospect.sourceMetadata?.capi?.[markerKey]);
       if (metaDuplicate) duplicate.push(eventName);
 
-      const ctx = {
-        // Stable across qualified/won → Meta dedups any duplicate send.
-        eventId: `${key}:${prospect.id}`,
-        eventTime,
-        marketingConsent,
-        ...(pixelIdOverride ? { pixelIdOverride } : {}),
-      };
+      // Row-ownership routing (ads-centralisation §3.2/§3.3.5): a ledger row
+      // in ANY state owns this (prospect, meta, key) pair — the delivery
+      // service attempts it (or leaves it to the worker) and the result maps
+      // onto this function's legacy return contract. No row ⇒ the PERMANENT
+      // legacy direct-send block below (planning off / marker-aware skip /
+      // failed planning transaction).
+      let ledgerOutcome = null;
+      let result = null;
+      if (!metaDuplicate) {
+        const led = await d.dispatchOutcomeDelivery({ prospectId: prospect.id, key, marketingConsent });
+        if (led.owned) {
+          ledgerOutcome = led.legacyOutcome;
+        } else {
+          const ctx = {
+            // Stable across qualified/won → Meta dedups any duplicate send.
+            eventId: `${key}:${prospect.id}`,
+            eventTime,
+            marketingConsent,
+            ...(pixelIdOverride ? { pixelIdOverride } : {}),
+          };
+          result = await dispatchWithRetry(prospect, ctx, { eventName });
+        }
+      }
 
-      const result = metaDuplicate ? null : await dispatchWithRetry(prospect, ctx, { eventName });
+      if (ledgerOutcome === 'dispatched') dispatched.push(eventName);
+      if (ledgerOutcome === 'duplicate') duplicate.push(eventName);
 
-      if (!metaDuplicate && result?.sent) {
+      if (!metaDuplicate && !ledgerOutcome && result?.sent) {
         // Atomic single-key marker write (prospectJsonPatch) — the old
         // read-spread-save of the whole object could delete keys any OTHER
         // writer (google markers, outcome facts, redemption) landed between
         // this handler's load and save (plan google-ads-signal-levers §4.3).
+        // (Ledger sends write this marker inside their settle transaction.)
         await d.setSourceMetadataPath(prospect.id, ['capi', markerKey], new Date().toISOString());
         dispatched.push(eventName);
       }
@@ -259,7 +282,21 @@ export function makeLeadOutcomeService(overrides = {}) {
         }
       }
 
-      if (!metaDuplicate && !result?.sent) {
+      if (ledgerOutcome && ledgerOutcome !== 'dispatched' && ledgerOutcome !== 'duplicate') {
+        // Ledger-owned but not delivered on this pass — the row (or the
+        // worker) governs the retry; the classification preserves the
+        // external path's 503-on-transient contract.
+        failed.push(eventName);
+        if (ledgerOutcome === 'guarded') guarded.push(eventName);
+        else if (ledgerOutcome === 'transientFailed') transientFailed.push(eventName);
+        else permanentFailed.push(eventName);
+        d.logger.warn(
+          { prospect_id: prospect.id, event_name: eventName, ledger_outcome: ledgerOutcome },
+          '[lead-outcome] ledger dispatch not sent (row governs retry)'
+        );
+      }
+
+      if (!metaDuplicate && !ledgerOutcome && !result?.sent) {
         // Not marked → reconciliation / next trigger can retry. (`guarded` = CAPI off.)
         failed.push(eventName);
         if (result?.reason === 'guarded') {

@@ -18,7 +18,7 @@ import {
   RewardEntitlement, RedemptionEvent, Redemption, Draw, DrawEntry, DrawAttempt,
   ShortLink, WebhookSubscriber, WebhookDelivery, Verification, WaitlistSignup,
   ConsentEvent, ConsumerSuppression, PartnerOrganisation, RewardOffer, Activation,
-  SessionVisit, IdempotencyKey,
+  SessionVisit, IdempotencyKey, PlatformDelivery,
 } from '../../src/models/index.js';
 import { markPhoneVerified, isPhoneRecentlyVerified } from '../../src/services/verifiedPhoneStore.js';
 import { phoneHashOf } from '../../src/services/consumerService.js';
@@ -167,6 +167,19 @@ describe('PDPA erasure — full matrix', () => {
       key: `retell:call:call-in-${RUN}`, scope: 'retell:call',
       responseBody: { prospectId: prospect1.id, status: 'created' },
       expiresAt: new Date(Date.now() + 24 * 3600_000),
+    });
+
+    // Platform-delivery ledger rows (ads-centralisation §3.6): a pending and a
+    // sent row for this person — both must be hard-deleted in the erasure txn.
+    await PlatformDelivery.create({
+      prospectId: prospect1.id, platform: 'meta', eventKey: 'lead',
+      eventId: `erase-ev-${RUN}`, eventTime: new Date(), dedupeAnchorAt: new Date(),
+      state: 'pending',
+    });
+    await PlatformDelivery.create({
+      prospectId: prospect2.id, platform: 'tiktok', eventKey: 'lead',
+      eventId: `erase-ev2-${RUN}`, eventTime: new Date(), dedupeAnchorAt: new Date(),
+      state: 'sent', sentAt: new Date(),
     });
 
     // Redeem-ops chain: offer → activation → issued entitlement + redemption.
@@ -359,6 +372,8 @@ describe('PDPA erasure — full matrix', () => {
     expect(report.referralCopiesScrubbed).toBe(1);
     expect(report.sessionVisits).toBe(1);
     expect(report.attributions).toBe(1);
+    expect(report.platformDeliveries).toBe(2);
+    expect(await PlatformDelivery.count({ where: { prospectId: [prospect1.id, prospect2.id] } })).toBe(0);
     expect(report.idempotencyKeys).toBe(1);
     expect(report.retellCallIds).toContain(`call-in-${RUN}`);
     expect(report.leadDeletedQueued).toBeGreaterThanOrEqual(1);
