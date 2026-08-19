@@ -8,11 +8,15 @@ import { useCampaignTheme } from '@/components/campaignPage/themeContext';
  * Prudential's compliance template, so it lives in exactly one place and every
  * toggled campaign renders the same bytes.
  *
- * `fbName` = the Facebook Business Name the ad runs under (Studio companion
- * field). Absent ⇒ the attribution line is omitted rather than guessed — never
- * invent a business identity in a regulatory disclosure.
+ * Substitutions per the template: [Partner] = MKTR PTE. LTD.;
+ * [Facebook Business Name] = `fbName` (Studio companion field). Absent ⇒ the
+ * attribution line is omitted rather than guessed — never invent a business
+ * identity in a regulatory disclosure.
  *
- * Text is verbatim from the template (2026-08-19). Do not editorialize it.
+ * TEXT IS VERBATIM from the template Shawn supplied 2026-08-20 — including
+ * the curly typographic quotes and the template's own mixed straight-open/
+ * curly-close pair on ("PFA”). Do not editorialize, re-quote, or "fix" it;
+ * a Prudential wording update replaces the whole block here, nowhere else.
  */
 export default function PrudentialIntroducerClause({ fbName }) {
   const { tokens: TOKENS } = useCampaignTheme();
@@ -29,14 +33,12 @@ export default function PrudentialIntroducerClause({ fbName }) {
   return (
     <div style={{ marginTop: 16, fontSize: 13, color: TOKENS.muted }}>
       {fbName ? (
-        <p style={pStyle}>
-          <strong style={{ color: TOKENS.ink }}>{fbName}</strong> belongs to MKTR PTE. LTD.
-        </p>
+        <p style={pStyle}>{fbName} belongs to MKTR PTE. LTD.</p>
       ) : null}
       <p style={pStyle}>
         MKTR PTE. LTD. is an introducer, carrying out introducing activities for Prudential
-        Assurance Company Singapore (Pte) Limited (&quot;Prudential&quot;) and Prudential Financial
-        Advisers Singapore Pte Ltd (&quot;PFA&quot;). MKTR PTE. LTD. is not allowed to give advice or
+        Assurance Company Singapore (Pte) Limited (“Prudential”) and Prudential Financial
+        Advisers Singapore Pte Ltd (&quot;PFA”). MKTR PTE. LTD. is not allowed to give advice or
         provide recommendations on any investment product, market any collective investment scheme
         or arrange any contract of insurance in respect of life policies, other than to the extent
         of carrying out introducing activities. MKTR PTE. LTD. receives a fee for carrying out
@@ -45,7 +47,7 @@ export default function PrudentialIntroducerClause({ fbName }) {
         the collection, use or disclosure of your personal data.
       </p>
       <p style={{ ...pStyle, marginBottom: 0 }}>
-        Prudential Assurance Company Singapore (Pte) Limited (or &quot;Prudential&quot;) is a life
+        Prudential Assurance Company Singapore (Pte) Limited (or “Prudential”) is a life
         insurance company that provides life and health insurance. You may refer to{' '}
         <a href="https://www.prudential.com.sg" target="_blank" rel="noopener noreferrer" style={linkStyle}>
           www.prudential.com.sg
@@ -55,8 +57,8 @@ export default function PrudentialIntroducerClause({ fbName }) {
         up, you also confirm that you have read, understood and given your consent for Prudential
         Assurance Company Singapore and its related corporations, respective representatives,
         agents, third party service providers, contractors and/or appointed distribution/business
-        partners (collectively referred to as &quot;Prudential and its authorised
-        representatives&quot;) to collect, use, disclose and/or process your personal data for the
+        partners (collectively referred to as “Prudential and its authorised
+        representatives”) to collect, use, disclose and/or process your personal data for the
         purpose of contacting you about products and services distributed, marketed and/or
         introduced by Prudential and its authorised representatives through marketing activities
         via all channels including but not limited to SMS, Social Media, In-app Push Notification,
