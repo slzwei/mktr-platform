@@ -23,7 +23,11 @@ const routesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../sr
 const PUBLIC_SURFACE = {
   "analytics.js": [
     "POST /events",
-    "POST /referrals"
+    "POST /referrals",
+    // Touchpoint beacon (ads-centralisation §4.3): public browser beacon,
+    // own rate bucket, Joi-validated, flag-gated skip, session-id only —
+    // never authorization material.
+    "POST /touch"
   ],
   "auth.js": [
     "GET /google/config",
