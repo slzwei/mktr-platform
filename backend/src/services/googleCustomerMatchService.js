@@ -11,7 +11,7 @@ import {
   selectAudiencePopulation,
   filterEligible,
 } from './audienceEligibilityService.js';
-import { markIngestAccepted, markIngestsSettled } from './audienceRemovalService.js';
+import { markIngestAccepted, markIngestsSettled, hasUnsettledIngests } from './audienceRemovalService.js';
 
 /**
  * Google Customer Match exclusion sync — the Google counterpart of
@@ -72,6 +72,7 @@ const defaultDeps = {
   withDestinationLock: withAdvisoryLock,
   markIngestAccepted,
   markIngestsSettled,
+  hasUnsettledIngests,
   loadEligibilityContext,
 };
 
@@ -181,7 +182,12 @@ export async function removeHashedIdentifiers(identifierRows, deps = {}) {
   const rows = (identifierRows || []).filter((r) => r?.userIdentifiers?.length);
   if (rows.length === 0) return { ok: false, permanent: true, errorCode: 'empty_identifiers' };
   try {
-    const res = await d.dmRequest('audienceMembers:remove', buildRemoveBody(rows), d);
+    // ONE wire attempt per outbox reservation (Codex P4 review #10): the DM
+    // client's internal 429/5xx retry loop is disabled here — the outbox row's
+    // submitAttempts IS the retry accounting, and its backoff ladder governs.
+    // (The DM client's own GOOGLE_DM_TIMEOUT_MS bounds the exchange; at 30s
+    // default it sits far under the 10-minute claim lease.)
+    const res = await d.dmRequest('audienceMembers:remove', buildRemoveBody(rows), { ...d, attempts: 1 });
     if (res?.requestId) return { ok: true, requestId: res.requestId };
     // An accept without a requestId cannot be settled — retry it.
     return { ok: false, transient: true, errorCode: 'missing_request_id' };
@@ -269,9 +275,17 @@ function extractStatus(body) {
  */
 const pendingSettles = []; // { requestId, kind: 'ingest'|'remove', acceptedAt, nextPollAt, delayMs }
 
+// Ingest entries a pass has SPLICED OUT and is currently polling. The
+// watermark close must count these as unsettled — the due-splice makes them
+// invisible to the queue scan, and an overlapping pass (or the same pass's
+// own tail) closing on an "empty" queue while a poll is in flight would
+// dispatch removals into an unsettled ingest (Codex P4 review #1).
+let inFlightIngestPolls = 0;
+
 /** Test seam — clears the pending-settlement queue. */
 export function __resetPendingSettlesForTests() {
   pendingSettles.length = 0;
+  inFlightIngestPolls = 0;
 }
 
 function firstPollDelayMs() {
@@ -316,6 +330,12 @@ export async function settlePendingStatuses(deps = {}) {
   for (let i = pendingSettles.length - 1; i >= 0; i--) {
     if (pendingSettles[i].nextPollAt <= now) due.push(...pendingSettles.splice(i, 1));
   }
+  // Spliced-out ingest entries are still UNSETTLED until their poll resolves —
+  // count them so the watermark close (here and in any overlapping pass) can
+  // never mistake in-flight for empty (Codex P4 review #1).
+  const ingestInFlightHere = due.filter((e) => e.kind === 'ingest').length;
+  inFlightIngestPolls += ingestInFlightHere;
+  let ingestSettledThisPass = 0;
   const keep = [];
   for (const entry of due) {
     summary.polled += 1;
@@ -337,11 +357,22 @@ export async function settlePendingStatuses(deps = {}) {
         summary.partialSuccess += 1;
         if (entry.kind === 'remove') summary.removePartial += 1;
       } else summary.failed += 1;
+      if (entry.kind === 'ingest') {
+        inFlightIngestPolls -= 1;
+        ingestSettledThisPass += 1;
+      }
       logger.info({ requestId: entry.requestId, kind: entry.kind, status }, 'google_cm.status.terminal');
       continue;
     }
     if (now - entry.acceptedAt >= SETTLE_HORIZON_MS) {
       summary.stuck += 1;
+      if (entry.kind === 'ingest') {
+        // Past Google's own 24h processing window: settled server-side
+        // whether we could observe it or not — the entry leaves the queue
+        // (already alerted above) and stops counting as unsettled.
+        inFlightIngestPolls -= 1;
+        ingestSettledThisPass += 1;
+      }
       logger.warn({ requestId: entry.requestId, kind: entry.kind, retrieveFailed }, 'google_cm.status.stuck');
       continue;
     }
@@ -353,28 +384,35 @@ export async function settlePendingStatuses(deps = {}) {
     });
   }
   pendingSettles.push(...keep);
+  // Kept (rescheduled) ingest entries are visible in the queue again — they
+  // stop counting as in-flight.
+  inFlightIngestPolls -= keep.filter((e) => e.kind === 'ingest').length;
   summary.pending = pendingSettles.length;
 
   // Settlement watermark (ads-centralisation §5.1): close it on settlement
-  // EVIDENCE, never hope. Two branches:
-  //  (a) positive knowledge — the queue holds no ingest entries after this
-  //      pass, i.e. every accepted ingest we watched reached a terminal
-  //      status (or its 24h stuck horizon, which already alerted);
-  //  (b) restart amnesia — a redeploy drops the in-memory queue, so an open
-  //      watermark with no entries to poll would otherwise hold removals
-  //      until the 30d escalation. Google's own diagnostics window bounds
-  //      processing at 24h, so once oldestUnsettledAcceptAt is >25h old every
-  //      ingest accepted before it HAS settled server-side whether we watched
-  //      or not — that bound is settlement evidence, not a guess.
+  // EVIDENCE, never hope. Preconditions: no ingest entries queued AND none
+  // in flight in ANY pass (Codex P4 review #1 — the due-splice hides polled
+  // entries from the queue scan). Then two evidence branches:
+  //  (a) positive knowledge — THIS pass settled ingest entries and none
+  //      remain: every accepted ingest we watched reached a terminal status
+  //      (or its 24h stuck horizon — beyond Google's own processing window,
+  //      already alerted);
+  //  (b) the provider bound — a redeploy drops this in-memory queue, and an
+  //      open watermark with nothing left to poll would otherwise hold every
+  //      removal until the 30d escalation. Google's diagnostics window caps
+  //      processing at 24h, so once the NEWEST accept
+  //      (lastIngestAcceptedAt, NOT the oldest — an old stuck ingest must
+  //      never vouch for a fresh one, Codex P4 review #2) is >25h old, every
+  //      accepted ingest has settled server-side whether we watched or not.
   if (process.env.GOOGLE_CM_USER_LIST_ID) {
-    const ingestStillPending = pendingSettles.some((e) => e.kind === 'ingest');
+    const ingestStillPending = pendingSettles.some((e) => e.kind === 'ingest') || inFlightIngestPolls > 0;
     if (!ingestStillPending) {
       try {
         const readState =
           d.readDestinationState ||
           (async (platform, dest) => {
             const [state] = await sequelize.query(
-              `SELECT "oldestUnsettledAcceptAt" FROM audience_destination_state
+              `SELECT "oldestUnsettledAcceptAt", "lastIngestAcceptedAt" FROM audience_destination_state
                 WHERE platform = :platform AND "destinationId" = :dest`,
               { replacements: { platform, dest } }
             );
@@ -383,8 +421,10 @@ export async function settlePendingStatuses(deps = {}) {
         const state = await readState('google', process.env.GOOGLE_CM_USER_LIST_ID);
         const openSince = state?.oldestUnsettledAcceptAt;
         if (openSince) {
-          const watchedDrain = summary.polled > 0; // (a) this pass settled the tail we were watching
-          const beyondBound = (d.now ? d.now() : Date.now()) - new Date(openSince).getTime() > 25 * 3600_000; // (b)
+          const watchedDrain = ingestSettledThisPass > 0; // (a)
+          const lastAccept = state?.lastIngestAcceptedAt ? new Date(state.lastIngestAcceptedAt).getTime() : null;
+          const beyondBound =
+            lastAccept !== null && (d.now ? d.now() : Date.now()) - lastAccept > 25 * 3600_000; // (b)
           if (watchedDrain || beyondBound) {
             await d.markIngestsSettled('google', process.env.GOOGLE_CM_USER_LIST_ID);
             logger.info({ watchedDrain, beyondBound }, 'google_cm.watermark_closed');
@@ -475,6 +515,18 @@ export async function syncGoogleCustomerMatch(deps = {}) {
       return { submitted: false, ok: true, reason: 'empty', eligible: 0, batches: 0, accepted: 0, failedBatches: 0, settlement: null };
     }
 
+    // Settlement watermark (§5.1): opened BEFORE the first wire attempt —
+    // an accept followed by a crash/DB error must never leave an unsettled
+    // ingest with the removal gate reading closed (Codex P4 review #3). If
+    // nothing ends up accepted AND the watermark was closed before this run,
+    // we close it again (safe: we hold the destination lock, and no accept
+    // happened). A pre-existing open watermark is NEVER cleared here.
+    const watermarkWasOpen = await d.hasUnsettledIngests(
+      'google',
+      process.env.GOOGLE_CM_USER_LIST_ID
+    );
+    await d.markIngestAccepted('google', process.env.GOOGLE_CM_USER_LIST_ID);
+
     const batches = chunk(rows, MAX_BATCH_MEMBERS);
     const acceptedIds = [];
     let failedBatches = 0;
@@ -506,11 +558,17 @@ export async function syncGoogleCustomerMatch(deps = {}) {
     // in-run claim of confirmed delivery is made.
     queueSettles(acceptedIds, 'ingest', d.now ? d.now() : Date.now());
 
-    // Settlement watermark (§5.1): accepted-but-unsettled ingests OPEN the
-    // watermark; the settle pass closes it once every accepted ingest reached
-    // a terminal status. While open, no removal may dispatch here.
-    if (acceptedIds.length > 0) {
-      await d.markIngestAccepted('google', process.env.GOOGLE_CM_USER_LIST_ID);
+    // Zero accepts does NOT close the pre-opened watermark: a timed-out or
+    // transport-errored ingest attempt is an AMBIGUOUS accept (Google may
+    // have taken it without us seeing the requestId), so the gate stays
+    // conservatively open and heals via the settle pass — positive drain
+    // knowledge or the 25h provider bound. `watermarkWasOpen` is kept for
+    // observability of that ambiguity.
+    if (acceptedIds.length === 0 && !watermarkWasOpen) {
+      logger.warn(
+        { failedBatches },
+        'google_cm.sync.watermark_held_on_ambiguous_accept (settle pass / 25h bound heals)'
+      );
     }
 
     const wholesale = acceptedIds.length === 0;

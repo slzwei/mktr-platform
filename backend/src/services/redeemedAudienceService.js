@@ -10,7 +10,7 @@ import {
   selectAudiencePopulation,
   filterEligible,
 } from './audienceEligibilityService.js';
-import { markIngestAccepted, markIngestsSettled } from './audienceRemovalService.js';
+import { markIngestAccepted, markIngestsSettled, removalHttpTimeoutMs } from './audienceRemovalService.js';
 
 /**
  * Redeemed-audience sync — pushes redeemers (hashed email + phone) from our own
@@ -168,6 +168,11 @@ export async function metaAudienceRemove({ audienceId, rows }, deps = {}) {
   const form = new URLSearchParams();
   form.set('payload', JSON.stringify({ schema: AUDIENCE_SCHEMA, data }));
 
+  // AUDIENCE_REMOVAL_HTTP_TIMEOUT_MS bounds the WHOLE exchange, body read
+  // included — an attempt must never outlive the drainer's 10-minute claim
+  // lease and race its own stale reclaim (Codex P4 review #9).
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), removalHttpTimeoutMs());
   let res;
   let body;
   try {
@@ -178,10 +183,13 @@ export async function metaAudienceRemove({ audienceId, rows }, deps = {}) {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: form.toString(),
+      signal: ac.signal,
     });
     body = await res.json().catch(() => ({}));
   } catch (err) {
     return { ok: false, transient: true, errorCode: 'network', message: err?.message };
+  } finally {
+    clearTimeout(timer);
   }
 
   if (res.ok) {

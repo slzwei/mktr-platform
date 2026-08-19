@@ -69,9 +69,9 @@ const defaultDeps = {
     const m = await import('./audienceRemovalService.js');
     return m.removalWritersEnabled();
   },
-  enqueueUnsubscribeRemovalsTx: async (t, consumerId) => {
+  enqueueUnsubscribeRemovalsTx: async (t, consumerId, suppressionId) => {
     const m = await import('./audienceRemovalService.js');
-    return m.enqueueUnsubscribeRemovalsTx(t, consumerId);
+    return m.enqueueUnsubscribeRemovalsTx(t, consumerId, suppressionId);
   },
 };
 
@@ -586,7 +586,14 @@ export function makeConsentService(overrides = {}) {
     // transaction; off ⇒ the legacy direct Google call post-commit. Never both.
     const useRemovalOutbox = await d.removalWritersEnabled();
     const result = await d.sequelize.transaction(async (t) => {
-      const [, created] = await d.ConsumerSuppression.findOrCreate({
+      // Lock order Consumer → Prospects → audience_removals (§5.5): anchor
+      // the person first so a concurrent capture/edit serializes behind this
+      // withdrawal instead of landing outside the locked removal snapshot.
+      await d.sequelize.query(`SELECT id FROM consumers WHERE id = :id FOR UPDATE`, {
+        replacements: { id: consumer.id },
+        transaction: t,
+      });
+      const [suppressionRow, created] = await d.ConsumerSuppression.findOrCreate({
         where: { consumerId: consumer.id, channel: 'all' },
         defaults: { id: randomUUID(), reason: 'unsubscribe', source },
         transaction: t,
@@ -604,10 +611,10 @@ export function makeConsentService(overrides = {}) {
       if (useRemovalOutbox) {
         // Durable removal rows (§5.5): person-level, one per configured
         // destination, hashes built from prospect rows LOCKED inside this
-        // transaction (lock order Consumer → Prospects → audience_removals).
-        // Idempotent on sourceKey, so the already-suppressed re-unsubscribe
-        // path is a free healing trigger here too.
-        await d.enqueueUnsubscribeRemovalsTx(t, consumer.id);
+        // transaction. The sourceKey rides the suppression row's id —
+        // idempotent while THIS suppression stands; a lifted-then-recreated
+        // suppression mints a fresh key and therefore a fresh removal.
+        await d.enqueueUnsubscribeRemovalsTx(t, consumer.id, suppressionRow.id);
       }
       return { alreadySuppressed: !created };
     });

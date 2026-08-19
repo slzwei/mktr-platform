@@ -120,6 +120,7 @@ const engineSeams = () => ({
   markIngestAccepted: jest.fn(async () => {}),
   markIngestsSettled: jest.fn(async () => {}),
   readDestinationState: async () => null,
+  hasUnsettledIngests: async () => false,
   loadEligibilityContext: async ({ requireConsent }) => ({
     suppressedPhones: await consentMocks.getSuppressedPhoneSet(),
     grantMap: requireConsent ? await consentMocks.getMarketableGrantMap() : null,

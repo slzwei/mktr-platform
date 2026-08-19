@@ -104,6 +104,17 @@ export async function markIngestAccepted(platform, destinationId, { transaction 
   );
 }
 
+/** Is the destination's watermark currently open (any unsettled ingest)? */
+export async function hasUnsettledIngests(platform, destinationId) {
+  const [rows] = await sequelize.query(
+    `SELECT 1 FROM audience_destination_state
+      WHERE platform = :platform AND "destinationId" = :destinationId
+        AND "oldestUnsettledAcceptAt" IS NOT NULL`,
+    { replacements: { platform, destinationId } }
+  );
+  return Boolean(rows?.length);
+}
+
 /** The destination's settle pass proved every accepted ingest terminal: close the watermark. */
 export async function markIngestsSettled(platform, destinationId, { transaction } = {}) {
   await sequelize.query(
@@ -186,12 +197,15 @@ export async function enqueueRemovalsTx(t, { sourceKey, pairs, subjectProspectId
 
 /**
  * Unsubscribe writer (§5.5, consentService.applyUnsubscribe's transaction).
- * Lock order Consumer → Prospects → audience_removals: the caller holds the
- * consumer anchor; we lock the person's prospect rows, hash IN-TXN, insert.
- * sourceKey is per-consumer — a person's global withdrawal is one removal
- * per destination, idempotent across repeat unsubscribes.
+ * Lock order Consumer → Prospects → audience_removals: the caller locked the
+ * consumer row first; we lock the person's prospect rows, hash IN-TXN,
+ * insert. The sourceKey carries the SUPPRESSION row's id — idempotent across
+ * repeat unsubscribes for the suppression's lifetime, but a suppression that
+ * is ever LIFTED (lead.unsuppressed exists) and later re-created mints a new
+ * row id, so the fresh withdrawal gets a fresh removal instead of colliding
+ * with the confirmed-and-blanked one (Codex P4 review #4).
  */
-export async function enqueueUnsubscribeRemovalsTx(t, consumerId) {
+export async function enqueueUnsubscribeRemovalsTx(t, consumerId, suppressionId) {
   await sequelize.query(`SELECT id FROM prospects WHERE "consumerId" = :consumerId FOR UPDATE`, {
     replacements: { consumerId },
     transaction: t,
@@ -202,7 +216,7 @@ export async function enqueueUnsubscribeRemovalsTx(t, consumerId) {
     raw: true,
     transaction: t,
   });
-  return enqueueRemovalsTx(t, { sourceKey: `unsubscribe:${consumerId}`, pairs });
+  return enqueueRemovalsTx(t, { sourceKey: `unsubscribe:${consumerId}:${suppressionId}`, pairs });
 }
 
 /**
@@ -537,6 +551,11 @@ export async function escalateAgedRemovals(deps = {}) {
  */
 export async function runRemovalDrainer(deps = {}) {
   const summary = { destinations: 0, submitted: {}, settled: {}, escalated: 0 };
+  // Age escalation runs FIRST (Codex P4 review #5): a row past MAX_DAYS takes
+  // the §5.5 mandated transition to needs_manual_action before this tick's
+  // claim/poll queries can see it — the queries below therefore only ever
+  // touch rows inside their age budget.
+  summary.escalated = await escalateAgedRemovals(deps);
   for (const dest of configuredRemovalDestinations()) {
     const res = await withAdvisoryLock(`aud:${dest.platform}:${dest.destinationId}`, async () => {
       const out = { submits: 0, settles: 0 };
@@ -579,9 +598,30 @@ export async function runRemovalDrainer(deps = {}) {
     });
     if (res.acquired) summary.destinations += 1;
   }
-  summary.escalated = await escalateAgedRemovals(deps);
   if (summary.destinations || summary.escalated) {
     logger.info(summary, 'audience_removal.drainer_tick');
   }
   return summary;
+}
+
+/**
+ * Fenced manual resolution (§5.5 last table row): the ops entry point that
+ * moves ONE needs_manual_action row to manually_resolved with the required
+ * resolver fields AND the identifier blanking in the SAME statement — the
+ * CHECK constraints enforce the resolver fields; this is what enforces the
+ * blanking. No route (§7.5) — callable from a future admin arc or a
+ * maintenance script after the platform-UI cleanup the runbook describes.
+ */
+export async function resolveRemovalManually(id, { resolvedBy, note }) {
+  if (!id || !resolvedBy || !note) {
+    throw new Error('resolveRemovalManually: id, resolvedBy and note are required');
+  }
+  const [, meta] = await sequelize.query(
+    `UPDATE audience_removals
+        SET state = 'manually_resolved', "resolvedBy" = :resolvedBy, "resolvedAt" = now(),
+            "resolutionNote" = :note, identifiers = '[]'::jsonb, "updatedAt" = now()
+      WHERE id = :id AND state = 'needs_manual_action'`,
+    { replacements: { id, resolvedBy, note: String(note).slice(0, 500) } }
+  );
+  return (meta?.rowCount ?? 0) > 0;
 }
