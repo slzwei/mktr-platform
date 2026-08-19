@@ -21,7 +21,7 @@
 export const CONSENT_COPY_VERSION = '2026-08-19-agree-all-v2';
 
 export const CONSENT_COPY = Object.freeze({
-  heading: 'One agreement — read once',
+  heading: 'Terms and conditions',
   intro: "By submitting this form, you agree to the following. It's short, and it's everything:",
   clauseContactHeadline: 'Contact from Redeem — this offer and future ones.',
   clauseContactBody:
