@@ -148,10 +148,14 @@ export async function sendConversionEvent(prospect, ctx = {}, options = {}, deps
     const ok = res.ok && body.code === 0;
 
     if (!ok) {
-      Sentry.captureException(new Error(`TikTok Events API failed: HTTP ${res.status} code ${body.code}`), {
-        tags: { source: 'tiktok_events', event_name: eventName },
-        extra: { status: res.status, body, prospect_id: prospect.id },
-      });
+      // suppressSentry: mirror of metaCapiService — the delivery ledger's
+      // retries classify + alert themselves; legacy callers are unchanged.
+      if (!options.suppressSentry) {
+        Sentry.captureException(new Error(`TikTok Events API failed: HTTP ${res.status} code ${body.code}`), {
+          tags: { source: 'tiktok_events', event_name: eventName },
+          extra: { status: res.status, body, prospect_id: prospect.id },
+        });
+      }
       logger.warn(
         { status: res.status, code: body.code, message: body.message, prospect_id: prospect.id, event_id: ctx.eventId },
         `tiktok.${logLabel}.failed`
@@ -165,10 +169,12 @@ export async function sendConversionEvent(prospect, ctx = {}, options = {}, deps
     );
     return { sent: true, status: res.status, body };
   } catch (err) {
-    Sentry.captureException(err, {
-      tags: { source: 'tiktok_events', event_name: eventName },
-      extra: { prospect_id: prospect.id, event_id: ctx.eventId },
-    });
+    if (!options.suppressSentry) {
+      Sentry.captureException(err, {
+        tags: { source: 'tiktok_events', event_name: eventName },
+        extra: { prospect_id: prospect.id, event_id: ctx.eventId },
+      });
+    }
     logger.error({ err: err.message, prospect_id: prospect.id }, `tiktok.${logLabel}.error`);
     return { sent: false, error: err.message };
   }

@@ -17,6 +17,7 @@ import {
   planningEnabled,
   deliveryPaused,
   mapDeliveryOutcomeToLegacy,
+  makeDeliveryFetch,
 } from '../../src/services/platformDeliveryService.js';
 import { OUTCOME_EVENTS, eventNameFor, eventKeysForStatus } from '../../src/services/outcomeEvents.js';
 
@@ -27,6 +28,7 @@ afterEach(() => {
   delete process.env.PLATFORM_DELIVERY_PAUSED;
   delete process.env.PLATFORM_DELIVERY_OUTCOME_HORIZON_HOURS;
   delete process.env.PLATFORM_DELIVERY_LEAD_HORIZON_HOURS;
+  delete process.env.PLATFORM_DELIVERY_HTTP_TIMEOUT_MS;
   delete process.env.META_EVENT_QUALIFIED;
 });
 
@@ -82,6 +84,13 @@ describe('classifySendResult — the settle taxonomy (§3.3.4.7)', () => {
   it('maps a TikTok 200-with-nonzero-code logical failure to failed_permanent', () => {
     const r = classifySendResult('tiktok', { sent: false, status: 200, body: { code: 40001 } });
     expect(r).toMatchObject({ kind: 'failed_permanent', errorCode: 'logical_reject' });
+  });
+
+  it('auth-class classifications carry Retry-After so the backoff floor applies (Codex #8)', () => {
+    const meta = classifySendResult('meta', { sent: false, status: 400, body: { error: { code: 190 } } }, { retryAfterMs: 90_000 });
+    expect(meta.retryAfterMs).toBe(90_000);
+    const tt = classifySendResult('tiktok', { sent: false, status: 200, body: { code: 40105 } }, { retryAfterMs: 45_000 });
+    expect(tt.retryAfterMs).toBe(45_000);
   });
 });
 
@@ -144,6 +153,48 @@ describe('computeDeadlineMs — per-key horizons + the wire anchor (§1.3)', () 
     expect(keyHorizonHours('confirmed_resident')).toBe(160);
     process.env.PLATFORM_DELIVERY_LEAD_HORIZON_HOURS = '99';
     expect(keyHorizonHours('lead')).toBe(47);
+  });
+
+  it('treats a BLANK env value as absent — the default, never a min-clamped zero (Codex #6)', () => {
+    process.env.PLATFORM_DELIVERY_OUTCOME_HORIZON_HOURS = '';
+    expect(keyHorizonHours('confirmed_resident')).toBe(156);
+    process.env.PLATFORM_DELIVERY_OUTCOME_HORIZON_HOURS = '  ';
+    expect(keyHorizonHours('confirmed_resident')).toBe(156);
+    process.env.PLATFORM_DELIVERY_OUTCOME_HORIZON_HOURS = 'abc';
+    expect(keyHorizonHours('confirmed_resident')).toBe(156);
+  });
+});
+
+describe('makeDeliveryFetch — the timeout covers the BODY read (Codex #1)', () => {
+  it('a stalled body aborts at the timeout instead of outliving the claim lease', async () => {
+    process.env.PLATFORM_DELIVERY_HTTP_TIMEOUT_MS = '1000';
+    const capture = {};
+    const base = async (url, opts) => ({
+      status: 200,
+      headers: { get: () => null },
+      // Headers arrived; the body never does. A real undici read rejects on
+      // abort — the fake wires the same contract to the wrapper's signal.
+      json: () => new Promise((resolve, reject) => {
+        opts.signal.addEventListener('abort', () => reject(new Error('body aborted')));
+      }),
+    });
+    const wrapped = makeDeliveryFetch(capture, base);
+    const res = await wrapped('https://provider.test/events', {});
+    await expect(res.json()).rejects.toThrow('body aborted');
+  }, 10000);
+
+  it('a settling body clears the timer, and Retry-After is captured out-of-band', async () => {
+    process.env.PLATFORM_DELIVERY_HTTP_TIMEOUT_MS = '1000';
+    const capture = {};
+    const base = async () => ({
+      status: 429,
+      headers: { get: (h) => (h === 'retry-after' ? '120' : null) },
+      json: async () => ({ code: 0 }),
+    });
+    const wrapped = makeDeliveryFetch(capture, base);
+    const res = await wrapped('https://provider.test/events', {});
+    await expect(res.json()).resolves.toEqual({ code: 0 });
+    expect(capture.retryAfterMs).toBe(120_000);
   });
 });
 

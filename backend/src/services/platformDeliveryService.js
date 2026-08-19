@@ -44,9 +44,14 @@ const CONFIG_BLOCKED_RETRY_MS = 30 * 60 * 1000;
 const WIRE_DEDUPE_WINDOW_HOURS = 47; // firstWireAt + 47h ≤ the provider's ~48h event-id window
 
 function numEnv(name, def, min, max) {
-  const raw = Number(process.env[name]);
-  if (!Number.isFinite(raw)) return def;
-  return Math.min(max, Math.max(min, raw));
+  const raw = process.env[name];
+  // Absent OR blank ⇒ default. (Number('') is 0 — without this, a blank env
+  // row would clamp to the MINIMUM: a blank outcome horizon would silently
+  // become 1h and mass-expire rows. Codex P2 review #6.)
+  if (raw === undefined || String(raw).trim() === '') return def;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, n));
 }
 
 export function planningEnabled() {
@@ -205,6 +210,15 @@ export async function planOutcomeDeliveriesTx(t, { prospectId, keys, campaign })
   if (!planningEnabled()) return { planned: false, reason: 'flag_off' };
   const validKeys = (keys || []).filter((k) => OUTCOME_KEYS.includes(k));
   if (!validKeys.length) return { planned: false, reason: 'no_keys' };
+  // Row-lock the prospect BEFORE reading facts/erased: the admin and webhook
+  // callers already hold this lock (their facts write took it), but the
+  // invariant sweep would otherwise read pre-erasure facts and insert a row
+  // AFTER erasure deleted everything and committed (Codex P2 review #3).
+  // Also pins the global prospect → delivery lock order (see the settle txn).
+  await sequelize.query(`SELECT id FROM prospects WHERE id = :prospectId FOR UPDATE`, {
+    replacements: { prospectId },
+    transaction: t,
+  });
   const prospect = await Prospect.findByPk(prospectId, { transaction: t, raw: true });
   if (!prospect) return { planned: false, reason: 'no_prospect' };
   if (prospect.sourceMetadata?.erased === true) return { planned: false, reason: 'erased' };
@@ -344,10 +358,10 @@ export function classifySendResult(platform, result, { retryAfterMs = null } = {
       };
     }
     if (platform === 'tiktok' && (status === 401 || status === 403 || TIKTOK_AUTH_CODES.has(result?.body?.code))) {
-      return { kind: 'retry_wait', errorCode: 'auth', authClass: true, status };
+      return { kind: 'retry_wait', errorCode: 'auth', authClass: true, retryAfterMs, status };
     }
     if (platform === 'meta' && status >= 400 && META_AUTH_CODES.has(result?.body?.error?.code)) {
-      return { kind: 'retry_wait', errorCode: 'auth', authClass: true, status };
+      return { kind: 'retry_wait', errorCode: 'auth', authClass: true, retryAfterMs, status };
     }
     if (status >= 400) {
       return { kind: 'failed_permanent', errorCode: 'http_4xx', status };
@@ -389,19 +403,40 @@ export function parseRetryAfterMs(value, now = Date.now()) {
  * Injected-fetch adapter (§3.3.6): enforces PLATFORM_DELIVERY_HTTP_TIMEOUT_MS
  * via AbortController (20s default — well under the 10-min claim lease) and
  * captures Retry-After out-of-band for the settle classification.
+ *
+ * The abort timer covers the WHOLE exchange, body read included: the senders
+ * consume `res.json()` after headers arrive, and a stalled body would
+ * otherwise let an attempt outlive the claim lease and race its own reclaim
+ * (Codex P2 review #1). The timer is cleared when json() settles; if the
+ * sender never reads the body it self-fires at the timeout, where aborting an
+ * abandoned response is a no-op. Applied over ANY base fetch, injected test
+ * seams included. Exported for the unit suite.
  */
-function makeDeliveryFetch(capture) {
+export function makeDeliveryFetch(capture, baseFetch) {
   const timeoutMs = httpTimeoutMs();
+  const doFetch = baseFetch || fetch;
   return async (url, opts = {}) => {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeoutMs);
+    let res;
     try {
-      const res = await fetch(url, { ...opts, signal: ac.signal });
-      capture.retryAfterMs = parseRetryAfterMs(res.headers?.get?.('retry-after'));
-      return res;
-    } finally {
+      res = await doFetch(url, { ...opts, signal: ac.signal });
+    } catch (err) {
       clearTimeout(timer);
+      throw err;
     }
+    capture.retryAfterMs = parseRetryAfterMs(res.headers?.get?.('retry-after'));
+    if (typeof res.json === 'function') {
+      const origJson = res.json.bind(res);
+      res.json = async () => {
+        try {
+          return await origJson();
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+    }
+    return res;
   };
 }
 
@@ -441,14 +476,17 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
   const isOutcomeKey = OUTCOME_KEYS.includes(row.eventKey);
 
   // 1. Rescreen: reload prospect (+ campaign only when the destination is unpinned).
+  // Every settle below is fenced on OUR claim token — a lost CAS means a
+  // reclaimer owns the row and ITS attempt governs, so we report claim_miss
+  // instead of our own classification (Codex P2 review #7).
   const prospect = await Prospect.findByPk(row.prospectId, { raw: true });
   if (!prospect) {
-    await settleFromSending(row.id, token, { state: 'skipped', errorCode: 'no_prospect' });
-    return { outcome: 'skipped', errorCode: 'no_prospect' };
+    const ok = await settleFromSending(row.id, token, { state: 'skipped', errorCode: 'no_prospect' });
+    return ok ? { outcome: 'skipped', errorCode: 'no_prospect' } : { outcome: 'claim_miss' };
   }
   if (prospect.sourceMetadata?.erased === true) {
-    await settleFromSending(row.id, token, { state: 'skipped', errorCode: 'erased' });
-    return { outcome: 'skipped', errorCode: 'erased' };
+    const ok = await settleFromSending(row.id, token, { state: 'skipped', errorCode: 'erased' });
+    return ok ? { outcome: 'skipped', errorCode: 'erased' } : { outcome: 'claim_miss' };
   }
   let campaign = null;
   if (!row.pixelId && prospect.campaignId) {
@@ -465,20 +503,20 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
     hasRegistrationAnchor,
   });
   if (Date.now() > deadlineMs) {
-    await settleFromSending(row.id, token, { state: 'expired', errorCode: 'deadline' });
-    return { outcome: 'expired' };
+    const ok = await settleFromSending(row.id, token, { state: 'expired', errorCode: 'deadline' });
+    return ok ? { outcome: 'expired' } : { outcome: 'claim_miss' };
   }
 
   // 3. Config check — NO attempt fields touched. Only the deadline ends a
   //    config-blocked row.
   const resolvedNow = row.pixelId || campaignPixelId(row.platform, campaign) || platformEnvPixelId(row.platform) || null;
   if (!platformConfigured(row.platform) || !resolvedNow) {
-    await settleFromSending(row.id, token, {
+    const ok = await settleFromSending(row.id, token, {
       state: 'config_blocked',
       nextAttemptAt: new Date(Date.now() + CONFIG_BLOCKED_RETRY_MS),
       errorCode: !platformConfigured(row.platform) ? 'platform_off' : 'no_destination',
     });
-    return { outcome: 'config_blocked' };
+    return ok ? { outcome: 'config_blocked' } : { outcome: 'claim_miss' };
   }
 
   // 4. Consent — snapshot for inline batches, per-row on worker retries;
@@ -507,8 +545,8 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
     { replacements: { id: row.prospectId } }
   );
   if (!freshRows?.[0] || freshRows[0].erased === 'true') {
-    await settleFromSending(row.id, token, { state: 'skipped', errorCode: 'erased' });
-    return { outcome: 'skipped', errorCode: 'erased' };
+    const ok = await settleFromSending(row.id, token, { state: 'skipped', errorCode: 'erased' });
+    return ok ? { outcome: 'skipped', errorCode: 'erased' } : { outcome: 'claim_miss' };
   }
 
   const [reserved] = await sequelize.query(
@@ -532,9 +570,11 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
   const sendAttempts = Number(reserved[0].sendAttempts);
 
   // 6. Send via the existing senders — payload rebuilt from the row (§1.1);
-  //    epoch-seconds eventTime; pinned pixel override; injected fetch.
+  //    epoch-seconds eventTime; pinned pixel override. The timeout wrapper is
+  //    ALWAYS applied — an injected deps.fetch is a base transport, never a
+  //    way around the lease-protecting timeout.
   const capture = { retryAfterMs: null };
-  const fetchImpl = d.fetch || makeDeliveryFetch(capture);
+  const fetchImpl = makeDeliveryFetch(capture, d.fetch || undefined);
   const ctx = {
     eventId: row.eventId,
     eventTime: Math.floor(new Date(row.eventTime).getTime() / 1000),
@@ -544,7 +584,9 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
   const send = row.platform === 'meta' ? d.metaSend : d.tiktokSend;
   let result;
   try {
-    result = await send(prospect, ctx, { eventName: eventNameForKey(row.eventKey) }, { fetch: fetchImpl });
+    // suppressSentry: the ledger owns failure classification + the once-per-
+    // row auth alert; per-attempt sender captures would multiply on retries.
+    result = await send(prospect, ctx, { eventName: eventNameForKey(row.eventKey), suppressSentry: true }, { fetch: fetchImpl });
   } catch (err) {
     // The senders never throw by contract; belt-and-braces for injected seams.
     result = { sent: false, error: err?.message || String(err) };
@@ -560,21 +602,30 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
       errorCode: null,
       providerRequestId: cls.providerRequestId,
     };
+    let settleApplied = false;
     if (isOutcomeKey) {
       // The legacy capi.{markerKey} write shares the settle's DB transaction
       // (§3.3.4.7) — marker and sent-state commit or roll back together.
+      // Lock order: PROSPECT FIRST, then the delivery row — erasure locks
+      // prospects and then deletes deliveries, so settling in the opposite
+      // order could deadlock a PDPA erasure (Codex P2 review #4).
       const markerKey = OUTCOME_EVENTS[row.eventKey].markerKey;
       await sequelize.transaction(async (tx) => {
-        const applied = await settleFromSending(row.id, token, fields, { transaction: tx });
-        if (applied) {
+        await sequelize.query(`SELECT id FROM prospects WHERE id = :pid FOR UPDATE`, {
+          replacements: { pid: row.prospectId },
+          transaction: tx,
+        });
+        settleApplied = await settleFromSending(row.id, token, fields, { transaction: tx });
+        if (settleApplied) {
           await d.setSourceMetadataPath(row.prospectId, ['capi', markerKey], new Date().toISOString(), {
             transaction: tx,
           });
         }
       });
     } else {
-      await settleFromSending(row.id, token, fields);
+      settleApplied = await settleFromSending(row.id, token, fields);
     }
+    if (!settleApplied) return { outcome: 'claim_miss' }; // a reclaimer owns the row; its attempt governs
     logger.info(
       { id: row.id, platform: row.platform, eventKey: row.eventKey, attempts: sendAttempts },
       'platform_delivery.sent'
@@ -589,7 +640,7 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
         extra: { delivery_id: row.id, status: cls.status },
       });
     }
-    await settleFromSending(row.id, token, {
+    const ok = await settleFromSending(row.id, token, {
       state: 'retry_wait',
       nextAttemptAt: new Date(
         Date.now() + computeBackoffMs(sendAttempts, { authClass: cls.authClass === true, retryAfterMs: cls.retryAfterMs, jitterRatio: d.jitterRatio })
@@ -597,21 +648,22 @@ export async function processDelivery(id, { marketingConsent, deps = {} } = {}) 
       lastStatus: cls.status ?? null,
       errorCode: cls.errorCode,
     });
-    return { outcome: 'retry_wait', errorCode: cls.errorCode };
+    return ok ? { outcome: 'retry_wait', errorCode: cls.errorCode } : { outcome: 'claim_miss' };
   }
   if (cls.kind === 'config_blocked') {
-    await settleFromSending(row.id, token, {
+    const ok = await settleFromSending(row.id, token, {
       state: 'config_blocked',
       nextAttemptAt: new Date(Date.now() + CONFIG_BLOCKED_RETRY_MS),
       errorCode: cls.errorCode,
     });
-    return { outcome: 'config_blocked', errorCode: cls.errorCode };
+    return ok ? { outcome: 'config_blocked', errorCode: cls.errorCode } : { outcome: 'claim_miss' };
   }
-  await settleFromSending(row.id, token, {
+  const settled = await settleFromSending(row.id, token, {
     state: 'failed_permanent',
     lastStatus: cls.status ?? null,
     errorCode: cls.errorCode,
   });
+  if (!settled) return { outcome: 'claim_miss' };
   logger.warn(
     { id: row.id, platform: row.platform, eventKey: row.eventKey, errorCode: cls.errorCode, status: cls.status },
     'platform_delivery.failed_permanent'
@@ -850,20 +902,31 @@ export async function runExpiryPass() {
  */
 export async function runOutcomeInvariantSweep() {
   if (!planningEnabled()) return 0;
-  const horizonMs = keyHorizonHours('confirmed_resident') * 3600_000;
+  const horizonHours = keyHorizonHours('confirmed_resident');
+  const horizonMs = horizonHours * 3600_000;
   let planned = 0;
   for (const key of OUTCOME_KEYS) {
     const markerKey = OUTCOME_EVENTS[key].markerKey;
-    // key/markerKey are code-owned constants (safe to interpolate).
+    // key/markerKey are code-owned constants (safe to interpolate). Age and
+    // origin eligibility are filtered IN SQL, before the LIMIT — otherwise
+    // permanently-ineligible facts (past-horizon, Retell-origin) would occupy
+    // the batch forever and starve young eligible facts (Codex P2 review #2).
+    // The ::timestamptz cast is regex-guarded; every fact writer normalizes
+    // through toISOString(), and the JS re-checks below stay as the belt.
     const [rows] = await sequelize.query(
       `SELECT p.id, p."sourceMetadata"::jsonb #>> '{outcomes,${key}}' AS fact
          FROM prospects p
-        WHERE p."sourceMetadata"::jsonb #>> '{outcomes,${key}}' IS NOT NULL
+        WHERE p."sourceMetadata"::jsonb #>> '{outcomes,${key}}' ~ '^\\d{4}-\\d{2}-\\d{2}T'
+          AND (p."sourceMetadata"::jsonb #>> '{outcomes,${key}}')::timestamptz >= now() - make_interval(hours => :horizonHours)
           AND p."sourceMetadata"::jsonb #>> '{capi,${markerKey}}' IS NULL
           AND COALESCE(p."sourceMetadata"::jsonb ->> 'erased', 'false') <> 'true'
+          AND p."leadSource" <> 'call_bot'
+          AND p."retellCallId" IS NULL
+          AND p."sourceMetadata"::jsonb ->> 'metaLeadgenId' IS NULL
           AND NOT EXISTS (SELECT 1 FROM platform_deliveries pd
                            WHERE pd."prospectId" = p.id AND pd.platform = 'meta' AND pd."eventKey" = '${key}')
-        LIMIT 200`
+        LIMIT 200`,
+      { replacements: { horizonHours } }
     );
     for (const r of rows || []) {
       const factMs = Date.parse(r.fact);
