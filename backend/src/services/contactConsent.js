@@ -69,6 +69,16 @@ export const AGREE_ALL_CONTACT_COPY_V2 =
   "Contact from Redeem — this offer and future ones. MKTR PTE. LTD. (the company behind Redeem) may contact you by phone call, text message (SMS or WhatsApp) or email about your signup and reward, and about other Redeem offers, rewards and lucky draws. You can opt out anytime — every marketing email includes an unsubscribe link, or contact us using the details in our Personal Data Policy. Opting out later won't affect a reward you've already claimed.";
 
 /**
+ * AGREE-ALL v3 era (2026-08-20): the agreement dialog's INTRO changed ("It's
+ * short, and it's everything" removed) — the contact clause itself is
+ * byte-identical to v2, so the registry entry below reuses V2's copy constant.
+ * A new label is still minted: the era records which agreement block the
+ * person read, and ANY user-visible edit to that block closes the old era
+ * (consentCopy.js header rule). v2 is CLOSED — bytes stay untouched.
+ */
+export const AGREE_ALL_CONSENT_VERSION_V3 = '2026-08-20-agree-all-v3';
+
+/**
  * META LEAD ADS era (native instant forms — docs/plans/meta-lead-ads-native-pipe.md §5).
  * This copy is the EXACT custom-disclaimer checkbox text operators must put on
  * every Meta instant form (checkbox key `mktr_pdpa_consent`). Editing the
@@ -101,6 +111,12 @@ export const CONTACT_CONSENT_VERSIONS = Object.freeze({
   }),
   [AGREE_ALL_CONSENT_VERSION_V2]: Object.freeze({
     copy: AGREE_ALL_CONTACT_COPY_V2,
+    copyHash: sha256(AGREE_ALL_CONTACT_COPY_V2),
+    channels: AGREE_ALL_CONSENT_CHANNELS,
+    scope: 'brand',
+  }),
+  [AGREE_ALL_CONSENT_VERSION_V3]: Object.freeze({
+    copy: AGREE_ALL_CONTACT_COPY_V2, // clause bytes unchanged in v3 (intro-only era)
     copyHash: sha256(AGREE_ALL_CONTACT_COPY_V2),
     channels: AGREE_ALL_CONSENT_CHANNELS,
     scope: 'brand',

@@ -93,11 +93,19 @@ export const AGREE_ALL_THIRD_PARTY_COPY =
  */
 export const AGREE_ALL_THIRD_PARTY_VERSION_V2 = '2026-08-19-agree-all-v2';
 
+/**
+ * AGREE-ALL v3 era label (2026-08-20): the dialog-intro era — this clause is
+ * byte-identical across v1/v2/v3; the label exists so v3 captures stamp their
+ * own era instead of falling back to the legacy default.
+ */
+export const AGREE_ALL_THIRD_PARTY_VERSION_V3 = '2026-08-20-agree-all-v3';
+
 /** Version labels buildExternalConsentEvidence may stamp (unknown => default). */
 const KNOWN_THIRD_PARTY_VERSIONS = Object.freeze([
   THIRD_PARTY_CONSENT_VERSION,
   AGREE_ALL_THIRD_PARTY_VERSION,
   AGREE_ALL_THIRD_PARTY_VERSION_V2,
+  AGREE_ALL_THIRD_PARTY_VERSION_V3,
 ]);
 
 /**

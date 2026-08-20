@@ -708,7 +708,12 @@ export function makeProspectService(overrides = {}) {
     // Deliberately scoped to the operator's own form config: campaigns that
     // leave dob optional keep behaving exactly as before, so this can never
     // start rejecting entrants on a live funnel that was set up to allow them.
-    const dobRequired = sourceDesign.requiredFields?.dob === true;
+    // Visibility-guarded like the client gate: a HIDDEN dob is never enforced —
+    // the form doesn't collect it, so requiring it server-side would 422 every
+    // submission on that funnel (required now defaults ON, making the hidden+
+    // required combo reachable from the Form panel with two ticks).
+    const dobRequired = sourceDesign.requiredFields?.dob === true
+      && sourceDesign.visibleFields?.dob !== false;
     // M8: STRICT calendar date, evaluated on the SINGAPORE calendar. The old
     // gate parsed arbitrary strings with new Date() and compared server-LOCAL
     // Y/M/D — on the UTC prod host an applicant whose birthday began at 00:00

@@ -137,7 +137,9 @@ describe('marketplace metadata intake — v2 documents', () => {
     status: 'active',
     design_config: {
       version: 2,
-      form: { gates: {}, fields: [] },
+      // dob explicitly optional: an empty fields[] falls back to the canonical
+      // defaults, which since the dob-required release would 422 this intake.
+      form: { gates: {}, fields: [{ id: 'dob', visible: true, required: false, row: null }] },
       distribution: {
         host: 'redeem',
         marketplace: {

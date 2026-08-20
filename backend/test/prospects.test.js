@@ -334,6 +334,21 @@ describe('DOB and postal code mapping', () => {
     expect(res.body.message).toMatch(/Date of birth is required/i)
   })
 
+  it('a required-but-HIDDEN dob is NOT enforced — the form never collects what the gate would demand', async () => {
+    const misconfigured = await createTestCampaign(adminUser.id, {
+      design_config: { requiredFields: { dob: true }, visibleFields: { dob: false } },
+    })
+    const res = await postProspect({
+      firstName: 'HiddenDob',
+      lastName: 'User',
+      email: `hiddendob-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: misconfigured.id,
+    })
+    expect(res.status).toBe(201)
+  })
+
   it('an OPTIONAL dob that is missing still passes — no new friction on funnels set up to allow it', async () => {
     const open = await createTestCampaign(adminUser.id, { min_age: 21, max_age: 65 })
     const res = await postProspect({

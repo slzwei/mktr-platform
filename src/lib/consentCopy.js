@@ -18,11 +18,15 @@
 // 2026-08-19-agree-all-v2: byte-identical to v1 except the legal-entity
 // casing in the contact clause ("MKTR Pte. Ltd." → "MKTR PTE. LTD.") —
 // consistent with the campaign T&Cs and the Prudential introducer clause.
-export const CONSENT_COPY_VERSION = '2026-08-19-agree-all-v2';
+// 2026-08-20-agree-all-v3: the dialog intro drops "It's short, and it's
+// everything" (Shawn: it is not short). Both evidence clauses are
+// byte-identical to v2 — the era exists because the agreement block a person
+// reads changed, per the any-user-visible-string rule above.
+export const CONSENT_COPY_VERSION = '2026-08-20-agree-all-v3';
 
 export const CONSENT_COPY = Object.freeze({
   heading: 'Terms and conditions',
-  intro: "By submitting this form, you agree to the following. It's short, and it's everything:",
+  intro: 'By submitting this form, you agree to the following:',
   clauseContactHeadline: 'Contact from Redeem — this offer and future ones.',
   clauseContactBody:
     "MKTR PTE. LTD. (the company behind Redeem) may contact you by phone call, text message (SMS or WhatsApp) or email about your signup and reward, and about other Redeem offers, rewards and lucky draws. You can opt out anytime — every marketing email includes an unsubscribe link, or contact us using the details in our Personal Data Policy. Opting out later won't affect a reward you've already claimed.",
