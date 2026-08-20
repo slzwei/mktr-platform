@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import DOMPurify from 'dompurify';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import DefaultTermsCopy from '@/components/legal/DefaultTermsCopy';
 import PrudentialIntroducerClause from '@/components/legal/PrudentialIntroducerClause';
@@ -52,6 +52,7 @@ export default function ConsentAgreementDialog({
           threaded through a CSS var. */}
       <DialogContent
         variant="sheet"
+        aria-describedby={undefined}
         className="border-0 p-0 gap-0 rounded-t-[var(--consent-modal-r)] rounded-b-none sm:rounded-[var(--consent-modal-r)] sm:w-[calc(100vw-32px)] sm:max-w-[520px]"
         style={{
           '--consent-modal-r': `${RADIUS.modal}px`,
@@ -65,22 +66,26 @@ export default function ConsentAgreementDialog({
           flexDirection: 'column',
         }}
       >
-        {/* Header — eyebrow + display title */}
+        {/* Header — display title. A real Radix DialogTitle (asChild keeps
+            the h2 + styles) so screen readers announce the dialog and the
+            missing-DialogTitle console error is gone; the "Agreement"
+            eyebrow was removed 2026-08-20 (Shawn). */}
         <div style={{ padding: '28px 28px 20px' }}>
-          <div style={sectionTitleStyle}>{CONSENT_INLINE.dialogEyebrow}</div>
-          <h2
-            style={{
-              fontFamily: 'Fraunces, serif',
-              fontWeight: 800,
-              fontSize: 30,
-              lineHeight: 1.05,
-              letterSpacing: '-0.015em',
-              color: TOKENS.ink,
-              margin: 0,
-            }}
-          >
-            {CONSENT_COPY.heading}
-          </h2>
+          <DialogTitle asChild>
+            <h2
+              style={{
+                fontFamily: 'Fraunces, serif',
+                fontWeight: 800,
+                fontSize: 30,
+                lineHeight: 1.05,
+                letterSpacing: '-0.015em',
+                color: TOKENS.ink,
+                margin: 0,
+              }}
+            >
+              {CONSENT_COPY.heading}
+            </h2>
+          </DialogTitle>
         </div>
 
         {/* Scrollable body — Section 1: the agreement list */}
