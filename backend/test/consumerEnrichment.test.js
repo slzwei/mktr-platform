@@ -603,6 +603,7 @@ describe('custom questions (studio-custom-questions §6–§7) — display-only 
       firstName: 'Forge', lastName: 'Case',
       email: `forge-${phoneSeq}@example.com`, phone: phoneFor(phoneSeq),
       leadSource: 'website', campaignId: cqCampaign.id,
+      date_of_birth: '1988-06-15', // dob defaults to REQUIRED now; V2_CQ has no fields[] so canonical defaults apply
       sourceMetadata: {
         customAnswers: [{ qid: 'x', prompt: 'Forged', values: ['x'] }],
         profileAnswers: { language: 'zh' },

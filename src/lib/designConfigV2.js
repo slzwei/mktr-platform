@@ -190,7 +190,7 @@ export function defaultFields() {
     { id: 'name', visible: true, required: true, row: null },
     { id: 'email', visible: true, required: true, row: null },
     { id: 'phone', visible: true, required: true, row: null },
-    { id: 'dob', visible: true, required: false, row: null },
+    { id: 'dob', visible: true, required: true, row: null },
     { id: 'postal', visible: true, required: false, row: null },
     { id: 'education', visible: false, required: false, row: null },
     { id: 'salary', visible: false, required: false, row: null },
