@@ -62,7 +62,6 @@ export const CONSENT_INLINE = Object.freeze({
   summaryLinkText: 'read the full agreement',
   summarySuffix: '.',
   checkboxLabel: 'I agree to the agreement above.',
-  dialogEyebrow: 'Agreement',
   sectionAgreeTitle: "What you're agreeing to",
   sectionTermsTitle: 'Terms & conditions',
   dialogAgreeCta: 'I agree',
