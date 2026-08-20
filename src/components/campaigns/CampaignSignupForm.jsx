@@ -307,44 +307,61 @@ export default function CampaignSignupForm({
     setResendCooldown(0);
   };
 
+  // A blocked submit never reaches the API, so server logs cannot say WHY a
+  // phone-verified visitor produced no prospect — the block reason exists only
+  // in this handler. Emit it as a pixel custom event (same channel as
+  // otp_sent/otp_verified) so the otp_verified → lead gap is attributable.
+  const trackSubmitBlocked = (reason) =>
+    trackFunnelEvent('submit_blocked', { campaign, previewMode, params: { reason } });
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setPreviewNotice('');
+    trackFunnelEvent('submit_attempted', { campaign, previewMode });
 
     if (!formData.name || !formData.email) {
+      trackSubmitBlocked('required_fields');
       setError('Please fill in all required fields.');
       return;
     }
     // Phone is always required for the public form (identity/dedup key).
     if (!formData.phone) {
+      trackSubmitBlocked('phone_missing');
       setError('Please enter your phone number.');
       return;
     }
     if (otpState !== 'verified') {
+      trackSubmitBlocked('otp_not_verified');
       setError('Please verify your phone number before submitting.');
       return;
     }
     if (visibleFields.dob !== false && formData.date_of_birth && formData.date_of_birth.length > 0 && formData.date_of_birth.length !== 10) {
+      trackSubmitBlocked('dob_incomplete');
       setError('Please enter a complete date of birth (DD/MM/YYYY).');
       return;
     }
     if (visibleFields.dob !== false && ageError) {
+      trackSubmitBlocked('age_blocked');
       setError('Please correct the date of birth to meet the age requirements.');
       return;
     }
     if (visibleFields.dob !== false && requiredFields.dob && (!formData.date_of_birth || formData.date_of_birth.length !== 10)) {
+      trackSubmitBlocked('dob_required');
       setError('Date of birth is required.');
       return;
     }
     if (visibleFields.postal_code !== false && requiredFields.postal_code && !formData.postal_code) {
+      trackSubmitBlocked('postal_required');
       setError('Postal code is required.');
       return;
     }
     if (visibleFields.education_level === true && requiredFields.education_level && !formData.education_level) {
+      trackSubmitBlocked('education_required');
       setError('Highest education is required.');
       return;
     }
     if (visibleFields.monthly_income === true && requiredFields.monthly_income && !formData.monthly_income) {
+      trackSubmitBlocked('income_required');
       setError('Last drawn salary is required.');
       return;
     }
@@ -357,11 +374,13 @@ export default function CampaignSignupForm({
       const q = resolveQuestion(requiredId, profileQuestions?.custom);
       if (!q) continue;
       if (!isQuestionAnswered(q, profileAnswers[requiredId])) {
+        trackSubmitBlocked('profile_question_missing');
         setError(`Please answer: ${q.prompt}`);
         return;
       }
     }
     if (!consentAll) {
+      trackSubmitBlocked('consent_missing');
       setError(CONSENT_BLOCK_HELPER);
       return;
     }
@@ -376,6 +395,7 @@ export default function CampaignSignupForm({
       if (parsed.getDate() === Number(day) && parsed.getMonth() === Number(month) - 1 && parsed.getFullYear() === Number(year)) {
         dobFormatted = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
       } else {
+        trackSubmitBlocked('dob_invalid');
         setError('Please enter a valid date of birth.');
         setLoading(null);
         return;
@@ -420,6 +440,7 @@ export default function CampaignSignupForm({
     try {
       await onSubmit(dataToSubmit);
     } catch (err) {
+      trackFunnelEvent('submit_failed', { campaign, previewMode });
       setError(err.response?.data?.message || err.message || 'Submission failed.');
     }
     setLoading(null);
@@ -446,7 +467,11 @@ export default function CampaignSignupForm({
       setDncConsent(false);
       apiClient
         .post('/dnc/check', { phone: formData.phone, countryCode: '+65', campaignId }, { skipAuth: true })
-        .then((res) => setDncStatus(res?.data?.registered ? 'on_dnc' : 'clear'))
+        .then((res) => {
+          const onDnc = res?.data?.registered === true;
+          if (onDnc) trackFunnelEvent('dnc_consent_shown', { campaign, previewMode });
+          setDncStatus(onDnc ? 'on_dnc' : 'clear');
+        })
         .catch(() => setDncStatus('clear'));
     }
   };
