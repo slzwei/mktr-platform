@@ -14,6 +14,7 @@ import { notFound } from './middleware/notFound.js';
 import { bootstrapDatabase } from './database/bootstrap.js';
 import { requestId } from './middleware/requestId.js';
 import { makeLimiter } from './middleware/rateLimiters.js';
+import { isRedeemOpsUser } from './services/redeemOps/permissions.js';
 
 // Non-autodiscoverable middleware
 import leadCaptureBind from './routes/leadCaptureBind.js';
@@ -112,7 +113,13 @@ export const init = async (app) => {
     prefix: 'rl:api',
     windowMs: isProd ? parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000 : 60 * 1000, // 1 minute window in dev
     max: (req) => {
-      if (isProd && req.user && req.user.role === 'admin') return 2000;
+      // Elevated budget for authenticated staff: platform admins AND any
+      // Redeem Ops principal (isRedeemOpsUser covers role='admin',
+      // role='redeem_ops' and granted redeemOpsRole). The ops outreach queue
+      // is API-chatty — task list + draft + outcome per contact — and ops
+      // execs were exhausting the anonymous 200/15min budget mid-shift.
+      // Anonymous/customer traffic keeps the tight cap.
+      if (isProd && isRedeemOpsUser(req.user)) return 2000;
       return isProd
         ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200
         : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000;
