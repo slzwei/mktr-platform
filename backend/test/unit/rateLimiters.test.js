@@ -100,6 +100,16 @@ describe('no limiter is left on the express-rate-limit defaults', () => {
     expect(src).toMatch(/makeLimiter\(\{\s*\n?\s*prefix: 'rl:api'/);
   });
 
+  it('the global /api limiter elevates every Redeem Ops principal, not only admins', () => {
+    // Ops execs grinding the outreach queue were exhausting the anonymous
+    // 200/15min budget mid-shift ("Too many requests from this IP"). The
+    // elevated budget must key off isRedeemOpsUser (admin + redeem_ops +
+    // granted redeemOpsRole), not a bare role === 'admin' check.
+    const src = read('server_internal.js');
+    expect(src).toMatch(/isRedeemOpsUser\(req\.user\)\) return 2000/);
+    expect(src).not.toMatch(/req\.user\.role === 'admin'\) return 2000/);
+  });
+
   it('every limiter declares a UNIQUE prefix', () => {
     const prefixes = [...routeFiles.map((f) => `routes/${f}`), 'server_internal.js']
       .flatMap((rel) => [...read(rel).matchAll(/prefix: '([^']+)'/g)].map((m) => m[1]));
