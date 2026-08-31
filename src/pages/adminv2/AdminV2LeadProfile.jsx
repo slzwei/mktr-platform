@@ -132,6 +132,33 @@ function ConsentKv({ label, state, legacy }) {
   );
 }
 
+/**
+ * DNC verdict row. Rendered in BOTH the person-level "Consent & reachability"
+ * block and the per-signup card: DNC belongs to the phone number, but the
+ * signup card is where you land from Prospects and decide whether to call, so
+ * the fact has to be legible there too rather than one view away.
+ * Null until a check has actually run (`dncStatus` unset = never scrubbed).
+ */
+function DncKv({ p }) {
+  if (!p?.dncStatus) return null;
+  const restricted = p.dncNoVoiceCall || p.dncNoTextMessage;
+  return (
+    <div style={{ display: 'flex', gap: 12, fontSize: 12.5, padding: '4px 0', alignItems: 'baseline' }}>
+      <span style={{ width: 96, flex: 'none', color: 'var(--ink-3)' }}>DNC</span>
+      <span style={{ color: 'var(--ink)', fontWeight: 600 }}>
+        {restricted
+          ? `no ${[p.dncNoVoiceCall && 'voice', p.dncNoTextMessage && 'SMS'].filter(Boolean).join(' + ')}`
+          : p.dncStatus}
+        {p.dncCheckedAt && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)' }}>
+            {' '}· checked {fmtDate(p.dncCheckedAt)}{p.dncValidUntil ? ` · valid to ${fmtDate(p.dncValidUntil)}` : ''}
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 
 
 // ── the page ────────────────────────────────────────────────────────────────
@@ -516,21 +543,7 @@ export default function AdminV2LeadProfile() {
                 <ConsentKv label="marketing" state={consent?.contact} legacy={p.sourceMetadata?.consent_contact} />
                 <ConsentKv label="terms" state={consent?.campaign_terms} legacy={p.sourceMetadata?.consent_terms} />
                 <ConsentKv label="third-party" state={consent?.third_party} legacy={p.sourceMetadata?.consent_third_party} />
-                {p.dncStatus && (
-                  <div style={{ display: 'flex', gap: 12, fontSize: 12.5, padding: '4px 0', alignItems: 'baseline' }}>
-                    <span style={{ width: 96, flex: 'none', color: 'var(--ink-3)' }}>DNC</span>
-                    <span style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                      {(p.dncNoVoiceCall || p.dncNoTextMessage)
-                        ? `no ${[p.dncNoVoiceCall && 'voice', p.dncNoTextMessage && 'SMS'].filter(Boolean).join(' + ')}`
-                        : p.dncStatus}
-                      {p.dncCheckedAt && (
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-3)' }}>
-                          {' '}· checked {fmtDate(p.dncCheckedAt)}{p.dncValidUntil ? ` · valid to ${fmtDate(p.dncValidUntil)}` : ''}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                )}
+                <DncKv p={p} />
                 {journey?.broadcasts && Object.keys(journey.broadcasts.counts).length > 0 && (
                   <div style={{ display: 'flex', gap: 12, fontSize: 12.5, padding: '4px 0', alignItems: 'baseline' }}>
                     <span style={{ width: 96, flex: 'none', color: 'var(--ink-3)' }}>broadcasts</span>
@@ -705,6 +718,7 @@ export default function AdminV2LeadProfile() {
                 {p.sourceMetadata?.phoneVerifiedAt && (
                   <KvRow label="verified"><span style={{ color: 'var(--ok)' }}>✓</span> {fmtDateTime(p.sourceMetadata.phoneVerifiedAt)}</KvRow>
                 )}
+                <DncKv p={p} />
                 <KvRow label="source">
                   {SOURCE_LABELS[p.leadSource] || p.leadSource}
                   {p.session?.landingPath ? ` → ${p.session.landingPath}` : ''}

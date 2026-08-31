@@ -193,6 +193,46 @@ describe('AdminV2LeadProfile — person profile view', () => {
     expect(screen.getByText('AGENT: EXTERNAL BUYER')).toBeInTheDocument();
   });
 
+  // DNC belongs to the phone number, but the signup view is where you land from
+  // Prospects and decide whether to call — so the verdict must be legible in BOTH
+  // views, not one click away (mirrored 2026-08-31).
+  describe('DNC verdict', () => {
+    const withDnc = (over = {}) => ({
+      ...JSON.parse(JSON.stringify(PROFILE)),
+      dncStatus: 'clear',
+      dncNoVoiceCall: false,
+      dncNoTextMessage: false,
+      dncNoFax: false,
+      dncCheckedAt: '2026-08-31T08:13:29Z',
+      dncValidUntil: '2026-09-21T00:00:00Z',
+      ...over,
+    });
+
+    it('shows a clear verdict on the signup card AND the person profile', async () => {
+      fetchProspectProfile.mockResolvedValue(withDnc());
+      setup('/admin/leads/p1');
+      expect(await screen.findByText('DNC')).toBeInTheDocument();
+      expect(screen.getByText(/clear/)).toBeInTheDocument();
+      expect(screen.getByText(/valid to/)).toBeInTheDocument();
+    });
+
+    it('names the restricted channels when the number is on the register', async () => {
+      fetchProspectProfile.mockResolvedValue(withDnc({
+        dncStatus: 'registered', dncNoVoiceCall: true, dncNoTextMessage: true,
+      }));
+      setup('/admin/leads/p1');
+      expect(await screen.findByText(/no voice \+ SMS/)).toBeInTheDocument();
+    });
+
+    // "Only if it is scrubbed" — a lead that was never checked shows nothing at
+    // all, so silence can never be misread as a clean result.
+    it('renders nothing when the lead was never scrubbed', async () => {
+      setup('/admin/leads/p1');
+      await screen.findByText('Signup detail');
+      expect(screen.queryByText('DNC')).not.toBeInTheDocument();
+    });
+  });
+
   it('campaign rows drill in by navigating to that signup URL', async () => {
     setup('/admin/leads/p1?view=profile');
     fireEvent.click(await screen.findByText('NTUC Trial Reward'));
