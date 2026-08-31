@@ -288,6 +288,29 @@ describe('schemas.prospectCreate', () => {
     expect(valid(schemas.prospectCreate, validBody).ok).toBe(true);
   });
 
+  // v2 (2026-08-19 legal-entity casing, #473) shipped on the frontend while this
+  // gate stayed on v1, so every redeem.sg signup 422'd for 12 days. Both eras
+  // must pass: an older cached bundle still posts v1.
+  it('accepts BOTH agree-all eras', () => {
+    for (const v of ['2026-07-21-agree-all-v1', '2026-08-19-agree-all-v2']) {
+      expect(valid(schemas.prospectCreate, { ...validBody, consent_copy_version: v }).ok).toBe(true);
+    }
+  });
+
+  // The real guard: this enum is derived from the ledger's era registry rather
+  // than hand-copied, so a newly minted era cannot pass the ledger and be
+  // rejected at the door. Any agree-all era the registry can turn into pinned
+  // evidence MUST validate here.
+  it('accepts every agree-all era the consent ledger can mint evidence for', async () => {
+    const { CONTACT_CONSENT_VERSIONS } = await import('../src/services/contactConsent.js');
+    const agreeAllEras = Object.keys(CONTACT_CONSENT_VERSIONS).filter((v) => v.includes('agree-all'));
+    expect(agreeAllEras.length).toBeGreaterThanOrEqual(2);
+    for (const v of agreeAllEras) {
+      const { ok } = valid(schemas.prospectCreate, { ...validBody, consent_copy_version: v });
+      expect([v, ok]).toEqual([v, true]);
+    }
+  });
+
   it('rejects unknown or non-string consent_copy_version labels', () => {
     const bad = valid(schemas.prospectCreate, { ...validBody, consent_copy_version: '2026-01-01' });
     expect(bad.ok).toBe(false);
