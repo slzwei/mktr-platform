@@ -6,6 +6,13 @@ import {
   MAX_CUSTOM_OPTIONS,
   MAX_TOTAL_PROFILE_QUESTIONS,
 } from '../utils/designConfigV2.js';
+// Imported, never re-typed: this enum and the ledger's era registry MUST agree.
+// A hardcoded literal here is what silently 422'd every redeem.sg signup for 12
+// days after era v2 shipped (#473) and this gate was left on v1.
+import {
+  AGREE_ALL_CONSENT_VERSION,
+  AGREE_ALL_CONSENT_VERSION_V2,
+} from '../services/contactConsent.js';
 
 // Validation middleware.
 //
@@ -269,14 +276,16 @@ export const schemas = {
     // client; this flag only records that the person ticked the box. That evidence is what
     // releases an otherwise-held DNC-registered lead (services/dncConsent.hasValidDncConsent).
     consent_dnc: Joi.boolean().optional(),
-    // Which contact-consent wording the form actually displayed.
-    // '2026-07-21-agree-all-v1' = the mandatory agree-all block (both funnels
-    // since the 2026-07-21 rework); absent = the legacy three-checkbox copy
-    // (pre-rework cached bundles). Strict valid() enum, not free string — the
-    // consent ledger maps this label to pinned copy/hash evidence
-    // (services/contactConsent.js), and an unknown label must never mint
-    // evidence.
-    consent_copy_version: Joi.string().valid('2026-07-21-agree-all-v1').optional(),
+    // Which contact-consent wording the form actually displayed. Both agree-all
+    // eras are accepted: v1 (2026-07-21 rework) and v2 (2026-08-19 legal-entity
+    // casing) — an older cached bundle still posts v1, so accepting only the
+    // current era breaks those clients. Absent = the legacy three-checkbox copy.
+    // Strict valid() enum, not free string — the consent ledger maps this label
+    // to pinned copy/hash evidence (services/contactConsent.js), and an unknown
+    // label must never mint evidence. EVERY new era must be added here too.
+    consent_copy_version: Joi.string()
+      .valid(AGREE_ALL_CONSENT_VERSION, AGREE_ALL_CONSENT_VERSION_V2)
+      .optional(),
     // Marketplace flow extras (redeem.sg /flow/:slug — docs/plans/
     // redeem-marketplace-v2.md Phase 4). Whitelisted here (this endpoint runs
     // stripUnknown, so an unlisted key is silently dropped); prospectService
