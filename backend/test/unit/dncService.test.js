@@ -145,6 +145,40 @@ describe('parseResponse', () => {
     expect(r.results[0].noTextMessage).toBe(true);
     expect(r.results[1].noTextMessage).toBe(false);
   });
+
+  // Verbatim body from PRODUCTION, 31 Aug 2026 (txn-less S501 probe). The spec documents a
+  // flat top-level `status_code`; the live system nests error codes under `errorTo.code`.
+  it('reads the live errorTo error envelope, not just the spec top-level status_code', () => {
+    const json = {
+      errorTo: {
+        errors: [{ reason: 'System Internal Error, please inform PDPC.', message: 'System Internal Error, please inform PDPC.' }],
+        code: 'S501',
+        message: 'System Internal Error, please inform PDPC.',
+      },
+    };
+    const r = dnc.parseResponse(json);
+    expect(r.statusCode).toBe('S501');
+    expect(r.results).toEqual([]);
+  });
+
+  it('keeps the top-level status_code authoritative when both shapes are present', () => {
+    const r = dnc.parseResponse({ status_code: 'S000', errorTo: { code: 'S501' } });
+    expect(r.statusCode).toBe('S000');
+  });
+
+  // The regression that matters: without the errorTo fallback every error mapped to the
+  // `unknown` default, so `alert` was never set and the S301/S40x Sentry pages never fired.
+  it('routes an errorTo-wrapped S301 to the insufficient-credits ALERT branch', () => {
+    const r = dnc.parseResponse({ errorTo: { code: 'S301', message: 'Insufficient credits' } });
+    expect(dnc.mapStatusCode(r.statusCode)).toEqual({
+      ok: false, retriable: true, alert: true, reason: 'insufficient_credits',
+    });
+  });
+
+  it('routes an errorTo-wrapped S401 to the non-retriable auth ALERT branch', () => {
+    const r = dnc.parseResponse({ errorTo: { code: 'S401' } });
+    expect(dnc.mapStatusCode(r.statusCode)).toEqual({ ok: false, retriable: false, alert: true, reason: 'auth' });
+  });
 });
 
 describe('nextTimestamp', () => {
