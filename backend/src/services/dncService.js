@@ -155,7 +155,13 @@ export function parseValidUntil(msg) {
 
 /** Normalise the DNC response JSON → typed result. Exported for tests. */
 export function parseResponse(json) {
-  const statusCode = json?.status_code || null;
+  // Spec v1.1 documents a flat top-level `status_code` for every Annex-A code, but the live
+  // system returns ERRORS as an `{ errorTo: { code, message, errors[] } }` envelope with
+  // HTTP 500 (observed in PRODUCTION 31 Aug 2026 for S501). Reading only `status_code` left
+  // every error as null → mapStatusCode's `default` (unknown/retriable, no alert), so the
+  // per-code branches — S301 insufficient-credits and S401/S402/S404 auth, both of which set
+  // `alert: true` — could never fire. Read both shapes.
+  const statusCode = json?.status_code || json?.errorTo?.code || null;
   const results = Array.isArray(json?.numbers)
     ? json.numbers.map((n) => ({
         number: n.number,

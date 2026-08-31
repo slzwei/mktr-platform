@@ -93,6 +93,27 @@ const appSignature = signer.sign(privateKeyPem, 'base64');
 | `S405` | HTTP method not allowed | Code bug → Sentry. |
 | `S501` | DNC internal error | Transient → retry with backoff, then `pending`. |
 
+> ⚠️ **The success shape above (§2.4) is NOT the error shape.** Verified against PRODUCTION
+> on 2026-08-31: errors come back as **HTTP 500** with the Annex-A code nested in an
+> `errorTo` envelope, not as a top-level `status_code`:
+>
+> ```json
+> { "errorTo": { "errors": [ { "reason": "…", "message": "…" } ],
+>                "code": "S501", "message": "System Internal Error, please inform PDPC." } }
+> ```
+>
+> `parseResponse` therefore reads `status_code || errorTo.code`. Reading only `status_code`
+> (as the spec implies) collapsed **every** error onto `mapStatusCode`'s `unknown` default,
+> which sets no `alert` — so the S301 credits page and the S401/S402/S404 auth pages in the
+> table above could never fire. Confirmed live for S501; PDPC has not confirmed whether the
+> other codes use the same envelope, and told us on 27 Aug 2026 they may change the error
+> response later, so the parser accepts both shapes rather than depending on their answer.
+>
+> Per DNC Ops (27 Aug 2026), S501 is also **not** only an internal error: it is what the API
+> returns when a request carries no valid telephone number. We keep it `retriable`, and the
+> per-lead backfill bound (`DNC_BACKFILL_MAX_ATTEMPTS`, §5.5) is what stops a number the
+> registry never accepts from being re-driven forever.
+
 ---
 
 ## 3. Compliance model (decisions that gate the build)
