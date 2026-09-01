@@ -24,8 +24,17 @@ describe('queryClient', () => {
     expect(queryClient.getDefaultOptions().queries.staleTime).toBe(30_000);
   });
 
-  it('has retry set to 1', () => {
-    expect(queryClient.getDefaultOptions().queries.retry).toBe(1);
+  it('retries once, but never a rate-limited call', () => {
+    const retry = queryClient.getDefaultOptions().queries.retry;
+    expect(typeof retry).toBe('function');
+    // one retry for ordinary failures
+    expect(retry(0, { status: 500 })).toBe(true);
+    expect(retry(1, { status: 500 })).toBe(false);
+    // 429 is never retried — the retry is charged against the same traffic
+    // budget and only keeps the client pinned at the limit
+    expect(retry(0, { status: 429 })).toBe(false);
+    // errors without a status (network) still get their one retry
+    expect(retry(0, new Error('Failed to fetch'))).toBe(true);
   });
 
   it('has refetchOnWindowFocus disabled', () => {
