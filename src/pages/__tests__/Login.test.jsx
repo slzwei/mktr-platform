@@ -177,4 +177,34 @@ describe('Login Page', () => {
  expect(screen.getByText('Login failed. Please try again.')).toBeInTheDocument();
  });
  });
+
+ it('shows the server reason when the failure carries a status (rate limited)', async () => {
+ mockLogin.mockRejectedValue(
+ Object.assign(new Error('Too many requests from this IP, please try again later.'), {
+ status: 429,
+ })
+ );
+ renderLogin();
+
+ fillAndSubmit('test@example.com', 'password123');
+
+ await waitFor(() => {
+ expect(
+ screen.getByText('Too many requests from this IP, please try again later.')
+ ).toBeInTheDocument();
+ });
+ });
+
+ it('shows the server reason on a rejected 401 (wrong password)', async () => {
+ mockLogin.mockRejectedValue(
+ Object.assign(new Error('Invalid email or password'), { status: 401 })
+ );
+ renderLogin();
+
+ fillAndSubmit('test@example.com', 'wrongpass');
+
+ await waitFor(() => {
+ expect(screen.getByText('Invalid email or password')).toBeInTheDocument();
+ });
+ });
 });

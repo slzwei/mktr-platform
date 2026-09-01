@@ -144,7 +144,9 @@ export default function AdminLogin() {
  setError(result.message || 'Login failed');
  }
  } catch (err) {
- setError('Login failed. Please try again.');
+ // Same contract as CustomerLogin: show the server's reason when one was
+ // sent; generic copy only for transport failures.
+ setError(err?.status && err.message ? err.message : 'Login failed. Please try again.');
  } finally {
  setLoading(false);
  }

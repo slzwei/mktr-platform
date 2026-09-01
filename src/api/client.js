@@ -108,7 +108,16 @@ class APIClient {
  }
 
  if (response.status === 401 && options.skipAuth) {
- const err = new Error('Authentication required');
+ // Surface the server's own reason (e.g. "Invalid email or password") —
+ // login forms must show the real cause, not a fixed string.
+ let message = 'Authentication required';
+ try {
+ const body = await response.json();
+ if (body?.message) message = body.message;
+ } catch {
+ /* non-JSON 401 — keep the fixed string */
+ }
+ const err = new Error(message);
  err.status = 401;
  throw err;
  }
@@ -242,9 +251,12 @@ export const apiClient = new APIClient();
  * Authentication API
  */
 export const auth = {
- // Login user — token now set as httpOnly cookie by the server
+ // Login user — token now set as httpOnly cookie by the server.
+ // skipAuth: a rejected login is not a session expiry — it must not clear
+ // stored auth state or broadcast auth:unauthorized, and the caller needs
+ // the server's real message (wrong password vs lockout vs rate limit).
  async login(email, password) {
- const response = await apiClient.post('/auth/login', { email, password });
+ const response = await apiClient.post('/auth/login', { email, password }, { skipAuth: true });
 
  if (response.success && response.data.user) {
  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
@@ -255,7 +267,7 @@ export const auth = {
 
  // Google OAuth login — token now set as httpOnly cookie by the server
  async googleLogin(credential) {
- const response = await apiClient.post('/auth/google', { credential });
+ const response = await apiClient.post('/auth/google', { credential }, { skipAuth: true });
 
  if (response.success && response.data.user) {
  localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
