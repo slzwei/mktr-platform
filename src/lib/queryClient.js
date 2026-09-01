@@ -25,7 +25,9 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      retry: 1,
+      // Never retry a rate-limited call: the retry is charged against the
+      // same budget, so it only keeps the client pinned at the limit.
+      retry: (failureCount, error) => error?.status !== 429 && failureCount < 1,
       refetchOnWindowFocus: false,
     },
   },

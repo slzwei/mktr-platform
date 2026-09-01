@@ -13,7 +13,7 @@
 import '../setup.js';
 import fs from 'fs';
 import path from 'path';
-import { makeLimiter, userOrClientKey } from '../../src/middleware/rateLimiters.js';
+import { makeLimiter, userOrClientKey, isSessionDoor } from '../../src/middleware/rateLimiters.js';
 import { PostgresRateLimitStore, clientKey } from '../../src/middleware/pgRateLimitStore.js';
 
 const srcDir = path.join(process.cwd(), 'src');
@@ -100,14 +100,32 @@ describe('no limiter is left on the express-rate-limit defaults', () => {
     expect(src).toMatch(/makeLimiter\(\{\s*\n?\s*prefix: 'rl:api'/);
   });
 
-  it('the global /api limiter elevates every Redeem Ops principal, not only admins', () => {
-    // Ops execs grinding the outreach queue were exhausting the anonymous
-    // 200/15min budget mid-shift ("Too many requests from this IP"). The
-    // elevated budget must key off isRedeemOpsUser (admin + redeem_ops +
-    // granted redeemOpsRole), not a bare role === 'admin' check.
+  it('the global /api limiter elevates every authenticated principal', () => {
+    // Staff CRM sessions legitimately exceed the anonymous 200/15min budget
+    // ("Too many requests from this IP" mid-shift). The elevated budget keys
+    // off req.user alone — any valid session, not a role allowlist.
     const src = read('server_internal.js');
-    expect(src).toMatch(/isRedeemOpsUser\(req\.user\)\) return 2000/);
+    expect(src).toMatch(/if \(isProd && req\.user\) return 2000/);
+    expect(src).not.toMatch(/isRedeemOpsUser\(req\.user\)\) return 2000/);
     expect(src).not.toMatch(/req\.user\.role === 'admin'\) return 2000/);
+  });
+
+  it('cookieParser is mounted before optionalAuth, exactly once', () => {
+    // The SPA's only credential is the httpOnly mktr_token cookie. With
+    // cookieParser mounted after the limiter, req.user was unset at budget
+    // time and every logged-in session was charged the anonymous budget
+    // (the 2026-09-01 ops login lockout).
+    const src = read('server_internal.js');
+    const cookieAt = src.indexOf('app.use(cookieParser())');
+    const authAt = src.indexOf("app.use('/api', optionalAuth");
+    expect(cookieAt).toBeGreaterThan(-1);
+    expect(authAt).toBeGreaterThan(-1);
+    expect(cookieAt).toBeLessThan(authAt);
+    expect([...src.matchAll(/app\.use\(cookieParser\(\)\)/g)]).toHaveLength(1);
+  });
+
+  it('the global /api limiter skips the session doors', () => {
+    expect(read('server_internal.js')).toMatch(/isSessionDoor\(req\.originalUrl\)/);
   });
 
   it('every limiter declares a UNIQUE prefix', () => {
@@ -139,5 +157,40 @@ describe('the eight bare auth doors now carry a limiter', () => {
   it('keeps password and token doors on their own buckets', () => {
     expect(src).toContain("prefix: 'rl:auth-password'");
     expect(src).toContain("prefix: 'rl:auth-token'");
+  });
+});
+
+describe('isSessionDoor — paths the global traffic budget must never throttle', () => {
+  it.each([
+    '/api/auth/login',
+    '/api/auth/google',
+    '/api/auth/google/config',
+    '/api/auth/google/state',
+    '/api/auth/google/callback',
+    '/api/auth/profile',
+    '/api/auth/refresh-token',
+    '/api/auth/logout',
+    '/api/auth/forgot-password',
+    '/api/auth/reset-password/some-token-value',
+  ])('%s is a session door', (url) => {
+    expect(isSessionDoor(url)).toBe(true);
+  });
+
+  it('ignores a query string', () => {
+    expect(isSessionDoor('/api/auth/login?redirect=%2Fadmin')).toBe(true);
+  });
+
+  it.each([
+    '/api/auth/register', // account creation is not a session door
+    '/api/auth/loginx', // no prefix confusion
+    '/api/auth/reset-password', // bare path without a token is not a route
+    '/api/redeem-ops/tasks',
+    '/api/prospects',
+  ])('%s stays behind the traffic budget', (url) => {
+    expect(isSessionDoor(url)).toBe(false);
+  });
+
+  it('handles a missing url without throwing', () => {
+    expect(isSessionDoor(undefined)).toBe(false);
   });
 });

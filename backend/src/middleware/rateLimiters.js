@@ -43,3 +43,36 @@ export function makeLimiter({ prefix, ...options } = /** @type {{prefix?: string
 export function userOrClientKey(req) {
   return req.user?.id ? `u:${req.user.id}` : clientKey(req);
 }
+
+/**
+ * Session doors the global /api IP limiter must never throttle: a user must
+ * always be able to log in, stay logged in, and recover their account, even
+ * when their IP's traffic budget is exhausted (an office NAT, a busy ops
+ * session — 2026-09-01 a redeem_ops user was locked out of login itself).
+ *
+ * This is NOT a brute-force hole: every one of these routes keeps its own
+ * dedicated gate — authLimiter (10/min) on login/register/google exchanges,
+ * passwordLimiter (10/15min) on forgot/reset, and the per-(email × client)
+ * lockout inside authService.login. Those stay in force; only the shared
+ * traffic budget stops applying.
+ */
+const SESSION_DOOR_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/google',
+  '/api/auth/google/config',
+  '/api/auth/google/state',
+  '/api/auth/google/callback',
+  '/api/auth/profile',
+  '/api/auth/refresh-token',
+  '/api/auth/logout',
+  '/api/auth/forgot-password',
+]);
+
+export function isSessionDoor(originalUrl) {
+  const pathOnly = String(originalUrl || '').split('?')[0];
+  return (
+    SESSION_DOOR_PATHS.has(pathOnly) ||
+    // Token-carrying recovery door: /api/auth/reset-password/:token
+    pathOnly.startsWith('/api/auth/reset-password/')
+  );
+}

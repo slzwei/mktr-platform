@@ -70,7 +70,10 @@ export default function CustomerLogin() {
  setError(result.message || 'Login failed');
  }
  } catch (err) {
- setError('Login failed. Please try again.');
+ // err.message carries the server's reason when one was sent (wrong
+ // password, lockout, rate limit); only transport failures without a
+ // status get the generic copy.
+ setError(err?.status && err.message ? err.message : 'Login failed. Please try again.');
  } finally {
  setLoading(false);
  }

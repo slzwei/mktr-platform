@@ -157,6 +157,19 @@ describe('APIClient 401 handling', () => {
  expect(localStorageMock.removeItem).toHaveBeenCalledWith('mktr_auth_token');
  expect(localStorageMock.removeItem).toHaveBeenCalledWith('mktr_user');
  });
+
+ it('surfaces the server message on a skipAuth 401 and leaves the session alone', async () => {
+ fetchMock.mockResolvedValueOnce(
+ fakeResponse({ success: false, message: 'Invalid email or password' }, { status: 401 })
+ );
+
+ await expect(
+ apiClient.post('/auth/login', { email: 'a@b.com' }, { skipAuth: true })
+ ).rejects.toThrow('Invalid email or password');
+
+ // A rejected login is not a session expiry — nothing is torn down.
+ expect(localStorageMock.removeItem).not.toHaveBeenCalled();
+ });
 });
 
 describe('APIClient custom headers EXTEND the defaults (ads-centralisation P3 review #1)', () => {

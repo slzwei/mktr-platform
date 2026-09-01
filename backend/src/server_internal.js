@@ -13,8 +13,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 import { bootstrapDatabase } from './database/bootstrap.js';
 import { requestId } from './middleware/requestId.js';
-import { makeLimiter } from './middleware/rateLimiters.js';
-import { isRedeemOpsUser } from './services/redeemOps/permissions.js';
+import { makeLimiter, isSessionDoor } from './middleware/rateLimiters.js';
 
 // Non-autodiscoverable middleware
 import leadCaptureBind from './routes/leadCaptureBind.js';
@@ -103,7 +102,13 @@ export const init = async (app) => {
     })
   );
 
-  // Rate limiting (relaxed for development, bypass for authenticated admins)
+  // Cookie parsing must precede optionalAuth: the SPA's only credential is the
+  // httpOnly `mktr_token` cookie (SameSite=Strict), so mounting cookieParser
+  // after the limiter left req.user unset at budget time — every logged-in
+  // staff session was charged the anonymous budget (the 2026-09-01 ops lockout).
+  app.use(cookieParser());
+
+  // Rate limiting (relaxed for development, elevated budget for authenticated staff)
   const isProd = process.env.NODE_ENV === 'production';
   // Client-keyed + durable like every other limiter (P1-6): the default
   // MemoryStore + req.ip keyed this on the Cloudflare EDGE address, so every
@@ -113,13 +118,11 @@ export const init = async (app) => {
     prefix: 'rl:api',
     windowMs: isProd ? parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000 : 60 * 1000, // 1 minute window in dev
     max: (req) => {
-      // Elevated budget for authenticated staff: platform admins AND any
-      // Redeem Ops principal (isRedeemOpsUser covers role='admin',
-      // role='redeem_ops' and granted redeemOpsRole). The ops outreach queue
-      // is API-chatty — task list + draft + outcome per contact — and ops
-      // execs were exhausting the anonymous 200/15min budget mid-shift.
-      // Anonymous/customer traffic keeps the tight cap.
-      if (isProd && isRedeemOpsUser(req.user)) return 2000;
+      // Any authenticated principal gets the staff budget: a working CRM
+      // session legitimately exceeds the anonymous cap (task queue + partner
+      // timelines + cadences per contact), and a valid session is required to
+      // claim it, so anonymous scrapers stay on the tight cap below.
+      if (isProd && req.user) return 2000;
       return isProd
         ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200
         : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000;
@@ -132,6 +135,12 @@ export const init = async (app) => {
     // check before doing any work.
     skip: (req) =>
       !isProd ||
+      // Session doors are never throttled by the shared traffic budget — a
+      // user must always be able to log in, stay logged in, and recover their
+      // account. Each door keeps its own dedicated gate (authLimiter,
+      // passwordLimiter, the per-email lockout), so brute-force protection is
+      // unchanged. See isSessionDoor in middleware/rateLimiters.js.
+      isSessionDoor(req.originalUrl) ||
       req.originalUrl.startsWith('/api/integrations/lyfe/') ||
       req.originalUrl.startsWith('/api/external/') ||
       req.originalUrl.startsWith('/api/whatsapp/') ||
@@ -141,7 +150,8 @@ export const init = async (app) => {
       req.originalUrl.startsWith('/api/meta/webhook'),
     message: 'Too many requests from this IP, please try again later.',
   });
-  // Ensure we decode JWT (if present) before limiter so skip() can see admin
+  // Ensure we decode the session (if present) before the limiter so max() can
+  // see the authenticated principal
   if (isProd) {
     logger.info('Rate limiter enabled (production mode)');
     app.use('/api', optionalAuth, limiter);
@@ -193,10 +203,9 @@ export const init = async (app) => {
   );
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-  // CSRF protection: Not required — API uses Bearer token authentication exclusively.
-  // Cookies (cookieParser) are used only for non-auth session attribution (sid, atk).
-  // If cookie-based auth is ever added, CSRF middleware must be implemented.
-  app.use(cookieParser());
+  // CSRF stance: the auth cookie (mktr_token) is SameSite=Strict and CORS is
+  // origin-allowlisted, so cross-site requests never carry a session.
+  // cookieParser itself is mounted earlier, before optionalAuth + the limiter.
 
   // Static file serving for uploads — allow cross-origin embedding for images
   app.use(
