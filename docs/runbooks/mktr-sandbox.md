@@ -98,6 +98,36 @@ why step 6 waits.
 
 ---
 
+## 3.1 Google sign-in (optional)
+
+Off by default. Two things make it safe to turn on:
+
+- The sandbox refuses to boot if it is given the **production** OAuth client
+  (`917664265015-…`) — that client's redirect URIs point at production, and
+  reusing it would widen its surface.
+- Google may LINK to an existing sandbox account but never CREATE one. Password
+  self-registration is closed here, so an open Google flow would have been the
+  same hole through a different door.
+
+To enable:
+
+1. Google Cloud Console → **APIs & Services → Credentials → Create credentials →
+   OAuth client ID → Web application**. Name it something like
+   `MKTR Sandbox`.
+2. **Authorised JavaScript origins:** `https://mktr-sandbox-api.onrender.com`
+   (add `https://sandbox.mktr.sg` after the DNS cutover).
+3. **Authorised redirect URIs:** `https://mktr-sandbox-api.onrender.com/auth/google/callback`
+   (and `https://sandbox.mktr.sg/auth/google/callback` later). This is a
+   frontend route — the SPA hands the code to the backend — and the backend
+   repeats the same URI at token exchange, derived from the request origin.
+4. On `mktr-sandbox-api` set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
+   `VITE_GOOGLE_CLIENT_ID` (the last is baked into the bundle at build time, so
+   it needs a deploy, not just a restart).
+5. Set `SANDBOX_GOOGLE_ADMIN_EMAILS` to the exact addresses allowed in, then
+   re-run the seed (§2.2). They are created as admins with **no password**, so
+   an account tied to a real identity is Google-only and cannot be reached with
+   the shared seed password.
+
 ## 4. Kill switches
 
 Each takes effect on the next restart, which a Render env-var change triggers
