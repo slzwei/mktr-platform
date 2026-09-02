@@ -691,6 +691,8 @@ than a stub's guess.
 | Deployed cookie isolation | `mktr_token; HttpOnly; Secure; SameSite=Strict` with **no `Domain`** |
 | Deployed sink | Valid signature 200, duplicate delivery id flagged, forged signature 401, stale timestamp 401 |
 | Deployed self-registration | `POST /api/auth/register` → 403 |
+| Google sign-in (enabled 2026-09-02) | Separate `MKTR Sandbox` OAuth client, its own secret and redirect URI. Backend reports `googleClientId: true`; the id is baked into the SPA's `google-*` chunk; `/api/auth/google/state` issues state with an httpOnly `oauth_state` cookie. `shawnleeapps@gmail.com` and `admin@mktr.sg` seeded as password-less admins — Google-only, unreachable with the shared seed password |
+| Google cannot self-register | An unknown Google address is refused 403 instead of being provisioned a `customer` account, governed by the same switch as password registration |
 
 ### 16.4 Known gaps
 
@@ -698,6 +700,14 @@ than a stub's guess.
   available, so `DO_SPACES_*` is unset and uploads land on the ephemeral service
   disk. The validator refuses a sandbox pointed at a production bucket, so this
   is a missing capability, not a leak. Needs a sandbox Spaces key.
+- **The sandbox OAuth client secret was pasted into a working session** and
+  should be rotated (Console → Credentials → the client → Add secret → update
+  `GOOGLE_CLIENT_SECRET` → delete the old one). Sandbox-only client, synthetic
+  data, so low severity — but free to fix.
+- **Production's exact OAuth client id is not pinned** in
+  `SANDBOX_FORBIDDEN_MARKERS`. Until it is, nothing in code stops a future
+  operator pasting the production client here; the project-number prefix is not
+  a usable discriminator (see `sandboxValidation.js`).
 - **No access control in front of the sandbox** beyond authentication. Cloudflare
   Access was the plan's proposal and `mktr.sg` is not on Cloudflare. Render IP
   allowlisting is the available equivalent if named-tester access is required.
