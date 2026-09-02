@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/node';
 import { scrubEvent, scrubBreadcrumb } from './sentryScrub.js';
+import { observabilityEnvironment } from './deployEnv.js';
 
 let initialized = false;
 
@@ -22,7 +23,10 @@ export function initSentry({ service = 'mktr-backend' } = {}) {
 
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
-    environment: process.env.NODE_ENV || 'development',
+    // Deployment identity, not NODE_ENV: the sandbox runs NODE_ENV=production on
+    // purpose, so NODE_ENV would file every sandbox event under production and
+    // page whoever owns the production alert route.
+    environment: observabilityEnvironment(),
     tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
     beforeSend: scrubEvent,
     beforeBreadcrumb: scrubBreadcrumb,

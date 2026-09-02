@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { publicHostFromRequest, cookieDomainForPublicHost } from './publicHost.js';
+import { sidCookieName, readSidCookie } from './attributionCookies.js';
 
 /**
  * ONE first-party session id (ads-centralisation §4.2), shared by the QR
@@ -31,7 +32,7 @@ export function mintSid() {
  * @param {{ cookies?: Record<string, string>, headers?: Record<string, unknown> }} req
  */
 export function resolveSid(req) {
-  return validSid(req.cookies?.sid) || validSid(req.headers?.['x-session-id']) || null;
+  return validSid(readSidCookie(req)) || validSid(req.headers?.['x-session-id']) || null;
 }
 
 /**
@@ -58,5 +59,5 @@ export function sidCookieOptions(req) {
  * @param {string} sid
  */
 export function setSidCookie(req, res, sid) {
-  res.cookie('sid', sid, sidCookieOptions(req));
+  res.cookie(sidCookieName(), sid, sidCookieOptions(req));
 }

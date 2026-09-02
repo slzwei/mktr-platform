@@ -5,6 +5,7 @@ import compression from 'compression';
 import pinoHttp from 'pino-http';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 
@@ -27,6 +28,8 @@ import { swaggerSpec } from './config/swagger.js';
 
 // Route auto-loader
 import { loadRoutes } from './routes/index.js';
+import { deployEnv, isSandbox } from './utils/deployEnv.js';
+import { allowedPublicHostsList } from './utils/publicHost.js';
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +47,17 @@ export const init = async (app) => {
       crossOriginResourcePolicy: false,
     })
   );
+
+  // Sandbox labelling (plan §6.4). Every response — API and SPA alike — carries
+  // a blanket noindex and names the deployment, so a leaked sandbox URL can
+  // never be indexed and any captured response is self-identifying.
+  if (isSandbox()) {
+    app.use((req, res, next) => {
+      res.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      res.set('X-Deploy-Env', 'sandbox');
+      next();
+    });
+  }
 
   app.use(
     compression({
@@ -69,16 +83,23 @@ export const init = async (app) => {
   // Always allow these origins + any from environment variables.
   // redeem.sg is the public-brand sibling static site (D7); both serve the
   // same SPA against the same backend.
-  const defaultOrigins = [
-    ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173']),
-    'https://mktr.sg',
-    'https://www.mktr.sg',
-    'https://redeem.sg',
-    'https://www.redeem.sg',
-    // Internal Redeem Ops surface (defence-in-depth: it proxies /api same-origin,
-    // so CORS rarely applies — docs/redeem-ops/RECOMMENDED_ARCHITECTURE.md §5).
-    'https://ops.redeem.sg',
-  ];
+  // Deployment-aware (docs/plans/mktr-production-sandbox.md §6.3): a sandbox
+  // gets ONLY its own exact origins. Inheriting the production list would let
+  // a page on mktr.sg make credentialed calls into the sandbox API.
+  const defaultOrigins = isSandbox()
+    ? allowedPublicHostsList()
+        .filter((host) => !['mktr.sg', 'www.mktr.sg', 'redeem.sg', 'www.redeem.sg', 'ops.redeem.sg'].includes(host))
+        .map((host) => `https://${host}`)
+    : [
+        ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173']),
+        'https://mktr.sg',
+        'https://www.mktr.sg',
+        'https://redeem.sg',
+        'https://www.redeem.sg',
+        // Internal Redeem Ops surface (defence-in-depth: it proxies /api same-origin,
+        // so CORS rarely applies — docs/redeem-ops/RECOMMENDED_ARCHITECTURE.md §5).
+        'https://ops.redeem.sg',
+      ];
   const envOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()) : [];
 
   const corsOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
@@ -194,7 +215,9 @@ export const init = async (app) => {
           req.originalUrl.startsWith('/api/integrations/lyfe/') ||
           req.originalUrl.startsWith('/api/external/') ||
           req.originalUrl.startsWith('/api/whatsapp/') ||
-          req.originalUrl.startsWith('/api/meta/webhook')
+          req.originalUrl.startsWith('/api/meta/webhook') ||
+          //   - /api/sandbox/       — the sandbox-only signed webhook sink (HMAC over the raw bytes)
+          req.originalUrl.startsWith('/api/sandbox/')
         ) {
           req.rawBody = buf;
         }
@@ -270,6 +293,15 @@ export const init = async (app) => {
     });
   });
 
+  // Sandbox policy snapshot — the evidence surface for the outbound guards.
+  // Caps, switch names and allowlist COUNTS only; never a destination or secret.
+  app.get('/health/sandbox', async (req, res) => {
+    if (!isSandbox()) return res.status(404).json({ success: false, message: 'Not a sandbox deployment.' });
+    const { policySnapshot } = await import('./services/outboundPolicy.js');
+    const { gatewaySnapshot } = await import('./services/dncGatewayClient.js');
+    res.status(200).json({ ...policySnapshot(), dncGateway: gatewaySnapshot() });
+  });
+
   // Per-adapter sync freshness — for uptime monitors / Sentry stale-sync alert
   app.get('/health/sync', async (req, res) => {
     try {
@@ -305,6 +337,30 @@ export const init = async (app) => {
     return res.redirect(302, `/api/qrcodes/track/${encodeURIComponent(req.params.slug)}`);
   });
 
+  // Sandbox SPA (plan §3): the sandbox serves its own frontend build from this
+  // same service, which makes `/api/*` genuinely same-origin — no static-site
+  // rewrite rule to drift, no cross-origin cookie question, and no way for a
+  // sandbox page to be pointed at the production API by a stale env var.
+  // Production is untouched: SANDBOX_SPA_DIR is only ever set on the sandbox.
+  if (isSandbox() && process.env.SANDBOX_SPA_DIR) {
+    const spaDir = path.resolve(process.env.SANDBOX_SPA_DIR);
+    const indexFile = path.join(spaDir, 'index.html');
+    if (fs.existsSync(indexFile)) {
+      app.use(express.static(spaDir, { index: false, maxAge: '1h', setHeaders: (res) => res.set('X-Robots-Tag', 'noindex, nofollow, noarchive') }));
+      // SPA fallback — every non-API GET renders the app shell. Kept last so it
+      // can never shadow an API route or the health endpoints.
+      app.get(/^\/(?!api\/|uploads\/|health).*/, (req, res, next) => {
+        if (req.method !== 'GET') return next();
+        res.set('Cache-Control', 'no-store');
+        res.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+        return res.sendFile(indexFile);
+      });
+      logger.info('[Sandbox] SPA served from this service', { spaDir });
+    } else {
+      logger.error('[Sandbox] SANDBOX_SPA_DIR is set but has no index.html — the SPA will 404', { spaDir });
+    }
+  }
+
   // Error handling middleware
   app.use(notFound);
   Sentry.setupExpressErrorHandler(app);
@@ -314,7 +370,7 @@ export const init = async (app) => {
   logger.info('Validating environment configuration...');
   await bootstrapDatabase();
   logger.info('Application Logic Ready');
-  logger.info('Environment configured', { env: process.env.NODE_ENV });
+  logger.info('Environment configured', { env: process.env.NODE_ENV, deployEnv: deployEnv() });
   logger.info('Monolith RPS config', {
     MANIFEST_RPS_PER_DEVICE: process.env.MANIFEST_RPS_PER_DEVICE || '2',
     BEACON_RPS_PER_DEVICE: process.env.BEACON_RPS_PER_DEVICE || '5',

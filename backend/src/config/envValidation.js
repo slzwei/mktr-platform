@@ -2,7 +2,18 @@
  * Validate that required environment variables are set in production.
  * Call once at startup — throws on missing required vars.
  */
+import { validateDeployment } from './sandboxValidation.js';
+
 export function validateEnv() {
+  // Deployment identity first (docs/plans/mktr-production-sandbox.md §4). The
+  // sandbox runs NODE_ENV=production on purpose, so this is the ONLY check that
+  // can tell the two deployments apart — and it must run before the production
+  // checks below, which would otherwise happily pass a sandbox pointed at a
+  // production resource.
+  for (const warning of validateDeployment()) {
+    console.warn(`\u26a0\ufe0f ${warning}`);
+  }
+
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) return;
 

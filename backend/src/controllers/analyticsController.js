@@ -3,6 +3,7 @@ import * as analyticsService from '../services/analyticsService.js';
 import * as prospectService from '../services/prospectService.js';
 import * as touchpointService from '../services/touchpointService.js';
 import { resolveSid, setSidCookie } from '../utils/sessionId.js';
+import { readSidCookie } from '../utils/attributionCookies.js';
 
 const allowedOrigins = new Set([
   'https://mktr.sg',
@@ -37,7 +38,7 @@ function assertAllowedOrigin(req) {
 }
 
 function getSessionId(req) {
-  const sid = req.cookies?.sid || req.headers['x-session-id'];
+  const sid = readSidCookie(req) || req.headers['x-session-id'];
   if (!sid) throw new AppError('Missing session', 400);
   return sid;
 }

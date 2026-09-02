@@ -9,13 +9,16 @@ import { queryClient } from '@/lib/queryClient'
 import { scrubEvent, scrubBreadcrumb } from '@/lib/sentryScrub'
 import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo'
 import { SPLASH_KEY, safeSessionGet, safeSessionSet, shouldSuppressSplash } from '@/lib/splash'
+import { observabilityEnvironment } from '@/lib/deployEnv'
 
 // Initialize Sentry
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN
 if (sentryDsn) {
  Sentry.init({
  dsn: sentryDsn,
- environment: import.meta.env.MODE,
+ // Deployment identity, not the Vite mode: a sandbox build IS mode
+ // 'production', so MODE would file every sandbox event under production.
+ environment: observabilityEnvironment(),
  tracesSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
  replaysSessionSampleRate: 0,
  replaysOnErrorSampleRate: import.meta.env.PROD ? 1.0 : 0,

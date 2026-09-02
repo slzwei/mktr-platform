@@ -3,6 +3,7 @@ import * as trackerService from '../services/trackerService.js';
 import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publicHost.js';
 import { frontendBaseForHost } from '../utils/frontendBase.js';
 import { SID_COOKIE_MAX_AGE_MS, validSid } from '../utils/sessionId.js';
+import { sidCookieName, atkCookieName, readSidCookie, readAtkCookie } from '../utils/attributionCookies.js';
 import { Campaign } from '../models/index.js';
 import { passesStaticGate } from '../services/marketplaceService.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
@@ -66,13 +67,13 @@ export const trackSlug = asyncHandler(async (req, res) => {
   // VALIDATED (§4.2): a malformed cookie is replaced with a fresh mint —
   // /touch and /prospects ignore invalid sids, so an attribution bound to a
   // garbage value could never converge with the session they key.
-  let sid = validSid(req.cookies?.sid);
+  let sid = validSid(readSidCookie(req));
   const isNewSid = !sid;
   if (isNewSid) sid = trackerService.generateSessionId();
 
   const { token, expiresAt } = await trackerService.createAttribution(qrTag, scan, sid);
 
-  res.cookie('atk', token, {
+  res.cookie(atkCookieName(), token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: isProd,
@@ -83,7 +84,7 @@ export const trackSlug = asyncHandler(async (req, res) => {
 
   if (isNewSid) {
     // 90d — the one session horizon (ads-centralisation §4.2).
-    res.cookie('sid', sid, {
+    res.cookie(sidCookieName(), sid, {
       httpOnly: true,
       sameSite: 'lax',
       secure: isProd,
@@ -102,6 +103,6 @@ export const trackSlug = asyncHandler(async (req, res) => {
 });
 
 export const getSession = asyncHandler(async (req, res) => {
-  const data = await trackerService.resolveSession(req.cookies?.sid, req.cookies?.atk);
+  const data = await trackerService.resolveSession(readSidCookie(req), readAtkCookie(req));
   return res.json({ success: true, data });
 });

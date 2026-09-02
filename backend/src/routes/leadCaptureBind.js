@@ -5,6 +5,7 @@ import { Attribution } from '../models/index.js';
 import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publicHost.js';
 import { frontendBaseForHost } from '../utils/frontendBase.js';
 import { SID_COOKIE_MAX_AGE_MS, validSid } from '../utils/sessionId.js';
+import { sidCookieName, readSidCookie, readAtkCookie } from '../utils/attributionCookies.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 if (isProd && !process.env.ATTRIB_SECRET) {
@@ -16,7 +17,7 @@ const router = express.Router();
 
 // Middleware to bind attribution from atk cookie and ensure sid cookie
 router.get('/lead-capture', asyncHandler(async (req, res, next) => {
-  const atk = req.cookies?.atk;
+  const atk = readAtkCookie(req);
   const isProdReq = process.env.NODE_ENV === 'production';
   const publicHost = publicHostFromRequest(req);
   const cookieDomain = isProdReq ? cookieDomainForPublicHost(publicHost) : undefined;
@@ -24,10 +25,10 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
   // A malformed cookie is replaced, not propagated: /touch and /prospects
   // validate both sid sources, so binding attribution to a garbage sid would
   // split the identity they converge on.
-  let sid = validSid(req.cookies?.sid);
+  let sid = validSid(readSidCookie(req));
   if (!sid) {
     sid = crypto.randomBytes(16).toString('hex');
-    res.cookie('sid', sid, {
+    res.cookie(sidCookieName(), sid, {
       httpOnly: true,
       sameSite: 'lax',
       secure: isProdReq,
