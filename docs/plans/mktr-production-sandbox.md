@@ -583,3 +583,117 @@ The sandbox is production-ready only when:
 ## 15. Review record
 
 Claude Code 2.1.252 performed a bounded read-only repository review on 2026-09-01 using only file read/search capabilities. Its verdict was **approve with changes**. No provider calls or repository mutations were permitted during the review. The material safety findings are incorporated into Sections 2, 4, 6, 8, 9, and 12 rather than retained as a separate appendix. Its UAT recommendation was explicitly rejected by subsequent product direction; the plan requires controlled production DNC checks.
+
+---
+
+## 16. Delivery record — 2026-09-02
+
+Branch `feat/production-sandbox`. Runbook: `docs/runbooks/mktr-sandbox.md`.
+
+| Commit | What it carries |
+|---|---|
+| `a9a6b8e8` | Deployment identity, fail-closed validation, outbound policy, shared DNC queue, host/cookie/SEO isolation, initializer, seeder, signed sink |
+| `6c47cfaa` | `DATABASE_URL` support, the sandbox boot wrapper, env documentation |
+| `da678a57` | Login-capable seed addresses, public-surface ledger entry, loopback gateway URLs |
+
+### 16.1 Resources created
+
+| Resource | Id | Notes |
+|---|---|---|
+| `mktr-sandbox-api` | `srv-dac04mifngtc73fgj5e0` | Web service, singapore, starter, **auto-deploy off**. Serves the API and the sandbox SPA. `https://mktr-sandbox-api.onrender.com` |
+| `mktr-sandbox-db` | `dpg-dac02uv40ujc73ajhn2g-a` | Postgres 17, basic_256mb, singapore, 1 GB |
+| `mktr-dnc-gateway` | `srv-dac04fbtqb8s73dov420` | Web service, singapore, starter, **auto-deploy off**. `https://mktr-dnc-gateway.onrender.com` |
+| `mktr-dnc-gateway-db` | `dpg-dac030740ujc73ajhqd0-a` | Postgres 17, basic_256mb, singapore, 1 GB |
+
+Nothing existing was renamed, deleted or reconfigured. Production
+(`mktr-backend-jo6r`, `mktr-platform`, `redeem-frontend`, `redeem-ops-frontend`,
+`mktr-db`) is untouched — no env var of any production service was read or
+written during this work.
+
+Recurring cost of the four new resources: roughly **USD 26/month**.
+
+### 16.2 What is blocked, and on exactly what
+
+Every remaining item needs a value that the Render API does not expose or a DNS
+zone this session cannot reach. In dashboard order:
+
+1. **`mktr-sandbox-api` → Environment → `DATABASE_URL`** = the *Internal Database
+   URL* from `mktr-sandbox-db`. Unblocks: the service booting, `sandbox:init-db`,
+   `sandbox:seed`, and every acceptance item that needs the deployed sandbox.
+2. **`mktr-dnc-gateway` → Environment → `DNC_GATEWAY_DATABASE_URL`** = the
+   *Internal Database URL* from `mktr-dnc-gateway-db`. Unblocks the queue.
+3. **`mktr-dnc-gateway` → Environment** ← copy `DNC_ORG_CODE`, `DNC_ESERVICE_ID`,
+   `DNC_PRIVATE_KEY`, `DNC_HTTPS_PROXY` from `mktr-backend-jo6r`, and set
+   `DNC_GATEWAY_TOKEN_PRODUCTION` to a freshly generated secret. Put that same
+   secret on `mktr-backend-jo6r` as `DNC_GATEWAY_TOKEN`, with
+   `DNC_GATEWAY_URL=https://mktr-dnc-gateway.onrender.com`. Unblocks the
+   production cutover (runbook §3) and therefore the live DNC check.
+4. **DNS at mschosting.com** — two CNAMEs, after adding both domains to
+   `mktr-sandbox-api` in Render:
+   `sandbox` → `mktr-sandbox-api.onrender.com`,
+   `api.sandbox` → `mktr-sandbox-api.onrender.com`.
+   Unblocks `https://sandbox.mktr.sg`. `mktr.sg` is **not** on Cloudflare (only
+   `redeem.sg` is), which is also why Cloudflare Access is not the access-control
+   answer here.
+5. **`mktr-sandbox-api` → `SNS_AWS_ACCESS_KEY_ID` / `SNS_AWS_SECRET_ACCESS_KEY`**
+   — only for the one live OTP test to `+6596989089`. Preferably a new IAM
+   principal scoped to `sns:Publish`, so sandbox spend is separable from
+   production's on the shared AWS account.
+
+Two secrets were generated inside the working session and must be rotated in the
+dashboard once the above is done: `DNC_GATEWAY_TOKEN_SANDBOX` (on the gateway,
+mirrored as `DNC_GATEWAY_TOKEN` on the sandbox) and `SANDBOX_SEED_PASSWORD`. The
+PDPC credential was never handled here — that is why item 3 is a manual copy.
+
+### 16.3 Verified, with evidence
+
+Run against a real PostgreSQL 17 and a PDPC stand-in that **verifies the RSA
+signature with the public key**, so a pass proves the real wire format rather
+than a stub's guess.
+
+| Acceptance area | Evidence |
+|---|---|
+| Blank-database initialization | Empty database → baseline + 18 post-baseline migrations → 96 tables |
+| Initialization idempotency | Second run: `already_initialized`, schema untouched |
+| Initialization refusals | Non-empty foreign database, missing flag, `DEPLOY_ENV≠sandbox`, and a production `DB_HOST` are each refused by name |
+| Seed idempotency | Second run: 0 created / 18 updated, identical UUIDs |
+| Seed refusals | Missing flag and missing password both refuse |
+| Seeded roles log in | `sandbox.admin@sandbox.example.com` → 200 |
+| Cookie isolation | `mktr_token`, `HttpOnly; Secure; SameSite=Strict`, **no `Domain`** → host-only |
+| Attribution cookie isolation | Sandbox reads `sbx_sid`/`sbx_atk`; a production `sid` on `.mktr.sg` is invisible to it |
+| Permission boundaries | `/api/users`: admin 200, analyst/agent/customer 403, anonymous 401. `/api/redeem-ops/partners`: ops roles 200, agent/customer 403. Sink admin endpoints: admin 200, analyst 403 |
+| Self-registration | `POST /api/auth/register` → 403 |
+| Sandbox labelling | `X-Deploy-Env: sandbox` and `X-Robots-Tag: noindex, nofollow, noarchive` on every response; `<title>SANDBOX — …`; `<meta name="robots" content="noindex, nofollow, noarchive">`; `robots.txt` = `Disallow: /`; no sitemap; persistent banner in the bundle |
+| Build-time contamination guards | A production Meta pixel id, a cross-origin `VITE_API_URL`, and an unknown `VITE_DEPLOY_ENV` each fail the build |
+| **OTP negative** | Rail armed. `91234567` → 403 `not_allowlisted`; `80000201` (fixed-OTP seed) → 403 `blocked_destination`. **No provider request, no credential use, no counter write** |
+| **OTP positive path** | `96989089` → passes the gate, budget `1/3 · 1/10 · 1/50`, then fails inside the AWS SDK for want of credentials — proving the request reaches the provider only for an allowlisted number |
+| **DNC negative** | Through the real service: `+6591234567` → held `not_allowlisted`; `+6580000201` → held `blocked_destination`. Neither reached the queue |
+| **DNC positive** | `+6596989089` → submitted to the queue → signed → `S000` → recorded `clear` with a validity date |
+| Fail closed | Gateway unavailable, still-queued, unauthorized, and policy refusal all leave the lead `pending` (held), never `clear` |
+| Gateway authentication | No token 401, wrong token 401; the source comes from the token, never the body |
+| Gateway second enforcement | A sandbox-token request for a non-allowlisted number is blocked in the gateway itself |
+| **Production priority** | Three sandbox items queued 50–60 s earlier were all overtaken by two production items queued 1–5 s earlier. Send order: production, production, sandbox, sandbox |
+| Ordered timestamps | Every PDPC call carried a strictly increasing timestamp, monotonic **across a gateway restart** (persisted in `dnc_gateway_clock`) |
+| Idempotent replay | A repeated idempotency key returned the first answer and made no second PDPC call |
+| Durable caps | The per-number daily cap fired at exactly 3 **across a restart**; production is never capped |
+| Webhook sink | Valid v2 200, legacy v1 200, duplicate delivery id flagged, forged signature 401, absent signature 401, 10-minute-old timestamp 401 |
+| Background jobs | Agent sync off (enforced), default Retell campaign suppressed, ads/AI/payments/Retell dark |
+| Tests | Backend unit 2568 → **2640 passing** (72 new). Lint and `typecheck` clean |
+
+### 16.4 Known gaps
+
+- **Object storage is not isolated yet** — no DigitalOcean Spaces credential was
+  available, so `DO_SPACES_*` is unset and uploads land on the ephemeral service
+  disk. The validator refuses a sandbox pointed at a production bucket, so this
+  is a missing capability, not a leak. Needs a sandbox Spaces key.
+- **No access control in front of the sandbox** beyond authentication. Cloudflare
+  Access was the plan's proposal and `mktr.sg` is not on Cloudflare. Render IP
+  allowlisting is the available equivalent if named-tester access is required.
+- **Frontend test suite** shows 78 failures under heavy parallel load; they are
+  timeouts (`Test timed out in 5000ms`), not assertion failures, and need a
+  clean re-run on an idle machine to be classified.
+- **Single gateway instance.** The queue is designed for redundant intake
+  (`FOR UPDATE SKIP LOCKED` + leases); only one instance is deployed. Raising
+  `numInstances` is safe when volume justifies it.
+- **Soak and G5/G6 sign-off** have not happened. This is Gate G4 complete on the
+  code, with deployment blocked on §16.2.
