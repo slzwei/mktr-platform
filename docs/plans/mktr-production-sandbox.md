@@ -1,6 +1,6 @@
 # MKTR production-behavior sandbox
 
-**Status:** IMPLEMENTED — safety code, initializer, seeder and infrastructure built and deployed dark. Blocked on four dashboard actions before the vanity host and the two live-rail tests (see §16).
+**Status:** DEPLOYED AND RUNNING at `https://mktr-sandbox-api.onrender.com` — initialized, seeded and verified with every rail dark. Remaining: the two DNS records for the vanity host, the DNC credential copy, and SNS keys for the live OTP test (see §16.2).
 **Date:** 2026-09-02 (implemented same day)
 **Owner:** Shawn Lee
 **Review verdict:** Approve with changes
@@ -617,9 +617,13 @@ Recurring cost of the four new resources: roughly **USD 26/month**.
 Every remaining item needs a value that the Render API does not expose or a DNS
 zone this session cannot reach. In dashboard order:
 
-1. **`mktr-sandbox-api` → Environment → `DATABASE_URL`** = the *Internal Database
-   URL* from `mktr-sandbox-db`. Unblocks: the service booting, `sandbox:init-db`,
-   `sandbox:seed`, and every acceptance item that needs the deployed sandbox.
+1. ~~**`mktr-sandbox-api` → `DATABASE_URL`**~~ — **DONE 2026-09-02 14:08 UTC.**
+   The database initialized (96 tables) and seeded (10 users, 3 campaigns, 2
+   package rows, 5 prospects) on first boot, and the flags were switched back
+   off. Doing this surfaced a real defect: `validateEnv()` still demanded the
+   four discrete `DB_*` variables while `connection.js` accepted `DATABASE_URL`,
+   so the database came up fully seeded and the API still refused to boot. Fixed
+   in `2409a72f` with three regression tests.
 2. **`mktr-dnc-gateway` → Environment → `DNC_GATEWAY_DATABASE_URL`** = the
    *Internal Database URL* from `mktr-dnc-gateway-db`. Unblocks the queue.
 3. **`mktr-dnc-gateway` → Environment** ← copy `DNC_ORG_CODE`, `DNC_ESERVICE_ID`,
@@ -679,7 +683,14 @@ than a stub's guess.
 | Webhook sink | Valid v2 200, legacy v1 200, duplicate delivery id flagged, forged signature 401, absent signature 401, 10-minute-old timestamp 401 |
 | Background jobs | Agent sync off (enforced), default Retell campaign suppressed, ads/AI/payments/Retell dark |
 | Tests | Backend unit 2568 → **2640 passing** (72 new). Backend integration 2870 passing. Frontend 2034 passing. Counts identical to `origin/main` on both suites — **zero failures introduced**. `eslint` and `typecheck` clean |
-| Deployed services fail closed | Both services are live and both refuse to operate without their database: the sandbox API's shell answers `/health` while the app logic declines to load (`DB_HOST (or DATABASE_URL) is required`), and the gateway exits rather than start uncredentialed. The boot wrapper correctly skipped initialization and seeding with their flags off |
+| Deployed services fail closed | The gateway still exits rather than start uncredentialed. Before its database was wired, the sandbox API did the same and served a boot-status page naming the missing variable |
+| **Deployed sandbox — live evidence** | `https://mktr-sandbox-api.onrender.com` serves the SPA: `<title>SANDBOX — …`, `<meta name="robots" content="noindex, nofollow, noarchive">`, `X-Deploy-Env: sandbox`, `X-Robots-Tag: noindex, nofollow, noarchive`, `robots.txt` = `Disallow: /` |
+| Deployed init + seed | First boot: blank database → baseline → migrations → 96 tables; seed created 10 users / 3 campaigns / 2 package rows / 5 prospects; both flags then switched back off |
+| Deployed negative tests | OTP to `91234567`, `80000201` **and** `96989089` all 403 with the rails dark — the kill switch alone stops every send |
+| Deployed permission boundaries | `/api/users`: admin 200, analyst/agent/customer 403, anonymous 401. `/api/redeem-ops/partners`: super and analyst 200, agent 403. Seeded campaigns visible to admin |
+| Deployed cookie isolation | `mktr_token; HttpOnly; Secure; SameSite=Strict` with **no `Domain`** |
+| Deployed sink | Valid signature 200, duplicate delivery id flagged, forged signature 401, stale timestamp 401 |
+| Deployed self-registration | `POST /api/auth/register` → 403 |
 
 ### 16.4 Known gaps
 
