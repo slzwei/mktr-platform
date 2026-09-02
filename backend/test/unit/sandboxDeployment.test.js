@@ -87,20 +87,26 @@ describe('validateDeployment — refusals', () => {
   test('the production Meta pixel copied into the environment', () =>
     refuses({ META_PIXEL_ID: '1402034528611431' }, /production resources/));
 
-  test('the production Google OAuth client copied into the environment', () =>
-    refuses(
-      { GOOGLE_CLIENT_ID: '917664265015-abc123.apps.googleusercontent.com' },
-      /production resources/,
-    ));
-
-  test('a SEPARATE Google client is accepted', async () => {
+  // A client id carries the PROJECT number, not the client's identity, so a
+  // sandbox-only client legitimately shares production's prefix. The guard must
+  // accept it; only an exact operator-pinned id is refused.
+  test('a separate Google client in the same project is accepted', async () => {
     const { validation } = await load({
       ...GOOD_SANDBOX,
-      GOOGLE_CLIENT_ID: '123456789012-sandboxclient.apps.googleusercontent.com',
+      GOOGLE_CLIENT_ID: '917664265015-sandboxclient.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'secret',
     });
     expect(() => validation.validateDeployment()).not.toThrow();
   });
+
+  test("production's exact client id is refused once pinned", () =>
+    refuses(
+      {
+        GOOGLE_CLIENT_ID: '917664265015-productionclient.apps.googleusercontent.com',
+        SANDBOX_FORBIDDEN_MARKERS: '917664265015-productionclient',
+      },
+      /production resources/,
+    ));
 
   test('the PDPC production endpoint configured directly', () =>
     refuses({ DNC_BASE_URL: 'https://www.dnc.gov.sg/realtime' }, /production/));

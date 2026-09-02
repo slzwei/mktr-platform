@@ -30,10 +30,17 @@ const PRODUCTION_MARKERS = [
   ['D8GJ6T3C77UDLID6746G', 'production TikTok pixel'],
   ['52506028688033', 'production Meta redeemed-audience'],
   ['www.dnc.gov.sg', 'PDPC production endpoint (sandbox must use the shared DNC queue)'],
-  // The production OAuth client's authorised redirect URIs point at production.
-  // Reusing it here would both widen that client's surface and let a sandbox
-  // token be minted against production's audience.
-  ['917664265015-', 'production Google OAuth client'],
+  // NOTE: there is deliberately no built-in marker for the Google OAuth client.
+  // A client id is `<project-number>-<random>.apps.googleusercontent.com`, so
+  // every client in a project shares the project-number prefix — including a
+  // correctly created sandbox-only client. Matching the prefix would refuse the
+  // RIGHT configuration, which is worse than not checking: a guard that fires on
+  // the correct answer teaches people to work around it.
+  //
+  // The property that matters (separate client ⇒ separate secret, separate
+  // audience, separate redirect URIs) is not derivable from the id string. Pin
+  // production's EXACT client id in SANDBOX_FORBIDDEN_MARKERS to make it
+  // enforceable; runbook §3.1 explains why a separate client is required.
 ];
 
 /**

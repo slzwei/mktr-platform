@@ -102,9 +102,22 @@ why step 6 waits.
 
 Off by default. Two things make it safe to turn on:
 
-- The sandbox refuses to boot if it is given the **production** OAuth client
-  (`917664265015-…`) — that client's redirect URIs point at production, and
-  reusing it would widen its surface.
+- Google may LINK to an existing sandbox account but never CREATE one, so a
+  separate client cannot become a way in for anyone who is not seeded.
+
+A client id is `<project-number>-<random>`, so a sandbox client in the same
+Google Cloud project shares production's prefix — the prefix proves nothing, and
+the validator deliberately does not match on it. To make "not the production
+client" enforceable, pin production's EXACT id:
+`SANDBOX_FORBIDDEN_MARKERS=<production client id>` on `mktr-sandbox-api`. The
+reason a separate client is required at all:
+
+- **Shared audience.** ID tokens are verified with `audience: GOOGLE_CLIENT_ID`,
+  so one client means a token minted for production is accepted by the sandbox
+  and vice versa.
+- **Shared secret.** A sandbox compromise would leak production's OAuth secret.
+- **Widened redirect URIs.** Adding the sandbox callback to production's client
+  extends what production's credential will redirect to.
 - Google may LINK to an existing sandbox account but never CREATE one. Password
   self-registration is closed here, so an open Google flow would have been the
   same hole through a different door.
