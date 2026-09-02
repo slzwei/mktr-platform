@@ -3,8 +3,35 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-if (!process.env.DB_HOST) {
-  throw new Error('DB_HOST is required. Run "docker compose up -d" for local PostgreSQL.');
+/**
+ * A managed provider hands you ONE connection string. Accepting `DATABASE_URL`
+ * (Render's "Internal Database URL") means a new deployment is wired by pasting
+ * a single value instead of transcribing four, which is one place fewer for a
+ * sandbox to end up pointed at the wrong database by a typo. The discrete
+ * DB_* variables still win when they are set, so production is unchanged.
+ */
+function fromDatabaseUrl() {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return {
+      host: url.hostname,
+      port: url.port ? Number(url.port) : 5432,
+      database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+      username: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+      sslmode: url.searchParams.get('sslmode'),
+    };
+  } catch {
+    throw new Error('DATABASE_URL is set but is not a valid postgres:// URL.');
+  }
+}
+
+const urlConfig = fromDatabaseUrl();
+
+if (!process.env.DB_HOST && !urlConfig) {
+  throw new Error('DB_HOST (or DATABASE_URL) is required. Run "docker compose up -d" for local PostgreSQL.');
 }
 
 const shouldUseSSL = (() => {
@@ -17,11 +44,11 @@ const shouldUseSSL = (() => {
 
 const config = {
   dialect: 'postgres',
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT || 5432),
-  database: process.env.DB_NAME,
-  username: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST || urlConfig?.host,
+  port: Number(process.env.DB_PORT || urlConfig?.port || 5432),
+  database: process.env.DB_NAME || urlConfig?.database,
+  username: process.env.DB_USER || urlConfig?.username,
+  password: process.env.DB_PASSWORD ?? urlConfig?.password,
   logging: false,
   define: {
     timestamps: true,

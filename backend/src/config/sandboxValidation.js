@@ -201,7 +201,9 @@ export function validateDeployment() {
   }
 
   // 2. Database must be the isolated sandbox instance.
-  if (!process.env.DB_HOST) failures.push('DB_HOST is required');
+  if (!process.env.DB_HOST && !process.env.DATABASE_URL) {
+    failures.push('DB_HOST (or DATABASE_URL) is required');
+  }
 
   // 3. Nothing may resolve to a production resource.
   const hits = collectMarkerHits();
