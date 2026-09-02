@@ -193,3 +193,49 @@ describe('hosts and cookies', () => {
     expect(prod.cookies.readSidCookie({ cookies: { sid: 'production-session' } })).toBe('production-session');
   });
 });
+
+describe('database configuration accepts either shape', () => {
+  const load = async (env) => {
+    jest.resetModules();
+    process.env = { ...ORIGINAL_ENV, ...env };
+    return import('../../src/config/envValidation.js');
+  };
+
+  // Regression: connection.js accepts DATABASE_URL, validateEnv did not. A
+  // sandbox wired with only a connection string initialized and seeded its
+  // database and then refused to boot the API on "Missing required environment
+  // variables: DB_HOST, …".
+  test('a connection string alone satisfies the production check', async () => {
+    const { validateEnv } = await load({
+      NODE_ENV: 'production',
+      DEPLOY_ENV: 'production',
+      JWT_SECRET: 'x',
+      DB_HOST: '', DB_NAME: '', DB_USER: '', DB_PASSWORD: '',
+      DATABASE_URL: 'postgresql://user:pw@dpg-example-a/db',
+    });
+    expect(() => validateEnv()).not.toThrow();
+  });
+
+  test('the discrete variables alone still satisfy it', async () => {
+    const { validateEnv } = await load({
+      NODE_ENV: 'production',
+      DEPLOY_ENV: 'production',
+      JWT_SECRET: 'x',
+      DB_HOST: 'db.internal', DB_NAME: 'n', DB_USER: 'u', DB_PASSWORD: 'p',
+      DATABASE_URL: '',
+    });
+    expect(() => validateEnv()).not.toThrow();
+  });
+
+  test('neither shape present refuses to boot at all', async () => {
+    // connection.js throws during MODULE EVALUATION, so the refusal happens on
+    // import rather than on the call — which is why a database-less deploy never
+    // mounts a single route. The shell renders the boot-status page instead.
+    await expect(load({
+      NODE_ENV: 'production',
+      DEPLOY_ENV: 'production',
+      JWT_SECRET: 'x',
+      DB_HOST: '', DB_NAME: '', DB_USER: '', DB_PASSWORD: '', DATABASE_URL: '',
+    })).rejects.toThrow(/DB_HOST \(or DATABASE_URL\) is required/);
+  });
+});

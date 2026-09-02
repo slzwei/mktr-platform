@@ -19,11 +19,19 @@ export function validateEnv() {
 
   const required = [
     'JWT_SECRET',
-    'DB_HOST',
-    'DB_NAME',
-    'DB_USER',
-    'DB_PASSWORD',
   ];
+
+  // The database can be described either way: a managed provider hands you ONE
+  // connection string (Render's Internal Database URL), while the discrete
+  // variables remain how production is configured. connection.js accepts both
+  // and prefers DB_*, so this check has to agree with it — demanding all four
+  // DB_* even when DATABASE_URL is present is how the sandbox came up with a
+  // fully initialized, fully seeded database and still refused to boot.
+  const dbVars = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
+  const missingDbVars = dbVars.filter((key) => !process.env[key]);
+  if (missingDbVars.length > 0 && !process.env.DATABASE_URL) {
+    required.push(...dbVars);
+  }
 
   const recommended = [
     'CORS_ORIGIN',
