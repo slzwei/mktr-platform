@@ -678,7 +678,8 @@ than a stub's guess.
 | Durable caps | The per-number daily cap fired at exactly 3 **across a restart**; production is never capped |
 | Webhook sink | Valid v2 200, legacy v1 200, duplicate delivery id flagged, forged signature 401, absent signature 401, 10-minute-old timestamp 401 |
 | Background jobs | Agent sync off (enforced), default Retell campaign suppressed, ads/AI/payments/Retell dark |
-| Tests | Backend unit 2568 → **2640 passing** (72 new). Lint and `typecheck` clean |
+| Tests | Backend unit 2568 → **2640 passing** (72 new). Backend integration 2870 passing. Frontend 2034 passing. Counts identical to `origin/main` on both suites — **zero failures introduced**. `eslint` and `typecheck` clean |
+| Deployed services fail closed | Both services are live and both refuse to operate without their database: the sandbox API's shell answers `/health` while the app logic declines to load (`DB_HOST (or DATABASE_URL) is required`), and the gateway exits rather than start uncredentialed. The boot wrapper correctly skipped initialization and seeding with their flags off |
 
 ### 16.4 Known gaps
 
@@ -689,9 +690,12 @@ than a stub's guess.
 - **No access control in front of the sandbox** beyond authentication. Cloudflare
   Access was the plan's proposal and `mktr.sg` is not on Cloudflare. Render IP
   allowlisting is the available equivalent if named-tester access is required.
-- **Frontend test suite** shows 78 failures under heavy parallel load; they are
-  timeouts (`Test timed out in 5000ms`), not assertion failures, and need a
-  clean re-run on an idle machine to be classified.
+- **Two pre-existing red suites, neither introduced here.** Verified by running
+  the same suites at `origin/main` (`7d62208d`): backend
+  `test/marketplaceService.test.js` fails 2 tests on both, and the frontend suite
+  fails 16 tests on both (2034 passing, identical counts). An earlier run showing
+  78 frontend failures was machine load — every one of those was
+  `Test timed out in 5000ms`, and they vanish on an idle re-run.
 - **Single gateway instance.** The queue is designed for redundant intake
   (`FOR UPDATE SKIP LOCKED` + leases); only one instance is deployed. Raising
   `numInstances` is safe when volume justifies it.
