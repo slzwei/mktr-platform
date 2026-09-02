@@ -25,6 +25,12 @@ dotenv.config();
  *
  * Identity is by stable natural key, so re-running updates in place: a second run
  * creates no duplicates and preserves every id.
+ *
+ * Addresses use `sandbox.example.com`: `example.com` is IANA-reserved, cannot be
+ * registered and publishes no MX, so mail to it is undeliverable by construction
+ * — while still being a syntactically valid address the login form accepts. A
+ * `.invalid` address is safer on paper and unusable in practice, because it
+ * fails the request validator and no seeded user could ever sign in.
  */
 
 const NAMESPACE = 'mktr-sandbox-v1';
@@ -44,16 +50,16 @@ export function stableUuid(key) {
  * boundary acceptance needs, each on its own fixed-OTP number.
  */
 export const SEED_USERS = [
-  { key: 'admin', phone: '+6580000201', email: 'sandbox.admin@example.invalid', firstName: 'Sandbox', lastName: 'Admin', role: 'admin', redeemOpsRole: null },
-  { key: 'agent', phone: '+6580000202', email: 'sandbox.agent@example.invalid', firstName: 'Sandbox', lastName: 'Agent', role: 'agent', redeemOpsRole: null },
-  { key: 'ops-super', phone: '+6580000203', email: 'sandbox.ops.super@example.invalid', firstName: 'Sandbox', lastName: 'OpsSuper', role: 'redeem_ops', redeemOpsRole: 'super_admin' },
-  { key: 'ops-admin', phone: '+6580000204', email: 'sandbox.ops.admin@example.invalid', firstName: 'Sandbox', lastName: 'OpsAdmin', role: 'redeem_ops', redeemOpsRole: 'ops_admin' },
-  { key: 'ops-bdm', phone: '+6580000205', email: 'sandbox.ops.bdm@example.invalid', firstName: 'Sandbox', lastName: 'Bdm', role: 'redeem_ops', redeemOpsRole: 'bdm' },
-  { key: 'ops-outreach', phone: '+6580000206', email: 'sandbox.ops.outreach@example.invalid', firstName: 'Sandbox', lastName: 'Outreach', role: 'redeem_ops', redeemOpsRole: 'outreach_exec' },
-  { key: 'ops-campaign', phone: '+6580000207', email: 'sandbox.ops.campaign@example.invalid', firstName: 'Sandbox', lastName: 'CampaignOps', role: 'redeem_ops', redeemOpsRole: 'campaign_ops' },
-  { key: 'ops-redemption', phone: '+6580000208', email: 'sandbox.ops.redemption@example.invalid', firstName: 'Sandbox', lastName: 'RedemptionOps', role: 'redeem_ops', redeemOpsRole: 'redemption_ops' },
-  { key: 'ops-analyst', phone: '+6580000209', email: 'sandbox.ops.analyst@example.invalid', firstName: 'Sandbox', lastName: 'Analyst', role: 'redeem_ops', redeemOpsRole: 'analyst' },
-  { key: 'consumer', phone: '+6580000210', email: 'sandbox.consumer@example.invalid', firstName: 'Sandbox', lastName: 'Consumer', role: 'customer', redeemOpsRole: null },
+  { key: 'admin', phone: '+6580000201', email: 'sandbox.admin@sandbox.example.com', firstName: 'Sandbox', lastName: 'Admin', role: 'admin', redeemOpsRole: null },
+  { key: 'agent', phone: '+6580000202', email: 'sandbox.agent@sandbox.example.com', firstName: 'Sandbox', lastName: 'Agent', role: 'agent', redeemOpsRole: null },
+  { key: 'ops-super', phone: '+6580000203', email: 'sandbox.ops.super@sandbox.example.com', firstName: 'Sandbox', lastName: 'OpsSuper', role: 'redeem_ops', redeemOpsRole: 'super_admin' },
+  { key: 'ops-admin', phone: '+6580000204', email: 'sandbox.ops.admin@sandbox.example.com', firstName: 'Sandbox', lastName: 'OpsAdmin', role: 'redeem_ops', redeemOpsRole: 'ops_admin' },
+  { key: 'ops-bdm', phone: '+6580000205', email: 'sandbox.ops.bdm@sandbox.example.com', firstName: 'Sandbox', lastName: 'Bdm', role: 'redeem_ops', redeemOpsRole: 'bdm' },
+  { key: 'ops-outreach', phone: '+6580000206', email: 'sandbox.ops.outreach@sandbox.example.com', firstName: 'Sandbox', lastName: 'Outreach', role: 'redeem_ops', redeemOpsRole: 'outreach_exec' },
+  { key: 'ops-campaign', phone: '+6580000207', email: 'sandbox.ops.campaign@sandbox.example.com', firstName: 'Sandbox', lastName: 'CampaignOps', role: 'redeem_ops', redeemOpsRole: 'campaign_ops' },
+  { key: 'ops-redemption', phone: '+6580000208', email: 'sandbox.ops.redemption@sandbox.example.com', firstName: 'Sandbox', lastName: 'RedemptionOps', role: 'redeem_ops', redeemOpsRole: 'redemption_ops' },
+  { key: 'ops-analyst', phone: '+6580000209', email: 'sandbox.ops.analyst@sandbox.example.com', firstName: 'Sandbox', lastName: 'Analyst', role: 'redeem_ops', redeemOpsRole: 'analyst' },
+  { key: 'consumer', phone: '+6580000210', email: 'sandbox.consumer@sandbox.example.com', firstName: 'Sandbox', lastName: 'Consumer', role: 'customer', redeemOpsRole: null },
 ];
 
 const SEED_CAMPAIGNS = [
@@ -224,7 +230,7 @@ export async function seedSandbox({ log = console } = {}) {
     const { created } = await upsert(Prospect, id, {
       firstName: spec.firstName,
       lastName: spec.lastName,
-      email: `sandbox.lead.${spec.key}@example.invalid`,
+      email: `sandbox.lead.${spec.key}@sandbox.example.com`,
       phone: spec.phone,
       leadSource: 'website',
       leadStatus: spec.leadStatus,

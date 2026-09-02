@@ -1,9 +1,10 @@
 # MKTR production-behavior sandbox
 
-**Status:** Draft — repository review complete; Claude review and product decisions folded in
-**Date:** 2026-09-02
-**Owner:** TBD
+**Status:** IMPLEMENTED — safety code, initializer, seeder and infrastructure built and deployed dark. Blocked on four dashboard actions before the vanity host and the two live-rail tests (see §16).
+**Date:** 2026-09-02 (implemented same day)
+**Owner:** Shawn Lee
 **Review verdict:** Approve with changes
+**Branch:** `feat/production-sandbox` · **Runbook:** `docs/runbooks/mktr-sandbox.md`
 **Target:** A production-mode MKTR admin sandbox containing only seeded synthetic data, with controlled real OTP and DNC verification available for approved test identities.
 **Planned address (not yet deployed):** `https://sandbox.mktr.sg` (`/api/*` will route to `https://api.sandbox.mktr.sg`)
 
@@ -394,45 +395,50 @@ It does not validate Lyfe agent lookup, receiver-side idempotency, or receiver-s
 
 ### Phase 1 — Safety code
 
-- [ ] Add `DEPLOY_ENV` and frontend deployment identity plumbing.
-- [ ] Add fail-closed startup validation.
-- [ ] Add the shared outbound destination and durable-budget guard.
-- [ ] Add live-rail kill switches.
-- [ ] Build the shared DNC queue, move production onto it, and prove production priority before admitting sandbox traffic.
-- [ ] Disable sandbox self-registration and production OAuth defaults.
-- [ ] Disable or gate background integrations.
-- [ ] Separate Sentry environment handling.
-- [ ] Add unit and integration tests for every negative path.
+- [x] Add `DEPLOY_ENV` and frontend deployment identity plumbing. — `backend/src/utils/deployEnv.js`, `src/lib/deployEnv.js`
+- [x] Add fail-closed startup validation. — `backend/src/config/sandboxValidation.js`, called first from `validateEnv()`
+- [x] Add the shared outbound destination and durable-budget guard. — `backend/src/services/outboundPolicy.js` on `rate_counters`
+- [x] Add live-rail kill switches. — `SANDBOX_LIVE_{OTP,DNC,EMAIL}_ENABLED`, effective on restart without a deploy
+- [x] Build the shared DNC queue. — `backend/src/dncGateway/`, deployed as `mktr-dnc-gateway`
+- [ ] Move production onto it and prove production priority before admitting sandbox traffic. — **blocked on the credential copy (§16.2)**
+- [x] Disable sandbox self-registration and production OAuth defaults. — `POST /api/auth/register` 403s in a sandbox; no `GOOGLE_CLIENT_ID` is set
+- [x] Disable or gate background integrations. — `SYNC_AGENT_CRON=false` enforced by the validator; the default Retell campaign is opt-in
+- [x] Separate Sentry environment handling. — both SDKs now use the deployment identity, not `NODE_ENV`/`MODE`
+- [x] Add unit and integration tests for every negative path. — 72 new tests, full unit suite green (2640 passing)
 
 **Gate G1:** CI proves non-allowlisted destinations cannot reach provider adapters. No live credentials exist in sandbox.
 
 ### Phase 2 — Database initialization and seeding
 
-- [ ] Implement `sandbox:init-db` with blank-database and advisory-lock guards.
-- [ ] Implement `sandbox:seed` with deterministic, idempotent fixtures.
-- [ ] Add seeded role, campaign, lead, package, credit, and subscriber coverage.
-- [ ] Test initialization refusal against a non-empty database.
-- [ ] Test seed refusal outside sandbox.
+- [x] Implement `sandbox:init-db` with blank-database and advisory-lock guards. — `backend/src/database/sandboxInit.js`
+- [x] Implement `sandbox:seed` with deterministic, idempotent fixtures. — `backend/src/database/sandboxSeed.js`
+- [x] Add seeded role, campaign, lead, package, credit, and subscriber coverage. — 10 users / 3 campaigns / 5 lead states / package + credits; the sink subscriber is registered at boot
+- [x] Test initialization refusal against a non-empty database. — proven against a real Postgres (§16.3) and in CI
+- [x] Test seed refusal outside sandbox. — proven both ways (§16.3)
 
 **Gate G2:** A new database can be initialized and seeded twice with no duplicates or destructive action.
 
 ### Phase 3 — Host and frontend isolation
 
-- [ ] Configure `sandbox.mktr.sg`, same-origin `/api/*`, and the `api.sandbox.mktr.sg` origin.
-- [ ] Add `sbx_sid`/`sbx_atk`, host-only auth cookies, and production-visit regression tests.
-- [ ] Make CORS and the public-host guard sandbox-aware.
-- [ ] Add access protection, banner, noindex, and sandbox canonical behavior.
-- [ ] Verify copied links, QR codes, redirects, and callbacks.
+- [x] Same-origin `/api/*`. — the sandbox API serves its own SPA build, so this holds by construction (see runbook §1)
+- [ ] Configure the `sandbox.mktr.sg` and `api.sandbox.mktr.sg` hosts. — **blocked on DNS (§16.2)**; the code already answers on both
+- [x] Add `sbx_sid`/`sbx_atk`, host-only auth cookies, and production-visit regression tests.
+- [x] Make CORS and the public-host guard sandbox-aware.
+- [x] Add banner, noindex, and sandbox canonical behavior. — persistent non-dismissible banner, `X-Robots-Tag` on every response, `robots.txt` disallow, no sitemap
+- [ ] Access protection (Cloudflare Access or equivalent). — not available: `mktr.sg` DNS is at mschosting, not Cloudflare
+- [x] Verify copied links and redirects stay inside the sandbox. — every link base is env-driven and set to the sandbox host
 
 **Gate G3:** Browser testing proves no request, cookie, or generated URL crosses into production.
 
 ### Phase 4 — Sink and dark deployment
 
-- [ ] Provision isolated Render services, Postgres, storage, the two chosen DNS records, and observability.
-- [ ] Disable automatic deploys or document exact-SHA promotion behavior.
-- [ ] Deploy with every provider credential absent.
-- [ ] Run the one-off database initializer and seeder.
-- [ ] Enable only the local signed webhook sink.
+- [x] Provision isolated Render services, Postgres and observability. — §16.1
+- [ ] Object storage. — no DigitalOcean Spaces credential available; uploads currently land on the service disk (§16.4)
+- [ ] The two DNS records. — **blocked (§16.2)**
+- [x] Disable automatic deploys. — both services are auto-deploy off; promotion is an explicit deploy of a chosen commit
+- [x] Deploy with every provider credential absent. — the validator refuses to boot if one is present
+- [ ] Run the one-off database initializer and seeder. — **blocked on `DATABASE_URL` (§16.2)**; both proven against a real Postgres locally
+- [x] Enable only the local signed webhook sink. — registered at boot as the sole subscriber; every other subscriber is disabled
 - [ ] Soak for at least one business day while inspecting outbound logs.
 
 **Gate G4:** Full synthetic lead lifecycle passes with zero live-provider traffic.

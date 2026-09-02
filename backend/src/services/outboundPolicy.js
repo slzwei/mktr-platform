@@ -296,7 +296,12 @@ async function evaluateEmailRail(address, deps) {
   const email = normalizeEmail(address);
   if (!email) return deny('bad_destination');
   const blind = blindIdentifier(email);
-  // Synthetic seed addresses can never be delivered to a real mailbox.
+  // Synthetic seed addresses can never be delivered to a real mailbox. Both the
+  // reserved `.invalid` TLD and the reserved `example.com`/`example.*` documentation
+  // domains are denied outright, so a seeded fixture can never become a live send.
+  if (/(^|[.@])(example\.(com|net|org)|test|invalid|localhost)$/.test(email.split('@')[1] || '')) {
+    return deny('blocked_destination', { destinationHash: blind });
+  }
   if (email.endsWith('.invalid')) return deny('blocked_destination', { destinationHash: blind });
   const allowlist = parseList('SANDBOX_ALLOWED_EMAILS', normalizeEmail);
   if (allowlist.length === 0) return deny('empty_allowlist', { destinationHash: blind });

@@ -104,7 +104,7 @@ describe('seed fixtures', () => {
     const policy = await import('../../src/services/outboundPolicy.js');
     expect(seed.SEED_USERS).toHaveLength(10);
     for (const user of seed.SEED_USERS) {
-      expect(user.email.endsWith('example.invalid')).toBe(true);
+      expect(user.email.endsWith('@sandbox.example.com')).toBe(true);
       expect(policy.isDeniedPhone(user.phone)).toBe(true);
     }
     // One user per authorization boundary acceptance needs.

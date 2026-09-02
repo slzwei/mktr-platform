@@ -107,6 +107,12 @@ const PUBLIC_SURFACE = {
   "rewardClaim.js": [
     "GET /:token"
   ],
+  // Sandbox-only signed webhook sink: verifies the outbox HMAC inside the
+  // handler (it IS the receiver), 404s outside DEPLOY_ENV=sandbox, and only
+  // mounts when SANDBOX_WEBHOOK_SINK_ENABLED=true.
+  "sandboxSink.js": [
+    "POST /webhook-sink"
+  ],
   "screeningCallback.js": [
     "GET /:token",
     "POST /:token"

@@ -142,7 +142,12 @@ function railProblems() {
     const allowed = (process.env.SANDBOX_ALLOWED_PHONES || '').split(',').map(normalizePhone).filter(Boolean);
     if (allowed.length === 0) problems.push('DNC_API_ENABLED=true requires a non-empty SANDBOX_ALLOWED_PHONES');
     if (!caps('dnc')) problems.push('SANDBOX_DNC_* caps must be positive integers when the DNC rail is live');
-    if (!/^https:\/\/[^/]+/.test(process.env.DNC_GATEWAY_URL || '')) {
+    // https everywhere, with one exception: a loopback address, which can only
+    // ever be a gateway running on this same host — useful for local
+    // verification and incapable of reaching a remote production endpoint.
+    const gatewayUrl = process.env.DNC_GATEWAY_URL || '';
+    const loopback = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(gatewayUrl);
+    if (!/^https:\/\/[^/]+/.test(gatewayUrl) && !loopback) {
       problems.push('DNC_API_ENABLED=true requires DNC_GATEWAY_URL (https origin of the shared DNC queue)');
     }
     if (!process.env.DNC_GATEWAY_TOKEN) {

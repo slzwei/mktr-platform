@@ -198,10 +198,11 @@ describe('email rail', () => {
     const { guardEmailRail } = await loadPolicy({
       DEPLOY_ENV: 'sandbox',
       SANDBOX_LIVE_EMAIL_ENABLED: 'true',
-      SANDBOX_ALLOWED_EMAILS: 'approved@example.com',
+      SANDBOX_ALLOWED_EMAILS: 'approved@mktr.sg',
     });
     expect((await guardEmailRail('someone@else.com', counterDeps())).reason).toBe('not_allowlisted');
-    expect((await guardEmailRail('sandbox.admin@example.invalid', counterDeps())).reason).toBe('blocked_destination');
-    expect((await guardEmailRail('APPROVED@Example.com ', counterDeps())).allowed).toBe(true);
+    expect((await guardEmailRail('sandbox.admin@sandbox.example.com', counterDeps())).reason).toBe('blocked_destination');
+    expect((await guardEmailRail('someone@thing.invalid', counterDeps())).reason).toBe('blocked_destination');
+    expect((await guardEmailRail('APPROVED@Mktr.SG ', counterDeps())).allowed).toBe(true);
   });
 });

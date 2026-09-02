@@ -130,6 +130,18 @@ describe('validateDeployment — refusals', () => {
     expect(() => validation.validateDeployment()).toThrow(/sandbox switches are armed/);
   });
 
+  test('a plain-http gateway on a remote host is refused', () =>
+    refuses(
+      {
+        DNC_API_ENABLED: 'true',
+        SANDBOX_LIVE_DNC_ENABLED: 'true',
+        SANDBOX_ALLOWED_PHONES: '+6596989089',
+        DNC_GATEWAY_URL: 'http://gateway.example.com',
+        DNC_GATEWAY_TOKEN: 'token',
+      },
+      /DNC_GATEWAY_URL/,
+    ));
+
   test('the fully armed DNC rail passes once the gateway is configured', async () => {
     const { validation } = await load({
       ...GOOD_SANDBOX,
