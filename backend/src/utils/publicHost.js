@@ -9,7 +9,9 @@
 // Trusting the raw `Host` / `X-Forwarded-Host` header is unsafe because an
 // attacker can spoof it. Always validate against an explicit allowlist.
 
-const ALLOWED_PUBLIC_HOSTS = new Set([
+import { isSandbox } from './deployEnv.js';
+
+const PRODUCTION_PUBLIC_HOSTS = [
   'mktr.sg',
   'www.mktr.sg',
   'redeem.sg',
@@ -19,7 +21,39 @@ const ALLOWED_PUBLIC_HOSTS = new Set([
   // guard gives it a narrow internal allowlist instead of the consumer block. Auth
   // cookies stay host-only here (cookieDomainForPublicHost returns undefined).
   'ops.redeem.sg',
-]);
+];
+
+// Sandbox hosts (docs/plans/mktr-production-sandbox.md §6.3). They are ADDITIVE and
+// only in a DEPLOY_ENV=sandbox process: production never learns a sandbox host, so a
+// forged `Host: sandbox.mktr.sg` against api.mktr.sg still falls through to the
+// conservative default. `SANDBOX_PUBLIC_HOSTS` lets one deployment carry both the
+// vanity host and the platform host (…onrender.com) before DNS is cut over.
+const DEFAULT_SANDBOX_HOSTS = ['sandbox.mktr.sg', 'api.sandbox.mktr.sg'];
+
+let sandboxCache = { raw: null, hosts: [] };
+
+function sandboxHosts() {
+  if (!isSandbox()) return [];
+  const raw = process.env.SANDBOX_PUBLIC_HOSTS || '';
+  if (sandboxCache.raw !== raw) {
+    const configured = raw
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean);
+    sandboxCache = { raw, hosts: [...new Set([...DEFAULT_SANDBOX_HOSTS, ...configured])] };
+  }
+  return sandboxCache.hosts;
+}
+
+function allowedHosts() {
+  return new Set([...PRODUCTION_PUBLIC_HOSTS, ...sandboxHosts()]);
+}
+
+/** True when `host` is one of THIS deployment's sandbox hosts. */
+export function isSandboxHost(host) {
+  if (!host) return false;
+  return sandboxHosts().includes(String(host).toLowerCase());
+}
 
 /**
  * Best-effort resolution of which allowlisted public host this request is
@@ -47,9 +81,10 @@ export function publicHostFromRequest(req) {
     req.get && req.get('host'),
   ].filter(Boolean);
 
+  const allowed = allowedHosts();
   for (const value of candidates) {
     const h = String(value).split(',')[0].trim().toLowerCase();
-    if (ALLOWED_PUBLIC_HOSTS.has(h)) return h;
+    if (allowed.has(h)) return h;
   }
 
   return undefined;
@@ -61,6 +96,10 @@ export function publicHostFromRequest(req) {
  * return undefined so callers fall back to host-only cookies (safest).
  */
 export function cookieDomainForPublicHost(host) {
+  // A sandbox host lives UNDER mktr.sg, so it must never widen a cookie to the
+  // parent domain: that would let sandbox state be read on mktr.sg (and vice
+  // versa). Host-only, always — checked before the mktr.sg branch below.
+  if (isSandboxHost(host)) return undefined;
   if (host === 'redeem.sg' || host === 'www.redeem.sg') return '.redeem.sg';
   if (host === 'mktr.sg' || host === 'www.mktr.sg') return '.mktr.sg';
   return undefined;
@@ -68,7 +107,7 @@ export function cookieDomainForPublicHost(host) {
 
 export function isAllowedPublicHost(host) {
   if (!host) return false;
-  return ALLOWED_PUBLIC_HOSTS.has(String(host).toLowerCase());
+  return allowedHosts().has(String(host).toLowerCase());
 }
 
 export function isRedeemHost(host) {
@@ -86,7 +125,15 @@ export function isOpsHost(host) {
 export function isMktrHost(host) {
   if (!host) return false;
   const h = String(host).toLowerCase();
+  // The sandbox serves the MKTR-brand SPA, so it takes the MKTR branch for
+  // brand/chrome decisions — but never the `.mktr.sg` cookie domain above.
+  if (isSandboxHost(h)) return true;
   return h === 'mktr.sg' || h === 'www.mktr.sg';
 }
 
-export const ALLOWED_PUBLIC_HOSTS_LIST = Array.from(ALLOWED_PUBLIC_HOSTS);
+export const ALLOWED_PUBLIC_HOSTS_LIST = PRODUCTION_PUBLIC_HOSTS.slice();
+
+/** Live view including this deployment's sandbox hosts. */
+export function allowedPublicHostsList() {
+  return Array.from(allowedHosts());
+}

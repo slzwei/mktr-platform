@@ -1,8 +1,21 @@
-import crypto from 'crypto';
 import nodeFetch from 'node-fetch';
 import * as Sentry from '@sentry/node';
 import { Prospect, ProspectActivity, sequelize } from '../models/index.js';
 import { logger } from '../utils/logger.js';
+import { isSandbox } from '../utils/deployEnv.js';
+import { guardPhoneRail, releasePhoneRail } from './outboundPolicy.js';
+import { submitToGateway } from './dncGatewayClient.js';
+import {
+  normalizePem,
+  formatDncNumber,
+  buildBaseString,
+  signRequest,
+  buildAuthHeader,
+  mapStatusCode,
+  parseValidUntil,
+  parseResponse,
+  DNC_CHECK_ENDPOINT,
+} from './dncProtocol.js';
 
 /**
  * dncService — checks Singapore numbers against PDPC's DNC Registry realtime API.
@@ -13,7 +26,7 @@ import { logger } from '../utils/logger.js';
  * failures land in Sentry + structured logs and degrade fail-safe (lead stays unchecked → held).
  */
 
-const ENDPOINT = 'check/registry';
+const ENDPOINT = DNC_CHECK_ENDPOINT;
 const DEFAULT_BASE_URL = 'https://uat.dnc.gov.sg/realtime';
 const DNC_CALL_LOCK_KEY = 'dnc_call'; // shared by request-path + backfill so all calls serialize
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -55,12 +68,6 @@ export function _resetDncBudget() {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-/** PEM private keys are often stored with literal "\n"; restore real newlines. */
-function normalizePem(pem) {
-  if (!pem) return pem;
-  return pem.includes('\\n') ? pem.replace(/\\n/g, '\n') : pem;
-}
-
 export function dncConfig() {
   return {
     enabled: process.env.DNC_API_ENABLED === 'true',
@@ -71,12 +78,29 @@ export function dncConfig() {
     checkOnBehalf: (process.env.DNC_CHECK_ON_BEHALF || 'N').toUpperCase() === 'Y' ? 'Y' : 'N',
     proxy: process.env.DNC_HTTPS_PROXY || null,
     timeoutMs: Number(process.env.DNC_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
+    // Shared DNC queue (docs/plans/mktr-production-sandbox.md §6.6). When set,
+    // this process NEVER signs or calls PDPC itself — it submits through the one
+    // gateway that owns the credential and the ordered timestamp. Unsetting
+    // DNC_GATEWAY_URL is the instant, deploy-free rollback to direct calls.
+    gatewayUrl: (process.env.DNC_GATEWAY_URL || '').replace(/\/+$/, ''),
+    gatewayToken: process.env.DNC_GATEWAY_TOKEN || '',
   };
 }
 
-/** True when the API is enabled AND fully credentialed — gates every outbound call. */
+/** True when this deployment submits through the shared DNC queue. */
+export function usesGateway(cfg = dncConfig()) {
+  return Boolean(cfg.gatewayUrl && cfg.gatewayToken);
+}
+
+/**
+ * True when the API is enabled AND fully credentialed — gates every outbound call.
+ * Gateway mode needs the gateway pair instead of the PDPC credential: the
+ * credential lives only in the gateway.
+ */
 export function dncReady(cfg = dncConfig()) {
-  return !!(cfg.enabled && cfg.orgCode && cfg.eServiceId && cfg.privateKey);
+  if (!cfg.enabled) return false;
+  if (usesGateway(cfg)) return true;
+  return !!(cfg.orgCode && cfg.eServiceId && cfg.privateKey);
 }
 
 /**
@@ -90,97 +114,19 @@ export function dncEnforcement(cfg = dncConfig()) {
   return (process.env.DNC_ENFORCEMENT || 'block').toLowerCase() === 'flag' ? 'flag' : 'block';
 }
 
-// ── Pure helpers (exported for tests) ───────────────────────────────────────────
-
-/**
- * Normalise a phone to the DNC wire format: 8 local digits starting 3/6/8/9.
- * Returns null for non-SG / malformed numbers (DNC only covers Singapore) → caller
- * marks the lead `skipped`.
- */
-export function formatDncNumber(phone) {
-  if (!phone) return null;
-  let d = String(phone).replace(/\D/g, '');
-  if (d.length === 11 && d.startsWith('65')) d = d.slice(2); // 65XXXXXXXX
-  else if (d.length === 10 && d.startsWith('65')) d = d.slice(2);
-  if (d.length !== 8) return null;
-  if (!/^[3689]\d{7}$/.test(d)) return null;
-  return d;
-}
-
-/** Signature base string — order is fixed and must match the header timestamp exactly. */
-export function buildBaseString({ orgCode, eServiceId, timestamp }) {
-  return `orgCode=${orgCode}&eServiceId=${eServiceId}&timestamp=${timestamp}`;
-}
-
-/** RSA-SHA256 over the base string, strict base64 (no line breaks). */
-export function signRequest(baseString, privateKeyPem) {
-  const signer = crypto.createSign('RSA-SHA256');
-  signer.update(baseString, 'utf8');
-  signer.end();
-  return signer.sign(normalizePem(privateKeyPem), 'base64');
-}
-
-/** Authorization header value — field order is critical (orgCode, eServiceId, timestamp, appSignature). */
-export function buildAuthHeader({ orgCode, eServiceId, timestamp, appSignature }) {
-  return `orgCode=${orgCode}&eServiceId=${eServiceId}&timestamp=${timestamp}&appSignature=${appSignature}`;
-}
-
-/** Map an Annex-A status code → handling. */
-export function mapStatusCode(code) {
-  switch (code) {
-    case 'S000': return { ok: true };
-    // No credits: keep the lead retriable (→ pending) so the backfill recovers it after top-up,
-    // and alert so a human tops up. Held leads stay fail-safe meanwhile.
-    case 'S301': return { ok: false, retriable: true, alert: true, reason: 'insufficient_credits' };
-    case 'S401':
-    case 'S402':
-    case 'S404': return { ok: false, retriable: false, alert: true, reason: 'auth' };
-    case 'S403': return { ok: false, retriable: false, alert: true, reason: 'bad_timestamp' };
-    case 'S101':
-    case 'S102':
-    case 'S405': return { ok: false, retriable: false, alert: true, reason: 'bad_request' };
-    case 'S501': return { ok: false, retriable: true, reason: 'dnc_internal' };
-    default: return { ok: false, retriable: true, reason: 'unknown' };
-  }
-}
-
-/** Pull the validity end date out of the human-readable `msg` ("…valid until 06-Nov-2020"). */
-export function parseValidUntil(msg) {
-  if (!msg) return null;
-  const m = String(msg).match(/(\d{1,2})[-\s]([A-Za-z]{3})[-\s](\d{4})/);
-  if (!m) return null;
-  const d = new Date(`${m[1]} ${m[2]} ${m[3]} 23:59:59 GMT+0800`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** Normalise the DNC response JSON → typed result. Exported for tests. */
-export function parseResponse(json) {
-  // Spec v1.1 documents a flat top-level `status_code` for every Annex-A code, but the live
-  // system returns ERRORS as an `{ errorTo: { code, message, errors[] } }` envelope with
-  // HTTP 500 (observed in PRODUCTION 31 Aug 2026 for S501). Reading only `status_code` left
-  // every error as null → mapStatusCode's `default` (unknown/retriable, no alert), so the
-  // per-code branches — S301 insufficient-credits and S401/S402/S404 auth, both of which set
-  // `alert: true` — could never fire. Read both shapes.
-  const statusCode = json?.status_code || json?.errorTo?.code || null;
-  const results = Array.isArray(json?.numbers)
-    ? json.numbers.map((n) => ({
-        number: n.number,
-        noVoiceCall: n.no_voice_call === 'R',
-        // Spec v1.1 documents `no_text_message`, but the live UAT system returns
-        // `no_text` (observed 12 Aug 2026, confirmed with DNC Ops). Accept both.
-        noTextMessage: (n.no_text_message ?? n.no_text) === 'R',
-        noFax: n.no_fax === 'R',
-      }))
-    : [];
-  return {
-    statusCode,
-    results,
-    validUntil: parseValidUntil(json?.msg),
-    transactionId: json?.transactionid || null,
-    createdTime: json?.created_time || null,
-    rawMsg: json?.msg || null,
-  };
-}
+// ── Pure protocol helpers ───────────────────────────────────────────────────────
+// Re-exported from dncProtocol.js so the shared DNC queue can speak the identical
+// wire format without importing this module's Sequelize/Sentry dependencies.
+export {
+  normalizePem,
+  formatDncNumber,
+  buildBaseString,
+  signRequest,
+  buildAuthHeader,
+  mapStatusCode,
+  parseValidUntil,
+  parseResponse,
+};
 
 // ── Proxy + call lock ───────────────────────────────────────────────────────────
 
@@ -228,6 +174,58 @@ export async function checkNumbers(numbers, opts = {}, deps = {}) {
     return { budgetExceeded: true, statusCode: null, results: [], validUntil: null, transactionId: null, createdTime: null, rawMsg: null };
   }
 
+  // Sandbox outbound gate (plan §6.2). Sits HERE — inside the one shared DNC
+  // service — so the form check, the create-time check, Retell and the backfill
+  // all inherit it, and a future caller cannot route around it. Every number in
+  // the batch must be allowlisted; one that is not fails the whole batch closed,
+  // before any request is built. The shared gateway re-checks independently.
+  const guard = deps.guardPhoneRail || guardPhoneRail;
+  const release = deps.releasePhoneRail || releasePhoneRail;
+  const guards = [];
+  if (isSandbox()) {
+    for (const number of numbers) {
+      const decision = await guard('dnc', number, deps);
+      if (!decision.allowed) {
+        for (const taken of guards) await release(taken, deps);
+        (deps.logger || logger).warn(
+          { reason: decision.reason, batch: numbers.length },
+          'dnc.check.sandbox_blocked',
+        );
+        return {
+          blocked: true,
+          blockedReason: decision.reason,
+          statusCode: null,
+          results: [],
+          validUntil: null,
+          transactionId: null,
+          createdTime: null,
+          rawMsg: null,
+        };
+      }
+      guards.push(decision);
+    }
+  }
+
+  const releaseGuards = async () => {
+    for (const taken of guards) await release(taken, deps);
+  };
+
+  // Shared DNC queue: this process holds no PDPC credential and never signs.
+  // The gateway owns the ordered timestamp, the credential and the egress path.
+  if (usesGateway(cfg)) {
+    try {
+      const result = await (deps.submitToGateway || submitToGateway)(
+        { numbers, checkOnBehalf, cfg },
+        deps,
+      );
+      if (result.gatewayUnavailable) await releaseGuards();
+      return result;
+    } catch (err) {
+      await releaseGuards();
+      throw err;
+    }
+  }
+
   const doCall = async () => {
     const timestamp = (deps.nextTimestamp || nextTimestamp)();
     const baseString = buildBaseString({ orgCode: cfg.orgCode, eServiceId: cfg.eServiceId, timestamp });
@@ -248,7 +246,12 @@ export async function checkNumbers(numbers, opts = {}, deps = {}) {
   };
 
   // Tests inject deps.skipLock to bypass the DB transaction.
-  return deps.skipLock ? doCall() : runWithDncCallLock(doCall, deps);
+  try {
+    return await (deps.skipLock ? doCall() : runWithDncCallLock(doCall, deps));
+  } catch (err) {
+    await releaseGuards();
+    throw err;
+  }
 }
 
 // ── Check + persist + audit (single lead) ─────────────────────────────────────────
@@ -357,6 +360,15 @@ export async function checkAndRecord(prospect, deps = {}) {
     return { status: 'pending', reason: 'budget_exceeded' };
   }
 
+  // Sandbox policy refusal, or the shared queue being unavailable: fail CLOSED.
+  // `pending` keeps the lead held and retriable — never delivered unchecked.
+  if (result.blocked || result.gatewayUnavailable) {
+    const reason = result.blockedReason || result.gatewayReason || 'blocked';
+    log.warn({ prospect_id: prospect.id, reason }, 'dnc.check.blocked');
+    await persistDnc(prospect, { dncStatus: 'pending' }, deps).catch(() => {});
+    return { status: 'pending', reason };
+  }
+
   const mapped = mapStatusCode(result.statusCode);
   if (!mapped.ok) {
     if (mapped.alert) {
@@ -390,6 +402,7 @@ export default {
   nextTimestamp,
   dncConfig,
   dncReady,
+  usesGateway,
   formatDncNumber,
   buildBaseString,
   signRequest,

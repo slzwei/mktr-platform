@@ -43,6 +43,22 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     console.error(`[Shell] ERROR DETAILS:`);
     console.error(err);
     console.error(`\n`);
+
+    // With no routes mounted, Express answers every request "Cannot GET /",
+    // which reads as a broken deploy rather than an unconfigured one. Say what
+    // is actually wrong instead — presence of required variables only, never a
+    // value and never the error text (a database fault can carry a connection
+    // string). Applies to every deployment, not just the sandbox: a production
+    // boot failure deserves the same legible answer.
+    const { renderBootFailurePage, bootStatus } = await import('./bootFailurePage.js');
+    app.get('/health/boot', (req, res) => res.status(503).json(bootStatus()));
+    app.use((req, res) => {
+      res.status(503);
+      res.set('Cache-Control', 'no-store');
+      res.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      if (req.accepts('html')) return res.type('html').send(renderBootFailurePage());
+      return res.json(bootStatus());
+    });
   }
 });
 

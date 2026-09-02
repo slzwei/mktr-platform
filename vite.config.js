@@ -9,6 +9,40 @@ import { visualizer } from 'rollup-plugin-visualizer'
 const BRAND = process.env.VITE_BRAND === 'redeem' ? 'redeem' : 'mktr'
 const brandConfigPath = path.resolve(__dirname, `./src/lib/brandConfigs/${BRAND}.js`)
 
+// Deployment identity (docs/plans/mktr-production-sandbox.md §4). A sandbox build
+// is a PRODUCTION Vite build, so `import.meta.env.PROD` cannot tell them apart —
+// VITE_DEPLOY_ENV is the only signal, and it must be exact.
+const DEPLOY_ENV = (process.env.VITE_DEPLOY_ENV || '').trim().toLowerCase()
+const IS_SANDBOX = DEPLOY_ENV === 'sandbox'
+if (DEPLOY_ENV && !['production', 'sandbox', 'development'].includes(DEPLOY_ENV)) {
+  throw new Error(`VITE_DEPLOY_ENV="${process.env.VITE_DEPLOY_ENV}" is not production | sandbox | development — refusing to build an environment we cannot name.`)
+}
+
+// Fail the BUILD, not the deploy, when a sandbox bundle carries a production
+// advertising or analytics identifier. These are baked into dist/ and fire on
+// first page view, so a copied env var would contaminate live ad optimisation
+// and attribution before anyone noticed the banner.
+if (IS_SANDBOX) {
+  const PRODUCTION_TRACKING_IDS = {
+    VITE_META_PIXEL_ID: '1402034528611431',
+    VITE_TIKTOK_PIXEL_ID: 'D8GJ6T3C77UDLID6746G',
+  }
+  const contaminated = Object.entries(PRODUCTION_TRACKING_IDS)
+    .filter(([key, value]) => process.env[key] && process.env[key].trim() === value)
+    .map(([key]) => key)
+  const anyTracking = ['VITE_META_PIXEL_ID', 'VITE_TIKTOK_PIXEL_ID', 'VITE_GOOGLE_ADS_CONVERSION_ID', 'VITE_GOOGLE_ADS_LEAD_LABEL', 'VITE_ADROLL_ADV_ID', 'VITE_ADROLL_PIX_ID']
+    .filter((key) => process.env[key])
+  if (contaminated.length > 0) {
+    throw new Error(`Sandbox build refused: ${contaminated.join(', ')} carry PRODUCTION tracking ids. Unset them or map them to a test account.`)
+  }
+  if (anyTracking.length > 0 && process.env.SANDBOX_ALLOW_TRACKING_IDS !== 'true') {
+    throw new Error(`Sandbox build refused: ${anyTracking.join(', ')} are set. Unset them, or set SANDBOX_ALLOW_TRACKING_IDS=true once they point at test accounts.`)
+  }
+  if (process.env.VITE_API_URL && process.env.VITE_API_URL !== '/api') {
+    throw new Error(`Sandbox build refused: VITE_API_URL must be "/api" (same-origin) — got "${process.env.VITE_API_URL}".`)
+  }
+}
+
 // Brand-aware defaults for %VITE_*% substitution in index.html. Each Render
 // Static Site can still override via env, but the build never ships unresolved
 // placeholders if an env var is missing.
@@ -30,10 +64,32 @@ for (const [k, v] of Object.entries(BRAND_HTML_DEFAULTS)) {
   if (!process.env[k]) process.env[k] = v
 }
 
+// A sandbox is never indexed and never claims a production canonical URL.
+if (IS_SANDBOX) {
+  process.env.VITE_ROBOTS_CONTENT = 'noindex, nofollow, noarchive'
+  process.env.VITE_CANONICAL_BASE = `https://${process.env.VITE_SANDBOX_HOST || 'sandbox.mktr.sg'}/`
+  process.env.VITE_PAGE_TITLE = `SANDBOX — ${process.env.VITE_PAGE_TITLE}`
+} else if (!process.env.VITE_ROBOTS_CONTENT) {
+  process.env.VITE_ROBOTS_CONTENT = 'index, follow'
+}
+
 // Emit brand-aware robots.txt and sitemap.xml into dist/ at build time.
 // Public routes only — internal/admin paths are excluded from sitemap and
 // disallowed in robots so search engines do not index login/admin surfaces.
 function brandSeoFiles() {
+  // A sandbox build gets a blanket disallow and NO sitemap — a leaked sandbox
+  // URL must never be crawled, and a sitemap would advertise it (plan §6.4).
+  if (IS_SANDBOX) {
+    const robots = ['User-agent: *', 'Disallow: /', ''].join('\n')
+    return {
+      name: 'mktr-brand-seo-files',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robots })
+      },
+    }
+  }
+
   // ops.redeem.sg is an internal staff tool — nothing on it should ever be
   // indexed, so its robots.txt is a blanket disallow and it gets no sitemap.
   if (process.env.VITE_SURFACE === 'ops') {

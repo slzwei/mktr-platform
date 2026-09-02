@@ -14,6 +14,7 @@ import {
   reserveGlobalSmsQuota,
   releaseGlobalSmsQuota,
 } from './smsQuota.js';
+import { guardPhoneRail, releasePhoneRail } from './outboundPolicy.js';
 
 // AWS SNS SMS config. The region + sender ID must match our SSIR-registered
 // identity in AWS, or Singapore telcos relabel the sender as "Likely-SCAM".
@@ -170,6 +171,19 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
     throw new AppError('Invalid Singapore phone number format.', 400);
   }
 
+  // Sandbox outbound gate (docs/plans/mktr-production-sandbox.md §6.2). Placed
+  // BEFORE the channel decision so it covers SNS and WhatsApp alike — and before
+  // any quota bump or DB write, so a non-allowlisted number is refused with no
+  // provider request, no credential use and no state change at all. No-op in
+  // production.
+  const railGuard = await guardPhoneRail('otp', fullPhone);
+  if (!railGuard.allowed) {
+    throw new AppError(
+      'This number is not approved for verification in the sandbox environment.',
+      403,
+    );
+  }
+
   // Per-number daily cap (SSIR User Agreement cl. 2.3.2). This endpoint is public
   // and unauthenticated, so without a per-number ceiling a caller can drive
   // unlimited messages at one victim's handset — every one of them stamped with
@@ -247,6 +261,8 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
     // Nothing reached the handset — hand the daily allowance back so our own
     // outage doesn't lock a genuine user out for the rest of the day.
     await releasePhoneOtpQuota(fullPhone).catch(() => {});
+    // Same for the sandbox rail budget: an outage must not eat the tiny allowance.
+    await releasePhoneRail(railGuard).catch(() => {});
     // Preserve deliberate status codes (the 429 from the global ceiling gate);
     // only genuine faults get flattened into a 500.
     if (err instanceof AppError) throw err;

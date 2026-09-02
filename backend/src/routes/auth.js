@@ -3,6 +3,7 @@ import { makeLimiter } from '../middleware/rateLimiters.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import * as auth from '../controllers/authController.js';
+import { isSandbox, flagOn } from '../utils/deployEnv.js';
 
 export const meta = {
   path: '/api/auth',
@@ -43,7 +44,21 @@ const tokenLimiter = makeLimiter({
 });
 
 // ─── Public auth ────────────────────────────────────────────────────────────
-router.post('/register', authLimiter, validate(schemas.userRegister), auth.register);
+// Public self-registration is CLOSED in a sandbox (plan §5): the environment
+// exists for a fixed cast of seeded, permission-boundary users, and an open
+// door would let anyone who finds the URL mint an account inside it. Off by
+// default; SANDBOX_SELF_REGISTRATION_ENABLED=true reopens it deliberately.
+const blockSandboxRegistration = (req, res, next) => {
+  if (isSandbox() && !flagOn('SANDBOX_SELF_REGISTRATION_ENABLED')) {
+    return res.status(403).json({
+      success: false,
+      message: 'Self-registration is disabled in the sandbox. Use a seeded account.',
+    });
+  }
+  return next();
+};
+
+router.post('/register', authLimiter, blockSandboxRegistration, validate(schemas.userRegister), auth.register);
 router.post('/login', authLimiter, validate(schemas.userLogin), auth.login);
 
 // ─── Google OAuth ───────────────────────────────────────────────────────────

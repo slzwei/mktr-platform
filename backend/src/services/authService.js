@@ -6,6 +6,7 @@ import { AppError } from '../middleware/appError.js';
 import { logger } from '../utils/logger.js';
 import { isAllowedPublicHost } from '../utils/publicHost.js';
 import { bump, peek, reset, blindIdentifier } from './rateCounter.js';
+import { isSandbox, flagOn } from '../utils/deployEnv.js';
 
 /**
  * Login lockout (P2-10).
@@ -237,6 +238,28 @@ function assertSoftLinkable(user) {
  * Finds or creates a local user from verified Google token payload fields.
  * @returns {{ user: object, token: string }}
  */
+/**
+ * Google sign-in may LINK to an existing sandbox account, but it must never MINT
+ * one (docs/plans/mktr-production-sandbox.md §5).
+ *
+ * Both Google flows find-or-CREATE, defaulting an unknown address to a live
+ * `customer` account. In a sandbox that is self-registration through a side
+ * door: password registration is closed, so leaving this open would mean anyone
+ * who found the URL and clicked "Sign in with Google" got an account inside the
+ * environment. Provision the address with `sandbox:seed` instead
+ * (`SANDBOX_GOOGLE_ADMIN_EMAILS`), and Google then binds to that seeded row.
+ *
+ * `SANDBOX_SELF_REGISTRATION_ENABLED=true` reopens it deliberately — the same
+ * switch that reopens password registration, so the two cannot drift apart.
+ */
+function assertGoogleProvisioningAllowed() {
+  if (!isSandbox() || flagOn('SANDBOX_SELF_REGISTRATION_ENABLED')) return;
+  throw new AppError(
+    'This Google account is not provisioned in the sandbox. Seed the address first, or sign in with a seeded email and password.',
+    403,
+  );
+}
+
 export async function googleIdTokenLogin({ email, googleSub, name, picture }) {
   // Same two-step as googleOAuthCallback: the sub is the hard link; matching on
   // email alone is a soft link and only binds into a row that proved it owns
@@ -250,6 +273,7 @@ export async function googleIdTokenLogin({ email, googleSub, name, picture }) {
   }
 
   if (!user) {
+    assertGoogleProvisioningAllowed();
     const fullName = name || '';
     const nameParts = fullName.split(' ');
     const firstName = nameParts[0] || 'Google';
@@ -373,6 +397,7 @@ export async function googleOAuthCallback(code, origin) {
   }
 
   if (!user) {
+    assertGoogleProvisioningAllowed();
     const nameParts = (googleUser.name || '').split(' ');
     const firstName = nameParts[0] || 'Google';
     const lastName = nameParts.slice(1).join(' ') || 'User';

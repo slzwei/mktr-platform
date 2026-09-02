@@ -29,6 +29,20 @@ export function nextSgtMidnight(now = new Date()) {
   return new Date(shifted.getTime() - SGT_OFFSET_MS);
 }
 
+/** `YYYY-MM` for the current Singapore calendar month. */
+export function sgtMonthKey(now = new Date()) {
+  return new Date(now.getTime() + SGT_OFFSET_MS).toISOString().slice(0, 7);
+}
+
+/** The first instant of the next Singapore calendar month, as a UTC Date. */
+export function nextSgtMonthStart(now = new Date()) {
+  const shifted = new Date(now.getTime() + SGT_OFFSET_MS);
+  shifted.setUTCDate(1);
+  shifted.setUTCHours(0, 0, 0, 0);
+  shifted.setUTCMonth(shifted.getUTCMonth() + 1);
+  return new Date(shifted.getTime() - SGT_OFFSET_MS);
+}
+
 /**
  * Blind a phone number before it becomes part of a counter key.
  *

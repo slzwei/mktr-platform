@@ -8,6 +8,7 @@ import { runMigrations } from './runMigrations.js';
 import { acquireTestRunLock } from './testRunLock.js';
 import { restoreBaselineSchema } from './restoreBaseline.js';
 import { logger } from '../utils/logger.js';
+import { isSandbox, flagOn } from '../utils/deployEnv.js';
 import { WebhookSubscriber, Campaign, IdempotencyKey } from '../models/index.js';
 import { adapterRegistry } from '../integrations/AdapterRegistry.js';
 // Side-effect: registers all platform adapters (currently just Lyfe).
@@ -49,6 +50,9 @@ export async function bootstrapDatabase() {
   });
   await safeRun('Lyfe webhook subscriber', ensureLyfeWebhookSubscriber);
   await safeRun('mktr-leads webhook subscriber', ensureMktrLeadsWebhookSubscriber);
+  if (isSandbox()) {
+    await safeRun('Sandbox webhook sink subscriber', ensureSandboxSinkSubscriber);
+  }
 
   // Warn if a destination webhook is configured but delivery is globally disabled
   const lyfeAdapter = adapterRegistry.get('lyfe');
@@ -60,7 +64,15 @@ export async function bootstrapDatabase() {
     logger.warn('⚠️ mktr-leads webhook URL is set but WEBHOOK_ENABLED is not "true" — leads will NOT be delivered to mktr-leads');
   }
 
-  await safeRun('Retell campaigns', ensureRetellCampaigns);
+  // Retell's default campaign is created UNCONDITIONALLY in production (it is the
+  // inbound voice pipeline). A sandbox has no Retell key and no voice traffic, so
+  // creating it would seed a campaign nobody asked for — make it opt-in there
+  // (plan §6.5).
+  if (!isSandbox() || flagOn('SANDBOX_RETELL_CAMPAIGNS_ENABLED')) {
+    await safeRun('Retell campaigns', ensureRetellCampaigns);
+  } else {
+    logger.info('[Sandbox] default Retell campaign creation suppressed (SANDBOX_RETELL_CAMPAIGNS_ENABLED=false)');
+  }
 
   // Meta Lead Ads (docs/plans/meta-lead-ads-native-pipe.md §3.3): deliberately
   // NOT safeRun — with the flag on, a missing fallback pool or worker would
@@ -844,6 +856,57 @@ export async function ensureMktrLeadsWebhookSubscriber() {
  * Format: RETELL_AGENTS=[{"agentId":"agent_xxx","name":"Luggage - CPF CareShield Life"}]
  * Falls back to a default if not set.
  */
+/**
+ * The sandbox's ONLY delivery destination (plan §8): a signed HMAC sink served by
+ * this same service. It exercises the real outbox — transaction, commit-before-
+ * flush, signature construction, retry, auto-disable and the fail-closed
+ * `no_subscriber` path — without any network route to production Lyfe.
+ *
+ * Registered as the sole enabled subscriber: any other row found in a sandbox is
+ * DISABLED here, so a copied fixture cannot quietly deliver somewhere real.
+ */
+export async function ensureSandboxSinkSubscriber() {
+  const url = process.env.SANDBOX_WEBHOOK_SINK_URL;
+  const secret = process.env.SANDBOX_WEBHOOK_SINK_SECRET;
+  if (!url || !secret) {
+    logger.warn('[Sandbox] webhook sink not configured (SANDBOX_WEBHOOK_SINK_URL/_SECRET) — no delivery destination');
+    return;
+  }
+
+  const NAME = 'Sandbox Sink';
+  const events = ['lead.created', 'lead.assigned', 'lead.unassigned'];
+
+  const existing = await WebhookSubscriber.findOne({ where: { name: NAME } });
+  if (existing) {
+    await existing.update({
+      url,
+      secret,
+      enabled: true,
+      events,
+      failureCount: 0,
+      metadata: { ...(existing.metadata || {}), destination: 'sandbox_sink', signatureVersion: LIVE_SUBSCRIBER_SIGNATURE_VERSION },
+    });
+  } else {
+    await WebhookSubscriber.create({
+      name: NAME,
+      url,
+      secret,
+      events,
+      enabled: true,
+      metadata: { destination: 'sandbox_sink', signatureVersion: LIVE_SUBSCRIBER_SIGNATURE_VERSION },
+    });
+  }
+
+  // Belt and braces: nothing else may deliver from a sandbox.
+  const others = await WebhookSubscriber.findAll({ where: { enabled: true } });
+  for (const row of others) {
+    if (row.name === NAME) continue;
+    await row.update({ enabled: false });
+    logger.warn('[Sandbox] disabled non-sink webhook subscriber', { name: row.name });
+  }
+  logger.info('[Sandbox] signed webhook sink registered as the sole subscriber', { url });
+}
+
 async function ensureRetellCampaigns() {
   let retellAgents;
   try {

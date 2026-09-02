@@ -95,6 +95,7 @@ import {
 } from './prospectHelpers.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 import { incCounter } from './observability.js';
+import { sidCookieName } from '../utils/attributionCookies.js';
 
 
 const defaultDeps = {
@@ -377,7 +378,7 @@ export function makeProspectService(overrides = {}) {
     // context on top (most-recently-touched wins; createdAt then id DESC are
     // deterministic tiebreakers for a same-millisecond lastTouchAt tie).
     // The sid is never authorization material.
-    const sid = meta?.sessionId ?? (validSid(cookies?.sid) || validSid(headers?.['x-session-id']));
+    const sid = meta?.sessionId ?? (validSid(cookies?.[sidCookieName()]) || validSid(headers?.['x-session-id']));
     if (sid) {
       incoming.sessionId = sid;
       const attribution = await m.Attribution.findOne({

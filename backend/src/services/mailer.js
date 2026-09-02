@@ -5,6 +5,7 @@ import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/custom
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 import { ensureUnsubToken } from './consentService.js';
 import { renderLeadConfirmation } from './email-templates/leadConfirmation.js';
+import { guardEmailRail } from './outboundPolicy.js';
 
 // D12: per-origin from-address. Lead-capture confirmations sent from the
 // redeem.sg flow use noreply@redeem.sg; admin / agent emails keep the
@@ -50,6 +51,20 @@ export async function sendEmail({ to, subject, html, text, context, from, attach
   // Resolve from-address by context (lead-capture flows pass context='redeem',
   // admin flows omit it). An explicit `from` arg overrides both.
   const resolvedFrom = from || resolveEmailFrom(context);
+
+  // Sandbox outbound gate (docs/plans/mktr-production-sandbox.md §6.2), applied
+  // immediately before the transport: a sandbox may only ever mail an exactly
+  // allowlisted address, and only while the email rail is switched on. Refusal
+  // is reported the same way a missing mailer is, so no caller changes shape.
+  // No-op in production.
+  const mailGuard = await guardEmailRail(to);
+  if (!mailGuard.allowed) {
+    logger.warn(
+      { to: maskEmail(to), reason: mailGuard.reason },
+      'sandbox.email_blocked',
+    );
+    return { success: false, blocked: true, reason: mailGuard.reason, message: 'Sandbox: recipient not allowlisted; email not sent.' };
+  }
 
   const transporter = getTransporter();
   if (!transporter) {
