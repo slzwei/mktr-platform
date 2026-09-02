@@ -239,3 +239,59 @@ describe('database configuration accepts either shape', () => {
     })).rejects.toThrow(/DB_HOST \(or DATABASE_URL\) is required/);
   });
 });
+
+describe('Google sign-in cannot be a side door into the sandbox', () => {
+  // Models are mocked so this stays a unit test: the lookups return "no such
+  // user", which is exactly the state in which the real code would CREATE one.
+  const loadAuth = async (env) => {
+    jest.resetModules();
+    process.env = {
+      ...ORIGINAL_ENV,
+      DB_HOST: '127.0.0.1', DB_NAME: 'x', DB_USER: 'x', DB_PASSWORD: 'x',
+      JWT_SECRET: 'x',
+      ...env,
+    };
+    const created = [];
+    jest.unstable_mockModule('../../src/models/index.js', () => ({
+      User: {
+        findOne: async () => null,
+        findByPk: async () => null,
+        create: async (values) => { created.push(values); return { id: 'new', ...values }; },
+      },
+      sequelize: {},
+    }));
+    const auth = await import('../../src/services/authService.js');
+    return { auth, created };
+  };
+
+  test('an unknown Google address is refused rather than provisioned', async () => {
+    const { auth, created } = await loadAuth({ DEPLOY_ENV: 'sandbox' });
+    await expect(
+      auth.googleIdTokenLogin({ email: 'stranger@gmail.com', googleSub: 'sub-1', name: 'A Stranger' }),
+    ).rejects.toThrow(/not provisioned in the sandbox/);
+    expect(created).toHaveLength(0); // nothing was minted
+  });
+
+  test('the refusal carries 403, not a 500', async () => {
+    const { auth } = await loadAuth({ DEPLOY_ENV: 'sandbox' });
+    await expect(
+      auth.googleIdTokenLogin({ email: 'stranger@gmail.com', googleSub: 'sub-2' }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  test('the same switch that reopens password registration reopens this', async () => {
+    const { auth, created } = await loadAuth({
+      DEPLOY_ENV: 'sandbox',
+      SANDBOX_SELF_REGISTRATION_ENABLED: 'true',
+    });
+    await auth.googleIdTokenLogin({ email: 'stranger@gmail.com', googleSub: 'sub-3' });
+    expect(created).toHaveLength(1);
+  });
+
+  test('production is untouched by the guard', async () => {
+    const { auth, created } = await loadAuth({ DEPLOY_ENV: 'production' });
+    await auth.googleIdTokenLogin({ email: 'stranger@gmail.com', googleSub: 'sub-4' });
+    expect(created).toHaveLength(1);
+    expect(created[0].role).toBe('customer');
+  });
+});

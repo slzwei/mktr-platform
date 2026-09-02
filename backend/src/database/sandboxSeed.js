@@ -172,6 +172,40 @@ export async function seedSandbox({ log = console } = {}) {
     summary.users[created ? 'created' : 'updated'] += 1;
   }
 
+  // ── Google-bound admins ──────────────────────────────────────────────────
+  // Google sign-in cannot CREATE an account in a sandbox (authService's
+  // assertGoogleProvisioningAllowed), so the addresses that should be able to
+  // use it have to exist first. These carry NO password: they are Google-only,
+  // which means the shared seed password can never be used to reach an account
+  // that maps to a real person's identity.
+  const googleAdmins = String(process.env.SANDBOX_GOOGLE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  for (const email of googleAdmins) {
+    const id = stableUuid(`user:google:${email}`);
+    const existing = await User.findByPk(id);
+    const values = {
+      email,
+      firstName: 'Sandbox',
+      lastName: 'Google Admin',
+      fullName: 'Sandbox Google Admin',
+      role: 'admin',
+      isActive: true,
+      emailVerified: true,
+    };
+    if (existing) {
+      // Never rewrite the password field here — a re-seed must not turn a
+      // Google-only account into a password-reachable one.
+      await existing.update(values);
+      summary.users.updated += 1;
+    } else {
+      await User.create({ id, ...values });
+      summary.users.created += 1;
+    }
+    log.log?.(`[sandbox:seed] google-admin ${email}`);
+  }
+
   // ── Campaigns ────────────────────────────────────────────────────────────
   const campaignIds = {};
   for (const spec of SEED_CAMPAIGNS) {
