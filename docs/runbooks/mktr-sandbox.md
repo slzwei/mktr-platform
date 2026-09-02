@@ -121,6 +121,12 @@ Production is unaffected by every one of these.
 ```bash
 BASE=https://mktr-sandbox-api.onrender.com     # or https://sandbox.mktr.sg once DNS is cut over
 
+# Did the app logic actually load? A 503 here (and a "Sandbox — not started"
+# page on every route) means the shell is up but the app is not: the response
+# names which required variables are absent. `/health` answering with
+# "mode":"shell" is the same signal.
+curl -s "$BASE/health/boot" | jq
+
 # Alive, and self-identifying as a sandbox
 curl -si "$BASE/health" | grep -i 'x-deploy-env\|x-robots-tag'
 
