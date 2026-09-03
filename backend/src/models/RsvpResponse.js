@@ -22,6 +22,8 @@ RsvpResponse.init({
   status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'going', comment: 'going | cancelled (DB CHECK)' },
   consentVersion: { type: DataTypes.STRING(40), allowNull: false },
   consentCopyHash: { type: DataTypes.STRING(64), allowNull: false },
+  // The exact sentence agreed to (migration 131) — wording is per-event and editable, so the text is the evidence.
+  consentCopy: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' },
   sourceMetadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
   createdAt: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW') },
   updatedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW') },

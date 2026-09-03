@@ -4,9 +4,9 @@ import { logger } from '../utils/logger.js';
 
 /**
  * RSVP confirmation email (docs/plans/rsvp-pages.md §8.3): an OPERATIONAL
- * message — the attendee's own RSVP, the event details, the link back. No
- * marketing content, ever: that is what keeps the event-scoped consent
- * honest and the DNC provisions out of scope.
+ * message — the attendee's own RSVP, the event details, the link back. It
+ * carries no offers itself; whatever the event's consent line permits later
+ * goes through a channel that honours opt-outs, not this transactional mail.
  *
  * Fired post-commit and fire-and-forget by the controller: a transport
  * failure is logged, never surfaced as a failed RSVP (§SHOULD-FIX 2 of the
@@ -39,7 +39,7 @@ export function renderRsvpConfirmation({ event, response, updated = false }) {
     '',
     'Need to change something? Open the page again and RSVP with this same email address.',
     '',
-    'This is a confirmation of an RSVP you made on the page above — not a marketing message. Your details are used for this event only.',
+    'This is a confirmation of the RSVP you made on the page above.',
     'MKTR PTE. LTD. (UEN 202507548M) runs Redeem. Personal Data Policy: https://redeem.sg/personal-data-policy',
   ].join('\n');
 
@@ -55,7 +55,7 @@ ${rowsHtml ? `<table role="presentation" cellpadding="0" cellspacing="0" style="
 <p style="margin:0 0 18px;font-size:14px;color:#5a301a">Hosted by ${escapeHtml(organiser)}.</p>
 <p style="margin:0 0 22px"><a href="${escapeHtml(url)}" style="display:inline-block;padding:11px 18px;background:#d17029;color:#fff;text-decoration:none;border-radius:999px;font-weight:700">Open the event page</a></p>
 <p style="margin:0 0 10px;font-size:13px;color:#7a6a58;line-height:1.5">Need to change something? Open the page again and RSVP with this same email address.</p>
-<p style="margin:0;font-size:12px;color:#9a7e5c;line-height:1.5">This is a confirmation of an RSVP you made on the page above — not a marketing message. Your details are used for this event only. MKTR PTE. LTD. (UEN 202507548M) runs Redeem. <a href="https://redeem.sg/personal-data-policy" style="color:#9a7e5c">Personal Data Policy</a>.</p>
+<p style="margin:0;font-size:12px;color:#9a7e5c;line-height:1.5">This is a confirmation of the RSVP you made on the page above. MKTR PTE. LTD. (UEN 202507548M) runs Redeem. <a href="https://redeem.sg/personal-data-policy" style="color:#9a7e5c">Personal Data Policy</a>.</p>
 </td></tr></table></td></tr></table></body></html>`;
   return { subject, html, text };
 }

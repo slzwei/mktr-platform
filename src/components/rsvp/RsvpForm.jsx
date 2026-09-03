@@ -62,7 +62,7 @@ function serverErrorsByKey(submitError) {
   return map;
 }
 
-export default function RsvpForm({ fields, consentCopy, submitLabel = 'RSVP', onSubmit, submitting = false, submitError = null, t, mode = 'live' }) {
+export default function RsvpForm({ fields, consentCopy, consentHash = null, submitLabel = 'RSVP', onSubmit, submitting = false, submitError = null, t, mode = 'live' }) {
   const [answers, setAnswers] = useState({});
   const [consent, setConsent] = useState(false);
   const [website, setWebsite] = useState('');
@@ -79,7 +79,9 @@ export default function RsvpForm({ fields, consentCopy, submitLabel = 'RSVP', on
     setTouched(true);
     const errors = validateAnswers(fields, answers, consent);
     if (Object.keys(errors).length) return;
-    onSubmit({ answers: buildAnswersPayload(fields, answers), consent: true, website });
+    // Echo the hash of the sentence this form displayed — the server refuses a
+    // submit against wording that changed since (consent_changed).
+    onSubmit({ answers: buildAnswersPayload(fields, answers), consent: true, website, ...(consentHash ? { consentHash } : {}) });
   };
 
   const inputStyle = (bad) => ({
@@ -91,7 +93,7 @@ export default function RsvpForm({ fields, consentCopy, submitLabel = 'RSVP', on
   const errorStyle = { fontSize: 12.5, color: t.danger, margin: '5px 0 0' };
   const topCode = submitError?.data?.code;
   const topMessage = submitError && !Object.keys(serverErrors).length
-    ? (topCode === 'full' ? 'Sorry — this event just filled up.' : topCode === 'closed' || topCode === 'ended' ? 'RSVPs for this event have closed.' : submitError.message || 'Something went wrong. Please try again.')
+    ? (topCode === 'full' ? 'Sorry — this event just filled up.' : topCode === 'closed' || topCode === 'ended' ? 'RSVPs for this event have closed.' : topCode === 'consent_changed' ? 'The consent wording was updated — please read it again, tick the box, and resubmit.' : submitError.message || 'Something went wrong. Please try again.')
     : null;
 
   return (

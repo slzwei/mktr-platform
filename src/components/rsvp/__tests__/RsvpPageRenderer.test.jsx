@@ -30,7 +30,7 @@ const LAYOUT = clampLayout({
   ],
   confirmation: { headline: 'See you there', body: 'Bring a friend.' },
 });
-const CONSENT = { version: 'v1', copy: 'I agree that MKTR PTE. LTD. may share my details with Acme.' };
+const CONSENT = { version: 'v1', copy: 'I agree that MKTR PTE. LTD. may share my details with Acme.', hash: 'a'.repeat(64) };
 
 const renderPage = (props = {}) => render(
   <RsvpPageRenderer title="Launch night" organiserName="Acme" layout={LAYOUT} state="open" consent={CONSENT} {...props} />
@@ -111,6 +111,7 @@ describe('RsvpPageRenderer', () => {
       answers: { name: 'Alice', email: 'alice@example.com', f_diet: 'Veg', f_days: ['Sat'], f_okay: true, f_pax1: 2 },
       consent: true,
       website: '',
+      consentHash: 'a'.repeat(64),
     });
   });
 
@@ -120,6 +121,8 @@ describe('RsvpPageRenderer', () => {
     expect(screen.getByText(/must be one of/)).toBeInTheDocument();
     rerender(<RsvpPageRenderer layout={LAYOUT} state="open" consent={CONSENT} submitError={{ message: 'full', data: { code: 'full' } }} />);
     expect(screen.getByText(/this event just filled up/)).toBeInTheDocument();
+    rerender(<RsvpPageRenderer layout={LAYOUT} state="open" consent={CONSENT} submitError={{ message: 'changed', data: { code: 'consent_changed' } }} />);
+    expect(screen.getByText(/consent wording was updated/)).toBeInTheDocument();
   });
 });
 

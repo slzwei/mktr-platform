@@ -24,7 +24,8 @@ describe('renderRsvpConfirmation', () => {
     expect(text).toContain('Hi Alice,');
     expect(text).toContain('When: Sat 4 Oct, 7pm');
     expect(text).toContain('Event page: https://rsvp.redeem.sg/launch');
-    expect(text).toContain('not a marketing message');
+    expect(text).toContain('This is a confirmation of the RSVP you made');
+    expect(text).not.toContain('not for marketing');
     expect(html).toContain('Launch &lt;night&gt;');
     expect(html).toContain('&lt;b&gt;Hall&lt;/b&gt;');
     expect(html).toContain('Acme &amp; Co');

@@ -3,7 +3,7 @@
  * preview, block/field editing, locked + frozen rules, explicit save with
  * only-changed meta, and publish problems surfaced from the server.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -32,7 +32,7 @@ const LAYOUT = clampLayout({
 });
 const baseEvent = () => ({
   id: 'ev-1', title: 'Launch night', slug: 'launch', organiserName: 'Acme', status: 'draft', capacity: null, closesAt: null,
-  layout: LAYOUT, consent: { version: 'v1', copy: 'I agree ... Acme ...' }, problems: [], goingCount: 0, responseCount: 0, frozen: false, locked: false,
+  layout: LAYOUT, consent: { version: 'v1', copy: 'I agree ... Acme ...', custom: '', defaultTemplate: 'Default: {organiser} may contact me.' }, problems: [], goingCount: 0, responseCount: 0, frozen: false, locked: false,
 });
 
 beforeEach(() => {
@@ -124,6 +124,22 @@ describe('AdminRsvpDesigner', () => {
     const banner = () => screen.getAllByRole('status').map((n) => n.textContent).join(' | ');
     await waitFor(() => expect(banner()).toContain('Add a link in Settings'));
     expect(banner()).toContain('"f_diet" needs at least 2 options');
+  });
+});
+
+describe('consent line', () => {
+  it('previews the default wording with the organiser substituted, and a custom line replaces it live', async () => {
+    renderPage();
+    const frame = () => screen.getByTestId('frame');
+    expect(within(frame()).getByLabelText(/Default: Acme may contact me\./)).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole('list', { name: 'Page blocks' })).getByRole('button', { name: /^RSVP form/ }));
+    const area = screen.getByLabelText('Consent line (the tick box under the form)');
+    expect(area).toHaveAttribute('placeholder', 'Default: {organiser} may contact me.');
+    // fireEvent: user-event treats `{` as a key descriptor and would eat the placeholder braces.
+    fireEvent.change(area, { target: { value: 'I let {organiser} invite me again.' } });
+    expect(within(frame()).getByLabelText(/I let Acme invite me again\./)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reset to default wording' }));
+    expect(within(frame()).getByLabelText(/Default: Acme may contact me\./)).toBeInTheDocument();
   });
 });
 

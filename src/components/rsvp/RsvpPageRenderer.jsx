@@ -102,6 +102,7 @@ function FormBlock({ block, layout, state, consent, t, mode, onSubmit, submittin
           <RsvpForm
             fields={fields}
             consentCopy={consent?.copy || ''}
+            consentHash={consent?.hash || null}
             submitLabel={block.submitLabel || DEFAULT_SUBMIT_LABEL}
             onSubmit={onSubmit}
             submitting={submitting}

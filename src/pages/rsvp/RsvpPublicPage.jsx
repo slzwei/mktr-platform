@@ -62,6 +62,9 @@ export default function RsvpPublicPage() {
       const code = err?.data?.code;
       if (code === 'full' || code === 'closed' || code === 'ended') {
         setEvent((prev) => (prev ? { ...prev, state: code } : prev));
+      } else if (code === 'consent_changed' && err?.data?.consent) {
+        // Show the wording the server holds now; the attendee re-reads and re-ticks.
+        setEvent((prev) => (prev ? { ...prev, consent: err.data.consent } : prev));
       }
     } finally {
       setSubmitting(false);

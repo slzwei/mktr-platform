@@ -27,7 +27,7 @@ const blockSnippet = (b) => {
 
 // ── Content ────────────────────────────────────────────────────────────────
 
-function BlockEditor({ block, onChange }) {
+function BlockEditor({ block, onChange, consentDefault = '' }) {
   const set = (k, v) => onChange({ ...block, [k]: v });
   const id = `blk-${block.id}`;
   switch (block.type) {
@@ -70,6 +70,19 @@ function BlockEditor({ block, onChange }) {
         <>
           <Field id={`${id}-h`} label="Form headline" value={block.headline} onChange={(v) => set('headline', v)} limit={LIMITS.headline} placeholder="Save your spot" />
           <Field id={`${id}-c`} label="Button label" value={block.submitLabel} onChange={(v) => set('submitLabel', v)} limit={LIMITS.submitLabel} placeholder="RSVP" />
+          <AreaField
+            id={`${id}-consent`}
+            label="Consent line (the tick box under the form)"
+            value={block.consentCopy}
+            onChange={(v) => set('consentCopy', v)}
+            limit={LIMITS.consentCopy}
+            rows={6}
+            placeholder={consentDefault}
+            hint="Blank uses the default above. Write {organiser} where the organiser's name should appear. Everyone who RSVPs keeps a copy of the exact wording they agreed to."
+          />
+          {block.consentCopy ? (
+            <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={() => set('consentCopy', '')}>Reset to default wording</button>
+          ) : null}
         </>
       );
     default:
@@ -77,7 +90,7 @@ function BlockEditor({ block, onChange }) {
   }
 }
 
-export function ContentPanel({ layout, update, selectedId, onSelect }) {
+export function ContentPanel({ layout, update, selectedId, onSelect, consentDefault = '' }) {
   const blocks = layout.blocks || [];
   const selected = blocks.find((b) => b.id === selectedId) || null;
   const items = blocks.map((b) => ({
@@ -118,7 +131,7 @@ export function ContentPanel({ layout, update, selectedId, onSelect }) {
       </Section>
       {selected ? (
         <Section title={BLOCK_LABELS[selected.type] || 'Block'}>
-          <BlockEditor block={selected} onChange={(next) => update((l) => ({ ...l, blocks: l.blocks.map((b) => (b.id === next.id ? next : b)) }), { kind: 'text' })} />
+          <BlockEditor block={selected} consentDefault={consentDefault} onChange={(next) => update((l) => ({ ...l, blocks: l.blocks.map((b) => (b.id === next.id ? next : b)) }), { kind: 'text' })} />
         </Section>
       ) : (
         <Section title="Edit"><Note>Select a block to edit it. Drag the handle (or focus it and use Space + arrows) to reorder.</Note></Section>

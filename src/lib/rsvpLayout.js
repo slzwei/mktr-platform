@@ -58,6 +58,8 @@ export const LIMITS = Object.freeze({
   detailsLabel: 40, detailsValue: 120, mediaUrl: 500, mediaAlt: 120,
   label: 80, help: 160, option: 48,
   confirmationHeadline: 80, confirmationBody: 600,
+  // The consent line under the form ('' = the server's default era wording).
+  consentCopy: 700,
   // Answer bounds (utils/rsvpAnswers.js builds the Joi from these).
   answerShort: 200, answerLong: 2000, multiselectMax: 12, numberAbs: 1_000_000_000,
 });
@@ -153,6 +155,8 @@ function cleanBlock(raw, id) {
         id, type: 'form',
         headline: sanitizeText(raw.headline, LIMITS.headline),
         submitLabel: sanitizeText(raw.submitLabel, LIMITS.submitLabel) || DEFAULT_SUBMIT_LABEL,
+        // Owner-authored consent sentence; may keep the {organiser} placeholder.
+        consentCopy: sanitizeText(raw.consentCopy, LIMITS.consentCopy),
       };
     default:
       return null;
@@ -335,6 +339,21 @@ export function layoutProblems(layout) {
     if (!seen.has(key)) problems.push(`locked_field_missing:${key}`);
   }
   return problems;
+}
+
+export const ORGANISER_PLACEHOLDER = '{organiser}';
+
+/** The consent sentence as an attendee sees it: `{organiser}` → the organiser's name. Pure; the server renders the same way. */
+export function renderConsentTemplate(template, organiserName) {
+  if (typeof template !== 'string' || !template.trim()) return '';
+  const name = typeof organiserName === 'string' && organiserName.trim() ? organiserName.trim() : 'the event organiser';
+  return template.trim().split(ORGANISER_PLACEHOLDER).join(name);
+}
+
+/** The form block's own consent template ('' when the event uses the default). */
+export function consentTemplateOf(layout) {
+  const form = (Array.isArray(layout?.blocks) ? layout.blocks : []).find((b) => b && b.type === 'form');
+  return typeof form?.consentCopy === 'string' ? form.consentCopy : '';
 }
 
 export function isValidRsvpSlug(slug) {
