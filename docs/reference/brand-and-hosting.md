@@ -35,6 +35,21 @@ Callers pass `resolveCustomerHost(campaign.design_config?.customerHost)`: `Admin
 
 **QR generation (backend):** `qrCodeService` bakes the campaign's host into the QR image at create/regenerate time and records it on `QrTag.targetHost` (enum `redeem`|`mktr`, nullable → legacy treated as redeem; migration `037-add-qrtag-target-host.js`). `backend/src/utils/customerHost.js` provides `normalizeCustomerHostChoice()` (enum clamp — the security boundary, never trusts a raw host) and `customerHostOrigin(choice)` (→ `PUBLIC_BASE_URL` for redeem/default, `MKTR_FRONTEND_URL`/`https://mktr.sg` for mktr). `campaignService.updateCampaign` clamps `design_config.customerHost` on save; the bulk-QR update path excludes `campaignId`/`targetHost`/`slug`/`qrCode`/`qrImageUrl` so host can't be mass-mutated without regeneration.
 
+## rsvp.redeem.sg — the RSVP attendee surface (docs/plans/rsvp-pages.md §7)
+
+A **third static site** from the same commit: `rsvp-frontend`, `VITE_BRAND=redeem` + `VITE_SURFACE=rsvp`. Its route table is one page (`/:slug`); an unknown path shows the same "not live" screen a draft event gets. Nothing else from the SPA is registered — no auth, no admin chunks, no marketplace, no trackers.
+
+| Env on `rsvp-frontend` | Value | Why |
+|---|---|---|
+| `VITE_BRAND` | `redeem` | Forced by the build guard — the operator brand would otherwise be inherited. |
+| `VITE_SURFACE` | `rsvp` | Selects the route table, forces the HTML identity (title `RSVP`, canonical `https://rsvp.redeem.sg/`), emits a blanket-disallow `robots.txt` and no sitemap. |
+| `VITE_RSVP_API_BASE` | `https://api.mktr.sg/api` | The cookie-less public client (`src/api/rsvpPublic.js`, `credentials: 'omit'`) calls the API **cross-origin** — the site needs **no `/api` rewrite**. |
+| `VITE_META_PIXEL_ID` / `VITE_TIKTOK_PIXEL_ID` / `VITE_GOOGLE_ADS_*` / `VITE_ADROLL_*` / `VITE_TOUCH_ENABLED` | **unset** | `scripts/rsvpSurfaceGuard.mjs` fails the build if any is populated — `index.html` would otherwise load the loaders before React renders. |
+
+Render dashboard (the MCP cannot set these): the SPA fallback rewrite `/* → /index.html`, and the custom domain `rsvp.redeem.sg`. Cloudflare: `CNAME rsvp → rsvp-frontend.onrender.com`.
+
+Backend: `rsvp.redeem.sg` is in `ALLOWED_PUBLIC_HOSTS` and `isRsvpHost()`; `internalRouteHostGuard` gives it a **strict allowlist of one prefix** (`/api/rsvp-public`) — the RSVP admin API `/api/rsvp` is also on the consumer blocklist; `cookieDomainForPublicHost` returns `undefined` for it; `https://rsvp.redeem.sg` is a default CORS origin. Confirmation emails link to `RSVP_PUBLIC_ORIGIN` (default `https://rsvp.redeem.sg`).
+
 ## Routing guards (D13 — internal routes are mktr.sg-only, three layers)
 
 1. **Render edge redirect rules on `redeem-frontend`** (16 rules) — catch admin paths before SPA loads. Routes: `/auth/*`, `/Admin*`, `/admin/*`, `/Agent*`, `/Driver*`, `/FleetOwner*`, `/preview*`, `/provision/*`, `/CustomerLogin`, `/ForgotPassword`, `/Onboarding`, `/PendingApproval`, `/MyProspects`, `/prospect/*`, `/profile`, `/settings` — all 301 to `mktr.sg{path}`.
@@ -89,5 +104,6 @@ Nameservers at Cloudflare (`chance.ns.cloudflare.com`, `liv.ns.cloudflare.com`) 
 | `mktr-platform` static site | `srv-d2s3che3jp1c738qlgjg` | mktr.sg |
 | `redeem-frontend` static site | `srv-d88qhph9rddc738nk0d0` | redeem.sg |
 | `redeem-ops-frontend` static site | `srv-d97i34q8qa3s73epa51g` (`VITE_SURFACE=ops`) | ops.redeem.sg |
+| `rsvp-frontend` static site | (created at P3 go-live — see plan §16) (`VITE_SURFACE=rsvp`) | rsvp.redeem.sg |
 | `mktr-backend-jo6r` | `srv-d2s9p0emcj7s73acd9lg` | api.mktr.sg |
 | `mktr-db` (Postgres) | `dpg-d2s2h7nfte5s739gnl7g-a` | — |

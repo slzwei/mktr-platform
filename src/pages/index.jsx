@@ -136,6 +136,33 @@ const RedeemOpsCadenceEditor = lazy(() => import('./redeemops/CadenceEditorPage'
 // boundary (internalRouteHostGuard's strict ops allowlist).
 const IS_OPS_SURFACE = import.meta.env.VITE_SURFACE === 'ops';
 
+// rsvp.redeem.sg — the attendee surface (docs/plans/rsvp-pages.md §7). The
+// route table is ONE page: /:slug. No auth, no admin chunks, no marketplace,
+// no trackers; an unknown path is the same "not live" screen a draft gets.
+const IS_RSVP_SURFACE = import.meta.env.VITE_SURFACE === 'rsvp';
+const RsvpPublicPage = lazy(() => import('./rsvp/RsvpPublicPage'));
+
+function RsvpNotFound() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, fontFamily: 'system-ui, sans-serif', textAlign: 'center' }}>
+      <div>
+        <h1 style={{ fontSize: 22, margin: '0 0 8px' }}>This RSVP link isn’t live</h1>
+        <p style={{ margin: 0, color: '#6b6b6b' }}>Check the link with whoever sent it to you.</p>
+      </div>
+    </div>
+  );
+}
+
+/** rsvp.redeem.sg route table: the event page, nothing else. */
+function RsvpSurfaceRoutes() {
+  return (
+    <Routes>
+      <Route path="/:slug" element={<RsvpPublicPage />} />
+      <Route path="*" element={<RsvpNotFound />} />
+    </Routes>
+  );
+}
+
 /**
  * The redeem-ops routes, shared verbatim between the mktr.sg dogfood
  * surface and the ops.redeem.sg build so the two can never drift.
@@ -226,10 +253,10 @@ function PagesContent() {
  <ErrorBoundary>
  {/* AdRoll retargeting pageViews on the public browse surfaces. No-op unless
      the build carries the AdRoll ids; never mounted on the ops surface. */}
- {!IS_OPS_SURFACE && <AdRollRouteTracker />}
+ {!IS_OPS_SURFACE && !IS_RSVP_SURFACE && <AdRollRouteTracker />}
  {/* Durable touchpoint beacons on the same browse allow-list (ads-centralisation §4.4).
      Dark unless VITE_TOUCH_ENABLED; never mounted on the ops surface. */}
- {!IS_OPS_SURFACE && <TouchRouteTracker />}
+ {!IS_OPS_SURFACE && !IS_RSVP_SURFACE && <TouchRouteTracker />}
  <Suspense
  fallback={
  <div className="min-h-screen flex items-center justify-center">
@@ -237,7 +264,7 @@ function PagesContent() {
  </div>
  }
  >
- {IS_OPS_SURFACE ? <OpsSurfaceRoutes /> : (
+ {IS_OPS_SURFACE ? <OpsSurfaceRoutes /> : IS_RSVP_SURFACE ? <RsvpSurfaceRoutes /> : (
  <Routes>
  {/* Public routes - no protection needed. Lead capture flow stays on both brands. */}
  <Route path="/" element={brand.showHomepage ? <Homepage /> : (MARKETPLACE_ON ? <MarketplaceHome /> : IS_REDEEM_BUILD ? <RedeemHome /> : <LeadCapture />)} />

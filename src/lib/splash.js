@@ -36,7 +36,9 @@ export function safeSessionSet(key, value) {
  * once-per-session splash.
  */
 export function shouldSuppressSplash(pathname = window.location.pathname) {
-  if (isRedeem()) return true;
+  // The rsvp surface builds as the redeem brand, so this is belt-and-braces:
+  // an attendee must never meet the operator splash whatever the brand var.
+  if (isRedeem() || import.meta.env.VITE_SURFACE === 'rsvp') return true;
   return (
     pathname.startsWith('/t/') ||
     pathname.startsWith('/share/') ||

@@ -34,6 +34,21 @@ describe('shouldSuppressSplash — redeem (customer) build', () => {
   });
 });
 
+describe('shouldSuppressSplash — rsvp attendee surface', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('always suppresses, whatever the brand var says', async () => {
+    vi.stubEnv('VITE_SURFACE', 'rsvp');
+    vi.resetModules();
+    const { shouldSuppressSplash: suppress } = await import('@/lib/splash');
+    expect(suppress('/launch-night')).toBe(true);
+    expect(suppress('/')).toBe(true);
+  });
+});
+
 describe('safe session storage helpers', () => {
   afterEach(() => vi.unstubAllGlobals());
 

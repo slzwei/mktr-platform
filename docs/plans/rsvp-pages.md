@@ -1,7 +1,7 @@
 # RSVP Pages — scope (v2, post-Codex)
 
 > Status: **P1 LIVE (dark) 2026-09-03** — PR #488 merged, migration 130 applied on prod.
-> **P2 BUILT 2026-09-03** on `feat/rsvp-p2` (worktree `~/lyfe-master/mktr-rsvp-worktree`) — §15. v1 2026-09-03 · v2 after an adversarial Codex pass
+> **P2** PR #489 (§15). **P3 BUILT 2026-09-03** on `feat/rsvp-p3` — §16 (incl. the go-live checklist). v1 2026-09-03 · v2 after an adversarial Codex pass
 > (gpt-5.6-sol, xhigh) whose claims were re-verified against the code (§13). P1 delivery
 > notes: §14.
 >
@@ -542,3 +542,55 @@ Designer + renderer + responses, per §6, with these implementation facts:
 - Verified locally: backend unit (incl. csv) + routes/audit 27/27 + typecheck + eslint;
   frontend P2 suites (renderer/form, sortable list, designer, list, responses, public page)
   + lockstep, eslint over all of `src/`.
+
+---
+
+## 16. P3 delivery notes + go-live checklist (2026-09-03)
+
+The surface, its isolation, the email, and the data-subject paths, per §7–§8:
+
+- **Host isolation.** `rsvp.redeem.sg` joins `ALLOWED_PUBLIC_HOSTS`; `isRsvpHost()`;
+  `internalRouteHostGuard` gives it a **strict allowlist of one prefix** (`/api/rsvp-public`)
+  — and `/api/rsvp` (the ADMIN namespace) now sits on the consumer blocklist too, so
+  `redeem.sg` cannot reach it either. `cookieDomainForPublicHost` returns `undefined` for
+  the host; `https://rsvp.redeem.sg` is a default CORS origin because the static site has
+  **no `/api` rewrite by design** — the cookie-less public client calls `api.mktr.sg`
+  directly (`VITE_RSVP_API_BASE`).
+- **Build boundary.** `scripts/rsvpSurfaceGuard.mjs`: `vite build` with `VITE_SURFACE=rsvp`
+  **fails** if any ad-tech id is set or `VITE_BRAND` is not `redeem`; the HTML identity
+  (title `RSVP`, canonical `https://rsvp.redeem.sg/`, redeem favicon) is forced; robots is a
+  blanket disallow, no sitemap. Proven on real builds (positive + two negatives).
+- **Route table.** `RsvpSurfaceRoutes()` = `/:slug` + a "not live" screen; AdRoll/touch
+  trackers never mount; the operator splash is suppressed by surface as well as by brand.
+  Honest footnote: Vite still *emits* the admin lazy chunks into `dist/assets` (the lazy
+  declarations are module-scope — the ops build has the same property); nothing on this
+  surface references them, so they are never fetched. The guarantee that is tested is the
+  route table + trackers, not the chunk list.
+- **Confirmation email** (`services/rsvpMailer.js`): operational only, escaped, links to
+  `RSVP_PUBLIC_ORIGIN/{slug}`, sent from the redeem context, post-commit and
+  fire-and-forget, only on a new or reactivated seat, honours `confirmation.emailEnabled`.
+- **Data-subject paths.** `erasureService` step 15b deletes RSVP rows matched on normalised
+  email / phone digits (covered by the erasure integration matrix, `report.rsvpResponses`);
+  `POST /api/rsvp/:id/purge` (reason required, refused while published, audited with actor +
+  row count); `retentionUntil` on PATCH; a 6-hourly sweep purges closed/draft events past it
+  (published ones wait to be closed); inert while `RSVP_ENABLED` is off.
+- Docs: `docs/reference/brand-and-hosting.md` (rsvp section + service table),
+  `CLAUDE.md` where-things-live row, `env.example` (`RSVP_PUBLIC_ORIGIN`).
+
+### Go-live checklist
+
+Done from this session (code): everything above. **Render / Cloudflare steps:**
+
+1. Render → New Static Site `rsvp-frontend` from `slzwei/mktr-platform` `main`, build
+   `npm ci && npm run build`, publish `dist`, env: `VITE_BRAND=redeem`, `VITE_SURFACE=rsvp`,
+   `VITE_RSVP_API_BASE=https://api.mktr.sg/api`, `VITE_API_URL=https://api.mktr.sg/api`.
+   **Do not attach the shared redeem env group** (it carries pixel ids — the build would
+   refuse). — *creatable via the Render MCP.*
+2. Render dashboard (MCP cannot): Redirects/Rewrites → `/*` → `/index.html` (Rewrite);
+   Custom Domains → `rsvp.redeem.sg`.
+3. Cloudflare (redeem.sg zone): `CNAME rsvp → rsvp-frontend.onrender.com` (DNS only / proxied
+   both work; Render terminates TLS).
+4. Flags: backend `RSVP_ENABLED=true` (mktr-backend-jo6r), `VITE_RSVP_ENABLED=true` on
+   `mktr-platform` (admin section appears after the rebuild).
+5. Self-test: create an event in `/admin/rsvp`, publish, open `https://rsvp.redeem.sg/{slug}`,
+   RSVP, check the row in Responses + the confirmation email, then close + purge it.

@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { visualizer } from 'rollup-plugin-visualizer'
+import { assertRsvpSurfaceEnv, RSVP_HTML } from './scripts/rsvpSurfaceGuard.mjs'
 
 // Resolve VITE_BRAND at config time so the chosen brand config file is the
 // only one imported by `@/lib/brand`. This keeps unused brand strings out of
@@ -30,13 +31,24 @@ for (const [k, v] of Object.entries(BRAND_HTML_DEFAULTS)) {
   if (!process.env[k]) process.env[k] = v
 }
 
+// rsvp.redeem.sg (docs/plans/rsvp-pages.md §7): the attendee surface. Its HTML
+// identity is its own and FORCED (an inherited redeem title/canonical would be
+// wrong), and the build refuses to carry any ad-tech id.
+const SURFACE = process.env.VITE_SURFACE || ''
+if (SURFACE === 'rsvp') {
+  assertRsvpSurfaceEnv(process.env)
+  for (const [k, v] of Object.entries(RSVP_HTML)) process.env[k] = v
+}
+
 // Emit brand-aware robots.txt and sitemap.xml into dist/ at build time.
 // Public routes only — internal/admin paths are excluded from sitemap and
 // disallowed in robots so search engines do not index login/admin surfaces.
 function brandSeoFiles() {
   // ops.redeem.sg is an internal staff tool — nothing on it should ever be
   // indexed, so its robots.txt is a blanket disallow and it gets no sitemap.
-  if (process.env.VITE_SURFACE === 'ops') {
+  // rsvp.redeem.sg pages are link-shared, not searched: same treatment
+  // (indexing hygiene only — never an access control).
+  if (process.env.VITE_SURFACE === 'ops' || process.env.VITE_SURFACE === 'rsvp') {
     const robots = ['User-agent: *', 'Disallow: /', ''].join('\n')
     return {
       name: 'mktr-brand-seo-files',

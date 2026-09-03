@@ -1,4 +1,4 @@
-import { publicHostFromRequest, isRedeemHost, isOpsHost } from '../utils/publicHost.js';
+import { publicHostFromRequest, isRedeemHost, isOpsHost, isRsvpHost } from '../utils/publicHost.js';
 import { logger } from '../utils/logger.js';
 
 // D13: auth / admin / agent / driver flows must not be reachable from the
@@ -35,7 +35,15 @@ const BLOCKED_PATH_PREFIXES = [
   // File administration + staff uploads (P1-5): nothing on a consumer host
   // uploads to or enumerates uploads/ — the only caller is the admin Studio.
   '/api/uploads',
+  // RSVP ADMIN namespace (docs/plans/rsvp-pages.md §5.1). /api/rsvp-public is a
+  // different prefix (matchesPrefix is segment-exact) and stays reachable.
+  '/api/rsvp',
 ];
+
+// rsvp.redeem.sg answers ONE namespace. Treating it like redeem.sg (a blocklist
+// that permits everything unlisted) would have left /api/rsvp — the ADMIN
+// API — reachable from the public host (Codex plan review, must-fix #3).
+const RSVP_ALLOWED_PREFIXES = ['/api/rsvp-public'];
 
 const OPS_ALLOWED_PREFIXES = [
   '/api/auth',
@@ -64,6 +72,21 @@ export function blockRedeemForInternalRoutes(req, res, next) {
   // redeem-ops namespace, and notifications exist there — EVERY other /api path
   // 403s at the host layer, including public capture endpoints and any future
   // namespace not on the blocklist (Codex Phase-1 review, finding 1).
+  if (isRsvpHost(publicHost)) {
+    if (!matchesPrefix(pathname, RSVP_ALLOWED_PREFIXES)) {
+      logger.warn('Blocked API call from rsvp.redeem.sg (outside allowlist)', {
+        path: pathname,
+        publicHost,
+        origin: req.get('origin') || null,
+      });
+      return res.status(403).json({
+        success: false,
+        message: 'This API is not available on rsvp.redeem.sg.',
+      });
+    }
+    return next();
+  }
+
   if (isOpsHost(publicHost)) {
     if (!matchesPrefix(pathname, OPS_ALLOWED_PREFIXES)) {
       logger.warn('Blocked API call from ops.redeem.sg (outside allowlist)', {

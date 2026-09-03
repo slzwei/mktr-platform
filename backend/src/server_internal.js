@@ -78,6 +78,10 @@ export const init = async (app) => {
     // Internal Redeem Ops surface (defence-in-depth: it proxies /api same-origin,
     // so CORS rarely applies — docs/redeem-ops/RECOMMENDED_ARCHITECTURE.md §5).
     'https://ops.redeem.sg',
+    // RSVP attendee surface (docs/plans/rsvp-pages.md §7): its static site has
+    // NO /api rewrite by design — the cookie-less public client calls
+    // api.mktr.sg directly, so CORS is the whole story here.
+    'https://rsvp.redeem.sg',
   ];
   const envOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()) : [];
 
