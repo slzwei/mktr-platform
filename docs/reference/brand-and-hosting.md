@@ -46,7 +46,7 @@ A **third static site** from the same commit: `rsvp-frontend`, `VITE_BRAND=redee
 | `VITE_RSVP_API_BASE` | `https://api.mktr.sg/api` | The cookie-less public client (`src/api/rsvpPublic.js`, `credentials: 'omit'`) calls the API **cross-origin** — the site needs **no `/api` rewrite**. |
 | `VITE_META_PIXEL_ID` / `VITE_TIKTOK_PIXEL_ID` / `VITE_GOOGLE_ADS_*` / `VITE_ADROLL_*` / `VITE_TOUCH_ENABLED` | **unset** | `scripts/rsvpSurfaceGuard.mjs` fails the build if any is populated — `index.html` would otherwise load the loaders before React renders. |
 
-Render dashboard (the MCP cannot set these): the SPA fallback rewrite `/* → /index.html`, and the custom domain `rsvp.redeem.sg`. Cloudflare: `CNAME rsvp → rsvp-frontend.onrender.com`.
+Render dashboard (the MCP cannot set these): the SPA fallback rewrite `/* → /index.html`, and the custom domain `rsvp.redeem.sg`. Cloudflare: `CNAME rsvp → rsvp-frontend-9d5j.onrender.com` (Render suffixed the slug at creation — use this exact target).
 
 Backend: `rsvp.redeem.sg` is in `ALLOWED_PUBLIC_HOSTS` and `isRsvpHost()`; `internalRouteHostGuard` gives it a **strict allowlist of one prefix** (`/api/rsvp-public`) — the RSVP admin API `/api/rsvp` is also on the consumer blocklist; `cookieDomainForPublicHost` returns `undefined` for it; `https://rsvp.redeem.sg` is a default CORS origin. Confirmation emails link to `RSVP_PUBLIC_ORIGIN` (default `https://rsvp.redeem.sg`).
 
@@ -104,6 +104,6 @@ Nameservers at Cloudflare (`chance.ns.cloudflare.com`, `liv.ns.cloudflare.com`) 
 | `mktr-platform` static site | `srv-d2s3che3jp1c738qlgjg` | mktr.sg |
 | `redeem-frontend` static site | `srv-d88qhph9rddc738nk0d0` | redeem.sg |
 | `redeem-ops-frontend` static site | `srv-d97i34q8qa3s73epa51g` (`VITE_SURFACE=ops`) | ops.redeem.sg |
-| `rsvp-frontend` static site | (created at P3 go-live — see plan §16) (`VITE_SURFACE=rsvp`) | rsvp.redeem.sg |
+| `rsvp-frontend` static site | `srv-dacinhrm8hqs73b377mg` (`VITE_SURFACE=rsvp`, origin `rsvp-frontend-9d5j.onrender.com`) | rsvp.redeem.sg |
 | `mktr-backend-jo6r` | `srv-d2s9p0emcj7s73acd9lg` | api.mktr.sg |
 | `mktr-db` (Postgres) | `dpg-d2s2h7nfte5s739gnl7g-a` | — |
