@@ -127,6 +127,46 @@ describe('AdminRsvpDesigner', () => {
   });
 });
 
+describe('undo / redo', () => {
+  it('undoes and redoes structural edits via the buttons and the keyboard', async () => {
+    renderPage();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: '+ Text' }));
+    const list = () => screen.getByRole('list', { name: 'Page blocks' });
+    expect(within(list()).getByRole('button', { name: 'Drag Text' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(within(list()).queryByRole('button', { name: 'Drag Text' })).not.toBeInTheDocument();
+    expect(screen.getByText('All changes saved')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(within(list()).getByRole('button', { name: 'Drag Text' })).toBeInTheDocument();
+    await userEvent.keyboard('{Meta>}z{/Meta}');
+    expect(within(list()).queryByRole('button', { name: 'Drag Text' })).not.toBeInTheDocument();
+    await userEvent.keyboard('{Meta>}{Shift>}z{/Shift}{/Meta}');
+    expect(within(list()).getByRole('button', { name: 'Drag Text' })).toBeInTheDocument();
+  });
+
+  it('collapses a typing burst into one step, and a new edit clears the redo stack', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: '+ Text' }));
+    await userEvent.type(screen.getByLabelText('Text'), 'Doors at 7');
+    expect(screen.getByLabelText('Text')).toHaveValue('Doors at 7');
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByLabelText('Text')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeEnabled();
+    await userEvent.type(screen.getByLabelText('Text'), 'New');
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled();
+  });
+
+  it('settings edits are undoable too', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await userEvent.type(screen.getByLabelText('Title (admin only)'), ' v2');
+    expect(screen.getByLabelText('Title (admin only)')).toHaveValue('Launch night v2');
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByLabelText('Title (admin only)')).toHaveValue('Launch night');
+  });
+});
+
 describe('helpers', () => {
   it('metaPatch diffs against the baseline and shapes capacity/closesAt', () => {
     const base = { title: 'A', slug: 'a', organiserName: 'O', capacity: '', closesAt: '' };
