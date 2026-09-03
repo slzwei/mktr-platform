@@ -1,7 +1,7 @@
 # RSVP Pages — scope (v2, post-Codex)
 
 > Status: **P1 LIVE (dark) 2026-09-03** — PR #488 merged, migration 130 applied on prod.
-> **P2** PR #489 (§15). **P3 BUILT 2026-09-03** on `feat/rsvp-p3` — §16 (incl. the go-live checklist). v1 2026-09-03 · v2 after an adversarial Codex pass
+> **P2** PR #489 merged. **P3** PR #490 merged — §16. **Deployed + flags ON 2026-09-03**: backend `RSVP_ENABLED=true`, admin `VITE_RSVP_ENABLED=true`, `rsvp-frontend` created (`srv-dacinhrm8hqs73b377mg`). Awaiting: SPA rewrite + custom domain (Render dashboard), Cloudflare CNAME, admin self-test. v1 2026-09-03 · v2 after an adversarial Codex pass
 > (gpt-5.6-sol, xhigh) whose claims were re-verified against the code (§13). P1 delivery
 > notes: §14.
 >
@@ -581,16 +581,20 @@ The surface, its isolation, the email, and the data-subject paths, per §7–§8
 
 Done from this session (code): everything above. **Render / Cloudflare steps:**
 
-1. Render → New Static Site `rsvp-frontend` from `slzwei/mktr-platform` `main`, build
-   `npm ci && npm run build`, publish `dist`, env: `VITE_BRAND=redeem`, `VITE_SURFACE=rsvp`,
-   `VITE_RSVP_API_BASE=https://api.mktr.sg/api`, `VITE_API_URL=https://api.mktr.sg/api`.
-   **Do not attach the shared redeem env group** (it carries pixel ids — the build would
-   refuse). — *creatable via the Render MCP.*
-2. Render dashboard (MCP cannot): Redirects/Rewrites → `/*` → `/index.html` (Rewrite);
-   Custom Domains → `rsvp.redeem.sg`.
-3. Cloudflare (redeem.sg zone): `CNAME rsvp → rsvp-frontend.onrender.com` (DNS only / proxied
-   both work; Render terminates TLS).
-4. Flags: backend `RSVP_ENABLED=true` (mktr-backend-jo6r), `VITE_RSVP_ENABLED=true` on
-   `mktr-platform` (admin section appears after the rebuild).
-5. Self-test: create an event in `/admin/rsvp`, publish, open `https://rsvp.redeem.sg/{slug}`,
-   RSVP, check the row in Responses + the confirmation email, then close + purge it.
+1. ✅ Render static site `rsvp-frontend` created via MCP 2026-09-03 08:11 UTC —
+   `srv-dacinhrm8hqs73b377mg`, origin `https://rsvp-frontend-9d5j.onrender.com`, build
+   `npm ci && npm run build`, publish `dist`, env `VITE_BRAND=redeem`, `VITE_SURFACE=rsvp`,
+   `VITE_RSVP_API_BASE=https://api.mktr.sg/api`, `VITE_API_URL=https://api.mktr.sg/api`, no
+   env group. First deploy live; origin serves `<title>RSVP</title>`, the rsvp canonical,
+   blanket-disallow robots, and the "not live" screen at `/`.
+2. ⬜ Render dashboard (MCP cannot): Redirects/Rewrites → `/*` → `/index.html` (Rewrite);
+   Custom Domains → `rsvp.redeem.sg`. Until the rewrite exists, deep paths 404 at the CDN.
+3. ⬜ Cloudflare (redeem.sg zone): `CNAME rsvp → rsvp-frontend-9d5j.onrender.com` (exact
+   target — Render suffixed the slug).
+4. ✅ Flags flipped 2026-09-03 08:11 UTC: backend `RSVP_ENABLED=true` (deploy
+   `dep-dacini8jo6nc738c7m20` live — `/api/rsvp-public/*` answers, strict host allowlist and
+   CORS preflight verified from the rsvp origin), `VITE_RSVP_ENABLED=true` on `mktr-platform`
+   (deploy `dep-daciniifngtc73dl4mv0` live — `/admin/rsvp` routes + nav entry in the bundle).
+5. ⬜ Self-test (needs an admin login): create an event in `/admin/rsvp`, publish, open
+   `https://rsvp.redeem.sg/{slug}`, RSVP, check the row in Responses + the confirmation
+   email, then close + purge it.
