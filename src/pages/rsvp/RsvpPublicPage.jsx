@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { fetchPublicRsvp, submitRsvp } from '@/api/rsvpPublic';
 import RsvpPageRenderer from '@/components/rsvp/RsvpPageRenderer';
 
@@ -22,13 +22,17 @@ function setRobotsNoindex() {
 
 export default function RsvpPublicPage() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
-  const [done, setDone] = useState(null);
+  // The confirmation email links here with ?confirmed=1: open on the "You're
+  // in" card rather than the blank form; "Change my RSVP" reveals the form.
+  const [done, setDone] = useState(() => (searchParams.get('confirmed') === '1' ? { status: 'confirmed' } : null));
+  const changeRsvp = useCallback(() => { setDone(null); setSubmitError(null); }, []);
 
   useEffect(() => {
     setRobotsNoindex();
@@ -95,6 +99,7 @@ export default function RsvpPublicPage() {
       submitting={submitting}
       submitError={submitError}
       done={done}
+      onChangeRsvp={done ? changeRsvp : null}
       mode="live"
     />
   );

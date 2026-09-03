@@ -23,21 +23,22 @@ describe('renderRsvpConfirmation', () => {
     expect(subject).toBe("You're in: Launch <night>");
     expect(text).toContain('Hi Alice,');
     expect(text).toContain('When: Sat 4 Oct, 7pm');
-    expect(text).toContain('Event page: https://rsvp.redeem.sg/launch');
+    expect(text).toContain('Your RSVP: https://rsvp.redeem.sg/launch?confirmed=1');
     expect(text).toContain('This is a confirmation of the RSVP you made');
     expect(text).not.toContain('not for marketing');
     expect(html).toContain('Launch &lt;night&gt;');
     expect(html).toContain('&lt;b&gt;Hall&lt;/b&gt;');
     expect(html).toContain('Acme &amp; Co');
     expect(html).not.toContain('<script>');
-    expect(html).toContain('href="https://rsvp.redeem.sg/launch"');
+    expect(html).toContain('href="https://rsvp.redeem.sg/launch?confirmed=1"');
+    expect(html).toContain('View your RSVP');
   });
 
   test('updated wording + a configurable public origin', () => {
     process.env.RSVP_PUBLIC_ORIGIN = 'https://rsvp.example.test/';
     const { subject, text } = rsvpMailer.renderRsvpConfirmation({ event: EVENT, response: RESPONSE, updated: true });
     expect(subject).toBe('Your RSVP is updated: Launch <night>');
-    expect(text).toContain('https://rsvp.example.test/launch');
+    expect(text).toContain('https://rsvp.example.test/launch?confirmed=1');
   });
 });
 

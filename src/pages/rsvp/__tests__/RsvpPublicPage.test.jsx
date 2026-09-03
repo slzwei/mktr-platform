@@ -59,6 +59,17 @@ describe('RsvpPublicPage', () => {
     expect(screen.getByLabelText(/New wording from Acme/)).toBeInTheDocument();
   });
 
+  it('?confirmed=1 (the email link) opens on the confirmation card, and "Change my RSVP" reveals the form', async () => {
+    api.fetchPublicRsvp.mockResolvedValue(DTO);
+    render(<MemoryRouter initialEntries={['/launch?confirmed=1']}><RsvpPublicPage /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { level: 2, name: "You're in" })).toBeInTheDocument();
+    expect(screen.getByText('Your RSVP is confirmed. See you there.')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'RSVP form' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Change my RSVP' }));
+    expect(screen.getByRole('form', { name: 'RSVP form' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Change my RSVP' })).not.toBeInTheDocument();
+  });
+
   it('a "full" refusal flips the page into the full state', async () => {
     api.fetchPublicRsvp.mockResolvedValue(DTO);
     api.submitRsvp.mockRejectedValue(Object.assign(new Error('This event is full'), { status: 409, data: { code: 'full' } }));
