@@ -107,6 +107,14 @@ const PUBLIC_SURFACE = {
   "rewardClaim.js": [
     "GET /:token"
   ],
+  // RSVP pages (docs/plans/rsvp-pages.md §5.2-5.4): the attendee-facing page
+  // read + submit on rsvp.redeem.sg. Flag-gated (RSVP_ENABLED); the submit is
+  // rate-limited, honeypotted, body-capped and Joi-validated against the
+  // event's own field defs.
+  "rsvpPublic.js": [
+    "GET /:slug",
+    "POST /:slug/respond"
+  ],
   "screeningCallback.js": [
     "GET /:token",
     "POST /:token"
