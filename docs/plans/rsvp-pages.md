@@ -566,6 +566,22 @@ Designer + renderer + responses, per §6, with these implementation facts:
   column, confirmation email no longer claims "not a marketing message".
 - Responses table header alignment fixed (a real `<tr>` cannot take the flex `.av2-thead`).
 
+### 15c. The email link opens the confirmed state (#495, live 11:24 UTC)
+
+Shawn's first test on the real domain: the confirmation email's "Open the event page"
+landed on the blank form again, which reads as if nothing was recorded. Now:
+
+- The email links to `https://rsvp.redeem.sg/{slug}?confirmed=1` and the button says
+  "View your RSVP"; the "need to change something" line points at "Change my RSVP".
+- `RsvpPublicPage` reads `?confirmed=1` and starts on the confirmation card
+  (`done = {status: 'confirmed'}`, default body "Your RSVP is confirmed. See you there.");
+  the card offers **Change my RSVP**, which reveals the form (also offered after a
+  submit). No PII travels in the link — the card is a state, not a lookup.
+- Verified live: a fresh RSVP on `livetest-2026` produced an email whose link carries
+  `?confirmed=1`; the deployed `RsvpPageRenderer-*.js` chunk carries the button. Note
+  for deploy checks: the public-page code lives in the lazy chunks
+  `RsvpPublicPage-*.js` / `RsvpPageRenderer-*.js`, not `index-*.js`.
+
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
 
 The surface, its isolation, the email, and the data-subject paths, per §7–§8:
