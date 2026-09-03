@@ -98,6 +98,14 @@ function defineAssociations() {
   EnrichmentScoringConfig.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
 
   // Saved cohorts (tracker "cohortapi") — definitions only, resolved live.
+  // RSVP pages (migration 130) — standalone event + attendee tables, outside
+  // the lead pipeline. RESTRICT on the creator, CASCADE responses from the
+  // event (the purge path is the only intended trigger).
+  const { RsvpEvent, RsvpResponse } = models;
+  RsvpEvent.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'RESTRICT' });
+  RsvpEvent.hasMany(RsvpResponse, { foreignKey: 'rsvpEventId', as: 'responses', onDelete: 'CASCADE' });
+  RsvpResponse.belongsTo(RsvpEvent, { foreignKey: 'rsvpEventId', as: 'event', onDelete: 'CASCADE' });
+
   const { Cohort } = models;
   Cohort.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'SET NULL' });
 
@@ -410,7 +418,8 @@ export const {
   EnrichmentScoringConfig, EnrichmentSweepRun,
   MetaPage, MetaFormMapping, MetaLeadgenEvent, MetaAgentConnection,
   OutreachAccount, OutreachPersona, OutreachEmail, TimelineHiddenEntry,
-  PlatformDelivery, Touchpoint, ErasedSessionSweep
+  PlatformDelivery, Touchpoint, ErasedSessionSweep,
+  RsvpEvent, RsvpResponse
 } = models;
 
 export { sequelize };
