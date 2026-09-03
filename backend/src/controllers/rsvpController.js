@@ -53,6 +53,19 @@ export const listResponses = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+export const updateResponse = asyncHandler(async (req, res) => {
+  const response = await rsvpService.updateResponse(req.params.id, req.params.rid, req.body);
+  res.json({ success: true, data: { response } });
+});
+
+export const exportResponsesCsv = asyncHandler(async (req, res) => {
+  const { filename, csv, truncated } = await rsvpService.exportResponsesCsv(req.params.id);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  if (truncated) res.setHeader('X-Rsvp-Export-Truncated', '1');
+  res.send(csv);
+});
+
 // ── public (routes/rsvpPublic.js; declared in meta.public) ──
 
 export const getPublicEvent = asyncHandler(async (req, res) => {

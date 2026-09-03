@@ -3,7 +3,7 @@
  * The §4 invariants, the frozen-field rule, and the public rebuild.
  */
 import {
-  clampLayout, defaultLayout, publicLayout, layoutProblems,
+  clampLayout, defaultLayout, publicLayout, layoutProblems, sanitizeMultiline,
   isValidRsvpSlug, slugProblem,
   LIMITS, LOCKED_FIELD_KEYS, BLOCK_TYPES, FIELD_TYPES, RESERVED_ROOT_SLUGS,
 } from '../../src/utils/rsvpLayout.js';
@@ -99,6 +99,16 @@ describe('clampLayout — blocks', () => {
     expect(doc.blocks[4].rows).toHaveLength(LIMITS.detailsRows);
     expect(doc.blocks[4].rows[0]).toEqual({ label: 'When', value: 'Sat' });
     expect(doc.blocks[5].submitLabel).toBe('RSVP');
+  });
+
+  test('text blocks and the confirmation body keep their paragraphs (single-line copy does not)', () => {
+    const doc = clampLayout({ blocks: [{ id: 'b_txt1', type: 'text', body: 'One.\r\n\r\nTwo.\u0007' }, { id: 'b_hero', type: 'hero', headline: 'A\nB' }, { type: 'form' }], confirmation: { body: 'x\ny' } });
+    expect(doc.blocks[0].body).toBe('One.\n\nTwo.');
+    expect(doc.blocks[1].headline).toBe('AB');
+    expect(doc.confirmation.body).toBe('x\ny');
+    // The cap trims trailing whitespace, newlines included.
+    expect(sanitizeMultiline('  a\u202Eb\n\nc  ', 4)).toBe('ab');
+    expect(sanitizeMultiline('a\n\nb', 3)).toBe('a');
   });
 
   test('vocabulary is exactly the plan', () => {

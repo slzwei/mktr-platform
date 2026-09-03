@@ -1,7 +1,7 @@
 # RSVP Pages — scope (v2, post-Codex)
 
-> Status: **P1 BUILT 2026-09-03** on `feat/rsvp-p1` (worktree `~/lyfe-master/mktr-rsvp-worktree`),
-> unreviewed, unmerged, ships dark. v1 2026-09-03 · v2 after an adversarial Codex pass
+> Status: **P1 LIVE (dark) 2026-09-03** — PR #488 merged, migration 130 applied on prod.
+> **P2 BUILT 2026-09-03** on `feat/rsvp-p2` (worktree `~/lyfe-master/mktr-rsvp-worktree`) — §15. v1 2026-09-03 · v2 after an adversarial Codex pass
 > (gpt-5.6-sol, xhigh) whose claims were re-verified against the code (§13). P1 delivery
 > notes: §14.
 >
@@ -507,3 +507,38 @@ Built exactly to §3–§5 with the following implementation facts worth knowing
 - **Not in P1 (as planned):** host allowlist `isRsvpHost` + dedicated public client,
   uploads endpoint, purge/erasure branch, confirmation email, CSV, response
   correct/cancel — P2/P3.
+
+---
+
+## 15. P2 delivery notes (2026-09-03)
+
+Designer + renderer + responses, per §6, with these implementation facts:
+
+- **One renderer** (`src/components/rsvp/RsvpPageRenderer.jsx` + `RsvpForm.jsx`) mounts in
+  the designer's `DeviceFrame` preview (`mode="preview"`: inert form, placeholders for empty
+  slots) and on the public page (`src/pages/rsvp/RsvpPublicPage.jsx`, wired to a route in P3).
+- **Designer** (`/admin/rsvp/:id`, chromeless like the Studio): rail Content · Form · Theme ·
+  **Settings** (a fourth section — slug/organiser/capacity/closes-at/confirmation copy — rather
+  than a top-bar popover). Two dnd-kit sortable lists with keyboard sensors
+  (`designer/SortableList.jsx`, modelled on `GuidedReviewDesigner`). **Explicit Save**; the
+  PATCH carries the layout plus only the meta keys that changed (`metaPatch`), so frozen
+  slug/organiser are never re-sent.
+- **Edits are raw, the preview is clamped.** Clamping every keystroke trimmed the space you
+  were about to type after (caught by the designer test); the preview renders
+  `clampLayout(layout, { frozen })` and the server clamps on save.
+- **`sanitizeMultiline`** joined the twin: the single-line sanitizer strips U+000A, which
+  collapsed multi-paragraph text blocks and long-text answers into one line. Text blocks,
+  the confirmation body and `textarea` answers keep their newlines now (lockstep-pinned).
+- **Server CSV** (`GET /api/rsvp/:id/responses.csv`) mirrors `src/lib/adminV2/csv.js`'s
+  formula guard on every header and value — so `+65…` phones export as `'+65…`, exactly as
+  the prospect export does. Custom answers are columns headed by their labels; ceiling 5,000
+  rows (`X-Rsvp-Export-Truncated: 1`).
+- **`PATCH /api/rsvp/:id/responses/:rid`** — correct name/phone/answers (re-validated
+  against the event's own defs as a merged whole), cancel / reactivate (a reactivation needs
+  a seat, checked under the event lock). Email is immutable (dedupe identity) and the
+  consent stamp is untouched by construction.
+- Admin routes + nav are gated on **`VITE_RSVP_ENABLED`** (mktr build); public client is
+  `src/api/rsvpPublic.js` — `credentials: 'omit'`, no token, base `VITE_RSVP_API_BASE`.
+- Verified locally: backend unit (incl. csv) + routes/audit 27/27 + typecheck + eslint;
+  frontend P2 suites (renderer/form, sortable list, designer, list, responses, public page)
+  + lockstep, eslint over all of `src/`.

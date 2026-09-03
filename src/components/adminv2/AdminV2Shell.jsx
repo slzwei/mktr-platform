@@ -66,6 +66,7 @@ const MOBILE_ROUTES = [
   [/^\/admin\/campaigns\/(new|workspace)/, { title: 'Campaign', parent: '/AdminCampaigns' }],
   [/^\/admin\/campaigns\/[^/]+\/(edit|workspace|studio)/, { title: 'Campaign', parent: '/AdminCampaigns' }],
   [/^\/admin\/campaigns\//, { title: 'Campaign', parent: '/AdminCampaigns' }],
+  [/^\/admin\/rsvp\//, { title: 'RSVP', parent: '/admin/rsvp' }],
   [/^\/admincampaigns/, { title: 'Campaigns', root: true }],
   [/^\/adminwallets/, { title: 'Money', root: true }],
   [/^\/adminagents/, { title: 'Money', root: true }],

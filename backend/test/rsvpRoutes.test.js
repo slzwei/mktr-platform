@@ -73,6 +73,7 @@ describe('admin gating', () => {
       ['get', '/api/rsvp'], ['post', '/api/rsvp'], ['get', '/api/rsvp/slug-availability?slug=x'],
       ['get', `/api/rsvp/${ZERO}`], ['patch', `/api/rsvp/${ZERO}`], ['post', `/api/rsvp/${ZERO}/publish`],
       ['post', `/api/rsvp/${ZERO}/close`], ['delete', `/api/rsvp/${ZERO}`], ['get', `/api/rsvp/${ZERO}/responses`],
+      ['get', `/api/rsvp/${ZERO}/responses.csv`], ['patch', `/api/rsvp/${ZERO}/responses/${ZERO}`],
     ];
     for (const [method, path] of routes) {
       expect((await request(app)[method](path)).status).toBe(401);
@@ -367,6 +368,57 @@ describe('responses listing', () => {
     expect(second.body.data.nextCursor).toBeNull();
     expect((await request(app).get(`/api/rsvp/${ev.id}/responses?cursor=%25%25%25`).set(admin())).status).toBe(400);
     expect((await request(app).get(`/api/rsvp/${ZERO}/responses`).set(admin())).status).toBe(404);
+  });
+});
+
+describe('responses export + correction (P2)', () => {
+  test('CSV: labels as headers, hostile values neutralised, answers flattened', async () => {
+    const ev = await publishedEvent();
+    expect((await respond(ev.slug, answersFor('csv1@x.com', { name: '=HYPERLINK("evil")', f_note: 'a,b' }))).status).toBe(201);
+    const res = await request(app).get(`/api/rsvp/${ev.id}/responses.csv`).set(admin());
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    expect(res.headers['content-disposition']).toMatch(/attachment; filename="rsvp-.*-responses\.csv"/);
+    const [header, line] = res.text.split('\r\n');
+    expect(header).toBe('name,email,phone,status,Diet,Note,I will bring ID,consent_version,submitted_at,updated_at');
+    // A leading + is a formula marker too — phones get the same ' guard the prospect export applies.
+    const expectedPrefix = `"'=HYPERLINK(""evil"")",csv1@x.com,'+6591234567,going,Veg,"a,b",yes,`;
+    expect(line.slice(0, expectedPrefix.length)).toBe(expectedPrefix);
+    expect((await request(app).get(`/api/rsvp/${ZERO}/responses.csv`).set(admin())).status).toBe(404);
+  });
+
+  test('PATCH response: cancel frees a seat, reactivation needs one, corrections are validated, email is immutable', async () => {
+    const ev = await publishedEvent({ patch: { capacity: 1 } });
+    expect((await respond(ev.slug, answersFor('first@x.com'))).status).toBe(201);
+    const first = (await request(app).get(`/api/rsvp/${ev.id}/responses`).set(admin())).body.data.responses[0];
+    const url = `/api/rsvp/${ev.id}/responses/${first.id}`;
+
+    const cancelled = await request(app).patch(url).set(admin()).send({ status: 'cancelled' });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.data.response.status).toBe('cancelled');
+    expect((await respond(ev.slug, answersFor('second@x.com'))).status).toBe(201); // seat freed
+    const reactivate = await request(app).patch(url).set(admin()).send({ status: 'going' });
+    expect(reactivate.status).toBe(409);
+    expect(reactivate.body.data.code).toBe('full');
+
+    const fixed = await request(app).patch(url).set(admin()).send({ name: 'Alice T.', phone: '8123 4567', answers: { f_diet: 'Halal' } });
+    expect(fixed.status).toBe(200);
+    expect(fixed.body.data.response).toMatchObject({ name: 'Alice T.', phone: '+6581234567', answers: { f_diet: 'Halal', f_note: 'hi', f_okay: true } });
+    const stored = await RsvpResponse.findByPk(first.id);
+    expect(stored.consentVersion).toBe(CURRENT_RSVP_CONSENT_VERSION);
+
+    const badAnswer = await request(app).patch(url).set(admin()).send({ answers: { f_diet: 'Beef' } });
+    expect(badAnswer.status).toBe(400);
+    const ghost = await request(app).patch(url).set(admin()).send({ answers: { f_ghost: 'x' } });
+    expect(ghost.status).toBe(400);
+    const email = await request(app).patch(url).set(admin()).send({ email: 'new@x.com' });
+    expect(email.status).toBe(400);
+    expect((await request(app).patch(url).set(admin()).send({})).status).toBe(400);
+    expect((await request(app).patch(url).set(admin()).send({ surprise: 1 })).status).toBe(400);
+    expect((await request(app).patch(`/api/rsvp/${ev.id}/responses/${ZERO}`).set(admin()).send({ status: 'going' })).status).toBe(404);
+    const other = await publishedEvent();
+    expect((await request(app).patch(`/api/rsvp/${other.id}/responses/${first.id}`).set(admin()).send({ status: 'going' })).status).toBe(404);
+    expect((await request(app).patch(`/api/rsvp/${ev.id}/responses/not-a-uuid`).set(admin()).send({ status: 'going' })).status).toBe(404);
   });
 });
 

@@ -7,7 +7,8 @@ import {
   clampLayout, defaultLayout, layoutProblems, publicLayout,
   isValidRsvpSlug, slugProblem, RSVP_SLUG_RE, LIMITS, sanitizeText,
 } from '../utils/rsvpLayout.js';
-import { buildSubmissionSchema, sanitizeAnswers, parseClosesAt, pickSourceMetadata } from '../utils/rsvpAnswers.js';
+import { buildSubmissionSchema, buildAnswersSchema, sanitizeAnswers, parseClosesAt, pickSourceMetadata } from '../utils/rsvpAnswers.js';
+import { toCsv } from '../utils/csv.js';
 import { CURRENT_RSVP_CONSENT_VERSION, resolveRsvpConsent, renderRsvpConsentCopy } from './rsvpConsentRegistry.js';
 import { emailNormKey } from './repeatSignup.js';
 import { normalizePhone } from './prospectHelpers.js';
@@ -271,6 +272,90 @@ export async function listResponses(eventId, { cursor, limit } = {}) {
     responses: page.map(toResponseDto),
     nextCursor: rows.length > size ? encodeCursor(page[page.length - 1]) : null,
   };
+}
+
+/** Responses beyond this many rows are not exported (documented ceiling, §5.1). */
+export const RESPONSES_EXPORT_CEILING = 5000;
+
+const BUILTIN_KEYS = ['name', 'email', 'phone'];
+
+function formatAnswer(v) {
+  if (v === null || v === undefined) return '';
+  if (Array.isArray(v)) return v.join('; ');
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  return v;
+}
+
+/** One CSV of every response, custom answers as columns headed by their labels. */
+export async function exportResponsesCsv(eventId) {
+  const event = await loadEvent(eventId);
+  const custom = (Array.isArray(event.layout?.fields) ? event.layout.fields : []).filter((f) => !BUILTIN_KEYS.includes(f.key));
+  const rows = await RsvpResponse.findAll({
+    where: { rsvpEventId: eventId },
+    order: [['createdAt', 'ASC'], ['id', 'ASC']],
+    limit: RESPONSES_EXPORT_CEILING,
+  });
+  const columns = [
+    { name: 'name', get: (r) => r.name },
+    { name: 'email', get: (r) => r.email },
+    { name: 'phone', get: (r) => r.phone || '' },
+    { name: 'status', get: (r) => r.status },
+    ...custom.map((f) => ({ name: f.label || f.key, get: (r) => formatAnswer(r.answers?.[f.key]) })),
+    { name: 'consent_version', get: (r) => r.consentVersion },
+    { name: 'submitted_at', get: (r) => (r.createdAt ? r.createdAt.toISOString() : '') },
+    { name: 'updated_at', get: (r) => (r.updatedAt ? r.updatedAt.toISOString() : '') },
+  ];
+  return {
+    filename: `rsvp-${event.slug || event.id}-responses.csv`,
+    csv: toCsv(columns, rows),
+    truncated: rows.length >= RESPONSES_EXPORT_CEILING,
+  };
+}
+
+/**
+ * Admin correction / cancellation of one attendee (§8.4). Email is the dedupe
+ * key and stays immutable; custom answers are re-validated against the
+ * event's own field defs as a whole (existing merged with the patch), so a
+ * correction can never store what the form could not; reactivating a
+ * cancelled seat needs a free seat, checked under the event lock like a
+ * submit. The consent stamp is untouched by construction.
+ */
+export async function updateResponse(eventId, responseId, patch) {
+  return sequelize.transaction(async (t) => {
+    const event = await RsvpEvent.findByPk(eventId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!event) throw typed(404, 'not_found', 'RSVP event not found');
+    const row = await RsvpResponse.findOne({ where: { id: responseId, rsvpEventId: eventId }, transaction: t, lock: t.LOCK.UPDATE });
+    if (!row) throw typed(404, 'not_found', 'Response not found');
+    if ('email' in patch) throw typed(400, 'email_immutable', "The email address is the attendee's identity for this event and cannot be edited");
+
+    const changes = {};
+    if ('name' in patch) {
+      const name = sanitizeText(patch.name, 120);
+      if (!name) throw typed(400, 'invalid', 'Name is required');
+      changes.name = name;
+    }
+    if ('phone' in patch) {
+      changes.phone = typeof patch.phone === 'string' && patch.phone.trim() ? String(normalizePhone(patch.phone.trim())).slice(0, 24) : null;
+    }
+    if ('answers' in patch) {
+      const fields = (Array.isArray(event.layout?.fields) ? event.layout.fields : []).filter((f) => !BUILTIN_KEYS.includes(f.key));
+      const merged = { ...(row.answers || {}), ...(patch.answers && typeof patch.answers === 'object' ? patch.answers : {}) };
+      const { error, value } = buildAnswersSchema(fields).validate(merged, { abortEarly: false });
+      if (error) throw validationError(error);
+      changes.answers = sanitizeAnswers(fields, value);
+    }
+    if ('status' in patch && patch.status !== row.status) {
+      if (patch.status === 'going' && event.capacity != null) {
+        const going = await RsvpResponse.count({ where: { rsvpEventId: event.id, status: 'going' }, transaction: t });
+        if (going >= event.capacity) throw typed(409, 'full', 'This event is full');
+      }
+      changes.status = patch.status;
+    }
+    if (Object.keys(changes).length > 0) {
+      await row.update(changes, { transaction: t, fields: [...Object.keys(changes), 'updatedAt'] });
+    }
+    return toResponseDto(row);
+  });
 }
 
 // ───────────────────────────── public ─────────────────────────────

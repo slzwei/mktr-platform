@@ -71,8 +71,23 @@ const DEFAULT_LABELS = Object.freeze({ name: 'Full name', email: 'Email', phone:
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-/** Owner copy + attendee text share one sanitizer (control/bidi strip, trim, cap). */
+/** Single-line owner copy + attendee text share one sanitizer (control/bidi strip, trim, cap). */
 export const sanitizeText = sanitizeQuestionText;
+
+/**
+ * Multi-line copy (text blocks, confirmation body, long-text answers): the
+ * single-line sanitizer strips U+000A with the other controls, which collapsed
+ * every paragraph into one line. This keeps newlines (CRLF normalised) and
+ * strips everything else the single-line one does.
+ */
+export function sanitizeMultiline(v, max) {
+  if (typeof v !== 'string') return '';
+  // eslint-disable-next-line no-control-regex
+  const stripped = v.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '');
+  const trimmed = stripped.trim();
+  if (typeof max === 'number' && max >= 0 && trimmed.length > max) return trimmed.slice(0, max).trimEnd();
+  return trimmed;
+}
 
 function cleanUrl(v) {
   if (typeof v !== 'string') return '';
@@ -118,7 +133,7 @@ function cleanBlock(raw, id) {
         mediaAlt: sanitizeText(raw.mediaAlt, LIMITS.mediaAlt),
       };
     case 'text':
-      return { id, type: 'text', body: sanitizeText(raw.body, LIMITS.body) };
+      return { id, type: 'text', body: sanitizeMultiline(raw.body, LIMITS.body) };
     case 'details': {
       const rows = [];
       for (const r of Array.isArray(raw.rows) ? raw.rows : []) {
@@ -252,7 +267,7 @@ function clampConfirmation(raw) {
   const c = isObj(raw) ? raw : {};
   return {
     headline: sanitizeText(c.headline, LIMITS.confirmationHeadline) || DEFAULT_CONFIRMATION_HEADLINE,
-    body: sanitizeText(c.body, LIMITS.confirmationBody),
+    body: sanitizeMultiline(c.body, LIMITS.confirmationBody),
     emailEnabled: c.emailEnabled !== false,
   };
 }

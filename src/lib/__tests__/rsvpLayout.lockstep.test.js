@@ -16,7 +16,7 @@ const CONSTANT_EXPORTS = [
 ];
 
 const FUNCTION_EXPORTS = [
-  'sanitizeText', 'defaultLayout', 'clampLayout', 'publicLayout', 'layoutProblems',
+  'sanitizeText', 'sanitizeMultiline', 'defaultLayout', 'clampLayout', 'publicLayout', 'layoutProblems',
   'isValidRsvpSlug', 'slugProblem',
 ];
 
@@ -36,6 +36,7 @@ const CORPUS = {
     fields: [{ key: 'email', type: 'checkbox', required: false }, { key: 'foo' }, { key: 'f_ok01', type: 'multiselect', options: [1, 'x', 'x', ' y '] }, { key: 'phone', type: 'text' }],
     confirmation: { headline: '', body: 'b'.repeat(2000), emailEnabled: false },
   },
+  paragraphs: { blocks: [{ id: 'b_txt1', type: 'text', body: 'One.\r\n\r\nTwo.\n\u0007Three.' }, { type: 'form' }], confirmation: { body: 'A\n\nB' } },
   unicode: { blocks: [{ id: 'b_h', type: 'hero', headline: '欢迎 — RSVP 🎉', subheadline: 'كل شيء' }, { type: 'form' }], fields: [{ key: 'f_zh01', type: 'text', label: '姓名' }] },
 };
 
@@ -93,6 +94,12 @@ describe('rsvpLayout twins — behavioural parity', () => {
       expect(mirror.slugProblem(s)).toBe(backend.slugProblem(s));
       expect(mirror.isValidRsvpSlug(s)).toBe(backend.isValidRsvpSlug(s));
     }
+  });
+
+  it('sanitizeMultiline agrees and keeps newlines', () => {
+    const s = 'One.\r\n\r\nTwo.\u0007\u202E';
+    expect(mirror.sanitizeMultiline(s, 100)).toBe(backend.sanitizeMultiline(s, 100));
+    expect(backend.sanitizeMultiline(s, 100)).toBe('One.\n\nTwo.');
   });
 
   it('sanitizeText agrees on hostile input', () => {

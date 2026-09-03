@@ -27,6 +27,7 @@ const router = express.Router();
 
 router.use(authenticateToken, requireAdmin);
 router.param('id', uuidParamGuard('RSVP event'));
+router.param('rid', uuidParamGuard('Response'));
 
 const createSchema = Joi.object({
   title: Joi.string().trim().min(1).max(LIMITS.title).required(),
@@ -44,6 +45,15 @@ const patchSchema = Joi.object({
   layout: Joi.object().unknown(true),
 }).min(1);
 
+// Admin correction / cancellation (§8.4). Email is deliberately absent — the
+// service 400s it as the attendee's immutable identity for this event.
+const responsePatchSchema = Joi.object({
+  status: Joi.string().valid('going', 'cancelled'),
+  name: Joi.string().trim().min(1).max(120),
+  phone: Joi.string().trim().max(24).allow('', null),
+  answers: Joi.object().unknown(true),
+}).min(1);
+
 router.get('/', rsvpController.listEvents);
 router.get('/slug-availability', rsvpController.checkSlugAvailability);
 router.post('/', validate(createSchema), rsvpController.createEvent);
@@ -54,5 +64,7 @@ router.post('/:id/close', rsvpController.closeEvent);
 // Drafts with no responses only — live events wait for the audited purge (§8.4, P3).
 router.delete('/:id', rsvpController.deleteEvent);
 router.get('/:id/responses', rsvpController.listResponses);
+router.get('/:id/responses.csv', rsvpController.exportResponsesCsv);
+router.patch('/:id/responses/:rid', validate(responsePatchSchema), rsvpController.updateResponse);
 
 export default router;

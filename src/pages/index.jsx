@@ -92,6 +92,12 @@ const AdminCampaignWorkspace = lazy(() => import('./AdminCampaignWorkspace'));
 // (rollout completed; the classic standalone designer is retired).
 const AdminCampaignStudio = lazy(() => import('./AdminCampaignStudio'));
 const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
+// RSVP event pages (docs/plans/rsvp-pages.md) — admin surface, dark until
+// VITE_RSVP_ENABLED=true is baked into the mktr build.
+const RSVP_ADMIN_ON = import.meta.env.VITE_RSVP_ENABLED === 'true';
+const AdminRsvpList = lazy(() => import('./admin/AdminRsvpList'));
+const AdminRsvpDesigner = lazy(() => import('./admin/AdminRsvpDesigner'));
+const AdminRsvpResponses = lazy(() => import('./admin/AdminRsvpResponses'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 
 const MyProspects = lazy(() => import('./MyProspects'));
@@ -437,6 +443,37 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
+ {/* RSVP pages — list + responses inside the admin shell, the designer is a
+ chromeless full-viewport takeover like the Studio. */}
+ {RSVP_ADMIN_ON && (
+ <>
+ <Route
+ path="/admin/rsvp" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminRsvpList />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ <Route
+ path="/admin/rsvp/:id/responses" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminRsvpResponses />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ <Route
+ path="/admin/rsvp/:id" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminRsvpDesigner />
+ </ProtectedRoute>
+ }
+ />
+ </>
+ )}
  {/* Campaign Studio — chromeless full-viewport takeover (own top bar + exit).
  The permanent design surface since the teardown PR. */}
  <Route
