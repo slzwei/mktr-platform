@@ -73,24 +73,35 @@ function ImageBlock({ block, t, preview }) {
   return <Media src={block.url} alt={block.alt} t={t} />;
 }
 
-function Confirmation({ confirmation, done, t }) {
+function Confirmation({ confirmation, done, t, onChangeRsvp }) {
+  const body = confirmation.body
+    || (done?.status === 'updated' ? 'We have updated your RSVP.'
+      : done?.status === 'confirmed' ? 'Your RSVP is confirmed. See you there.'
+        : 'Your RSVP is saved. See you there.');
   return (
     <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <h2 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: t.ink }}>{confirmation.headline || DEFAULT_CONFIRMATION_HEADLINE}</h2>
-      <p style={{ margin: 0, fontSize: 15.5, lineHeight: 1.55, color: t.bodyText }}>
-        {confirmation.body || (done?.status === 'updated' ? 'We have updated your RSVP.' : 'Your RSVP is saved. See you there.')}
-      </p>
+      <p style={{ margin: 0, fontSize: 15.5, lineHeight: 1.55, color: t.bodyText }}>{body}</p>
+      {onChangeRsvp ? (
+        <button
+          type="button"
+          onClick={onChangeRsvp}
+          style={{ alignSelf: 'flex-start', marginTop: 6, padding: '9px 14px', fontSize: 14, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', color: t.ink, background: 'transparent', border: `1px solid ${t.line}`, borderRadius: t.r.btn }}
+        >
+          Change my RSVP
+        </button>
+      ) : null}
     </div>
   );
 }
 
-function FormBlock({ block, layout, state, consent, t, mode, onSubmit, submitting, submitError, done }) {
+function FormBlock({ block, layout, state, consent, t, mode, onSubmit, submitting, submitError, done, onChangeRsvp }) {
   const fields = Array.isArray(layout.fields) ? layout.fields : [];
   const notice = STATE_COPY[state];
   return (
     <section style={{ background: t.card, borderRadius: t.r.card, padding: '22px 20px 24px', boxShadow: '0 1px 2px rgba(0,0,0,.06)' }}>
       {done ? (
-        <Confirmation confirmation={layout.confirmation || {}} done={done} t={t} />
+        <Confirmation confirmation={layout.confirmation || {}} done={done} t={t} onChangeRsvp={onChangeRsvp} />
       ) : notice ? (
         <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: t.ink }}>{notice.title}</h2>
@@ -121,6 +132,8 @@ const BLOCKS = { hero: HeroBlock, text: TextBlock, details: DetailsBlock, image:
 export default function RsvpPageRenderer({
   title, organiserName, layout, state = 'open', consent = null,
   onSubmit, submitting = false, submitError = null, done = null, mode = 'live',
+  // Offered on the confirmation card (email link / after submit): reveals the form again.
+  onChangeRsvp = null,
 }) {
   const t = useMemo(() => resolveRsvpTheme(layout?.theme), [layout?.theme]);
   const blocks = Array.isArray(layout?.blocks) ? layout.blocks : [];
@@ -145,6 +158,7 @@ export default function RsvpPageRenderer({
               submitting={submitting}
               submitError={submitError}
               done={done}
+              onChangeRsvp={onChangeRsvp}
             />
           );
         })}

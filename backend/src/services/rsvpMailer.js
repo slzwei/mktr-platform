@@ -21,7 +21,10 @@ function detailRows(layout) {
 }
 
 export function renderRsvpConfirmation({ event, response, updated = false }) {
-  const url = event.slug ? `${rsvpPublicOrigin()}/${encodeURIComponent(event.slug)}` : rsvpPublicOrigin();
+  // `?confirmed=1` opens the page in its confirmed state ("You're in" + a
+  // "Change my RSVP" button) instead of the blank form — the link otherwise
+  // reads as if nothing was recorded (Shawn, go-live day).
+  const url = event.slug ? `${rsvpPublicOrigin()}/${encodeURIComponent(event.slug)}?confirmed=1` : rsvpPublicOrigin();
   const firstName = String(response.name || '').trim().split(/\s+/)[0] || 'there';
   const rows = detailRows(event.layout);
   const organiser = event.organiserName || 'the organiser';
@@ -35,9 +38,9 @@ export function renderRsvpConfirmation({ event, response, updated = false }) {
     ...rows.map((r) => `${r.label}: ${r.value}`),
     '',
     `Hosted by ${organiser}.`,
-    `Event page: ${url}`,
+    `Your RSVP: ${url}`,
     '',
-    'Need to change something? Open the page again and RSVP with this same email address.',
+    'Need to change something? Open that link, choose "Change my RSVP", and submit again with this same email address.',
     '',
     'This is a confirmation of the RSVP you made on the page above.',
     'MKTR PTE. LTD. (UEN 202507548M) runs Redeem. Personal Data Policy: https://redeem.sg/personal-data-policy',
@@ -53,8 +56,8 @@ export function renderRsvpConfirmation({ event, response, updated = false }) {
 <p style="margin:0 0 14px;font-size:15px;line-height:1.5">Hi ${escapeHtml(firstName)}, ${updated ? 'we have updated your RSVP for' : 'your RSVP for'} <strong>${escapeHtml(event.title)}</strong> ${updated ? '' : 'is confirmed'}.</p>
 ${rowsHtml ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px">${rowsHtml}</table>` : ''}
 <p style="margin:0 0 18px;font-size:14px;color:#5a301a">Hosted by ${escapeHtml(organiser)}.</p>
-<p style="margin:0 0 22px"><a href="${escapeHtml(url)}" style="display:inline-block;padding:11px 18px;background:#d17029;color:#fff;text-decoration:none;border-radius:999px;font-weight:700">Open the event page</a></p>
-<p style="margin:0 0 10px;font-size:13px;color:#7a6a58;line-height:1.5">Need to change something? Open the page again and RSVP with this same email address.</p>
+<p style="margin:0 0 22px"><a href="${escapeHtml(url)}" style="display:inline-block;padding:11px 18px;background:#d17029;color:#fff;text-decoration:none;border-radius:999px;font-weight:700">View your RSVP</a></p>
+<p style="margin:0 0 10px;font-size:13px;color:#7a6a58;line-height:1.5">Need to change something? Open your RSVP above, choose &ldquo;Change my RSVP&rdquo;, and submit again with this same email address.</p>
 <p style="margin:0;font-size:12px;color:#9a7e5c;line-height:1.5">This is a confirmation of the RSVP you made on the page above. MKTR PTE. LTD. (UEN 202507548M) runs Redeem. <a href="https://redeem.sg/personal-data-policy" style="color:#9a7e5c">Personal Data Policy</a>.</p>
 </td></tr></table></td></tr></table></body></html>`;
   return { subject, html, text };
