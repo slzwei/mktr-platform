@@ -616,6 +616,14 @@ Done from this session (code): everything above. **Render / Cloudflare steps:**
    `dep-dacini8jo6nc738c7m20` live — `/api/rsvp-public/*` answers, strict host allowlist and
    CORS preflight verified from the rsvp origin), `VITE_RSVP_ENABLED=true` on `mktr-platform`
    (deploy `dep-daciniifngtc73dl4mv0` live — `/admin/rsvp` routes + nav entry in the bundle).
-5. ⬜ Self-test (needs an admin login): create an event in `/admin/rsvp`, publish, open
-   `https://rsvp.redeem.sg/{slug}`, RSVP, check the row in Responses + the confirmation
-   email, then close + purge it.
+5. ✅ Self-test done 2026-09-03 ~09:00 UTC through the admin session (API-driven, curl for
+   the public side, the page itself waits for the domain): create → publish → public GET
+   (era v2 wording + hash, no internal keys) → wrong-hash submit refused `409
+   consent_changed` → RSVP `201` → resubmit `200 updated` → missing consent `400` →
+   honeypot `200 ok` (nothing stored) → Responses page + CSV (`'+65…` guard, `consent_copy`)
+   → **confirmation email delivered in <1 s** (`noreply@redeem.sg` → the Redeem Ops
+   mailbox) → close → purge (`responseCount: 3`) → admin and public `404`. Also verified
+   live: strict host allowlist, CORS preflight, `/api/rsvp` blocked from redeem.sg, admin
+   routes `401` unauthenticated, undo/redo and the consent-line editor in the deployed bundle.
+   Note: an event published under era v1 keeps v1 wording until re-published (Close →
+   Reopen) or given a custom line; new publishes stamp v2.
