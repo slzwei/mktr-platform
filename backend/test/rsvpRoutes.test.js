@@ -73,7 +73,7 @@ describe('admin gating', () => {
       ['get', '/api/rsvp'], ['post', '/api/rsvp'], ['get', '/api/rsvp/slug-availability?slug=x'],
       ['get', `/api/rsvp/${ZERO}`], ['patch', `/api/rsvp/${ZERO}`], ['post', `/api/rsvp/${ZERO}/publish`],
       ['post', `/api/rsvp/${ZERO}/close`], ['delete', `/api/rsvp/${ZERO}`], ['get', `/api/rsvp/${ZERO}/responses`],
-      ['get', `/api/rsvp/${ZERO}/responses.csv`], ['patch', `/api/rsvp/${ZERO}/responses/${ZERO}`],
+      ['get', `/api/rsvp/${ZERO}/responses.csv`], ['patch', `/api/rsvp/${ZERO}/responses/${ZERO}`], ['post', `/api/rsvp/${ZERO}/purge`],
     ];
     for (const [method, path] of routes) {
       expect((await request(app)[method](path)).status).toBe(401);
@@ -419,6 +419,42 @@ describe('responses export + correction (P2)', () => {
     const other = await publishedEvent();
     expect((await request(app).patch(`/api/rsvp/${other.id}/responses/${first.id}`).set(admin()).send({ status: 'going' })).status).toBe(404);
     expect((await request(app).patch(`/api/rsvp/${ev.id}/responses/not-a-uuid`).set(admin()).send({ status: 'going' })).status).toBe(404);
+  });
+});
+
+describe('purge + retention (P3)', () => {
+  test('purge is refused while published, then takes the event and its responses; retentionUntil is stored', async () => {
+    const ev = await publishedEvent();
+    expect((await respond(ev.slug, answersFor('gone@x.com'))).status).toBe(201);
+    const refused = await request(app).post(`/api/rsvp/${ev.id}/purge`).set(admin()).send({ reason: 'test cleanup' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.data.code).toBe('purge_refused');
+    expect((await request(app).post(`/api/rsvp/${ev.id}/purge`).set(admin()).send({})).status).toBe(400);
+
+    const kept = await request(app).patch(`/api/rsvp/${ev.id}`).set(admin()).send({ retentionUntil: '2030-01-01T00:00' });
+    expect(kept.status).toBe(200);
+    expect(new Date(kept.body.data.event.retentionUntil).toISOString()).toBe('2029-12-31T16:00:00.000Z');
+
+    await request(app).post(`/api/rsvp/${ev.id}/close`).set(admin());
+    const purged = await request(app).post(`/api/rsvp/${ev.id}/purge`).set(admin()).send({ reason: 'test cleanup' });
+    expect(purged.status).toBe(200);
+    expect(purged.body.data).toEqual({ purged: true, responseCount: 1 });
+    expect((await request(app).get(`/api/rsvp/${ev.id}`).set(admin())).status).toBe(404);
+    expect(await RsvpResponse.count({ where: { rsvpEventId: ev.id } })).toBe(0);
+  });
+
+  test('the retention sweep purges closed/draft events past their date and leaves published ones alone', async () => {
+    const { purgeExpiredEvents } = await import('../src/services/rsvpService.js');
+    const closed = await publishedEvent({ patch: { retentionUntil: '2020-01-01T00:00' } });
+    await request(app).post(`/api/rsvp/${closed.id}/close`).set(admin());
+    const live = await publishedEvent({ patch: { retentionUntil: '2020-01-01T00:00' } });
+    const future = await createEvent();
+    await request(app).patch(`/api/rsvp/${future.id}`).set(admin()).send({ retentionUntil: '2040-01-01T00:00' });
+    const { purged } = await purgeExpiredEvents();
+    expect(purged).toBeGreaterThanOrEqual(1);
+    expect(await RsvpEvent.findByPk(closed.id)).toBeNull();
+    expect(await RsvpEvent.findByPk(live.id)).not.toBeNull();
+    expect(await RsvpEvent.findByPk(future.id)).not.toBeNull();
   });
 });
 

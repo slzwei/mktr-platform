@@ -732,6 +732,21 @@ export function makeErasureService(overrides = {}) {
         report.waitlistSignups = rowCount(wMeta);
       }
 
+      // 15b. RSVP attendee rows (docs/plans/rsvp-pages.md §8.4) live OUTSIDE
+      // the consumer spine by design, so this is the only path from a person
+      // to them: matched on the same normalised emails + phone digits as the
+      // waitlist, DELETED not husked — the row is the person (name, email,
+      // phone, answers, consent stamp) and holds no non-personal skeleton.
+      if (emails.length || phoneDigits) {
+        const [, rsvpMeta] = await d.sequelize.query(
+          `DELETE FROM rsvp_responses
+            WHERE ${emails.length ? '"emailNormalized" IN (:emails)' : 'false'}
+               OR ${phoneDigits ? "regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = :digits" : 'false'}`,
+          { replacements: { ...(emails.length ? { emails } : {}), ...(phoneDigits ? { digits: phoneDigits } : {}) }, transaction: t }
+        );
+        report.rsvpResponses = rowCount(rsvpMeta);
+      }
+
       // 16. The person's consent-evidence rows keep their semantic core
       // (kind/granted/version/verified/when) but drop the page-URL locator
       // (Codex R1 #11) — the explicit append-only exception, like erasure

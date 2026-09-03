@@ -19,6 +19,12 @@ const ALLOWED_PUBLIC_HOSTS = new Set([
   // guard gives it a narrow internal allowlist instead of the consumer block. Auth
   // cookies stay host-only here (cookieDomainForPublicHost returns undefined).
   'ops.redeem.sg',
+  // RSVP event pages (docs/plans/rsvp-pages.md §7) — an ANONYMOUS attendee
+  // surface on the redeem apex. Not a redeem-consumer host either: the host
+  // guard gives it the narrowest allowlist of all (only /api/rsvp-public), and
+  // cookieDomainForPublicHost returns undefined for it — no cookie is ever
+  // minted there (the surface's client sends none).
+  'rsvp.redeem.sg',
 ]);
 
 /**
@@ -81,6 +87,12 @@ export function isRedeemHost(host) {
 export function isOpsHost(host) {
   if (!host) return false;
   return String(host).toLowerCase() === 'ops.redeem.sg';
+}
+
+/** The attendee-facing RSVP surface — anonymous, one API namespace, no cookies. */
+export function isRsvpHost(host) {
+  if (!host) return false;
+  return String(host).toLowerCase() === 'rsvp.redeem.sg';
 }
 
 export function isMktrHost(host) {

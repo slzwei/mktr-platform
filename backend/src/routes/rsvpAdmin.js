@@ -41,6 +41,7 @@ const patchSchema = Joi.object({
   slug: Joi.string().trim().max(60).allow('', null),
   capacity: Joi.number().integer().min(1).max(100000).allow(null),
   closesAt: Joi.string().trim().max(40).allow('', null),
+  retentionUntil: Joi.string().trim().max(40).allow('', null),
   // The clamp sanitises the document; Joi only insists it is an object.
   layout: Joi.object().unknown(true),
 }).min(1);
@@ -63,6 +64,9 @@ router.post('/:id/publish', rsvpController.publishEvent);
 router.post('/:id/close', rsvpController.closeEvent);
 // Drafts with no responses only — live events wait for the audited purge (§8.4, P3).
 router.delete('/:id', rsvpController.deleteEvent);
+// Irreversible: the event and every response. Reason is required (audited).
+const purgeSchema = Joi.object({ reason: Joi.string().trim().min(3).max(300).required() });
+router.post('/:id/purge', validate(purgeSchema), rsvpController.purgeEvent);
 router.get('/:id/responses', rsvpController.listResponses);
 router.get('/:id/responses.csv', rsvpController.exportResponsesCsv);
 router.patch('/:id/responses/:rid', validate(responsePatchSchema), rsvpController.updateResponse);

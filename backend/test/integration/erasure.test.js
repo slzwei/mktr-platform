@@ -19,6 +19,7 @@ import {
   ShortLink, WebhookSubscriber, WebhookDelivery, Verification, WaitlistSignup,
   ConsentEvent, ConsumerSuppression, PartnerOrganisation, RewardOffer, Activation,
   SessionVisit, IdempotencyKey, PlatformDelivery, Touchpoint, ErasedSessionSweep,
+  RsvpEvent, RsvpResponse,
 } from '../../src/models/index.js';
 import { markPhoneVerified, isPhoneRecentlyVerified } from '../../src/services/verifiedPhoneStore.js';
 import { phoneHashOf } from '../../src/services/consumerService.js';
@@ -335,6 +336,17 @@ describe('PDPA erasure — full matrix', () => {
       email: `erase-${phone8}@test.com`, name: 'Erin Tan', phone: `65${phone8}`,
       source: 'homepage', ipAddress: '8.8.8.8', userAgent: 'jest',
     });
+    // RSVP attendee row for the same person (docs/plans/rsvp-pages.md §8.4):
+    // outside the consumer spine by design, so the erasure branch must find
+    // it by normalised email / phone digits, not by consumerId.
+    const rsvpEvent = await RsvpEvent.create({
+      title: 'Erasure RSVP', slug: `erase-${RUN}`, organiserName: 'Acme', status: 'closed',
+      layout: {}, consentVersion: 'v', createdBy: admin.user.id,
+    });
+    await RsvpResponse.create({
+      rsvpEventId: rsvpEvent.id, name: 'Erin Tan', email: `Erase-${phone8}@test.com`, emailNormalized: `erase-${phone8}@test.com`,
+      phone: `+65${phone8}`, answers: {}, status: 'going', consentVersion: 'v', consentCopyHash: 'h',
+    });
   });
 
   let report;
@@ -379,6 +391,8 @@ describe('PDPA erasure — full matrix', () => {
     expect(report.shortLinks).toBe(2); // capture auto-mints one share link per funnel prospect
     expect(report.verifications).toBe(1);
     expect(report.waitlistSignups).toBe(1);
+    expect(report.rsvpResponses).toBe(1);
+    expect(await RsvpResponse.count({ where: { emailNormalized: `erase-${phone8}@test.com` } })).toBe(0);
     expect(report.referralCopiesScrubbed).toBe(1);
     expect(report.sessionVisits).toBe(1);
     expect(report.attributions).toBe(1);

@@ -149,6 +149,19 @@ export async function bootstrapDatabase() {
       }
     }, 3_600_000);
 
+    // RSVP retention purge (docs/plans/rsvp-pages.md §8.4): closed/draft events
+    // past their retentionUntil are deleted with their responses (CASCADE — the
+    // one intended trigger). Every 6 hours; inert while the feature is dark.
+    setInterval(async () => {
+      try {
+        if (String(process.env.RSVP_ENABLED || 'false').toLowerCase() !== 'true') return;
+        const { purgeExpiredEvents } = await import('../services/rsvpService.js');
+        await purgeExpiredEvents();
+      } catch (err) {
+        logger.warn('[RSVP] retention purge failed', { error: err?.message });
+      }
+    }, 6 * 60 * 60 * 1000);
+
     // Purge expired idempotency keys every hour
     setInterval(async () => {
       try {

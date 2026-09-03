@@ -193,6 +193,11 @@ export async function updateEvent(id, patch) {
     if (d === undefined) throw typed(400, 'closes_at_invalid', 'closesAt must be an ISO date-time (an SGT wall time is accepted without an offset)');
     changes.closesAt = d;
   }
+  if ('retentionUntil' in patch) {
+    const d = parseClosesAt(patch.retentionUntil);
+    if (d === undefined) throw typed(400, 'retention_invalid', 'retentionUntil must be an ISO date-time (an SGT wall time is accepted without an offset)');
+    changes.retentionUntil = d;
+  }
   if ('layout' in patch) {
     changes.layout = clampLayout(patch.layout, { frozen: responseCount > 0 ? row.layout?.fields : null });
   }
@@ -231,6 +236,36 @@ export async function deleteEvent(id) {
   }
   await row.destroy();
   return { deleted: true };
+}
+
+/**
+ * Irreversible purge (§8.4): the event row and, by CASCADE, every response —
+ * the only intended trigger of that cascade. Refused while published (close
+ * first); audited with actor, reason and the row count it took.
+ */
+export async function purgeEvent(id, { actorId, reason }) {
+  const row = await loadEvent(id);
+  if (row.status === 'published') throw typed(409, 'purge_refused', 'Close the event before purging it');
+  const responseCount = num(row.get('responseCount'));
+  await row.destroy();
+  logger.warn({ rsvpEventId: id, slug: row.slug, responseCount, actorId, reason }, 'rsvp.event.purged');
+  return { purged: true, responseCount };
+}
+
+/** Retention sweep: closed/draft events past retentionUntil go the same way. Published ones wait to be closed. */
+export async function purgeExpiredEvents(now = new Date()) {
+  const rows = await RsvpEvent.findAll({
+    where: { retentionUntil: { [Op.lte]: now }, status: { [Op.ne]: 'published' } },
+    attributes: COUNT_ATTRS,
+  });
+  let purged = 0;
+  for (const row of rows) {
+    const responseCount = num(row.get('responseCount'));
+    await row.destroy();
+    purged++;
+    logger.warn({ rsvpEventId: row.id, slug: row.slug, responseCount, retentionUntil: row.retentionUntil }, 'rsvp.event.purged_by_retention');
+  }
+  return { purged };
 }
 
 // Cursor = base64url(anchor row id). The (createdAt, id) tuple comparison runs
@@ -386,6 +421,9 @@ export async function getPublicEvent(slug) {
   };
 }
 
+/** What the confirmation email needs, detached from the row (the txn is over by then). */
+const eventSnapshot = (row) => ({ id: row.id, title: row.title, slug: row.slug, organiserName: row.organiserName, layout: row.layout });
+
 function validationError(joiError) {
   const errors = joiError.details.map((d) => ({ field: d.path.join('.'), message: d.message }));
   return typed(400, 'invalid', 'Validation Error', { errors });
@@ -430,7 +468,7 @@ export async function submitResponse(slug, body, { referrer } = {}) {
         { name, email: answers.email, phone, answers: customAnswers, status: 'going' },
         { transaction: t, fields: ['name', 'email', 'phone', 'answers', 'status', 'updatedAt'] }
       );
-      return { created: false, reactivated, id: existing.id };
+      return { created: false, reactivated, id: existing.id, notify: { event: eventSnapshot(event), response: { email: answers.email, name }, updated: !reactivated } };
     }
 
     if (capacity != null && going >= capacity) throw typed(409, 'full', 'This event is full');
@@ -446,7 +484,7 @@ export async function submitResponse(slug, body, { referrer } = {}) {
       consentCopyHash: era.templateHash,
       sourceMetadata: pickSourceMetadata(value.source, referrer),
     }, { transaction: t });
-    return { created: true, reactivated: false, id: row.id };
+    return { created: true, reactivated: false, id: row.id, notify: { event: eventSnapshot(event), response: { email: answers.email, name }, updated: false } };
   }).catch((err) => {
     // The event lock serialises same-email submits, so this is belt-and-braces.
     if (err?.name === 'SequelizeUniqueConstraintError') throw typed(409, 'duplicate', 'You have already responded — please try again');
