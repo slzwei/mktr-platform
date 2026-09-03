@@ -64,9 +64,12 @@ export const SOURCE_UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm
 export function buildSubmissionSchema(fields) {
   return Joi.object({
     answers: buildAnswersSchema(fields),
-    // The tick is required; any version/hash the client sends is NOT a key here
-    // and therefore rejected — the server stamps the era (§8.1).
+    // The tick is required. The server stamps the era + the exact wording it
+    // holds (§8.1); the ONLY client evidence accepted is the hash of the sentence
+    // the page displayed, which the service compares against its current copy so
+    // a submit against edited wording is refused and re-shown, never mis-stamped.
     consent: Joi.boolean().strict().valid(true).required(),
+    consentHash: Joi.string().trim().lowercase().pattern(/^[0-9a-f]{64}$/).optional(),
     // Honeypot: real forms leave it empty; bots fill it. Accepted, then ignored.
     website: Joi.string().allow('').max(200).optional(),
     source: Joi.object(

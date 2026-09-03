@@ -12,12 +12,12 @@ const CONSTANT_EXPORTS = [
   'RSVP_LAYOUT_VERSION', 'BLOCK_TYPES', 'FIELD_TYPES', 'OPTION_FIELD_TYPES',
   'LOCKED_FIELD_KEYS', 'BUILTIN_FIELD_TYPES', 'CUSTOM_FIELD_KEY_RE', 'BLOCK_ID_RE',
   'RSVP_SLUG_RE', 'RESERVED_ROOT_SLUGS', 'LIMITS', 'DEFAULT_PRESET_ID',
-  'DEFAULT_SUBMIT_LABEL', 'DEFAULT_CONFIRMATION_HEADLINE',
+  'DEFAULT_SUBMIT_LABEL', 'DEFAULT_CONFIRMATION_HEADLINE', 'ORGANISER_PLACEHOLDER',
 ];
 
 const FUNCTION_EXPORTS = [
   'sanitizeText', 'sanitizeMultiline', 'defaultLayout', 'clampLayout', 'publicLayout', 'layoutProblems',
-  'isValidRsvpSlug', 'slugProblem',
+  'isValidRsvpSlug', 'slugProblem', 'renderConsentTemplate', 'consentTemplateOf',
 ];
 
 /** Raw documents spanning garbage, partial, over-cap, hostile and unicode input. */
@@ -37,6 +37,7 @@ const CORPUS = {
     confirmation: { headline: '', body: 'b'.repeat(2000), emailEnabled: false },
   },
   paragraphs: { blocks: [{ id: 'b_txt1', type: 'text', body: 'One.\r\n\r\nTwo.\n\u0007Three.' }, { type: 'form' }], confirmation: { body: 'A\n\nB' } },
+  consent: { blocks: [{ id: 'b_form', type: 'form', consentCopy: '  I let {organiser} contact me.\u202E ' }] },
   unicode: { blocks: [{ id: 'b_h', type: 'hero', headline: '欢迎 — RSVP 🎉', subheadline: 'كل شيء' }, { type: 'form' }], fields: [{ key: 'f_zh01', type: 'text', label: '姓名' }] },
 };
 
@@ -100,6 +101,13 @@ describe('rsvpLayout twins — behavioural parity', () => {
     const s = 'One.\r\n\r\nTwo.\u0007\u202E';
     expect(mirror.sanitizeMultiline(s, 100)).toBe(backend.sanitizeMultiline(s, 100));
     expect(backend.sanitizeMultiline(s, 100)).toBe('One.\n\nTwo.');
+  });
+
+  it('consent helpers agree', () => {
+    const doc = backend.clampLayout(CORPUS.consent);
+    expect(mirror.consentTemplateOf(doc)).toBe(backend.consentTemplateOf(doc));
+    expect(mirror.renderConsentTemplate(mirror.consentTemplateOf(doc), 'Acme')).toBe(backend.renderConsentTemplate(backend.consentTemplateOf(doc), 'Acme'));
+    expect(backend.renderConsentTemplate(backend.consentTemplateOf(doc), 'Acme')).toBe('I let Acme contact me.');
   });
 
   it('sanitizeText agrees on hostile input', () => {

@@ -8,7 +8,7 @@
 import request from 'supertest';
 import { getApp, closeDb, createTestUser } from './helpers.js';
 import { sequelize, RsvpEvent, RsvpResponse } from '../src/models/index.js';
-import { CURRENT_RSVP_CONSENT_VERSION, RSVP_CONSENT_VERSIONS } from '../src/services/rsvpConsentRegistry.js';
+import { CURRENT_RSVP_CONSENT_VERSION, hashConsentCopy } from '../src/services/rsvpConsentRegistry.js';
 
 const RUN = Date.now().toString(36).slice(-5);
 const ZERO = '00000000-0000-4000-8000-000000000000';
@@ -218,7 +218,7 @@ describe('public read', () => {
     expect(open.body.data).toMatchObject({ slug: ev.slug, title: 'Launch night', organiserName: 'Acme Pte Ltd', state: 'open' });
     expect(open.body.data.layout.internal).toBeUndefined();
     expect(open.body.data.layout.blocks.map((b) => b.type)).toEqual(['hero', 'details', 'form']);
-    expect(open.body.data.consent).toEqual({ version: CURRENT_RSVP_CONSENT_VERSION, copy: expect.stringContaining('Acme Pte Ltd') });
+    expect(open.body.data.consent).toEqual({ version: CURRENT_RSVP_CONSENT_VERSION, copy: expect.stringContaining('Acme Pte Ltd'), hash: hashConsentCopy(open.body.data.consent.copy) });
     for (const key of ['id', 'createdBy', 'consentVersion', 'capacity', 'retentionUntil']) expect(open.body.data[key]).toBeUndefined();
 
     await request(app).post(`/api/rsvp/${ev.id}/close`).set(admin());
@@ -249,10 +249,13 @@ describe('respond', () => {
     const row = await RsvpResponse.findOne({ where: { rsvpEventId: ev.id } });
     expect(row).toMatchObject({
       name: 'Alice Tan', email: 'Alice.Tan@Example.com', emailNormalized: 'alice.tan@example.com', phone: '+6591234567', status: 'going',
-      consentVersion: CURRENT_RSVP_CONSENT_VERSION, consentCopyHash: RSVP_CONSENT_VERSIONS[CURRENT_RSVP_CONSENT_VERSION].templateHash,
+      consentVersion: CURRENT_RSVP_CONSENT_VERSION,
       answers: { f_diet: 'Veg', f_note: 'see you', f_okay: true },
       sourceMetadata: { utm_source: 'ig', referrer: 'https://redeem.sg/x' },
     });
+    // The response keeps the exact sentence it agreed to, and its hash.
+    expect(row.consentCopy).toContain('share them with Acme Pte Ltd, the organiser');
+    expect(row.consentCopyHash).toBe(hashConsentCopy(row.consentCopy));
     const view = await request(app).get(`/api/rsvp/${ev.id}`).set(admin());
     expect(view.body.data.event).toMatchObject({ goingCount: 1, responseCount: 1, frozen: true });
   });
@@ -354,6 +357,38 @@ describe('respond', () => {
   });
 });
 
+describe('editable consent wording', () => {
+  test('a custom consent line flows to the public page, is stamped verbatim, and an out-of-date page is refused', async () => {
+    const ev = await publishedEvent({ patch: { layout: { ...CONTENT_LAYOUT, blocks: CONTENT_LAYOUT.blocks.map((b) => (b.type === 'form' ? { ...b, consentCopy: 'I let {organiser} and Redeem tell me about the next one. Opt out anytime.' } : b)) } } });
+    const pub = await request(app).get(`/api/rsvp-public/${ev.slug}`);
+    expect(pub.body.data.consent.copy).toBe('I let Acme Pte Ltd and Redeem tell me about the next one. Opt out anytime.');
+    const { hash } = pub.body.data.consent;
+    expect(hash).toBe(hashConsentCopy(pub.body.data.consent.copy));
+
+    const stale = await respond(ev.slug, { ...answersFor('a@x.com'), consentHash: 'f'.repeat(64) });
+    expect(stale.status).toBe(409);
+    expect(stale.body.data.code).toBe('consent_changed');
+    expect(stale.body.data.consent.hash).toBe(hash);
+    expect(await RsvpResponse.count({ where: { rsvpEventId: ev.id } })).toBe(0);
+
+    const ok = await respond(ev.slug, { ...answersFor('a@x.com'), consentHash: hash });
+    expect(ok.status).toBe(201);
+    const row = await RsvpResponse.findOne({ where: { rsvpEventId: ev.id } });
+    expect(row.consentCopy).toBe('I let Acme Pte Ltd and Redeem tell me about the next one. Opt out anytime.');
+    expect(row.consentCopyHash).toBe(hash);
+
+    // Editing the wording afterwards never rewrites what was agreed.
+    await request(app).patch(`/api/rsvp/${ev.id}`).set(admin()).send({ layout: { ...CONTENT_LAYOUT, blocks: CONTENT_LAYOUT.blocks.map((b) => (b.type === 'form' ? { ...b, consentCopy: 'Different words.' } : b)) } });
+    const again = await RsvpResponse.findByPk(row.id);
+    expect(again.consentCopy).toBe('I let Acme Pte Ltd and Redeem tell me about the next one. Opt out anytime.');
+    const admin1 = await request(app).get(`/api/rsvp/${ev.id}`).set(admin());
+    expect(admin1.body.data.event.consent).toMatchObject({ custom: 'Different words.', copy: 'Different words.' });
+    expect(admin1.body.data.event.consent.defaultTemplate).toContain('future events and offers');
+    const listed = await request(app).get(`/api/rsvp/${ev.id}/responses`).set(admin());
+    expect(listed.body.data.responses[0].consentCopy).toContain('tell me about the next one');
+  });
+});
+
 describe('responses listing', () => {
   test('cursor pagination in (createdAt, id) order; bad cursors are 400', async () => {
     const ev = await publishedEvent();
@@ -380,7 +415,7 @@ describe('responses export + correction (P2)', () => {
     expect(res.headers['content-type']).toMatch(/text\/csv/);
     expect(res.headers['content-disposition']).toMatch(/attachment; filename="rsvp-.*-responses\.csv"/);
     const [header, line] = res.text.split('\r\n');
-    expect(header).toBe('name,email,phone,status,Diet,Note,I will bring ID,consent_version,submitted_at,updated_at');
+    expect(header).toBe('name,email,phone,status,Diet,Note,I will bring ID,consent_version,consent_copy,submitted_at,updated_at');
     // A leading + is a formula marker too — phones get the same ' guard the prospect export applies.
     const expectedPrefix = `"'=HYPERLINK(""evil"")",csv1@x.com,'+6591234567,going,Veg,"a,b",yes,`;
     expect(line.slice(0, expectedPrefix.length)).toBe(expectedPrefix);

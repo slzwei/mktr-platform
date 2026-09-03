@@ -342,17 +342,29 @@ prove what the person saw. Frontend/backend copy parity is lockstep-tested, mirr
 
 Wording changes mint a **new** version. Closed eras are never edited.
 
+**Editable wording (2026-09-03):** the registry still owns the *default* template and its
+era; an event may override the sentence on its form block. Because the text can change,
+the hash alone no longer reconstructs it — so every response **snapshots the exact
+sentence** (`rsvp_responses.consentCopy`, migration 131) alongside its hash, and the
+public page echoes the hash of the sentence it displayed; a submit whose hash no longer
+matches the server's current copy is refused (`consent_changed`) with the new wording, so
+a stale page can never be stamped against words it did not show.
+
 ### 8.2 Say who receives the data
 The copy names **MKTR PTE. LTD. (UEN 202507548M)** as controller and the event's
 `organiserName` as the recipient, with the purpose stated. "The organiser" alone
 does not identify a data recipient.
 
-### 8.3 Scope of the grant
-Event-operational messages only (confirmation, venue change, cancellation). **Not**
-"no PDPA obligations" — notification, protection, retention limitation and
-access/correction all apply regardless. What the narrow scope buys is that v1 sends
-no marketing message, so the DNC provisions are not engaged; if outbound content
-ever becomes promotional, that call is reassessed before it ships.
+### 8.3 Scope of the grant — REVISED 2026-09-03 (Shawn: "we might contact them again")
+The v1 era's "used for this event only and not for marketing" line is CLOSED. The
+**v2 default** wording covers contact about this event *and future events and offers*
+from the organiser and Redeem, with an opt-out sentence — a ticked box with that
+wording, hashed and timestamped per response, is the consent basis the PDPA/DNC rules
+ask for. The wording is **editable per event** (form block → "Consent line", `{organiser}`
+substitution, reset to default). Two things that stay true: notification, protection,
+retention and access/correction obligations apply regardless of scope; and RSVP rows sit
+outside the consumer spine, so any *actual* marketing to attendees later needs a send
+path that honours opt-outs — none exists yet, and this plan does not build one.
 
 ### 8.4 Data-subject workflows
 - Response-level admin **read / correct / cancel / scrub**, so one attendee can be
@@ -544,6 +556,15 @@ Designer + renderer + responses, per §6, with these implementation facts:
   + lockstep, eslint over all of `src/`.
 
 ---
+
+## 15b. Post-go-live changes (2026-09-03)
+
+- **Undo/redo** in the designer (#492): ⌘Z / ⌘⇧Z + buttons; typing bursts coalesce, structural
+  edits are their own step; history survives saves.
+- **Editable consent line + v2 era** (see §8.1/§8.3): per-event wording on the form block,
+  per-response snapshot (migration 131), hash echo → `consent_changed`, CSV `consent_copy`
+  column, confirmation email no longer claims "not a marketing message".
+- Responses table header alignment fixed (a real `<tr>` cannot take the flex `.av2-thead`).
 
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
 

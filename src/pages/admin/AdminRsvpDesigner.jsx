@@ -5,7 +5,7 @@ import { useRsvpEvent } from '@/hooks/queries/useRsvp';
 import { updateRsvpEvent, publishRsvpEvent, closeRsvpEvent, checkRsvpSlug } from '@/api/rsvp';
 import { queryClient } from '@/lib/queryClient';
 import { rsvpPublicUrl } from '@/lib/brand';
-import { clampLayout } from '@/lib/rsvpLayout';
+import { clampLayout, consentTemplateOf, renderConsentTemplate } from '@/lib/rsvpLayout';
 import DeviceFrame from '@/components/studio/DeviceFrame';
 import RsvpPageRenderer from '@/components/rsvp/RsvpPageRenderer';
 import { ContentPanel, FormPanel, ThemePanel, SettingsPanel, isoToSgtLocal } from '@/components/rsvp/designer/panels';
@@ -324,7 +324,7 @@ export default function AdminRsvpDesigner() {
 
         {/* Panel */}
         <aside style={{ width: 320, flexShrink: 0, overflowY: 'auto', background: 'var(--surface, #fff)', borderRight: '1px solid var(--line, #E3E6EB)' }}>
-          {section === 'content' && <ContentPanel layout={layout} update={update} selectedId={selectedBlock} onSelect={setSelectedBlock} />}
+          {section === 'content' && <ContentPanel layout={layout} update={update} selectedId={selectedBlock} onSelect={setSelectedBlock} consentDefault={event.consent?.defaultTemplate || ''} />}
           {section === 'form' && <FormPanel layout={layout} update={update} selectedKey={selectedField} onSelect={setSelectedField} frozenKeys={frozenKeys} />}
           {section === 'theme' && <ThemePanel layout={layout} update={update} />}
           {section === 'settings' && <SettingsPanel meta={meta} setMeta={patchMeta} layout={layout} update={update} locked={Boolean(event.locked)} slugStatus={slugStatus} />}
@@ -347,7 +347,11 @@ export default function AdminRsvpDesigner() {
                 organiserName={meta.organiserName}
                 layout={previewLayout}
                 state="open"
-                consent={event.consent ? { ...event.consent, copy: event.consent.copy } : null}
+                consent={{
+                  version: event.consent?.version,
+                  // Same substitution the server applies, over the UNSAVED wording + organiser.
+                  copy: renderConsentTemplate(consentTemplateOf(previewLayout) || event.consent?.defaultTemplate || '', meta.organiserName),
+                }}
                 mode="preview"
               />
             </DeviceFrame>

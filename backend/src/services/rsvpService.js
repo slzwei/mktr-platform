@@ -4,12 +4,12 @@ import { AppError } from '../middleware/appError.js';
 import { UUID_PARAM_RE } from '../middleware/uuidParam.js';
 import { logger } from '../utils/logger.js';
 import {
-  clampLayout, defaultLayout, layoutProblems, publicLayout,
+  clampLayout, defaultLayout, layoutProblems, publicLayout, consentTemplateOf,
   isValidRsvpSlug, slugProblem, RSVP_SLUG_RE, LIMITS, sanitizeText,
 } from '../utils/rsvpLayout.js';
 import { buildSubmissionSchema, buildAnswersSchema, sanitizeAnswers, parseClosesAt, pickSourceMetadata } from '../utils/rsvpAnswers.js';
 import { toCsv } from '../utils/csv.js';
-import { CURRENT_RSVP_CONSENT_VERSION, resolveRsvpConsent, renderRsvpConsentCopy } from './rsvpConsentRegistry.js';
+import { CURRENT_RSVP_CONSENT_VERSION, resolveRsvpConsent, renderRsvpConsentCopy, hashConsentCopy } from './rsvpConsentRegistry.js';
 import { emailNormKey } from './repeatSignup.js';
 import { normalizePhone } from './prospectHelpers.js';
 
@@ -69,9 +69,13 @@ function toAdminDto(row, { withLayout = false } = {}) {
   };
   if (withLayout) {
     dto.layout = row.layout;
+    const custom = consentTemplateOf(row.layout);
     dto.consent = {
       version: row.consentVersion,
-      copy: renderRsvpConsentCopy(row.consentVersion, row.organiserName),
+      // Rendered from the event's own template when it has one, else the era default.
+      copy: renderRsvpConsentCopy(row.consentVersion, row.organiserName, custom),
+      custom,
+      defaultTemplate: resolveRsvpConsent(row.consentVersion)?.template || resolveRsvpConsent(CURRENT_RSVP_CONSENT_VERSION)?.template || '',
     };
     dto.problems = publishProblems(row);
   }
@@ -88,6 +92,7 @@ function toResponseDto(row) {
     status: row.status,
     consentVersion: row.consentVersion,
     consentCopyHash: row.consentCopyHash,
+    consentCopy: row.consentCopy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -337,6 +342,7 @@ export async function exportResponsesCsv(eventId) {
     { name: 'status', get: (r) => r.status },
     ...custom.map((f) => ({ name: f.label || f.key, get: (r) => formatAnswer(r.answers?.[f.key]) })),
     { name: 'consent_version', get: (r) => r.consentVersion },
+    { name: 'consent_copy', get: (r) => r.consentCopy || '' },
     { name: 'submitted_at', get: (r) => (r.createdAt ? r.createdAt.toISOString() : '') },
     { name: 'updated_at', get: (r) => (r.updatedAt ? r.updatedAt.toISOString() : '') },
   ];
@@ -415,14 +421,18 @@ export async function getPublicEvent(slug) {
     state,
     closesAt: row.closesAt,
     layout: publicLayout(row.layout),
-    ...(state === 'open'
-      ? { consent: { version: row.consentVersion, copy: renderRsvpConsentCopy(row.consentVersion, row.organiserName) } }
-      : {}),
+    ...(state === 'open' ? { consent: currentConsent(row) } : {}),
   };
 }
 
 /** What the confirmation email needs, detached from the row (the txn is over by then). */
 const eventSnapshot = (row) => ({ id: row.id, title: row.title, slug: row.slug, organiserName: row.organiserName, layout: row.layout });
+
+/** The sentence an attendee sees right now + its hash — what the page echoes back and what a response stamps. */
+function currentConsent(row) {
+  const copy = renderRsvpConsentCopy(row.consentVersion, row.organiserName, consentTemplateOf(row.layout));
+  return { version: row.consentVersion, copy, hash: hashConsentCopy(copy) };
+}
 
 function validationError(joiError) {
   const errors = joiError.details.map((d) => ({ field: d.path.join('.'), message: d.message }));
@@ -455,6 +465,12 @@ export async function submitResponse(slug, body, { referrer } = {}) {
 
     const era = resolveRsvpConsent(event.consentVersion);
     if (!era) throw new AppError(`Unknown RSVP consent era ${event.consentVersion}`, 500);
+    const consent = currentConsent(event);
+    // The page echoes the hash of the sentence it displayed. A mismatch means the
+    // wording changed under the attendee: refuse and hand back the current copy.
+    if (value.consentHash && value.consentHash !== consent.hash) {
+      throw typed(409, 'consent_changed', 'The consent wording was updated. Please read it again and resubmit.', { consent });
+    }
 
     const capacity = event.capacity;
     const going = await RsvpResponse.count({ where: { rsvpEventId: event.id, status: 'going' }, transaction: t });
@@ -481,7 +497,8 @@ export async function submitResponse(slug, body, { referrer } = {}) {
       answers: customAnswers,
       status: 'going',
       consentVersion: event.consentVersion,
-      consentCopyHash: era.templateHash,
+      consentCopyHash: consent.hash,
+      consentCopy: consent.copy,
       sourceMetadata: pickSourceMetadata(value.source, referrer),
     }, { transaction: t });
     return { created: true, reactivated: false, id: row.id, notify: { event: eventSnapshot(event), response: { email: answers.email, name }, updated: false } };

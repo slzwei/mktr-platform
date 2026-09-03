@@ -76,8 +76,11 @@ export default function AdminRsvpResponses() {
         <div className="av2-card" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr className="av2-thead">
-                {['Name', 'Email', 'Phone', ...customFields.map((f) => f.label || f.key), 'Status', 'Submitted', ''].map((h, i) => <th key={i} style={{ textAlign: 'left', padding: '8px 12px', whiteSpace: 'nowrap' }}>{h}</th>)}
+              {/* Not .av2-thead: that class is display:flex for the div tables and would collapse real <th> cells leftwards. */}
+              <tr style={{ background: 'var(--surface-2)' }}>
+                {['Name', 'Email', 'Phone', ...customFields.map((f) => f.label || f.key), 'Status', 'Submitted', ''].map((h, i) => (
+                  <th key={i} className="av2-mono" style={{ textAlign: 'left', padding: '9px 12px', whiteSpace: 'nowrap', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)', fontWeight: 600, borderBottom: '1px solid var(--line)' }}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>

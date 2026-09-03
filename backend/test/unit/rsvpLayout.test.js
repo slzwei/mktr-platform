@@ -4,7 +4,7 @@
  */
 import {
   clampLayout, defaultLayout, publicLayout, layoutProblems, sanitizeMultiline,
-  isValidRsvpSlug, slugProblem,
+  isValidRsvpSlug, slugProblem, renderConsentTemplate, consentTemplateOf,
   LIMITS, LOCKED_FIELD_KEYS, BLOCK_TYPES, FIELD_TYPES, RESERVED_ROOT_SLUGS,
 } from '../../src/utils/rsvpLayout.js';
 
@@ -61,7 +61,7 @@ describe('clampLayout — garbage in, valid doc out', () => {
 describe('clampLayout — blocks', () => {
   test('unknown types dropped, second form dropped, missing form appended', () => {
     const doc = clampLayout({ blocks: [{ type: 'carousel' }, { id: 'b_ab01', type: 'form' }, { id: 'b_ab02', type: 'form', headline: 'dup' }] });
-    expect(doc.blocks).toEqual([{ id: 'b_ab01', type: 'form', headline: '', submitLabel: 'RSVP' }]);
+    expect(doc.blocks).toEqual([{ id: 'b_ab01', type: 'form', headline: '', submitLabel: 'RSVP', consentCopy: '' }]);
     const noForm = clampLayout({ blocks: [{ type: 'text', body: 'x' }] });
     expect(noForm.blocks.map((b) => b.type)).toEqual(['text', 'form']);
   });
@@ -70,7 +70,7 @@ describe('clampLayout — blocks', () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ id: `b_t${i}`, type: 'text', body: String(i) }));
     const doc = clampLayout({ blocks: [...many, { id: 'b_form', type: 'form', headline: 'Keep me' }] });
     expect(doc.blocks).toHaveLength(LIMITS.blocks);
-    expect(formBlocks(doc)).toEqual([{ id: 'b_form', type: 'form', headline: 'Keep me', submitLabel: 'RSVP' }]);
+    expect(formBlocks(doc)).toEqual([{ id: 'b_form', type: 'form', headline: 'Keep me', submitLabel: 'RSVP', consentCopy: '' }]);
     expect(doc.blocks.filter((b) => b.type === 'text')).toHaveLength(LIMITS.blocks - 1);
   });
 
@@ -109,6 +109,18 @@ describe('clampLayout — blocks', () => {
     // The cap trims trailing whitespace, newlines included.
     expect(sanitizeMultiline('  a\u202Eb\n\nc  ', 4)).toBe('ab');
     expect(sanitizeMultiline('a\n\nb', 3)).toBe('a');
+  });
+
+  test('the form block carries an owner-authored consent line, capped and sanitised; helpers render it', () => {
+    const doc = clampLayout({ blocks: [{ id: 'b_form', type: 'form', consentCopy: '  I let {organiser} contact me\u202E about the next one. ' }] });
+    expect(doc.blocks[0].consentCopy).toBe('I let {organiser} contact me about the next one.');
+    expect(consentTemplateOf(doc)).toBe('I let {organiser} contact me about the next one.');
+    expect(renderConsentTemplate(consentTemplateOf(doc), 'Acme')).toBe('I let Acme contact me about the next one.');
+    expect(renderConsentTemplate(consentTemplateOf(doc), '')).toBe('I let the event organiser contact me about the next one.');
+    expect(renderConsentTemplate('', 'Acme')).toBe('');
+    expect(consentTemplateOf(defaultLayout())).toBe('');
+    const long = clampLayout({ blocks: [{ id: 'b_form', type: 'form', consentCopy: 'x'.repeat(2000) }] });
+    expect(long.blocks[0].consentCopy).toHaveLength(LIMITS.consentCopy);
   });
 
   test('vocabulary is exactly the plan', () => {
