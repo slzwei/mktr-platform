@@ -76,6 +76,13 @@ export function customerLeadCaptureUrl(campaignId, extraParams = {}, host = DEFA
   return customerPublicUrl(`/LeadCapture?${qs}`, host);
 }
 
+// RSVP event pages live on their own host (docs/plans/rsvp-pages.md §7) — a
+// third static site, never redeem.sg/mktr.sg, and never a per-campaign choice.
+export const RSVP_PUBLIC_HOST = 'rsvp.redeem.sg';
+export function rsvpPublicUrl(slug) {
+  return `https://${RSVP_PUBLIC_HOST}/${encodeURIComponent(String(slug || ''))}`;
+}
+
 // Customer-facing public preview URL (admin previews a campaign before publish).
 export function customerPreviewUrl(slug, host = DEFAULT_CUSTOMER_HOST) {
   return customerPublicUrl(`/p/${encodeURIComponent(slug)}`, host);

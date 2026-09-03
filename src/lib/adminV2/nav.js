@@ -24,6 +24,10 @@ export const NAV = [
       { to: '/AdminShortLinks', label: 'Short Links' },
     ],
   },
+  // RSVP event pages (docs/plans/rsvp-pages.md) — dark until the build flag flips.
+  ...(import.meta.env.VITE_RSVP_ENABLED === 'true'
+    ? [{ label: 'Events', items: [{ to: '/admin/rsvp', label: 'RSVP Pages' }] }]
+    : []),
   {
     label: 'System',
     items: [

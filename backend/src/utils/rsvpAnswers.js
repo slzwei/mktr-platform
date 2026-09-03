@@ -7,7 +7,7 @@
  * flat answers, `.unknown(false)` at both levels.
  */
 import Joi from 'joi';
-import { LIMITS, OPTION_FIELD_TYPES, sanitizeText } from './rsvpLayout.js';
+import { LIMITS, OPTION_FIELD_TYPES, sanitizeText, sanitizeMultiline } from './rsvpLayout.js';
 import { cleanYmd } from './sgtTime.js';
 
 /** Per-request ceiling on the public POST — the global 1mb parser is far too generous here. */
@@ -84,7 +84,7 @@ export function sanitizeAnswers(fields, answers) {
     if (!f) continue;
     if (typeof value === 'string') {
       const max = f.type === 'textarea' ? LIMITS.answerLong : f.type === 'email' ? 254 : LIMITS.answerShort;
-      out[key] = OPTION_FIELD_TYPES.includes(f.type) ? value : sanitizeText(value, max);
+      out[key] = OPTION_FIELD_TYPES.includes(f.type) ? value : f.type === 'textarea' ? sanitizeMultiline(value, max) : sanitizeText(value, max);
     } else if (Array.isArray(value)) {
       out[key] = value.filter((v) => typeof v === 'string');
     } else {
