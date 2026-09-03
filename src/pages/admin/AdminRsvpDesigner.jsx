@@ -23,9 +23,20 @@ import '@/styles/adminV2.css';
  * document with the same twin the server applies, so what you see is what
  * the save will store, and the server's response (clamped, frozen fields
  * restored) is adopted as the new baseline after every save.
+ *
+ * Undo/redo: every edit (layout or settings) snapshots the previous
+ * {layout, meta} onto a bounded history. Consecutive TYPING edits within
+ * HISTORY_COALESCE_MS share one entry so a burst undoes as a phrase, not a
+ * keystroke; structural edits (add / delete / reorder / toggle) always get
+ * their own step — otherwise "add a block, start typing, undo" removed the
+ * block (caught by the designer test). ⌘Z / ⌘⇧Z (Ctrl on Windows) and the
+ * top-bar buttons. Saving does not clear history — a save is a checkpoint,
+ * not a point of no return.
  */
 
 const SECTIONS = [['content', 'Content'], ['form', 'Form'], ['theme', 'Theme'], ['settings', 'Settings']];
+const HISTORY_LIMIT = 100;
+const HISTORY_COALESCE_MS = 700;
 const DEVICES = [{ id: 'mobile', label: 'Mobile', width: 390, height: 780 }, { id: 'desktop', label: 'Desktop', width: 1180, height: 820 }];
 
 export const PROBLEM_COPY = {
@@ -81,15 +92,73 @@ export default function AdminRsvpDesigner() {
   const stageRef = useRef(null);
   const [stageW, setStageW] = useState(0);
 
+  // The current {layout, meta} mirrored in a ref so history pushes read the
+  // pre-edit state synchronously (a push inside a React updater would double
+  // under StrictMode).
+  const snapshotRef = useRef({ layout: null, meta: null });
+  const historyRef = useRef({ past: [], future: [], lastAt: 0, lastKind: null });
+  const [historyTick, setHistoryTick] = useState(0);
+  const commit = useCallback((next) => {
+    snapshotRef.current = next;
+    setLayout(next.layout);
+    setMeta(next.meta);
+  }, []);
+  const pushHistory = useCallback((kind = 'structural') => {
+    const h = historyRef.current;
+    const now = Date.now();
+    const cur = snapshotRef.current;
+    if (!cur.layout) return;
+    const coalesce = kind === 'text' && h.lastKind === 'text' && h.lastAt && now - h.lastAt < HISTORY_COALESCE_MS && h.past.length > 0;
+    if (!coalesce) {
+      h.past.push(cur);
+      if (h.past.length > HISTORY_LIMIT) h.past.shift();
+    }
+    h.future = [];
+    h.lastAt = now;
+    h.lastKind = kind;
+    setHistoryTick((t) => t + 1);
+  }, []);
+  const undo = useCallback(() => {
+    const h = historyRef.current;
+    if (!h.past.length) return;
+    h.future.push(snapshotRef.current);
+    h.lastAt = 0;
+    h.lastKind = null;
+    commit(h.past.pop());
+    setHistoryTick((t) => t + 1);
+  }, [commit]);
+  const redo = useCallback(() => {
+    const h = historyRef.current;
+    if (!h.future.length) return;
+    h.past.push(snapshotRef.current);
+    h.lastAt = 0;
+    h.lastKind = null;
+    commit(h.future.pop());
+    setHistoryTick((t) => t + 1);
+  }, [commit]);
+  const canUndo = historyRef.current.past.length > 0;
+  const canRedo = historyRef.current.future.length > 0;
+  void historyTick;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
   // Adopt the server document once (and again after each save via adopt()).
   const adopt = useCallback((ev) => {
     const l = clampLayout(ev.layout);
     const m = metaFromEvent(ev);
-    setLayout(l);
-    setMeta(m);
+    commit({ layout: l, meta: m });
     setBaseline({ layout: l, meta: m });
     setProblems(ev.problems || []);
-  }, []);
+  }, [commit]);
   useEffect(() => { if (event && !baseline) adopt(event); }, [event, baseline, adopt]);
 
   const dirty = useMemo(() => baseline && layout && meta && (JSON.stringify(layout) !== JSON.stringify(baseline.layout) || JSON.stringify(meta) !== JSON.stringify(baseline.meta)), [baseline, layout, meta]);
@@ -110,9 +179,18 @@ export default function AdminRsvpDesigner() {
 
   const frozenDefs = useMemo(() => (event?.frozen ? (event.layout?.fields || []) : null), [event]);
   const frozenKeys = useMemo(() => new Set((frozenDefs || []).map((f) => f.key)), [frozenDefs]);
-  const update = useCallback((fn) => setLayout((prev) => fn(prev)), []);
+  // `kind: 'text'` marks a typed edit (coalesced); anything else is one step.
+  const update = useCallback((fn, { kind } = {}) => {
+    pushHistory(kind);
+    const cur = snapshotRef.current;
+    commit({ layout: fn(cur.layout), meta: cur.meta });
+  }, [pushHistory, commit]);
   const previewLayout = useMemo(() => (layout ? clampLayout(layout, { frozen: frozenDefs }) : null), [layout, frozenDefs]);
-  const patchMeta = useCallback((patch) => setMeta((prev) => ({ ...prev, ...patch })), []);
+  const patchMeta = useCallback((patch) => {
+    pushHistory('text');
+    const cur = snapshotRef.current;
+    commit({ layout: cur.layout, meta: { ...cur.meta, ...patch } });
+  }, [pushHistory, commit]);
 
   // Slug availability probe (debounced) while the link is still editable.
   useEffect(() => {
@@ -215,6 +293,10 @@ export default function AdminRsvpDesigner() {
         <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: statusTone }}>{event.status}</span>
         {baseline.meta.slug ? <code style={{ fontSize: 11.5, color: 'var(--ink-2, #5B616E)' }}>rsvp.redeem.sg/{baseline.meta.slug}</code> : null}
         <span style={{ fontSize: 11.5, color: dirty ? '#8A5B07' : 'var(--ink-3, #9BA0AB)' }}>{saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'All changes saved'}</span>
+        <div role="group" aria-label="History" style={{ display: 'flex', gap: 4 }}>
+          <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">Undo</button>
+          <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={redo} disabled={!canRedo} title="Redo (⌘⇧Z)">Redo</button>
+        </div>
         <div style={{ flex: 1 }} />
         <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={copyLink} disabled={!baseline.meta.slug}>Copy link</button>
         <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={() => navigate(`/admin/rsvp/${event.id}/responses`)}>Responses ({event.goingCount || 0})</button>

@@ -118,7 +118,7 @@ export function ContentPanel({ layout, update, selectedId, onSelect }) {
       </Section>
       {selected ? (
         <Section title={BLOCK_LABELS[selected.type] || 'Block'}>
-          <BlockEditor block={selected} onChange={(next) => update((l) => ({ ...l, blocks: l.blocks.map((b) => (b.id === next.id ? next : b)) }))} />
+          <BlockEditor block={selected} onChange={(next) => update((l) => ({ ...l, blocks: l.blocks.map((b) => (b.id === next.id ? next : b)) }), { kind: 'text' })} />
         </Section>
       ) : (
         <Section title="Edit"><Note>Select a block to edit it. Drag the handle (or focus it and use Space + arrows) to reorder.</Note></Section>
@@ -202,7 +202,7 @@ export function FormPanel({ layout, update, selectedKey, onSelect, frozenKeys })
       </Section>
       {selected ? (
         <Section title="Field">
-          <FieldEditor field={selected} frozen={frozenKeys.has(selected.key)} onChange={(next) => update((l) => ({ ...l, fields: l.fields.map((f) => (f.key === next.key ? next : f)) }))} />
+          <FieldEditor field={selected} frozen={frozenKeys.has(selected.key)} onChange={(next) => update((l) => ({ ...l, fields: l.fields.map((f) => (f.key === next.key ? next : f)) }), { kind: 'text' })} />
         </Section>
       ) : (
         <Section title="Edit"><Note>Select a field to edit it. Name and email are always on the form.</Note></Section>
@@ -215,7 +215,7 @@ export function FormPanel({ layout, update, selectedKey, onSelect, frozenKeys })
 
 export function ThemePanel({ layout, update }) {
   const theme = layout.theme || {};
-  const setTheme = (patch) => update((l) => ({ ...l, theme: { ...l.theme, ...patch } }));
+  const setTheme = (patch, kind) => update((l) => ({ ...l, theme: { ...l.theme, ...patch } }), kind ? { kind } : {});
   const preset = THEME_PRESETS.find((p) => p.id === theme.preset) || THEME_PRESETS[0];
   return (
     <>
@@ -240,7 +240,7 @@ export function ThemePanel({ layout, update }) {
         </div>
       </Section>
       <Section title="Adjust">
-        <Field id="theme-accent" label="Accent colour" value={theme.accent} onChange={(v) => setTheme({ accent: v })} placeholder={preset.accent} hint="#RRGGBB — blank uses the preset's accent" />
+        <Field id="theme-accent" label="Accent colour" value={theme.accent} onChange={(v) => setTheme({ accent: v }, 'text')} placeholder={preset.accent} hint="#RRGGBB — blank uses the preset's accent" />
         <SelectField id="theme-font" label="Font" value={theme.font || ''} onChange={(v) => setTheme({ font: v })} options={[{ value: '', label: `Preset (${(HERO_FONTS.find((f) => f.id === preset.font) || {}).label || preset.font})` }, ...FONT_IDS.map((id) => ({ value: id, label: (HERO_FONTS.find((f) => f.id === id) || {}).label || id }))]} />
         <SelectField id="theme-radius" label="Corners" value={theme.radius || ''} onChange={(v) => setTheme({ radius: v })} options={[{ value: '', label: `Preset (${preset.radius})` }, ...THEME_RADIUS_IDS.map((r) => ({ value: r, label: r }))]} />
       </Section>
@@ -260,7 +260,7 @@ export function isoToSgtLocal(iso) {
 
 export function SettingsPanel({ meta, setMeta, layout, update, locked, slugStatus }) {
   const confirmation = layout.confirmation || {};
-  const setConf = (patch) => update((l) => ({ ...l, confirmation: { ...l.confirmation, ...patch } }));
+  const setConf = (patch) => update((l) => ({ ...l, confirmation: { ...l.confirmation, ...patch } }), { kind: 'text' });
   const problem = meta.slug ? slugProblem(meta.slug) : null;
   return (
     <>
