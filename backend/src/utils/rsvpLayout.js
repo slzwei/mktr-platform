@@ -41,6 +41,8 @@ export const BLOCK_ID_RE = /^b_[a-z0-9]{4,12}$/;
 
 /** Root-of-host slug (rsvp.redeem.sg/{slug}) — shorter than campaign slugs on purpose. */
 export const RSVP_SLUG_RE = /^[a-z0-9-]{3,40}$/;
+/** Deliberately plain: a deliverability check is the mail server's job, not a regex's. */
+export const NOTIFY_EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 /**
  * The slug shares a namespace with every asset path on the host (§7). Kept
  * generous: a reserved word costs nothing, a shadowed asset costs the site.
@@ -53,7 +55,7 @@ export const RESERVED_ROOT_SLUGS = Object.freeze([
 ]);
 
 export const LIMITS = Object.freeze({
-  blocks: 12, fields: 20, options: 12, detailsRows: 8,
+  blocks: 12, fields: 20, options: 12, detailsRows: 8, notifyEmails: 10,
   title: 120, headline: 80, subheadline: 150, body: 2000, submitLabel: 40,
   detailsLabel: 40, detailsValue: 120, detailsLink: 500, mediaUrl: 500, mediaAlt: 120,
   label: 80, help: 160, option: 48,
@@ -393,6 +395,33 @@ export function normalizeSgMobile(value) {
   const digits = String(value ?? '').replace(/[^0-9]/g, '');
   const local = digits.length === 10 && digits.startsWith('65') ? digits.slice(2) : digits;
   return /^[89][0-9]{7}$/.test(local) ? local : '';
+}
+
+/**
+ * Organiser notification recipients. Accepts what a person actually types into
+ * a box — one per line, or commas, or semicolons, or a mix — and returns the
+ * clean list plus whatever could not be read as an address, so the designer can
+ * point at the bad one instead of silently dropping it.
+ */
+export function parseNotifyEmails(input) {
+  const raw = Array.isArray(input) ? input : String(input ?? '').split(/[\n,;]+/);
+  const emails = [];
+  const invalid = [];
+  const seen = new Set();
+  for (const piece of raw) {
+    const one = String(piece ?? '').trim().replace(/^[<]|[>]$/g, '');
+    if (!one) continue;
+    if (!NOTIFY_EMAIL_RE.test(one) || one.length > 254) {
+      if (invalid.length < LIMITS.notifyEmails) invalid.push(one.slice(0, 254));
+      continue;
+    }
+    const key = one.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    emails.push(one);
+    if (emails.length >= LIMITS.notifyEmails) break;
+  }
+  return { emails, invalid };
 }
 
 export function isValidRsvpSlug(slug) {

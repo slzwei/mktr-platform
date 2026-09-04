@@ -5,7 +5,7 @@ import { UUID_PARAM_RE } from '../middleware/uuidParam.js';
 import { logger } from '../utils/logger.js';
 import {
   clampLayout, defaultLayout, layoutProblems, publicLayout, consentTemplateOf,
-  isValidRsvpSlug, slugProblem, RSVP_SLUG_RE, LIMITS, sanitizeText, requiresPhoneVerification, phoneFieldOf, normalizeSgMobile } from '../utils/rsvpLayout.js';
+  isValidRsvpSlug, slugProblem, RSVP_SLUG_RE, LIMITS, sanitizeText, requiresPhoneVerification, phoneFieldOf, normalizeSgMobile, parseNotifyEmails } from '../utils/rsvpLayout.js';
 import { buildSubmissionSchema, buildAnswersSchema, sanitizeAnswers, parseClosesAt, pickSourceMetadata } from '../utils/rsvpAnswers.js';
 import { toCsv } from '../utils/csv.js';
 import { CURRENT_RSVP_CONSENT_VERSION, resolveRsvpConsent, renderRsvpConsentCopy, hashConsentCopy } from './rsvpConsentRegistry.js';
@@ -57,6 +57,8 @@ function toAdminDto(row, { withLayout = false } = {}) {
     closesAt: row.closesAt,
     consentVersion: row.consentVersion,
     retentionUntil: row.retentionUntil,
+    // Admin-only, by construction: toPublicDto never touches this row shape.
+    notifyEmails: Array.isArray(row.notifyEmails) ? row.notifyEmails : [],
     publishedAt: row.publishedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -145,11 +147,14 @@ export async function createEvent(input, user) {
   const title = sanitizeText(input.title, LIMITS.title);
   if (!title) throw typed(400, 'title_required', 'Title is required');
   const organiserName = sanitizeText(input.organiserName, LIMITS.title);
+  const { emails: notifyEmails, invalid: badNotify } = parseNotifyEmails(input.notifyEmails);
+  if (badNotify.length) throw typed(400, 'notify_emails_invalid', `Not an email address: ${badNotify.join(', ')}`, { invalid: badNotify });
   const slug = typeof input.slug === 'string' && input.slug.trim() ? input.slug.trim() : null;
   if (slug) await assertSlugFree(slug);
   const row = await RsvpEvent.create({
     title,
     organiserName,
+    notifyEmails,
     slug,
     status: 'draft',
     layout: defaultLayout(),
@@ -202,6 +207,13 @@ export async function updateEvent(id, patch) {
     const d = parseClosesAt(patch.retentionUntil);
     if (d === undefined) throw typed(400, 'retention_invalid', 'retentionUntil must be an ISO date-time (an SGT wall time is accepted without an offset)');
     changes.retentionUntil = d;
+  }
+  if ('notifyEmails' in patch) {
+    const { emails, invalid } = parseNotifyEmails(patch.notifyEmails);
+    if (invalid.length) {
+      throw typed(400, 'notify_emails_invalid', `Not an email address: ${invalid.join(', ')}`, { invalid });
+    }
+    changes.notifyEmails = emails;
   }
   if ('layout' in patch) {
     changes.layout = clampLayout(patch.layout, { frozen: responseCount > 0 ? row.layout?.fields : null });
@@ -426,7 +438,11 @@ export async function getPublicEvent(slug) {
 }
 
 /** What the confirmation email needs, detached from the row (the txn is over by then). */
-const eventSnapshot = (row) => ({ id: row.id, title: row.title, slug: row.slug, organiserName: row.organiserName, layout: row.layout });
+const eventSnapshot = (row) => ({
+  id: row.id, title: row.title, slug: row.slug, organiserName: row.organiserName, layout: row.layout,
+  capacity: row.capacity,
+  notifyEmails: Array.isArray(row.notifyEmails) ? row.notifyEmails : [],
+});
 
 /** The sentence an attendee sees right now + its hash — what the page echoes back and what a response stamps. */
 function currentConsent(row) {
@@ -510,7 +526,7 @@ export async function submitResponse(slug, body, { referrer, deps = {} } = {}) {
         { name, email: answers.email, phone, answers: customAnswers, status: 'going' },
         { transaction: t, fields: ['name', 'email', 'phone', 'answers', 'status', 'updatedAt'] }
       );
-      return { created: false, reactivated, id: existing.id, notify: { event: eventSnapshot(event), response: { email: answers.email, name }, updated: !reactivated } };
+      return { created: false, reactivated, id: existing.id, notify: { event: eventSnapshot(event), response: { email: answers.email, name, phone, answers: customAnswers }, goingCount: reactivated ? going + 1 : going, updated: !reactivated } };
     }
 
     if (capacity != null && going >= capacity) throw typed(409, 'full', 'This event is full');
@@ -527,7 +543,7 @@ export async function submitResponse(slug, body, { referrer, deps = {} } = {}) {
       consentCopy: consent.copy,
       sourceMetadata: pickSourceMetadata(value.source, referrer),
     }, { transaction: t });
-    return { created: true, reactivated: false, id: row.id, notify: { event: eventSnapshot(event), response: { email: answers.email, name }, updated: false } };
+    return { created: true, reactivated: false, id: row.id, notify: { event: eventSnapshot(event), response: { email: answers.email, name, phone, answers: customAnswers }, goingCount: going + 1, updated: false } };
   }).catch((err) => {
     // The event lock serialises same-email submits, so this is belt-and-braces.
     if (err?.name === 'SequelizeUniqueConstraintError') throw typed(409, 'duplicate', 'You have already responded — please try again');

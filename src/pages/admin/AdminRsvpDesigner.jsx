@@ -60,6 +60,7 @@ const metaFromEvent = (ev) => ({
   organiserName: ev.organiserName || '',
   capacity: ev.capacity == null ? '' : String(ev.capacity),
   closesAt: isoToSgtLocal(ev.closesAt),
+  notifyEmails: (ev.notifyEmails || []).join('\n'),
 });
 
 /** Only the meta keys that changed go into the PATCH (frozen fields 409 if re-sent changed). */
@@ -70,6 +71,7 @@ export function metaPatch(baseline, meta) {
   if (meta.organiserName !== baseline.organiserName) patch.organiserName = meta.organiserName;
   if (meta.capacity !== baseline.capacity) patch.capacity = meta.capacity === '' ? null : Number(meta.capacity);
   if (meta.closesAt !== baseline.closesAt) patch.closesAt = meta.closesAt || null;
+  if (meta.notifyEmails !== baseline.notifyEmails) patch.notifyEmails = meta.notifyEmails;
   return patch;
 }
 
