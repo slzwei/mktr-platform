@@ -73,14 +73,14 @@ describe('RsvpPageRenderer', () => {
     expect(fireEvent.click(screen.getByRole('link', { name: /545 Orchard Road/ }))).toBe(false);
   });
 
-  describe('mobile verification', () => {
+  describe('mobile verification (same choreography as the capture funnel)', () => {
     const withPhone = (formOverrides = {}) => clampLayout({
       ...LAYOUT,
       blocks: LAYOUT.blocks.map((b) => (b.type === 'form' ? { ...b, ...formOverrides } : b)),
       fields: [
         { key: 'name', type: 'text', label: 'Full name', required: true },
         { key: 'email', type: 'email', label: 'Email', required: true },
-        { key: 'phone', type: 'phone', label: 'Mobile' },
+        { key: 'phone', type: 'phone', label: 'Mobile', required: true },
       ],
     });
     const fill = async () => {
@@ -88,77 +88,141 @@ describe('RsvpPageRenderer', () => {
       await userEvent.type(screen.getByLabelText(/Email/), 'ann@example.com');
       await userEvent.click(screen.getByLabelText(/I agree/i));
     };
+    const mount = (props = {}, formOverrides = {}) => render(
+      <RsvpPageRenderer
+        layout={withPhone(formOverrides)}
+        state="open"
+        consent={CONSENT}
+        onSubmit={props.onSubmit || vi.fn()}
+        sendCode={props.sendCode || vi.fn().mockResolvedValue({})}
+        checkCode={props.checkCode || vi.fn().mockResolvedValue(true)}
+        mode={props.mode || 'live'}
+      />
+    );
 
-    it('blocks submit until the code is verified, then lets it through', async () => {
-      const onSubmit = vi.fn();
+    it('the number is typed against a +65 prefix and shown grouped', async () => {
+      mount();
+      const input = screen.getByLabelText(/Mobile/);
+      await userEvent.type(input, '91234567');
+      expect(input).toHaveValue('9123 4567');
+      // Letters and a pasted country code cannot get in.
+      await userEvent.clear(input);
+      await userEvent.type(input, 'abc9123');
+      expect(input).toHaveValue('9123');
+    });
+
+    it('Verify sends the code, the panel opens, and a correct code collapses it into a badge', async () => {
       const sendCode = vi.fn().mockResolvedValue({});
       const checkCode = vi.fn().mockResolvedValue(true);
-      render(<RsvpPageRenderer layout={withPhone()} state="open" consent={CONSENT} onSubmit={onSubmit} sendCode={sendCode} checkCode={checkCode} />);
-
+      const onSubmit = vi.fn();
+      mount({ sendCode, checkCode, onSubmit });
       await fill();
-      await userEvent.type(screen.getByLabelText('Mobile'), '91234567');
+
+      const verifyBtn = screen.getByRole('button', { name: 'Verify' });
+      expect(verifyBtn).toBeDisabled();
+      await userEvent.type(screen.getByLabelText(/Mobile/), '91234567');
+      expect(verifyBtn).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Count me in' })).toBeDisabled();
 
-      await userEvent.click(screen.getByRole('button', { name: 'Send code' }));
+      await userEvent.click(verifyBtn);
       await waitFor(() => expect(sendCode).toHaveBeenCalledWith('91234567'));
+      expect(await screen.findByText(/Enter the 6-digit code/)).toBeInTheDocument();
+      // The number is locked while a code is outstanding.
+      expect(screen.getByLabelText(/Mobile/)).toBeDisabled();
 
-      await userEvent.type(screen.getByLabelText('Code'), '123456');
-      await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
-      await waitFor(() => expect(screen.getByText('Mobile verified.')).toBeInTheDocument());
-      expect(checkCode).toHaveBeenCalledWith('91234567', '123456');
+      await userEvent.type(screen.getByLabelText('Verification code'), '123456');
+      // Auto-verifies on the sixth digit — no second click needed.
+      await waitFor(() => expect(checkCode).toHaveBeenCalledWith('91234567', '123456'));
+      expect(await screen.findByText('Verified')).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText(/Enter the 6-digit code/)).not.toBeInTheDocument());
 
       const submit = screen.getByRole('button', { name: 'Count me in' });
-      expect(submit).toBeEnabled();
+      await waitFor(() => expect(submit).toBeEnabled());
       await userEvent.click(submit);
       expect(onSubmit).toHaveBeenCalledTimes(1);
     });
 
-    it('editing the number after verifying drops back to unverified', async () => {
-      render(<RsvpPageRenderer layout={withPhone()} state="open" consent={CONSENT} onSubmit={vi.fn()} sendCode={vi.fn().mockResolvedValue({})} checkCode={vi.fn().mockResolvedValue(true)} />);
-      await fill();
-      await userEvent.type(screen.getByLabelText('Mobile'), '91234567');
-      await userEvent.click(screen.getByRole('button', { name: 'Send code' }));
-      await userEvent.type(await screen.findByLabelText('Code'), '123456');
+    it('Edit reopens the number, with the resend still cooling down', async () => {
+      mount();
+      await userEvent.type(screen.getByLabelText(/Mobile/), '91234567');
       await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
-      await waitFor(() => expect(screen.getByText('Mobile verified.')).toBeInTheDocument());
+      await screen.findByText(/Enter the 6-digit code/);
 
-      await userEvent.type(screen.getByLabelText('Mobile'), '8');
-      expect(screen.queryByText('Mobile verified.')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Count me in' })).toBeDisabled();
+      await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      expect(screen.queryByText(/Enter the 6-digit code/)).not.toBeInTheDocument();
+      expect(screen.getByLabelText(/Mobile/)).toBeEnabled();
+      // Same guard as the capture funnel: a fresh send waits out the cooldown,
+      // so one typo cannot burn a second SMS immediately.
+      const row = screen.getByRole('button', { name: /Wait \d+s/ });
+      expect(row).toBeDisabled();
     });
 
-    it('will not offer a code for a number we cannot text, and shows a failed check', async () => {
-      const checkCode = vi.fn().mockRejectedValue(new Error('Invalid verification code'));
-      render(<RsvpPageRenderer layout={withPhone()} state="open" consent={CONSENT} onSubmit={vi.fn()} sendCode={vi.fn().mockResolvedValue({})} checkCode={checkCode} />);
-      await fill();
-      await userEvent.type(screen.getByLabelText('Mobile'), '12345');
-      expect(screen.getByRole('button', { name: 'Send code' })).toBeDisabled();
-
-      await userEvent.clear(screen.getByLabelText('Mobile'));
-      await userEvent.type(screen.getByLabelText('Mobile'), '91234567');
-      await userEvent.click(screen.getByRole('button', { name: 'Send code' }));
-      await userEvent.type(await screen.findByLabelText('Code'), '000000');
-      await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
-      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Invalid verification code'));
-      expect(screen.getByRole('button', { name: 'Count me in' })).toBeDisabled();
-    });
-
-    it('a blank optional mobile submits with no verification at all', async () => {
+    it('the verified number is locked, so what was verified is what gets submitted', async () => {
       const onSubmit = vi.fn();
-      const sendCode = vi.fn();
-      render(<RsvpPageRenderer layout={withPhone()} state="open" consent={CONSENT} onSubmit={onSubmit} sendCode={sendCode} checkCode={vi.fn()} />);
+      mount({ onSubmit });
       await fill();
+      await userEvent.type(screen.getByLabelText(/Mobile/), '91234567');
+      await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await userEvent.type(await screen.findByLabelText('Verification code'), '123456');
+      await screen.findByText('Verified');
+
+      const input = screen.getByLabelText(/Mobile/);
+      expect(input).toBeDisabled();
+      await userEvent.type(input, '8');
+      expect(input).toHaveValue('9123 4567');
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Count me in' })).toBeEnabled());
       await userEvent.click(screen.getByRole('button', { name: 'Count me in' }));
       expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(onSubmit.mock.calls[0][0].answers.phone).toBe('91234567');
+    });
+
+    it('a wrong code keeps the panel open and says why', async () => {
+      const checkCode = vi.fn().mockRejectedValue(new Error('Invalid verification code'));
+      mount({ checkCode });
+      await fill();
+      await userEvent.type(screen.getByLabelText(/Mobile/), '91234567');
+      await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      await userEvent.type(await screen.findByLabelText('Verification code'), '000000');
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Invalid verification code'));
+      expect(screen.getByText(/Enter the 6-digit code/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Count me in' })).toBeDisabled();
+    });
+
+    it('offers a resend on a cooldown once a code is out', async () => {
+      const sendCode = vi.fn().mockResolvedValue({});
+      mount({ sendCode });
+      await userEvent.type(screen.getByLabelText(/Mobile/), '91234567');
+      await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+      const resend = await screen.findByRole('button', { name: /Resend code in \d+s/ });
+      expect(resend).toBeDisabled();
+      expect(sendCode).toHaveBeenCalledTimes(1);
+    });
+
+    it('a number we cannot text never gets a code', async () => {
+      const sendCode = vi.fn();
+      mount({ sendCode });
+      await userEvent.type(screen.getByLabelText(/Mobile/), '1234567');
+      expect(screen.getByRole('button', { name: 'Verify' })).toBeDisabled();
       expect(sendCode).not.toHaveBeenCalled();
     });
 
-    it('with the toggle off there is no verification step', async () => {
+    it('the designer preview SHOWS the row, inert — the owner must see what attendees get', async () => {
+      const sendCode = vi.fn();
+      mount({ sendCode, mode: 'preview' });
+      const button = screen.getByRole('button', { name: 'Verify' });
+      expect(button).toBeInTheDocument();
+      expect(button).toBeDisabled();
+      await userEvent.click(button);
+      expect(sendCode).not.toHaveBeenCalled();
+    });
+
+    it('with the toggle off the mobile is a plain field again', async () => {
       const onSubmit = vi.fn();
-      render(<RsvpPageRenderer layout={withPhone({ verifyPhone: false })} state="open" consent={CONSENT} onSubmit={onSubmit} sendCode={vi.fn()} checkCode={vi.fn()} />);
+      mount({ onSubmit }, { verifyPhone: false });
       await fill();
-      await userEvent.type(screen.getByLabelText('Mobile'), '91234567');
-      expect(screen.queryByRole('button', { name: 'Send code' })).not.toBeInTheDocument();
+      await userEvent.type(screen.getByLabelText(/Mobile/), '+65 9123 4567');
+      expect(screen.queryByRole('button', { name: 'Verify' })).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole('button', { name: 'Count me in' }));
       expect(onSubmit).toHaveBeenCalledTimes(1);
     });
