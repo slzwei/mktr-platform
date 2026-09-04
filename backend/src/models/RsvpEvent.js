@@ -21,6 +21,9 @@ RsvpEvent.init({
   closesAt: { type: DataTypes.DATE, allowNull: true },
   consentVersion: { type: DataTypes.STRING(40), allowNull: false },
   retentionUntil: { type: DataTypes.DATE, allowNull: true },
+  // Organiser notification recipients (migration 132). NEVER part of the
+  // public DTO — the public layout is served to every visitor.
+  notifyEmails: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
   createdBy: { type: DataTypes.UUID, allowNull: false, references: { model: 'users', key: 'id' } },
   publishedAt: { type: DataTypes.DATE, allowNull: true },
   // fn('NOW') so the model agrees with the migration's DB default (see

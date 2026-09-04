@@ -562,3 +562,36 @@ describe('mobile verification gate', () => {
     expect((await respond(ev.slug, body('gate7@example.com', '81111111'))).status).toBe(201);
   });
 });
+
+describe('organiser notification recipients', () => {
+  test('the admin DTO carries them, the PUBLIC one never does', async () => {
+    const ev = await publishedEvent({ patch: { notifyEmails: 'ops@example.com\nBoss@Example.com' } });
+
+    const admin_ = await request(app).get(`/api/rsvp/${ev.id}`).set(admin());
+    expect(admin_.body.data.event.notifyEmails).toEqual(['ops@example.com', 'Boss@Example.com']);
+
+    const pub = await request(app).get(`/api/rsvp-public/${ev.slug}`);
+    expect(pub.status).toBe(200);
+    expect(JSON.stringify(pub.body)).not.toContain('ops@example.com');
+    expect(JSON.stringify(pub.body)).not.toContain('Boss@Example.com');
+    expect(pub.body.data.notifyEmails).toBeUndefined();
+  });
+
+  test('a bad address is refused with the offender named, and nothing is stored', async () => {
+    const ev = await publishedEvent();
+    const res = await request(app).patch(`/api/rsvp/${ev.id}`).set(admin()).send({ notifyEmails: 'ok@example.com\nnope' });
+    expect(res.status).toBe(400);
+    expect(res.body.data.code).toBe('notify_emails_invalid');
+    expect(res.body.message).toContain('nope');
+
+    const after = await request(app).get(`/api/rsvp/${ev.id}`).set(admin());
+    expect(after.body.data.event.notifyEmails).toEqual([]);
+  });
+
+  test('clearing the box removes everyone', async () => {
+    const ev = await publishedEvent({ patch: { notifyEmails: ['a@x.com'] } });
+    await request(app).patch(`/api/rsvp/${ev.id}`).set(admin()).send({ notifyEmails: '' }).expect(200);
+    const after = await request(app).get(`/api/rsvp/${ev.id}`).set(admin());
+    expect(after.body.data.event.notifyEmails).toEqual([]);
+  });
+});

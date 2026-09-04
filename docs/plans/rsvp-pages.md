@@ -660,6 +660,28 @@ field was a plain input. It now reuses the funnel's own OTP, rather than a secon
   look like the mktr otp verification.... not the next page of the form".
 - **Cost.** Every verified RSVP sends one SMS under the MKTR sender id.
 
+### 15g. The organiser gets told (2026-09-04)
+
+Shawn: "i need a notification. on the rsvp designer, include a place i can send emails
+to, maybe multiple email addresses. make sure it works." Nothing reached the organiser
+before this — an RSVP only appeared if someone opened the Responses page.
+
+- **A COLUMN, not the layout** (migration 132, `rsvp_events.notifyEmails` JSONB `[]`).
+  `GET /api/rsvp-public/:slug` hands the whole clamped layout to every visitor, so
+  addresses parked there would be published. The public DTO is an explicit allowlist
+  and a route test asserts the addresses never appear in that payload.
+- `parseNotifyEmails` (twin) reads what a person types — one per line, commas,
+  semicolons, `<addr>` — dedupes case-insensitively, caps at `LIMITS.notifyEmails`
+  (10), and RETURNS what it could not read so the designer can name it. The service
+  400s `notify_emails_invalid` rather than silently dropping a typo.
+- Designer: Settings → "Tell me about new RSVPs", with a live count, the offending
+  address called out, and a warning while the list is empty.
+- Email: one message PER RECIPIENT (nobody sees the others' addresses), `Reply-To`
+  the attendee so replying reaches the person. Carries name, email, mobile, every
+  answered custom question, the seat count, and a link to the Responses page. Sent on
+  every accepted submission INCLUDING edits — a changed dietary answer matters to
+  whoever is catering. Fire-and-forget: a recipient's mail server can never fail an RSVP.
+
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
 
 The surface, its isolation, the email, and the data-subject paths, per §7–§8:

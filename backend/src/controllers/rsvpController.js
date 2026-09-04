@@ -1,6 +1,6 @@
 import { asyncHandler } from '../middleware/errorHandler.js';
 import * as rsvpService from '../services/rsvpService.js';
-import { sendRsvpConfirmationEmail } from '../services/rsvpMailer.js';
+import { sendRsvpConfirmationEmail, sendRsvpOrganiserNotification } from '../services/rsvpMailer.js';
 
 // ── admin (router-level authenticateToken + requireAdmin — routes/rsvpAdmin.js) ──
 
@@ -88,6 +88,11 @@ export const respond = asyncHandler(async (req, res) => {
   // failed one, and a resubmit only re-mails when it actually changed a seat.
   if (result.notify && (result.created || result.reactivated)) {
     sendRsvpConfirmationEmail(result.notify).catch(() => {});
+  }
+  // The organiser hears about EVERY accepted submission, edits included — a
+  // changed dietary answer matters to whoever is catering.
+  if (result.notify) {
+    sendRsvpOrganiserNotification(result.notify).catch(() => {});
   }
   return res
     .status(result.created ? 201 : 200)

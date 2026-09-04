@@ -33,6 +33,8 @@ const createSchema = Joi.object({
   title: Joi.string().trim().min(1).max(LIMITS.title).required(),
   organiserName: Joi.string().trim().max(LIMITS.title).allow('').optional(),
   slug: Joi.string().trim().max(60).allow('', null).optional(),
+  // A raw textarea or an array; parseNotifyEmails in the service is the judge.
+  notifyEmails: Joi.alternatives().try(Joi.string().allow('').max(4000), Joi.array().items(Joi.string().max(254)).max(50)).optional(),
 });
 
 const patchSchema = Joi.object({
@@ -42,6 +44,7 @@ const patchSchema = Joi.object({
   capacity: Joi.number().integer().min(1).max(100000).allow(null),
   closesAt: Joi.string().trim().max(40).allow('', null),
   retentionUntil: Joi.string().trim().max(40).allow('', null),
+  notifyEmails: Joi.alternatives().try(Joi.string().allow('').max(4000), Joi.array().items(Joi.string().max(254)).max(50)),
   // The clamp sanitises the document; Joi only insists it is an object.
   layout: Joi.object().unknown(true),
 }).min(1);

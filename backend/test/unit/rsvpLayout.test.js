@@ -6,7 +6,7 @@ import {
   clampLayout, defaultLayout, publicLayout, layoutProblems, sanitizeMultiline,
   isValidRsvpSlug, slugProblem, renderConsentTemplate, consentTemplateOf,
   LIMITS, LOCKED_FIELD_KEYS, BLOCK_TYPES, FIELD_TYPES, RESERVED_ROOT_SLUGS,
-  requiresPhoneVerification, phoneFieldOf, normalizeSgMobile,
+  requiresPhoneVerification, phoneFieldOf, normalizeSgMobile, parseNotifyEmails,
 } from '../../src/utils/rsvpLayout.js';
 
 const formBlocks = (doc) => doc.blocks.filter((b) => b.type === 'form');
@@ -346,6 +346,38 @@ describe('mobile verification', () => {
   test('normalizeSgMobile rejects anything that is not an SG mobile', () => {
     for (const bad of ['61234567', '1234567', '912345678', '+1 415 555 1234', 'not a phone', '', null, undefined]) {
       expect(normalizeSgMobile(bad)).toBe('');
+    }
+  });
+});
+
+describe('parseNotifyEmails', () => {
+  test('reads the separators a person actually types', () => {
+    expect(parseNotifyEmails('a@x.com\nb@x.com').emails).toEqual(['a@x.com', 'b@x.com']);
+    expect(parseNotifyEmails('a@x.com, b@x.com ; c@x.com').emails).toEqual(['a@x.com', 'b@x.com', 'c@x.com']);
+    expect(parseNotifyEmails(['a@x.com', ' b@x.com ']).emails).toEqual(['a@x.com', 'b@x.com']);
+    expect(parseNotifyEmails('<a@x.com>').emails).toEqual(['a@x.com']);
+  });
+
+  test('deduplicates case-insensitively, keeping the first spelling', () => {
+    expect(parseNotifyEmails('Ann@X.com\nann@x.com\nANN@X.COM').emails).toEqual(['Ann@X.com']);
+  });
+
+  test('reports what it could not read instead of dropping it silently', () => {
+    const { emails, invalid } = parseNotifyEmails('good@x.com\nnot-an-email\nalso bad@\nb@y.com');
+    expect(emails).toEqual(['good@x.com', 'b@y.com']);
+    expect(invalid).toEqual(['not-an-email', 'also bad@']);
+  });
+
+  test('rejects an address with no dot in the domain, and an over-long one', () => {
+    expect(parseNotifyEmails('a@localhost').invalid).toEqual(['a@localhost']);
+    expect(parseNotifyEmails(`${'a'.repeat(250)}@x.com`).emails).toEqual([]);
+  });
+
+  test('caps the list and treats empty input as no recipients', () => {
+    const many = Array.from({ length: LIMITS.notifyEmails + 5 }, (_, i) => `a${i}@x.com`).join('\n');
+    expect(parseNotifyEmails(many).emails).toHaveLength(LIMITS.notifyEmails);
+    for (const empty of ['', '   ', '\n\n', null, undefined, []]) {
+      expect(parseNotifyEmails(empty)).toEqual({ emails: [], invalid: [] });
     }
   });
 });

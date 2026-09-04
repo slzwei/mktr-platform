@@ -56,6 +56,28 @@ describe('AdminRsvpDesigner', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('takes notification recipients, counts them, and sends them on save', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.getByText(/Nobody is told when someone RSVPs/)).toBeInTheDocument();
+    const box = screen.getByLabelText(/Send each RSVP to these email addresses/);
+    fireEvent.change(box, { target: { value: 'ops@example.com\nboss@example.com' } });
+    expect(screen.getByText(/2 people get an email for every RSVP/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.updateRsvpEvent).toHaveBeenCalled());
+    const [, patch] = api.updateRsvpEvent.mock.calls.at(-1);
+    expect(patch.notifyEmails).toBe('ops@example.com\nboss@example.com');
+  });
+
+  it('names an address it cannot read instead of dropping it', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.change(screen.getByLabelText(/Send each RSVP to these email addresses/), { target: { value: 'ops@example.com, nope' } });
+    expect(screen.getByText(/Not an email address: nope/)).toBeInTheDocument();
+  });
+
   it('mobile verification is ON by default and can be switched off', async () => {
     renderPage();
     await userEvent.click(screen.getByRole('button', { name: 'Form' }));

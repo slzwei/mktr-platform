@@ -1,6 +1,6 @@
 import { THEME_PRESETS, FONT_IDS, THEME_RADIUS_IDS } from '@/lib/designConfigV2';
 import { HERO_FONTS } from '@/lib/heroFonts';
-import { BLOCK_TYPES, FIELD_TYPES, LIMITS, LOCKED_FIELD_KEYS, BUILTIN_FIELD_TYPES, slugProblem, phoneFieldOf } from '@/lib/rsvpLayout';
+import { BLOCK_TYPES, FIELD_TYPES, LIMITS, LOCKED_FIELD_KEYS, BUILTIN_FIELD_TYPES, slugProblem, phoneFieldOf, parseNotifyEmails } from '@/lib/rsvpLayout';
 import SortableList from './SortableList';
 import { Field, AreaField, SelectField, Toggle, Section, Note, randomId, ImageField } from './kit';
 import { uploadRsvpImage } from '@/lib/rsvpImageUpload';
@@ -341,6 +341,9 @@ export function isoToSgtLocal(iso) {
 
 export function SettingsPanel({ meta, setMeta, layout, update, locked, slugStatus }) {
   const confirmation = layout.confirmation || {};
+  // Kept as raw text while typing (a half-typed address is not an error yet);
+  // the count and the warning come from parsing that text, not from storage.
+  const notify = parseNotifyEmails(meta.notifyEmails);
   const setConf = (patch) => update((l) => ({ ...l, confirmation: { ...l.confirmation, ...patch } }), { kind: 'text' });
   const problem = meta.slug ? slugProblem(meta.slug) : null;
   return (
@@ -359,6 +362,24 @@ export function SettingsPanel({ meta, setMeta, layout, update, locked, slugStatu
         />
         <Field id="set-capacity" label="Capacity (blank = unlimited)" type="number" value={meta.capacity ?? ''} onChange={(v) => setMeta({ capacity: v })} />
         <Field id="set-closes" label="RSVPs close (Singapore time)" type="datetime-local" value={meta.closesAt} onChange={(v) => setMeta({ closesAt: v })} />
+      </Section>
+      <Section title="Tell me about new RSVPs">
+        <AreaField
+          id="set-notify"
+          label="Send each RSVP to these email addresses"
+          value={meta.notifyEmails}
+          onChange={(v) => setMeta({ notifyEmails: v })}
+          rows={3}
+          placeholder={'you@example.com\nteam@example.com'}
+          hint={`One per line, or separated by commas. Up to ${LIMITS.notifyEmails}. Leave empty for no emails.`}
+        />
+        {notify.invalid.length ? (
+          <Note tone="bad">{`Not an email address: ${notify.invalid.join(', ')}. Fix or remove it before saving.`}</Note>
+        ) : notify.emails.length ? (
+          <Note>{`${notify.emails.length} ${notify.emails.length === 1 ? 'person gets' : 'people get'} an email for every RSVP, including edits. Reply goes straight to the attendee.`}</Note>
+        ) : (
+          <Note tone="warn">Nobody is told when someone RSVPs. You would have to check the Responses page.</Note>
+        )}
       </Section>
       <Section title="After they RSVP">
         <Field id="set-conf-h" label="Headline" value={confirmation.headline} onChange={(v) => setConf({ headline: v })} limit={LIMITS.confirmationHeadline} placeholder="You're in" />
