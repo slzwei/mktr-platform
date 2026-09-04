@@ -60,6 +60,19 @@ describe('RsvpPageRenderer', () => {
     expect(screen.queryByRole('textbox', { name: 'Website' })).not.toBeInTheDocument();
   });
 
+  it('a details row with a link renders the value as a new-tab link; preview keeps it inert', () => {
+    const layout = clampLayout({ ...LAYOUT, blocks: LAYOUT.blocks.map((b) => (b.type === 'details' ? { ...b, rows: [{ label: 'Where', value: '545 Orchard Road', href: 'https://maps.app.goo.gl/abc' }] } : b)) });
+    const { unmount } = render(<RsvpPageRenderer layout={layout} state="open" consent={CONSENT} onSubmit={() => {}} />);
+    const link = screen.getByRole('link', { name: /545 Orchard Road/ });
+    expect(link).toHaveAttribute('href', 'https://maps.app.goo.gl/abc');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(fireEvent.click(link)).toBe(true);
+    unmount();
+    render(<RsvpPageRenderer layout={layout} state="open" consent={CONSENT} mode="preview" onSubmit={() => {}} />);
+    expect(fireEvent.click(screen.getByRole('link', { name: /545 Orchard Road/ }))).toBe(false);
+  });
+
   it('preview mode shows placeholders for empty slots and never submits', async () => {
     const onSubmit = vi.fn();
     const empty = clampLayout({ blocks: [{ id: 'b_h', type: 'hero' }, { id: 'b_t', type: 'text' }, { id: 'b_d', type: 'details' }, { id: 'b_i', type: 'image' }, { id: 'b_f', type: 'form' }] });

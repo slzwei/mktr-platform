@@ -59,3 +59,24 @@ describe('sendRsvpConfirmationEmail', () => {
     expect(await rsvpMailer.sendRsvpConfirmationEmail({ event: EVENT, response: { name: 'x' } })).toEqual({ sent: false, reason: 'no_recipient' });
   });
 });
+
+describe('details row links', () => {
+  test('a row with a link renders as an anchor in HTML and in brackets in text', () => {
+    const event = {
+      id: 'e1', title: 'Launch', slug: 'launch', organiserName: 'Acme',
+      layout: { blocks: [{ type: 'details', rows: [{ label: 'Where', value: 'Hall <b>2</b>', href: 'https://maps.app.goo.gl/abc?q=1&x=y' }, { label: 'When', value: 'Sat', href: '' }] }], confirmation: { emailEnabled: true } },
+    };
+    const { html, text } = rsvpMailer.renderRsvpConfirmation({ event, response: { email: 'ann@example.com', name: 'Ann Lee' } });
+    expect(html).toContain('<a href="https://maps.app.goo.gl/abc?q=1&amp;x=y" style="color:#2b1d12">Hall &lt;b&gt;2&lt;/b&gt;</a>');
+    expect(html).not.toContain('<a href="">');
+    expect(text).toContain('Where: Hall <b>2</b> (https://maps.app.goo.gl/abc?q=1&x=y)');
+    expect(text).toContain('When: Sat\n');
+  });
+
+  test('a non-https link in stored layout is never linked', () => {
+    const event = { id: 'e1', title: 'Launch', slug: 'launch', organiserName: 'Acme', layout: { blocks: [{ type: 'details', rows: [{ label: 'Where', value: 'Hall', href: 'javascript:alert(1)' }] }] } };
+    const { html, text } = rsvpMailer.renderRsvpConfirmation({ event, response: { email: 'ann@example.com', name: 'Ann' } });
+    expect(html).not.toContain('javascript:');
+    expect(text).toContain('Where: Hall\n');
+  });
+});

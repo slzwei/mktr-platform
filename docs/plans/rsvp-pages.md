@@ -582,6 +582,22 @@ landed on the blank form again, which reads as if nothing was recorded. Now:
   for deploy checks: the public-page code lives in the lazy chunks
   `RsvpPublicPage-*.js` / `RsvpPageRenderer-*.js`, not `index-*.js`.
 
+### 15d. Details rows can link out (2026-09-04)
+
+Shawn: "make the location clickable as a google link? if needed include a field that I
+can include a gmap link?" Each Details row now carries an optional `href`:
+
+- Twin clamp: `cleanLink` — https only, ≤ `LIMITS.detailsLink` (500), dropped when the row
+  has no value to hang it off. Old rows clamp to `href: ''`; nothing else changes shape.
+- Designer: a "Link (optional)" field under each row plus a **Google Maps link** button
+  that fills it with a Maps search for the row's own text
+  (`https://www.google.com/maps/search/?api=1&query=…`). Paste a `maps.app.goo.gl` pin
+  instead when the search would be ambiguous.
+- Public page: the value renders as an underlined link with a ↗ glyph, `target=_blank`,
+  `rel=noopener noreferrer`; the designer preview keeps it inert (click prevented).
+- Confirmation email: the value is an anchor in HTML and `(link)` after the value in text.
+  The mailer re-checks the https regex on read, so a stored non-https string is never linked.
+
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
 
 The surface, its isolation, the email, and the data-subject paths, per §7–§8:

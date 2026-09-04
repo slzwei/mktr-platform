@@ -27,6 +27,9 @@ const blockSnippet = (b) => {
 
 // ── Content ────────────────────────────────────────────────────────────────
 
+/** A Google Maps search for the row's own text — the one-click way to make a venue clickable. */
+export const googleMapsSearchUrl = (value) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(String(value || '').trim())}`;
+
 function BlockEditor({ block, onChange, consentDefault = '' }) {
   const set = (k, v) => onChange({ ...block, [k]: v });
   const id = `blk-${block.id}`;
@@ -48,13 +51,36 @@ function BlockEditor({ block, onChange, consentDefault = '' }) {
       return (
         <>
           {rows.map((r, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 6, alignItems: 'end' }}>
-              <Field id={`${id}-l${i}`} label={i === 0 ? 'Label' : ''} value={r.label} onChange={(v) => setRow(i, 'label', v)} limit={LIMITS.detailsLabel} placeholder="When" />
-              <Field id={`${id}-v${i}`} label={i === 0 ? 'Value' : ''} value={r.value} onChange={(v) => setRow(i, 'value', v)} limit={LIMITS.detailsValue} placeholder="Sat 4 Oct, 7pm" />
-              <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" aria-label={`Remove row ${i + 1}`} onClick={() => set('rows', rows.filter((_, j) => j !== i))}>×</button>
+            <div key={i} style={{ display: 'grid', gap: 6, paddingTop: i ? 8 : 0, borderTop: i ? '1px solid var(--line, #E6E8EC)' : 'none' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 6, alignItems: 'end' }}>
+                <Field id={`${id}-l${i}`} label={i === 0 ? 'Label' : ''} value={r.label} onChange={(v) => setRow(i, 'label', v)} limit={LIMITS.detailsLabel} placeholder="When" />
+                <Field id={`${id}-v${i}`} label={i === 0 ? 'Value' : ''} value={r.value} onChange={(v) => setRow(i, 'value', v)} limit={LIMITS.detailsValue} placeholder="Sat 4 Oct, 7pm" />
+                <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" aria-label={`Remove row ${i + 1}`} onClick={() => set('rows', rows.filter((_, j) => j !== i))}>×</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, alignItems: 'end' }}>
+                <Field
+                  id={`${id}-h${i}`}
+                  label={i === 0 ? 'Link (optional)' : ''}
+                  value={r.href}
+                  onChange={(v) => setRow(i, 'href', v)}
+                  limit={LIMITS.detailsLink}
+                  placeholder="https://maps.app.goo.gl/…"
+                  hint={i === 0 ? 'https:// only. The value becomes a link that opens in a new tab.' : undefined}
+                />
+                <button
+                  type="button"
+                  className="av2-btn av2-btn--ghost av2-btn--sm"
+                  disabled={!String(r.value || '').trim()}
+                  title="Link this value to a Google Maps search for it"
+                  aria-label={`Google Maps link for row ${i + 1}`}
+                  onClick={() => setRow(i, 'href', googleMapsSearchUrl(r.value))}
+                >
+                  Google Maps link
+                </button>
+              </div>
             </div>
           ))}
-          <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={rows.length >= LIMITS.detailsRows} onClick={() => set('rows', [...rows, { label: '', value: '' }])}>+ Add row</button>
+          <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={rows.length >= LIMITS.detailsRows} onClick={() => set('rows', [...rows, { label: '', value: '', href: '' }])}>+ Add row</button>
         </>
       );
     }
