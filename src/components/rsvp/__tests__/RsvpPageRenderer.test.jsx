@@ -153,6 +153,16 @@ describe('RsvpPageRenderer', () => {
       expect(sendCode).not.toHaveBeenCalled();
     });
 
+    it('the designer preview SHOWS the step, inert — the owner must see what attendees get', async () => {
+      const sendCode = vi.fn();
+      render(<RsvpPageRenderer layout={withPhone()} state="open" consent={CONSENT} mode="preview" onSubmit={vi.fn()} sendCode={sendCode} checkCode={vi.fn()} />);
+      const button = screen.getByRole('button', { name: 'Send code' });
+      expect(button).toBeInTheDocument();
+      expect(button).toBeDisabled();
+      await userEvent.click(button);
+      expect(sendCode).not.toHaveBeenCalled();
+    });
+
     it('with the toggle off there is no verification step', async () => {
       const onSubmit = vi.fn();
       render(<RsvpPageRenderer layout={withPhone({ verifyPhone: false })} state="open" consent={CONSENT} onSubmit={onSubmit} sendCode={vi.fn()} checkCode={vi.fn()} />);

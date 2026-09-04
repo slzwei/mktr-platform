@@ -94,6 +94,10 @@ export default function RsvpForm({
   const phoneLocal = normalizeSgMobile(phoneValue);
   // Blank optional mobile = nothing to verify; the server agrees.
   const otpRequired = Boolean(mode === 'live' && verifyPhone && phoneKey && phoneValue.trim());
+  // The designer preview shows the same step, inert — hiding it made the owner
+  // think the feature had not shipped (Shawn, "still not live?").
+  const showOtpStep = Boolean(verifyPhone && phoneKey);
+  const inert = mode !== 'live';
   // Bound to the NUMBER, so editing it after verifying drops back to unverified.
   const phoneVerified = Boolean(phoneLocal && otp.verifiedFor === phoneLocal);
   const otpBlocking = otpRequired && !phoneVerified;
@@ -104,7 +108,7 @@ export default function RsvpForm({
   };
 
   const requestCode = async () => {
-    if (!phoneLocal || otp.busy) return;
+    if (inert || !phoneLocal || otp.busy) return;
     setOtp((prev) => ({ ...prev, busy: true, error: '' }));
     try {
       await sendCode(phoneLocal);
@@ -116,7 +120,7 @@ export default function RsvpForm({
 
   const submitCode = async () => {
     const code = otp.code.trim();
-    if (code.length < 6 || otp.busy) return;
+    if (inert || code.length < 6 || otp.busy) return;
     setOtp((prev) => ({ ...prev, busy: true, error: '' }));
     try {
       await checkCode(phoneLocal, code);
@@ -215,7 +219,7 @@ export default function RsvpForm({
             )}
             {f.help ? <p style={helpStyle}>{f.help}</p> : null}
             {bad ? <p role="alert" style={errorStyle}>{bad}</p> : null}
-            {verifyPhone && f.key === phoneKey && mode === 'live' ? (
+            {showOtpStep && f.key === phoneKey ? (
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {phoneVerified ? (
                   <p style={{ ...helpStyle, color: t.ink, fontWeight: 600 }}>Mobile verified.</p>
@@ -234,15 +238,15 @@ export default function RsvpForm({
                           onChange={(e) => setOtp((prev) => ({ ...prev, code: e.target.value.replace(/[^0-9]/g, ''), error: '' }))}
                           style={{ ...inputStyle(false), width: 120, letterSpacing: '0.25em' }}
                         />
-                        <button type="button" onClick={submitCode} disabled={otp.busy || otp.code.trim().length < 6} style={secondaryBtn(t, otp.busy || otp.code.trim().length < 6)}>
+                        <button type="button" onClick={submitCode} disabled={inert || otp.busy || otp.code.trim().length < 6} style={secondaryBtn(t, inert || otp.busy || otp.code.trim().length < 6)}>
                           {otp.busy ? 'Checking…' : 'Verify'}
                         </button>
-                        <button type="button" onClick={requestCode} disabled={otp.busy} style={{ ...secondaryBtn(t, otp.busy), border: 'none', textDecoration: 'underline' }}>
+                        <button type="button" onClick={requestCode} disabled={inert || otp.busy} style={{ ...secondaryBtn(t, inert || otp.busy), border: 'none', textDecoration: 'underline' }}>
                           Send again
                         </button>
                       </div>
                     ) : (
-                      <button type="button" onClick={requestCode} disabled={otp.busy || !phoneLocal} style={secondaryBtn(t, otp.busy || !phoneLocal)}>
+                      <button type="button" onClick={requestCode} disabled={inert || otp.busy || !phoneLocal} style={secondaryBtn(t, inert || otp.busy || !phoneLocal)}>
                         {otp.busy ? 'Sending…' : 'Send code'}
                       </button>
                     )}

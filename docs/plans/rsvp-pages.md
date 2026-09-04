@@ -645,6 +645,9 @@ field was a plain input. It now reuses the funnel's own OTP, rather than a secon
   unverified.
 - **Designer.** Form panel → "Mobile verification", disabled with an explanation when
   there is no phone field, and a warning note when switched off.
+- **Preview shows it.** The step renders in the designer preview too, inert (buttons
+  disabled, no API calls). The first cut hid it behind `mode === 'live'`, and the owner
+  read the unchanged preview as "the feature did not ship".
 - **Cost.** Every verified RSVP sends one SMS under the MKTR sender id.
 
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
