@@ -21,6 +21,9 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: v
 const api = vi.hoisted(() => ({ updateRsvpEvent: vi.fn(), publishRsvpEvent: vi.fn(), closeRsvpEvent: vi.fn(), checkRsvpSlug: vi.fn() }));
 vi.mock('@/api/rsvp', () => api);
 
+const { uploadRsvpImage } = vi.hoisted(() => ({ uploadRsvpImage: vi.fn() }));
+vi.mock('@/lib/rsvpImageUpload', () => ({ uploadRsvpImage }));
+
 let EVENT;
 vi.mock('@/hooks/queries/useRsvp', () => ({ useRsvpEvent: () => ({ data: EVENT, isLoading: false, isError: false }) }));
 
@@ -51,6 +54,39 @@ describe('AdminRsvpDesigner', () => {
     expect(within(screen.getByTestId('frame')).getByRole('heading', { level: 1, name: 'Launch night' })).toBeInTheDocument();
     expect(screen.getByText('All changes saved')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('uploads a hero image through the picker and stores the absolute url', async () => {
+    uploadRsvpImage.mockResolvedValue({ url: 'https://api.mktr.sg/uploads/images/hero.webp', note: 'Optimised for fast loading: 6.0MB to 180KB, 1600 by 1200.' });
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: '+ Hero' }));
+
+    const picker = screen.getByTestId(/-media-file$/);
+    expect(screen.getByRole('button', { name: 'Upload image' })).toBeInTheDocument();
+    await userEvent.upload(picker, new File([new Uint8Array([1, 2, 3])], 'IMG_1.jpg', { type: 'image/jpeg' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Image')).toHaveValue('https://api.mktr.sg/uploads/images/hero.webp'));
+    expect(uploadRsvpImage).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Optimised for fast loading/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Replace image' })).toBeInTheDocument();
+    const img = screen.getByTestId('frame').querySelector('img');
+    expect(img).toHaveAttribute('src', 'https://api.mktr.sg/uploads/images/hero.webp');
+    expect(img).toHaveAttribute('loading', 'eager');
+    expect(img).toHaveAttribute('decoding', 'async');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByLabelText('Image')).toHaveValue('');
+  });
+
+  it('shows the reason when an upload fails and stores nothing', async () => {
+    uploadRsvpImage.mockRejectedValue(new Error('Image is too large — maximum 10MB.'));
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: '+ Image' }));
+    await userEvent.upload(screen.getByTestId(/-img-file$/), new File([new Uint8Array([1])], 'huge.jpg', { type: 'image/jpeg' }));
+
+    await waitFor(() => expect(screen.getByText('Image is too large — maximum 10MB.')).toBeInTheDocument());
+    expect(screen.getByLabelText('Image')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Upload image' })).toBeInTheDocument();
   });
 
   it('a details row can carry a link, and "Google Maps link" fills it from the value', async () => {

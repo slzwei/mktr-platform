@@ -598,6 +598,29 @@ can include a gmap link?" Each Details row now carries an optional `href`:
 - Confirmation email: the value is an anchor in HTML and `(link)` after the value in text.
   The mailer re-checks the https regex on read, so a stored non-https string is never linked.
 
+### 15e. Image upload, optimised in the browser (2026-09-04)
+
+Shawn: "i should be able to upload image. and the image should be optimised for fast
+loads. this is only accepting image urls?" The hero and image blocks now have a real
+picker; the URL box stays for anyone pasting a link.
+
+- `src/lib/imageOptimize.js` — before the upload, the file is decoded with
+  `createImageBitmap({imageOrientation:'from-image'})`, downscaled so its longest edge
+  is ≤1600, and re-encoded to WebP at q0.82 (JPEG when the browser hands back a PNG,
+  which means it cannot encode WebP). Every failure path returns the ORIGINAL File:
+  animated GIF (a canvas round-trip freezes it), missing browser APIs, decode failure,
+  or a re-encode that came out no smaller. A file already ≤1600px and <150KB is left
+  untouched. A 6MB phone photo lands as roughly 180KB.
+- `src/lib/rsvpImageUpload.js` composes that with the existing
+  `POST /api/uploads/single?type=images` (multer + content sniffing already hardened),
+  enforces `MAX_UPLOAD_SIZE_MB` on the OPTIMISED bytes, and reports the saving.
+- **Absolute URLs.** `uploadService` now returns `publicUrl` next to `url`, built from
+  `API_PUBLIC_ORIGIN` (default `https://api.mktr.sg`). The RSVP designer stores that
+  one: rsvp.redeem.sg has only the SPA rewrite, so a relative `/uploads/...` would 404
+  there while looking right in the designer preview on mktr.sg.
+- Renderer: hero images load eagerly (first paint), a standalone image block lazily,
+  both `decoding="async"`.
+
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
 
 The surface, its isolation, the email, and the data-subject paths, per §7–§8:

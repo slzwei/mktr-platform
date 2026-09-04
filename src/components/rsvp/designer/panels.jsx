@@ -2,7 +2,8 @@ import { THEME_PRESETS, FONT_IDS, THEME_RADIUS_IDS } from '@/lib/designConfigV2'
 import { HERO_FONTS } from '@/lib/heroFonts';
 import { BLOCK_TYPES, FIELD_TYPES, LIMITS, LOCKED_FIELD_KEYS, BUILTIN_FIELD_TYPES, slugProblem } from '@/lib/rsvpLayout';
 import SortableList from './SortableList';
-import { Field, AreaField, SelectField, Toggle, Section, Note, randomId } from './kit';
+import { Field, AreaField, SelectField, Toggle, Section, Note, randomId, ImageField } from './kit';
+import { uploadRsvpImage } from '@/lib/rsvpImageUpload';
 
 /**
  * The RSVP designer's four inspector panels (docs/plans/rsvp-pages.md §6):
@@ -30,7 +31,7 @@ const blockSnippet = (b) => {
 /** A Google Maps search for the row's own text — the one-click way to make a venue clickable. */
 export const googleMapsSearchUrl = (value) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(String(value || '').trim())}`;
 
-function BlockEditor({ block, onChange, consentDefault = '' }) {
+function BlockEditor({ block, onChange, consentDefault = '', uploadImage = uploadRsvpImage }) {
   const set = (k, v) => onChange({ ...block, [k]: v });
   const id = `blk-${block.id}`;
   switch (block.type) {
@@ -39,8 +40,17 @@ function BlockEditor({ block, onChange, consentDefault = '' }) {
         <>
           <Field id={`${id}-h`} label="Headline" value={block.headline} onChange={(v) => set('headline', v)} limit={LIMITS.headline} />
           <AreaField id={`${id}-s`} label="Subheadline" value={block.subheadline} onChange={(v) => set('subheadline', v)} limit={LIMITS.subheadline} rows={2} />
-          <Field id={`${id}-m`} label="Image URL" value={block.mediaUrl} onChange={(v) => set('mediaUrl', v)} limit={LIMITS.mediaUrl} placeholder="https://…" hint="https:// links only" />
-          <Field id={`${id}-a`} label="Image description" value={block.mediaAlt} onChange={(v) => set('mediaAlt', v)} limit={LIMITS.mediaAlt} />
+          <ImageField
+            idBase={`${id}-media`}
+            label="Image"
+            url={block.mediaUrl}
+            alt={block.mediaAlt}
+            onUrl={(v) => set('mediaUrl', v)}
+            onAlt={(v) => set('mediaAlt', v)}
+            limitUrl={LIMITS.mediaUrl}
+            limitAlt={LIMITS.mediaAlt}
+            uploadImage={uploadImage}
+          />
         </>
       );
     case 'text':
@@ -87,8 +97,17 @@ function BlockEditor({ block, onChange, consentDefault = '' }) {
     case 'image':
       return (
         <>
-          <Field id={`${id}-u`} label="Image URL" value={block.url} onChange={(v) => set('url', v)} limit={LIMITS.mediaUrl} placeholder="https://…" hint="https:// links only" />
-          <Field id={`${id}-a`} label="Image description" value={block.alt} onChange={(v) => set('alt', v)} limit={LIMITS.mediaAlt} />
+          <ImageField
+            idBase={`${id}-img`}
+            label="Image"
+            url={block.url}
+            alt={block.alt}
+            onUrl={(v) => set('url', v)}
+            onAlt={(v) => set('alt', v)}
+            limitUrl={LIMITS.mediaUrl}
+            limitAlt={LIMITS.mediaAlt}
+            uploadImage={uploadImage}
+          />
         </>
       );
     case 'form':
@@ -116,7 +135,7 @@ function BlockEditor({ block, onChange, consentDefault = '' }) {
   }
 }
 
-export function ContentPanel({ layout, update, selectedId, onSelect, consentDefault = '' }) {
+export function ContentPanel({ layout, update, selectedId, onSelect, consentDefault = '', uploadImage = uploadRsvpImage }) {
   const blocks = layout.blocks || [];
   const selected = blocks.find((b) => b.id === selectedId) || null;
   const items = blocks.map((b) => ({
@@ -157,7 +176,7 @@ export function ContentPanel({ layout, update, selectedId, onSelect, consentDefa
       </Section>
       {selected ? (
         <Section title={BLOCK_LABELS[selected.type] || 'Block'}>
-          <BlockEditor block={selected} consentDefault={consentDefault} onChange={(next) => update((l) => ({ ...l, blocks: l.blocks.map((b) => (b.id === next.id ? next : b)) }), { kind: 'text' })} />
+          <BlockEditor block={selected} consentDefault={consentDefault} uploadImage={uploadImage} onChange={(next) => update((l) => ({ ...l, blocks: l.blocks.map((b) => (b.id === next.id ? next : b)) }), { kind: 'text' })} />
         </Section>
       ) : (
         <Section title="Edit"><Note>Select a block to edit it. Drag the handle (or focus it and use Space + arrows) to reorder.</Note></Section>
