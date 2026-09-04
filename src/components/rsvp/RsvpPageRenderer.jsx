@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { resolveRsvpTheme } from '@/lib/rsvpTheme';
-import { DEFAULT_SUBMIT_LABEL, DEFAULT_CONFIRMATION_HEADLINE } from '@/lib/rsvpLayout';
+import { DEFAULT_SUBMIT_LABEL, DEFAULT_CONFIRMATION_HEADLINE, phoneFieldOf } from '@/lib/rsvpLayout';
 import RsvpForm from './RsvpForm';
 
 /**
@@ -117,7 +117,7 @@ function Confirmation({ confirmation, done, t, onChangeRsvp }) {
   );
 }
 
-function FormBlock({ block, layout, state, consent, t, mode, onSubmit, submitting, submitError, done, onChangeRsvp }) {
+function FormBlock({ block, layout, state, consent, t, mode, onSubmit, submitting, submitError, done, onChangeRsvp, sendCode, checkCode }) {
   const fields = Array.isArray(layout.fields) ? layout.fields : [];
   const notice = STATE_COPY[state];
   return (
@@ -142,6 +142,10 @@ function FormBlock({ block, layout, state, consent, t, mode, onSubmit, submittin
             submitError={submitError}
             t={t}
             mode={mode}
+            verifyPhone={block.verifyPhone !== false && Boolean(phoneFieldOf(layout))}
+            phoneKey={phoneFieldOf(layout)?.key || null}
+            {...(sendCode ? { sendCode } : {})}
+            {...(checkCode ? { checkCode } : {})}
           />
         </>
       )}
@@ -156,6 +160,8 @@ export default function RsvpPageRenderer({
   onSubmit, submitting = false, submitError = null, done = null, mode = 'live',
   // Offered on the confirmation card (email link / after submit): reveals the form again.
   onChangeRsvp = null,
+  // Seams for tests; live pages use the real public client inside RsvpForm.
+  sendCode = null, checkCode = null,
 }) {
   const t = useMemo(() => resolveRsvpTheme(layout?.theme), [layout?.theme]);
   const blocks = Array.isArray(layout?.blocks) ? layout.blocks : [];
@@ -181,6 +187,8 @@ export default function RsvpPageRenderer({
               submitError={submitError}
               done={done}
               onChangeRsvp={onChangeRsvp}
+              sendCode={sendCode}
+              checkCode={checkCode}
             />
           );
         })}

@@ -621,6 +621,32 @@ picker; the URL box stays for anyone pasting a link.
 - Renderer: hero images load eagerly (first paint), a standalone image block lazily,
   both `decoding="async"`.
 
+### 15f. Mobile verification, default ON (2026-09-04)
+
+Shawn: "is the mobile got OTP verification? the same one on mktr? can add a toggle to
+disable and enable phone otp verification? default to enabled." It had none — the mobile
+field was a plain input. It now reuses the funnel's own OTP, rather than a second one.
+
+- **Flag.** The form block gains `verifyPhone`, clamped as `raw.verifyPhone !== false`,
+  so ABSENT reads as true: opt-out, never off by omission, and every event written
+  before this existed becomes verified-by-default on its next read.
+- **Scope.** `requiresPhoneVerification(layout)` is true only when the flag is on AND
+  the form has a phone field. `phoneFieldOf` takes the FIRST field of type `phone`, so
+  an owner who deleted the built-in one and added their own is covered too.
+- **Endpoints.** `/api/verify/send` + `/check` (SG mobiles, 6 digits, 10 minutes, 5
+  attempts, per-number daily cap protecting the SSIR "MKTR" sender id) are added to
+  `RSVP_ALLOWED_PREFIXES` so rsvp.redeem.sg can reach them. Nothing new was built.
+- **Server is the boundary.** `submitResponse` calls `assertPhoneVerified` before any
+  write: unverifiable number → 422 `phone_unverifiable`, unverified → 422
+  `phone_unverified`. It reads the DURABLE marker, so a redeploy between the code and
+  the submit cannot silently un-verify someone. A blank optional mobile still passes.
+- **Page.** "Send code" next to the mobile, then a 6-digit box; submit stays disabled
+  until it verifies. Verification is bound to the NUMBER, so editing it reverts to
+  unverified.
+- **Designer.** Form panel → "Mobile verification", disabled with an explanation when
+  there is no phone field, and a warning note when switched off.
+- **Cost.** Every verified RSVP sends one SMS under the MKTR sender id.
+
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
 
 The surface, its isolation, the email, and the data-subject paths, per §7–§8:

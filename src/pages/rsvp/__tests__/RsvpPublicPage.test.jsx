@@ -8,7 +8,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, useParams: () => ({ slug: 'launch' }) };
 });
-const api = vi.hoisted(() => ({ fetchPublicRsvp: vi.fn(), submitRsvp: vi.fn() }));
+const api = vi.hoisted(() => ({ fetchPublicRsvp: vi.fn(), submitRsvp: vi.fn(), sendRsvpPhoneCode: vi.fn(), checkRsvpPhoneCode: vi.fn() }));
 vi.mock('@/api/rsvpPublic', () => api);
 
 import RsvpPublicPage from '../RsvpPublicPage';

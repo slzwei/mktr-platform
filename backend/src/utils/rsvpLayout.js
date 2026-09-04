@@ -167,6 +167,10 @@ function cleanBlock(raw, id) {
         submitLabel: sanitizeText(raw.submitLabel, LIMITS.submitLabel) || DEFAULT_SUBMIT_LABEL,
         // Owner-authored consent sentence; may keep the {organiser} placeholder.
         consentCopy: sanitizeText(raw.consentCopy, LIMITS.consentCopy),
+        // Require an SMS code for the mobile number before the RSVP is accepted.
+        // DEFAULT ON: absent (every event written before this existed) reads as
+        // true, so the guard is opt-OUT, never opt-in by omission.
+        verifyPhone: raw.verifyPhone !== false,
       };
     default:
       return null;
@@ -364,6 +368,31 @@ export function renderConsentTemplate(template, organiserName) {
 export function consentTemplateOf(layout) {
   const form = (Array.isArray(layout?.blocks) ? layout.blocks : []).find((b) => b && b.type === 'form');
   return typeof form?.consentCopy === 'string' ? form.consentCopy : '';
+}
+
+/**
+ * The field the mobile-verification toggle governs: the first phone field on
+ * the form. Usually the built-in `phone`, but an owner who deleted it and added
+ * their own phone question gets the same protection.
+ */
+export function phoneFieldOf(layout) {
+  return (layout?.fields || []).find((f) => f?.type === 'phone') || null;
+}
+
+/** Does this document actually ask for a mobile AND require it to be verified? */
+export function requiresPhoneVerification(layout) {
+  const form = (layout?.blocks || []).find((b) => b?.type === 'form');
+  return Boolean(form && form.verifyPhone !== false && phoneFieldOf(layout));
+}
+
+/**
+ * An 8-digit Singapore mobile, or '' when the input is not one. OTP is SG-only
+ * (the SSIR-registered "MKTR" sender id), so anything else cannot be verified.
+ */
+export function normalizeSgMobile(value) {
+  const digits = String(value ?? '').replace(/[^0-9]/g, '');
+  const local = digits.length === 10 && digits.startsWith('65') ? digits.slice(2) : digits;
+  return /^[89][0-9]{7}$/.test(local) ? local : '';
 }
 
 export function isValidRsvpSlug(slug) {

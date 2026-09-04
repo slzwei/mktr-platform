@@ -43,7 +43,14 @@ const BLOCKED_PATH_PREFIXES = [
 // rsvp.redeem.sg answers ONE namespace. Treating it like redeem.sg (a blocklist
 // that permits everything unlisted) would have left /api/rsvp — the ADMIN
 // API — reachable from the public host (Codex plan review, must-fix #3).
-const RSVP_ALLOWED_PREFIXES = ['/api/rsvp-public'];
+const RSVP_ALLOWED_PREFIXES = [
+  '/api/rsvp-public',
+  // Mobile verification for the RSVP form reuses the funnel's OTP endpoints
+  // (already public, already rate-limited, already under the per-number SSIR
+  // daily cap). Both routes are send/check only — they read and write nothing
+  // beyond the verification row.
+  '/api/verify',
+];
 
 const OPS_ALLOWED_PREFIXES = [
   '/api/auth',

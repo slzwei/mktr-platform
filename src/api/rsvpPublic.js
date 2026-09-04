@@ -39,3 +39,21 @@ export async function submitRsvp(slug, payload) {
   const body = await call(`/rsvp-public/${encodeURIComponent(slug)}/respond`, { method: 'POST', body: JSON.stringify(payload) });
   return body?.data ?? null;
 }
+
+/**
+ * Mobile verification. These are the funnel's own OTP endpoints (Singapore
+ * mobiles only, six digits, ten minutes, five attempts, and a per-number daily
+ * cap that protects the registered "MKTR" sender id). `phone` is the bare
+ * 8-digit local number.
+ */
+export async function sendRsvpPhoneCode(phone) {
+  return call('/verify/send', { method: 'POST', body: JSON.stringify({ phone, countryCode: '+65' }) });
+}
+
+/** Resolves on a good code; a wrong one throws with the server's own wording. */
+export async function checkRsvpPhoneCode(phone, code) {
+  const body = await call('/verify/check', { method: 'POST', body: JSON.stringify({ phone, code, countryCode: '+65' }) });
+  const ok = body?.data?.verified === true || body?.data?.status === 'approved';
+  if (!ok) throw new Error('That code did not verify. Please try again.');
+  return true;
+}

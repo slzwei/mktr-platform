@@ -37,10 +37,13 @@ describe('internalRouteHostGuard — rsvp host policy', () => {
   test('rsvp.redeem.sg reaches only the public RSVP namespace', () => {
     expect(run('/api/rsvp-public/launch-night', 'rsvp.redeem.sg').nextCalled).toBe(true);
     expect(run('/api/rsvp-public/launch-night/respond', 'rsvp.redeem.sg').nextCalled).toBe(true);
+    // Mobile verification rides the funnel's own OTP routes.
+    expect(run('/api/verify/send', 'rsvp.redeem.sg').nextCalled).toBe(true);
+    expect(run('/api/verify/check', 'rsvp.redeem.sg').nextCalled).toBe(true);
   });
 
   test('rsvp.redeem.sg is STRICT-allowlist: the admin API and every other namespace 403', () => {
-    for (const path of ['/api/rsvp', '/api/rsvp/abc/responses.csv', '/api/auth/login', '/api/campaigns', '/api/prospects', '/api/uploads/single', '/api/previews/public/x', '/api/redeem-ops/team', '/api/rsvp-publicx']) {
+    for (const path of ['/api/rsvp', '/api/rsvp/abc/responses.csv', '/api/auth/login', '/api/campaigns', '/api/prospects', '/api/uploads/single', '/api/previews/public/x', '/api/redeem-ops/team', '/api/rsvp-publicx', '/api/verifyx', '/api/verify-admin']) {
       expect(run(path, 'rsvp.redeem.sg')).toEqual({ statusCode: 403, nextCalled: false });
     }
   });
