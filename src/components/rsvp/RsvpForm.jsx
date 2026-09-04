@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { LIMITS, normalizeSgMobile } from '@/lib/rsvpLayout';
 import { sendRsvpPhoneCode, checkRsvpPhoneCode } from '@/api/rsvpPublic';
+import RsvpPhoneVerify from './RsvpPhoneVerify';
 
 /**
  * The RSVP form — the ONE interactive piece of an event page (docs/plans/
@@ -15,12 +16,6 @@ import { sendRsvpPhoneCode, checkRsvpPhoneCode } from '@/api/rsvpPublic';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** The quiet button next to the mobile field — never competes with Submit. */
-const secondaryBtn = (t, disabled) => ({
-  padding: '10px 14px', fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
-  cursor: disabled ? 'not-allowed' : 'pointer', color: t.ink, background: 'transparent',
-  border: `1px solid ${t.line}`, borderRadius: t.r.btn, opacity: disabled ? 0.55 : 1,
-});
 
 export function validateAnswers(fields, answers, consent) {
   const errors = {};
@@ -79,7 +74,8 @@ export default function RsvpForm({
   sendCode = sendRsvpPhoneCode, checkCode = checkRsvpPhoneCode,
 }) {
   const [answers, setAnswers] = useState({});
-  const [otp, setOtp] = useState({ stage: 'idle', code: '', busy: false, error: '', verifiedFor: '' });
+  const [verifiedPhone, setVerifiedPhone] = useState('');
+  const [otpError, setOtpError] = useState('');
   const [consent, setConsent] = useState(false);
   const [website, setWebsite] = useState('');
   const [touched, setTouched] = useState(false);
@@ -89,46 +85,16 @@ export default function RsvpForm({
 
   const set = (key, value) => setAnswers((prev) => ({ ...prev, [key]: value }));
 
-  // --- mobile verification -------------------------------------------------
+  // --- mobile verification (RsvpPhoneVerify owns the flow) --------------
   const phoneValue = phoneKey ? String(answers[phoneKey] ?? '') : '';
-  const phoneLocal = normalizeSgMobile(phoneValue);
   // Blank optional mobile = nothing to verify; the server agrees.
   const otpRequired = Boolean(mode === 'live' && verifyPhone && phoneKey && phoneValue.trim());
-  // The designer preview shows the same step, inert — hiding it made the owner
-  // think the feature had not shipped (Shawn, "still not live?").
-  const showOtpStep = Boolean(verifyPhone && phoneKey);
-  const inert = mode !== 'live';
+  // The designer preview shows the same row, inert — hiding it made the owner
+  // think the feature had not shipped.
+  const showPhoneVerify = Boolean(verifyPhone && phoneKey);
   // Bound to the NUMBER, so editing it after verifying drops back to unverified.
-  const phoneVerified = Boolean(phoneLocal && otp.verifiedFor === phoneLocal);
+  const phoneVerified = Boolean(verifiedPhone && verifiedPhone === normalizeSgMobile(phoneValue));
   const otpBlocking = otpRequired && !phoneVerified;
-
-  const setPhone = (key, value) => {
-    set(key, value);
-    setOtp((prev) => (prev.stage === 'idle' ? prev : { ...prev, stage: 'idle', code: '', error: '' }));
-  };
-
-  const requestCode = async () => {
-    if (inert || !phoneLocal || otp.busy) return;
-    setOtp((prev) => ({ ...prev, busy: true, error: '' }));
-    try {
-      await sendCode(phoneLocal);
-      setOtp((prev) => ({ ...prev, stage: 'sent', busy: false, code: '', error: '' }));
-    } catch (err) {
-      setOtp((prev) => ({ ...prev, busy: false, error: err?.message || 'Could not send the code. Please try again.' }));
-    }
-  };
-
-  const submitCode = async () => {
-    const code = otp.code.trim();
-    if (inert || code.length < 6 || otp.busy) return;
-    setOtp((prev) => ({ ...prev, busy: true, error: '' }));
-    try {
-      await checkCode(phoneLocal, code);
-      setOtp({ stage: 'verified', code: '', busy: false, error: '', verifiedFor: phoneLocal });
-    } catch (err) {
-      setOtp((prev) => ({ ...prev, busy: false, error: err?.message || 'That code did not verify. Please try again.' }));
-    }
-  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -137,7 +103,7 @@ export default function RsvpForm({
     const errors = validateAnswers(fields, answers, consent);
     if (Object.keys(errors).length) return;
     if (otpBlocking) {
-      setOtp((prev) => ({ ...prev, error: phoneLocal ? 'Please verify your mobile number first.' : 'Enter a Singapore mobile number so we can send you a code.' }));
+      setOtpError('Please verify your mobile number before submitting.');
       return;
     }
     // Echo the hash of the sentence this form displayed — the server refuses a
@@ -164,6 +130,25 @@ export default function RsvpForm({
         const bad = errorFor(f.key);
         const value = answers[f.key];
         const req = f.required ? <span aria-hidden="true" style={{ color: t.danger }}> *</span> : null;
+        if (showPhoneVerify && f.key === phoneKey) {
+          return (
+            <RsvpPhoneVerify
+              key={f.key}
+              id={id}
+              label={f.label}
+              required={f.required}
+              help={f.help}
+              value={value}
+              onChange={(v) => set(f.key, v)}
+              fieldError={bad}
+              t={t}
+              inert={mode !== 'live'}
+              sendCode={sendCode}
+              checkCode={checkCode}
+              onVerifiedChange={(local) => { setVerifiedPhone(local || ''); setOtpError(''); }}
+            />
+          );
+        }
         return (
           <div key={f.key}>
             {f.type === 'checkbox' ? (
@@ -210,7 +195,7 @@ export default function RsvpForm({
                     inputMode={f.type === 'phone' ? 'tel' : f.type === 'number' ? 'decimal' : undefined}
                     autoComplete={f.key === 'name' ? 'name' : f.key === 'email' ? 'email' : f.key === 'phone' ? 'tel' : 'off'}
                     value={value || ''}
-                    onChange={(e) => (f.key === phoneKey ? setPhone(f.key, e.target.value) : set(f.key, e.target.value))}
+                    onChange={(e) => set(f.key, e.target.value)}
                     maxLength={f.type === 'email' ? 254 : LIMITS.answerShort}
                     style={inputStyle(bad)}
                   />
@@ -219,47 +204,6 @@ export default function RsvpForm({
             )}
             {f.help ? <p style={helpStyle}>{f.help}</p> : null}
             {bad ? <p role="alert" style={errorStyle}>{bad}</p> : null}
-            {showOtpStep && f.key === phoneKey ? (
-              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {phoneVerified ? (
-                  <p style={{ ...helpStyle, color: t.ink, fontWeight: 600 }}>Mobile verified.</p>
-                ) : (
-                  <>
-                    {otp.stage === 'sent' ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <label htmlFor="rsvp-otp" style={{ ...labelStyle, marginBottom: 0 }}>Code</label>
-                        <input
-                          id="rsvp-otp"
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          maxLength={6}
-                          value={otp.code}
-                          onChange={(e) => setOtp((prev) => ({ ...prev, code: e.target.value.replace(/[^0-9]/g, ''), error: '' }))}
-                          style={{ ...inputStyle(false), width: 120, letterSpacing: '0.25em' }}
-                        />
-                        <button type="button" onClick={submitCode} disabled={inert || otp.busy || otp.code.trim().length < 6} style={secondaryBtn(t, inert || otp.busy || otp.code.trim().length < 6)}>
-                          {otp.busy ? 'Checking…' : 'Verify'}
-                        </button>
-                        <button type="button" onClick={requestCode} disabled={inert || otp.busy} style={{ ...secondaryBtn(t, inert || otp.busy), border: 'none', textDecoration: 'underline' }}>
-                          Send again
-                        </button>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={requestCode} disabled={inert || otp.busy || !phoneLocal} style={secondaryBtn(t, inert || otp.busy || !phoneLocal)}>
-                        {otp.busy ? 'Sending…' : 'Send code'}
-                      </button>
-                    )}
-                    <p style={helpStyle}>
-                      {otp.stage === 'sent'
-                        ? 'We sent a 6-digit code by SMS. Enter it here to confirm this is your number.'
-                        : 'We will text you a 6-digit code to confirm this number. Singapore mobiles only.'}
-                    </p>
-                  </>
-                )}
-                {otp.error ? <p role="alert" style={errorStyle}>{otp.error}</p> : null}
-              </div>
-            ) : null}
           </div>
         );
       })}
@@ -276,6 +220,7 @@ export default function RsvpForm({
       </label>
       {errorFor('consent') ? <p role="alert" style={{ ...errorStyle, marginTop: -8 }}>{errorFor('consent')}</p> : null}
       {topMessage ? <p role="alert" style={{ ...errorStyle, fontSize: 14 }}>{topMessage}</p> : null}
+      {otpError ? <p role="alert" style={{ ...errorStyle, fontSize: 14 }}>{otpError}</p> : null}
 
       <button
         type="submit"

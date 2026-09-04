@@ -645,9 +645,19 @@ field was a plain input. It now reuses the funnel's own OTP, rather than a secon
   unverified.
 - **Designer.** Form panel → "Mobile verification", disabled with an explanation when
   there is no phone field, and a warning note when switched off.
-- **Preview shows it.** The step renders in the designer preview too, inert (buttons
+- **Preview shows it.** The row renders in the designer preview too, inert (buttons
   disabled, no API calls). The first cut hid it behind `mode === 'live'`, and the owner
   read the unchanged preview as "the feature did not ship".
+- **Same choreography as the funnel** (`components/rsvp/RsvpPhoneVerify.jsx`, the RSVP
+  theme's answer to `campaigns/signup/OTPVerification.jsx` + FieldRenderer's phone row):
+  a `+65` prefix inside the field with the number grouped `9123 4567`, a pill **Verify**
+  beside it, then an inline panel that slides down — "Enter the 6-digit code we sent by
+  SMS to +65 9123 4567" with **Edit**, one paste-friendly `one-time-code` input (not six
+  boxes), auto-verify on the sixth digit, a resend cooldown, and on success a hold on the
+  tick before it collapses into a green **✓ Verified** badge. The number is locked while
+  a code is outstanding and after verifying, so what was verified is what is submitted.
+  The first cut was a bare "Send code" button and a small code box; Shawn: "it should
+  look like the mktr otp verification.... not the next page of the form".
 - **Cost.** Every verified RSVP sends one SMS under the MKTR sender id.
 
 ## 16. P3 delivery notes + go-live checklist (2026-09-03)
