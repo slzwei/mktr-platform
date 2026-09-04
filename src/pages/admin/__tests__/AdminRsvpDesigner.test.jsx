@@ -56,6 +56,30 @@ describe('AdminRsvpDesigner', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('mobile verification is ON by default and can be switched off', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: 'Form' }));
+
+    // No phone question yet: nothing to verify, so the switch is inert.
+    const toggle = screen.getByLabelText(/Verify mobile numbers with an SMS code/);
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeDisabled();
+    expect(screen.getByText(/Add a phone field to the form to use this/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '+ Phone' }));
+    expect(toggle).toBeEnabled();
+    expect(toggle).toBeChecked();
+
+    await userEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText(/Anyone can type any number/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(api.updateRsvpEvent).toHaveBeenCalled());
+    const [, patch] = api.updateRsvpEvent.mock.calls.at(-1);
+    expect(patch.layout.blocks.find((b) => b.type === 'form').verifyPhone).toBe(false);
+  });
+
   it('uploads a hero image through the picker and stores the absolute url', async () => {
     uploadRsvpImage.mockResolvedValue({ url: 'https://api.mktr.sg/uploads/images/hero.webp', note: 'Optimised for fast loading: 6.0MB to 180KB, 1600 by 1200.' });
     renderPage();

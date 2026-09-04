@@ -9,6 +9,7 @@ import request from 'supertest';
 import { getApp, closeDb, createTestUser } from './helpers.js';
 import { sequelize, RsvpEvent, RsvpResponse } from '../src/models/index.js';
 import { CURRENT_RSVP_CONSENT_VERSION, hashConsentCopy } from '../src/services/rsvpConsentRegistry.js';
+import { markPhoneVerified, _resetVerifiedPhones } from '../src/services/verifiedPhoneStore.js';
 
 const RUN = Date.now().toString(36).slice(-5);
 const ZERO = '00000000-0000-4000-8000-000000000000';
@@ -42,7 +43,9 @@ const CONTENT_LAYOUT = {
   blocks: [
     { id: 'b_hero', type: 'hero', headline: 'Launch night', subheadline: 'Drinks + demos' },
     { id: 'b_when', type: 'details', rows: [{ label: 'When', value: 'Sat 4 Oct, 7pm' }] },
-    { id: 'b_form', type: 'form', headline: 'Save your spot', submitLabel: 'Count me in' },
+    // Mobile verification defaults ON; its own suite covers it, so the rest of
+    // this file opts out rather than stamping a marker for every submit.
+    { id: 'b_form', type: 'form', headline: 'Save your spot', submitLabel: 'Count me in', verifyPhone: false },
   ],
   fields: [
     { key: 'name' }, { key: 'email' }, { key: 'phone', label: 'Mobile' },
@@ -500,5 +503,62 @@ describe('models', () => {
     const loaded = await RsvpEvent.findByPk(ev.id, { include: [{ association: 'responses' }, { association: 'creator' }] });
     expect(loaded.responses).toHaveLength(1);
     expect(loaded.creator.role).toBe('admin');
+  });
+});
+
+describe('mobile verification gate', () => {
+  const VERIFY_LAYOUT = {
+    ...CONTENT_LAYOUT,
+    // No verifyPhone key at all — this is the default-ON path.
+    blocks: CONTENT_LAYOUT.blocks.map((b) => (b.type === 'form' ? { id: b.id, type: 'form', headline: b.headline, submitLabel: b.submitLabel } : b)),
+  };
+  const body = (email, phone) => ({
+    answers: { name: 'Alice Tan', email, ...(phone === undefined ? {} : { phone }), f_diet: 'Veg', f_okay: true },
+    consent: true,
+  });
+
+  beforeEach(() => { _resetVerifiedPhones(); });
+
+  test('refuses an unverified mobile with a typed 422, and accepts it once verified', async () => {
+    const ev = await publishedEvent({ patch: { layout: VERIFY_LAYOUT } });
+
+    const blocked = await respond(ev.slug, body('gate1@example.com', '91234567'));
+    expect(blocked.status).toBe(422);
+    expect(blocked.body.data.code).toBe('phone_unverified');
+    expect(await RsvpResponse.count({ where: { rsvpEventId: ev.id } })).toBe(0);
+
+    markPhoneVerified('+6591234567');
+    const ok = await respond(ev.slug, body('gate1@example.com', '+65 9123 4567'));
+    expect(ok.status).toBe(201);
+    expect(await RsvpResponse.count({ where: { rsvpEventId: ev.id } })).toBe(1);
+  });
+
+  test('a number we cannot text is refused as unverifiable, not as unverified', async () => {
+    const ev = await publishedEvent({ patch: { layout: VERIFY_LAYOUT } });
+    const res = await respond(ev.slug, body('gate2@example.com', '+1 415 555 1234'));
+    expect(res.status).toBe(422);
+    expect(res.body.data.code).toBe('phone_unverifiable');
+  });
+
+  test('an optional mobile left blank still gets through', async () => {
+    const ev = await publishedEvent({ patch: { layout: VERIFY_LAYOUT } });
+    expect((await respond(ev.slug, body('gate3@example.com'))).status).toBe(201);
+    expect((await respond(ev.slug, body('gate4@example.com', '   '))).status).toBe(201);
+  });
+
+  test('turning the toggle off lets an unverified number through', async () => {
+    const off = {
+      ...CONTENT_LAYOUT,
+      blocks: CONTENT_LAYOUT.blocks.map((b) => (b.type === 'form' ? { ...b, verifyPhone: false } : b)),
+    };
+    const ev = await publishedEvent({ patch: { layout: off } });
+    expect((await respond(ev.slug, body('gate5@example.com', '91234567'))).status).toBe(201);
+  });
+
+  test('the marker is read per number — verifying one does not clear another', async () => {
+    const ev = await publishedEvent({ patch: { layout: VERIFY_LAYOUT } });
+    markPhoneVerified('+6581111111');
+    expect((await respond(ev.slug, body('gate6@example.com', '91234567'))).status).toBe(422);
+    expect((await respond(ev.slug, body('gate7@example.com', '81111111'))).status).toBe(201);
   });
 });

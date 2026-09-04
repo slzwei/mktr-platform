@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { LIMITS } from '@/lib/rsvpLayout';
+import { LIMITS, normalizeSgMobile } from '@/lib/rsvpLayout';
+import { sendRsvpPhoneCode, checkRsvpPhoneCode } from '@/api/rsvpPublic';
 
 /**
  * The RSVP form — the ONE interactive piece of an event page (docs/plans/
@@ -13,6 +14,13 @@ import { LIMITS } from '@/lib/rsvpLayout';
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The quiet button next to the mobile field — never competes with Submit. */
+const secondaryBtn = (t, disabled) => ({
+  padding: '10px 14px', fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
+  cursor: disabled ? 'not-allowed' : 'pointer', color: t.ink, background: 'transparent',
+  border: `1px solid ${t.line}`, borderRadius: t.r.btn, opacity: disabled ? 0.55 : 1,
+});
 
 export function validateAnswers(fields, answers, consent) {
   const errors = {};
@@ -62,8 +70,16 @@ function serverErrorsByKey(submitError) {
   return map;
 }
 
-export default function RsvpForm({ fields, consentCopy, consentHash = null, submitLabel = 'RSVP', onSubmit, submitting = false, submitError = null, t, mode = 'live' }) {
+export default function RsvpForm({
+  fields, consentCopy, consentHash = null, submitLabel = 'RSVP', onSubmit, submitting = false, submitError = null, t, mode = 'live',
+  // Mobile verification: the owner's toggle plus the field it governs. The
+  // server enforces the same rule — this half is only the courtesy that stops
+  // someone submitting into a refusal.
+  verifyPhone = false, phoneKey = null,
+  sendCode = sendRsvpPhoneCode, checkCode = checkRsvpPhoneCode,
+}) {
   const [answers, setAnswers] = useState({});
+  const [otp, setOtp] = useState({ stage: 'idle', code: '', busy: false, error: '', verifiedFor: '' });
   const [consent, setConsent] = useState(false);
   const [website, setWebsite] = useState('');
   const [touched, setTouched] = useState(false);
@@ -73,12 +89,53 @@ export default function RsvpForm({ fields, consentCopy, consentHash = null, subm
 
   const set = (key, value) => setAnswers((prev) => ({ ...prev, [key]: value }));
 
+  // --- mobile verification -------------------------------------------------
+  const phoneValue = phoneKey ? String(answers[phoneKey] ?? '') : '';
+  const phoneLocal = normalizeSgMobile(phoneValue);
+  // Blank optional mobile = nothing to verify; the server agrees.
+  const otpRequired = Boolean(mode === 'live' && verifyPhone && phoneKey && phoneValue.trim());
+  // Bound to the NUMBER, so editing it after verifying drops back to unverified.
+  const phoneVerified = Boolean(phoneLocal && otp.verifiedFor === phoneLocal);
+  const otpBlocking = otpRequired && !phoneVerified;
+
+  const setPhone = (key, value) => {
+    set(key, value);
+    setOtp((prev) => (prev.stage === 'idle' ? prev : { ...prev, stage: 'idle', code: '', error: '' }));
+  };
+
+  const requestCode = async () => {
+    if (!phoneLocal || otp.busy) return;
+    setOtp((prev) => ({ ...prev, busy: true, error: '' }));
+    try {
+      await sendCode(phoneLocal);
+      setOtp((prev) => ({ ...prev, stage: 'sent', busy: false, code: '', error: '' }));
+    } catch (err) {
+      setOtp((prev) => ({ ...prev, busy: false, error: err?.message || 'Could not send the code. Please try again.' }));
+    }
+  };
+
+  const submitCode = async () => {
+    const code = otp.code.trim();
+    if (code.length < 6 || otp.busy) return;
+    setOtp((prev) => ({ ...prev, busy: true, error: '' }));
+    try {
+      await checkCode(phoneLocal, code);
+      setOtp({ stage: 'verified', code: '', busy: false, error: '', verifiedFor: phoneLocal });
+    } catch (err) {
+      setOtp((prev) => ({ ...prev, busy: false, error: err?.message || 'That code did not verify. Please try again.' }));
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (mode !== 'live' || !onSubmit) return;
     setTouched(true);
     const errors = validateAnswers(fields, answers, consent);
     if (Object.keys(errors).length) return;
+    if (otpBlocking) {
+      setOtp((prev) => ({ ...prev, error: phoneLocal ? 'Please verify your mobile number first.' : 'Enter a Singapore mobile number so we can send you a code.' }));
+      return;
+    }
     // Echo the hash of the sentence this form displayed — the server refuses a
     // submit against wording that changed since (consent_changed).
     onSubmit({ answers: buildAnswersPayload(fields, answers), consent: true, website, ...(consentHash ? { consentHash } : {}) });
@@ -149,7 +206,7 @@ export default function RsvpForm({ fields, consentCopy, consentHash = null, subm
                     inputMode={f.type === 'phone' ? 'tel' : f.type === 'number' ? 'decimal' : undefined}
                     autoComplete={f.key === 'name' ? 'name' : f.key === 'email' ? 'email' : f.key === 'phone' ? 'tel' : 'off'}
                     value={value || ''}
-                    onChange={(e) => set(f.key, e.target.value)}
+                    onChange={(e) => (f.key === phoneKey ? setPhone(f.key, e.target.value) : set(f.key, e.target.value))}
                     maxLength={f.type === 'email' ? 254 : LIMITS.answerShort}
                     style={inputStyle(bad)}
                   />
@@ -158,6 +215,47 @@ export default function RsvpForm({ fields, consentCopy, consentHash = null, subm
             )}
             {f.help ? <p style={helpStyle}>{f.help}</p> : null}
             {bad ? <p role="alert" style={errorStyle}>{bad}</p> : null}
+            {verifyPhone && f.key === phoneKey && mode === 'live' ? (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {phoneVerified ? (
+                  <p style={{ ...helpStyle, color: t.ink, fontWeight: 600 }}>Mobile verified.</p>
+                ) : (
+                  <>
+                    {otp.stage === 'sent' ? (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <label htmlFor="rsvp-otp" style={{ ...labelStyle, marginBottom: 0 }}>Code</label>
+                        <input
+                          id="rsvp-otp"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={otp.code}
+                          onChange={(e) => setOtp((prev) => ({ ...prev, code: e.target.value.replace(/[^0-9]/g, ''), error: '' }))}
+                          style={{ ...inputStyle(false), width: 120, letterSpacing: '0.25em' }}
+                        />
+                        <button type="button" onClick={submitCode} disabled={otp.busy || otp.code.trim().length < 6} style={secondaryBtn(t, otp.busy || otp.code.trim().length < 6)}>
+                          {otp.busy ? 'Checking…' : 'Verify'}
+                        </button>
+                        <button type="button" onClick={requestCode} disabled={otp.busy} style={{ ...secondaryBtn(t, otp.busy), border: 'none', textDecoration: 'underline' }}>
+                          Send again
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={requestCode} disabled={otp.busy || !phoneLocal} style={secondaryBtn(t, otp.busy || !phoneLocal)}>
+                        {otp.busy ? 'Sending…' : 'Send code'}
+                      </button>
+                    )}
+                    <p style={helpStyle}>
+                      {otp.stage === 'sent'
+                        ? 'We sent a 6-digit code by SMS. Enter it here to confirm this is your number.'
+                        : 'We will text you a 6-digit code to confirm this number. Singapore mobiles only.'}
+                    </p>
+                  </>
+                )}
+                {otp.error ? <p role="alert" style={errorStyle}>{otp.error}</p> : null}
+              </div>
+            ) : null}
           </div>
         );
       })}
@@ -177,10 +275,10 @@ export default function RsvpForm({ fields, consentCopy, consentHash = null, subm
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={submitting || otpBlocking}
         style={{
           padding: '14px 18px', fontSize: 16, fontWeight: 700, fontFamily: 'inherit', cursor: submitting ? 'wait' : 'pointer',
-          color: t.onAccent, background: t.accent, border: 'none', borderRadius: t.r.btn, opacity: submitting ? 0.7 : 1,
+          color: t.onAccent, background: t.accent, border: 'none', borderRadius: t.r.btn, opacity: submitting || otpBlocking ? 0.7 : 1,
         }}
       >
         {submitting ? 'Sending…' : submitLabel}

@@ -6,6 +6,7 @@ import {
   clampLayout, defaultLayout, publicLayout, layoutProblems, sanitizeMultiline,
   isValidRsvpSlug, slugProblem, renderConsentTemplate, consentTemplateOf,
   LIMITS, LOCKED_FIELD_KEYS, BLOCK_TYPES, FIELD_TYPES, RESERVED_ROOT_SLUGS,
+  requiresPhoneVerification, phoneFieldOf, normalizeSgMobile,
 } from '../../src/utils/rsvpLayout.js';
 
 const formBlocks = (doc) => doc.blocks.filter((b) => b.type === 'form');
@@ -61,7 +62,7 @@ describe('clampLayout — garbage in, valid doc out', () => {
 describe('clampLayout — blocks', () => {
   test('unknown types dropped, second form dropped, missing form appended', () => {
     const doc = clampLayout({ blocks: [{ type: 'carousel' }, { id: 'b_ab01', type: 'form' }, { id: 'b_ab02', type: 'form', headline: 'dup' }] });
-    expect(doc.blocks).toEqual([{ id: 'b_ab01', type: 'form', headline: '', submitLabel: 'RSVP', consentCopy: '' }]);
+    expect(doc.blocks).toEqual([{ id: 'b_ab01', type: 'form', headline: '', submitLabel: 'RSVP', consentCopy: '', verifyPhone: true }]);
     const noForm = clampLayout({ blocks: [{ type: 'text', body: 'x' }] });
     expect(noForm.blocks.map((b) => b.type)).toEqual(['text', 'form']);
   });
@@ -70,7 +71,7 @@ describe('clampLayout — blocks', () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ id: `b_t${i}`, type: 'text', body: String(i) }));
     const doc = clampLayout({ blocks: [...many, { id: 'b_form', type: 'form', headline: 'Keep me' }] });
     expect(doc.blocks).toHaveLength(LIMITS.blocks);
-    expect(formBlocks(doc)).toEqual([{ id: 'b_form', type: 'form', headline: 'Keep me', submitLabel: 'RSVP', consentCopy: '' }]);
+    expect(formBlocks(doc)).toEqual([{ id: 'b_form', type: 'form', headline: 'Keep me', submitLabel: 'RSVP', consentCopy: '', verifyPhone: true }]);
     expect(doc.blocks.filter((b) => b.type === 'text')).toHaveLength(LIMITS.blocks - 1);
   });
 
@@ -283,5 +284,68 @@ describe('details row links', () => {
 
   test('a link without a value has nothing to hang off and is dropped', () => {
     expect(row([{ label: 'Where', value: '', href: 'https://maps.app.goo.gl/abc' }])).toEqual({ label: 'Where', value: '', href: '' });
+  });
+});
+
+describe('mobile verification', () => {
+  const doc = (overrides = {}, fields = undefined) => clampLayout({
+    blocks: [{ id: 'b_form', type: 'form', ...overrides }],
+    ...(fields ? { fields } : {}),
+  });
+
+  test('defaults ON, including for documents written before the flag existed', () => {
+    expect(doc().blocks.find((b) => b.type === 'form').verifyPhone).toBe(true);
+    expect(doc({ verifyPhone: undefined }).blocks.find((b) => b.type === 'form').verifyPhone).toBe(true);
+    expect(doc({ verifyPhone: 'yes' }).blocks.find((b) => b.type === 'form').verifyPhone).toBe(true);
+  });
+
+  test('only an explicit false turns it off', () => {
+    expect(doc({ verifyPhone: false }).blocks.find((b) => b.type === 'form').verifyPhone).toBe(false);
+  });
+
+  test('requiresPhoneVerification needs BOTH the flag and a phone field', () => {
+    const withPhone = doc({}, [
+      { key: 'name', type: 'text', label: 'Name', required: true },
+      { key: 'email', type: 'email', label: 'Email', required: true },
+      { key: 'phone', type: 'phone', label: 'Mobile' },
+    ]);
+    expect(requiresPhoneVerification(withPhone)).toBe(true);
+    expect(phoneFieldOf(withPhone).key).toBe('phone');
+
+    const noPhone = doc({}, [
+      { key: 'name', type: 'text', label: 'Name', required: true },
+      { key: 'email', type: 'email', label: 'Email', required: true },
+    ]);
+    expect(requiresPhoneVerification(noPhone)).toBe(false);
+    expect(phoneFieldOf(noPhone)).toBeNull();
+
+    const off = clampLayout({ blocks: [{ id: 'b_form', type: 'form', verifyPhone: false }], fields: withPhone.fields });
+    expect(requiresPhoneVerification(off)).toBe(false);
+  });
+
+  test('a custom phone question is governed too, not just the built-in one', () => {
+    const custom = clampLayout({
+      blocks: [{ id: 'b_form', type: 'form' }],
+      fields: [
+        { key: 'name', type: 'text', label: 'Name', required: true },
+        { key: 'email', type: 'email', label: 'Email', required: true },
+        { key: 'f_mob1', type: 'phone', label: 'Contact number' },
+      ],
+    });
+    expect(phoneFieldOf(custom).key).toBe('f_mob1');
+    expect(requiresPhoneVerification(custom)).toBe(true);
+  });
+
+  test('normalizeSgMobile accepts the shapes people actually type', () => {
+    for (const input of ['91234567', '+65 9123 4567', '65 9123 4567', '+6591234567', '9123-4567', ' 81234567 ']) {
+      expect(normalizeSgMobile(input)).toMatch(/^[89][0-9]{7}$/);
+    }
+    expect(normalizeSgMobile('+65 9123 4567')).toBe('91234567');
+  });
+
+  test('normalizeSgMobile rejects anything that is not an SG mobile', () => {
+    for (const bad of ['61234567', '1234567', '912345678', '+1 415 555 1234', 'not a phone', '', null, undefined]) {
+      expect(normalizeSgMobile(bad)).toBe('');
+    }
   });
 });

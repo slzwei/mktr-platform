@@ -5,13 +5,13 @@ import { UUID_PARAM_RE } from '../middleware/uuidParam.js';
 import { logger } from '../utils/logger.js';
 import {
   clampLayout, defaultLayout, layoutProblems, publicLayout, consentTemplateOf,
-  isValidRsvpSlug, slugProblem, RSVP_SLUG_RE, LIMITS, sanitizeText,
-} from '../utils/rsvpLayout.js';
+  isValidRsvpSlug, slugProblem, RSVP_SLUG_RE, LIMITS, sanitizeText, requiresPhoneVerification, phoneFieldOf, normalizeSgMobile } from '../utils/rsvpLayout.js';
 import { buildSubmissionSchema, buildAnswersSchema, sanitizeAnswers, parseClosesAt, pickSourceMetadata } from '../utils/rsvpAnswers.js';
 import { toCsv } from '../utils/csv.js';
 import { CURRENT_RSVP_CONSENT_VERSION, resolveRsvpConsent, renderRsvpConsentCopy, hashConsentCopy } from './rsvpConsentRegistry.js';
 import { emailNormKey } from './repeatSignup.js';
 import { normalizePhone } from './prospectHelpers.js';
+import { isPhoneVerifiedDurable } from './verifiedPhoneStore.js';
 
 /**
  * RSVP pages (docs/plans/rsvp-pages.md §5). Admin CRUD + lifecycle, the public
@@ -443,7 +443,32 @@ function validationError(joiError) {
  * The submit transaction. Returns { created, reactivated } or { ignored } for
  * a honeypot hit (the caller answers 200 either way — bots learn nothing).
  */
-export async function submitResponse(slug, body, { referrer } = {}) {
+/**
+ * Mobile verification gate. The page will not let you submit unverified, but
+ * the page is not the security boundary — a direct POST is. Reads the DURABLE
+ * marker (not the in-process Map) so a redeploy landing between the code and
+ * the submit does not silently un-verify someone.
+ *
+ * Only bites when the event asks for it AND a mobile was actually given: the
+ * phone field is optional on most forms, and leaving it blank must stay allowed.
+ */
+async function assertPhoneVerified(event, answers, deps) {
+  if (!requiresPhoneVerification(event.layout)) return;
+  const key = phoneFieldOf(event.layout)?.key;
+  const given = key ? answers[key] : '';
+  if (typeof given !== 'string' || !given.trim()) return;
+
+  const local = normalizeSgMobile(given);
+  if (!local) {
+    throw typed(422, 'phone_unverifiable', 'Enter a Singapore mobile number so we can send you a verification code.');
+  }
+  const verified = await (deps.isPhoneVerifiedDurable || isPhoneVerifiedDurable)(`+65${local}`);
+  if (!verified) {
+    throw typed(422, 'phone_unverified', 'Please verify your mobile number before submitting.');
+  }
+}
+
+export async function submitResponse(slug, body, { referrer, deps = {} } = {}) {
   if (typeof slug !== 'string' || !RSVP_SLUG_RE.test(slug)) throw typed(404, 'not_found', 'Event not found');
   return sequelize.transaction(async (t) => {
     const event = await RsvpEvent.findOne({ where: { slug }, transaction: t, lock: t.LOCK.UPDATE });
@@ -457,6 +482,7 @@ export async function submitResponse(slug, body, { referrer } = {}) {
     if (value.website) return { ignored: true };
 
     const answers = sanitizeAnswers(fields, value.answers);
+    await assertPhoneVerified(event, answers, deps);
     const emailNormalized = emailNormKey(answers.email);
     const name = typeof answers.name === 'string' ? answers.name : '';
     if (!emailNormalized || !name) throw typed(400, 'invalid', 'Validation Error', { errors: [{ field: 'answers', message: 'name and email are required' }] });

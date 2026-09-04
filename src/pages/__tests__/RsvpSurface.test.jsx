@@ -7,7 +7,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { clampLayout } from '@/lib/rsvpLayout';
 
-const api = vi.hoisted(() => ({ fetchPublicRsvp: vi.fn(), submitRsvp: vi.fn() }));
+const api = vi.hoisted(() => ({ fetchPublicRsvp: vi.fn(), submitRsvp: vi.fn(), sendRsvpPhoneCode: vi.fn(), checkRsvpPhoneCode: vi.fn() }));
 vi.mock('@/api/rsvpPublic', () => api);
 vi.mock('@/components/AdRollRouteTracker', () => ({ default: () => <div data-testid="adroll-tracker" /> }));
 

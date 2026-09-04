@@ -1,6 +1,6 @@
 import { THEME_PRESETS, FONT_IDS, THEME_RADIUS_IDS } from '@/lib/designConfigV2';
 import { HERO_FONTS } from '@/lib/heroFonts';
-import { BLOCK_TYPES, FIELD_TYPES, LIMITS, LOCKED_FIELD_KEYS, BUILTIN_FIELD_TYPES, slugProblem } from '@/lib/rsvpLayout';
+import { BLOCK_TYPES, FIELD_TYPES, LIMITS, LOCKED_FIELD_KEYS, BUILTIN_FIELD_TYPES, slugProblem, phoneFieldOf } from '@/lib/rsvpLayout';
 import SortableList from './SortableList';
 import { Field, AreaField, SelectField, Toggle, Section, Note, randomId, ImageField } from './kit';
 import { uploadRsvpImage } from '@/lib/rsvpImageUpload';
@@ -226,6 +226,14 @@ function FieldEditor({ field, frozen, onChange }) {
 
 export function FormPanel({ layout, update, selectedKey, onSelect, frozenKeys }) {
   const fields = layout.fields || [];
+  const formBlock = (layout.blocks || []).find((b) => b.type === 'form') || null;
+  const phoneField = phoneFieldOf(layout);
+  // Absent reads as ON — the guard is opt-out, never off by omission.
+  const verifyPhone = formBlock ? formBlock.verifyPhone !== false : true;
+  const setVerifyPhone = (next) => update(
+    (l) => ({ ...l, blocks: l.blocks.map((b) => (b.type === 'form' ? { ...b, verifyPhone: next } : b)) }),
+    { kind: 'toggle' },
+  );
   const selected = fields.find((f) => f.key === selectedKey) || null;
   const items = fields.map((f) => {
     const locked = LOCKED_FIELD_KEYS.includes(f.key);
@@ -243,7 +251,22 @@ export function FormPanel({ layout, update, selectedKey, onSelect, frozenKeys })
   };
   return (
     <>
-      <Section title="Fields" first>
+      <Section title="Mobile verification" first>
+        <Toggle
+          id="form-verify-phone"
+          label="Verify mobile numbers with an SMS code"
+          checked={verifyPhone}
+          disabled={!phoneField}
+          onChange={setVerifyPhone}
+          hint={
+            phoneField
+              ? 'People must enter a 6-digit code texted to them before their RSVP is accepted. Singapore mobiles only. A blank optional mobile is still allowed through.'
+              : 'Add a phone field to the form to use this.'
+          }
+        />
+        {phoneField && !verifyPhone ? <Note tone="warn">Anyone can type any number. Turn this on if you plan to contact people by phone.</Note> : null}
+      </Section>
+      <Section title="Fields">
         <SortableList
           ariaLabel="Form fields"
           items={items}
