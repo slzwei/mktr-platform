@@ -21,9 +21,19 @@ const STATE_COPY = {
 
 const PLACEHOLDER = { headline: 'Your event headline', subheadline: 'A line about what, when and why.', body: 'Tell people what to expect.', details: [{ label: 'When', value: 'Date and time' }, { label: 'Where', value: 'Venue' }] };
 
-function Media({ src, alt, t }) {
+function Media({ src, alt, t, eager = false }) {
   if (!src) return null;
-  return <img src={src} alt={alt || ''} style={{ display: 'block', width: '100%', height: 'auto', borderRadius: t.r.media, objectFit: 'cover' }} />;
+  return (
+    <img
+      src={src}
+      alt={alt || ''}
+      // The hero is the page's first paint, so it loads eagerly; a picture
+      // further down waits until it is near the viewport.
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      style={{ display: 'block', width: '100%', height: 'auto', borderRadius: t.r.media, objectFit: 'cover' }}
+    />
+  );
 }
 
 function HeroBlock({ block, t, preview }) {
@@ -32,7 +42,7 @@ function HeroBlock({ block, t, preview }) {
   const ghost = preview && !block.headline;
   return (
     <header style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Media src={block.mediaUrl} alt={block.mediaAlt} t={t} />
+      <Media src={block.mediaUrl} alt={block.mediaAlt} t={t} eager />
       {headline ? <h1 style={{ margin: 0, fontSize: 'clamp(28px, 6vw, 40px)', lineHeight: 1.1, fontWeight: 800, letterSpacing: '-0.01em', color: ghost ? t.muted : t.ink }}>{headline}</h1> : null}
       {sub ? <p style={{ margin: 0, fontSize: 17, lineHeight: 1.5, color: preview && !block.subheadline ? t.muted : t.bodyText }}>{sub}</p> : null}
     </header>

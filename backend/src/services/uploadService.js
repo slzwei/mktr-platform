@@ -29,6 +29,19 @@ async function uploadFileToStorage(key, file) {
  * Upload a single file to cloud storage (if enabled) or keep local.
  * Returns a fileInfo object.
  */
+/** Where uploads are publicly readable (same convention as mailer/emailBroadcast). */
+function apiPublicOrigin() {
+  return (process.env.API_PUBLIC_ORIGIN || 'https://api.mktr.sg').replace(/\/$/, '');
+}
+
+/** Absolute form of a stored file URL; already-absolute storage URLs pass through. */
+export function absoluteUploadUrl(fileUrl) {
+  const url = String(fileUrl || '');
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${apiPublicOrigin()}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
 export async function processSingleUpload(file, type = 'general', userId) {
   // Videos are normalized to a silent, web-optimized MP4 before storage, so any
   // source format (MOV/HEVC, etc.) plays cross-browser as a muted hero loop.
@@ -47,6 +60,10 @@ export async function processSingleUpload(file, type = 'general', userId) {
     mimetype: file.mimetype,
     size: file.size,
     url: fileUrl,
+    // Absolute twin of `url`. The relative form only resolves on surfaces that
+    // proxy /uploads (mktr.sg, redeem.sg); rsvp.redeem.sg does not, so anything
+    // stored for a page that renders off-origin must use this one.
+    publicUrl: absoluteUploadUrl(fileUrl),
     type,
     uploadedBy: userId,
     uploadedAt: new Date()

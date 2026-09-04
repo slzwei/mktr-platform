@@ -1,8 +1,76 @@
+import { useRef, useState } from 'react';
 /**
  * Small inspector inputs for the RSVP designer panels — the Studio's panelKit
  * look (admin-v2 tokens) on plain value/onChange props, so the panels do not
  * need the Studio's doc binder.
  */
+
+/**
+ * Image slot: pick a file (optimised in the browser before it is sent) or paste
+ * a URL. Uploads are stored ABSOLUTE, because the public RSVP page is served
+ * from rsvp.redeem.sg, which does not proxy /uploads.
+ */
+export function ImageField({ idBase, label, url, alt, onUrl, onAlt, limitUrl, limitAlt, uploadImage }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+
+  const pick = async (event) => {
+    const file = event.target.files?.[0];
+    if (inputRef.current) inputRef.current.value = '';
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    setNote('');
+    try {
+      const { url: next, note: savedNote } = await uploadImage(file);
+      onUrl(next);
+      setNote(savedNote || '');
+    } catch (err) {
+      setError(err?.message || 'Upload failed. Please try again.');
+    }
+    setBusy(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            ref={inputRef}
+            id={`${idBase}-file`}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={pick}
+            data-testid={`${idBase}-file`}
+          />
+          <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={busy} onClick={() => inputRef.current?.click()}>
+            {busy ? 'Uploading…' : url ? 'Replace image' : 'Upload image'}
+          </button>
+          {url ? (
+            <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={busy} onClick={() => { onUrl(''); setNote(''); setError(''); }}>
+              Remove
+            </button>
+          ) : null}
+        </div>
+        {error ? <Note tone="bad">{error}</Note> : note ? <Note>{note}</Note> : null}
+      </div>
+      <Field
+        id={`${idBase}-u`}
+        label={label}
+        value={url}
+        onChange={(v) => { onUrl(v); setNote(''); setError(''); }}
+        limit={limitUrl}
+        placeholder="https://…"
+        hint="Upload a picture, or paste an https:// link. Uploads are resized and converted to WebP so the page loads fast."
+      />
+      <Field id={`${idBase}-a`} label="Image description" value={alt} onChange={onAlt} limit={limitAlt} hint="Read aloud by screen readers." />
+    </>
+  );
+}
+
 export function Field({ id, label, value, onChange, limit, placeholder, disabled = false, hint, type = 'text' }) {
   const len = String(value ?? '').length;
   return (
