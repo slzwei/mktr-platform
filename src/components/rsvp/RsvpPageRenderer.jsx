@@ -59,7 +59,19 @@ function DetailsBlock({ block, t, preview }) {
       {list.map((r, i) => (
         <div key={i} style={{ display: 'contents' }}>
           <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: t.muted, paddingTop: 3 }}>{r.label}</div>
-          <div style={{ fontSize: 15.5, lineHeight: 1.45, color: rows.length ? t.ink : t.muted }}>{r.value}</div>
+          <div style={{ fontSize: 15.5, lineHeight: 1.45, color: rows.length ? t.ink : t.muted }}>
+            {r.href ? (
+              <a
+                href={r.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={preview ? (e) => e.preventDefault() : undefined}
+                style={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: t.muted, textUnderlineOffset: 3 }}
+              >
+                {r.value}<span aria-hidden="true"> ↗</span>
+              </a>
+            ) : r.value}
+          </div>
         </div>
       ))}
     </section>

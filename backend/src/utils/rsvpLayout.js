@@ -55,7 +55,7 @@ export const RESERVED_ROOT_SLUGS = Object.freeze([
 export const LIMITS = Object.freeze({
   blocks: 12, fields: 20, options: 12, detailsRows: 8,
   title: 120, headline: 80, subheadline: 150, body: 2000, submitLabel: 40,
-  detailsLabel: 40, detailsValue: 120, mediaUrl: 500, mediaAlt: 120,
+  detailsLabel: 40, detailsValue: 120, detailsLink: 500, mediaUrl: 500, mediaAlt: 120,
   label: 80, help: 160, option: 48,
   confirmationHeadline: 80, confirmationBody: 600,
   // The consent line under the form ('' = the server's default era wording).
@@ -98,6 +98,14 @@ function cleanUrl(v) {
   if (/^https:\/\/[^\s"'<>]+$/i.test(s)) return s;
   if (/^\/uploads\/[A-Za-z0-9_\-./]+$/.test(s)) return s;
   return '';
+}
+
+/** Outbound link on a details row (a Google Maps pin, a venue page): https only. */
+function cleanLink(v) {
+  if (typeof v !== 'string') return '';
+  const s = v.trim();
+  if (!s || s.length > LIMITS.detailsLink) return '';
+  return /^https:\/\/[^\s"'<>]+$/i.test(s) ? s : '';
 }
 
 function cleanHex(v) {
@@ -143,7 +151,9 @@ function cleanBlock(raw, id) {
         const label = sanitizeText(r.label, LIMITS.detailsLabel);
         const value = sanitizeText(r.value, LIMITS.detailsValue);
         if (!label && !value) continue;
-        rows.push({ label, value });
+        // A link needs visible text to hang off — without a value it is dropped.
+        const href = value ? cleanLink(r.href) : '';
+        rows.push({ label, value, href });
         if (rows.length >= LIMITS.detailsRows) break;
       }
       return { id, type: 'details', rows };

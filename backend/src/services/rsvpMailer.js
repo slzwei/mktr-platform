@@ -20,6 +20,9 @@ function detailRows(layout) {
   return (block?.rows || []).filter((r) => r?.label || r?.value);
 }
 
+/** The row's outbound link (clamped https at save time; re-checked here anyway). */
+const rowLink = (r) => (typeof r?.href === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(r.href) ? r.href : '');
+
 export function renderRsvpConfirmation({ event, response, updated = false }) {
   // `?confirmed=1` opens the page in its confirmed state ("You're in" + a
   // "Change my RSVP" button) instead of the blank form — the link otherwise
@@ -35,7 +38,7 @@ export function renderRsvpConfirmation({ event, response, updated = false }) {
     `Hi ${firstName},`,
     '',
     updated ? `We have updated your RSVP for ${event.title}.` : `Your RSVP for ${event.title} is confirmed.`,
-    ...rows.map((r) => `${r.label}: ${r.value}`),
+    ...rows.map((r) => `${r.label}: ${r.value}${rowLink(r) ? ` (${rowLink(r)})` : ''}`),
     '',
     `Hosted by ${organiser}.`,
     `Your RSVP: ${url}`,
@@ -46,7 +49,7 @@ export function renderRsvpConfirmation({ event, response, updated = false }) {
     'MKTR PTE. LTD. (UEN 202507548M) runs Redeem. Personal Data Policy: https://redeem.sg/personal-data-policy',
   ].join('\n');
 
-  const rowsHtml = rows.map((r) => `<tr><td style="padding:4px 12px 4px 0;color:#7a6a58;font-size:13px;white-space:nowrap">${escapeHtml(r.label)}</td><td style="padding:4px 0;color:#2b1d12;font-size:15px">${escapeHtml(r.value)}</td></tr>`).join('');
+  const rowsHtml = rows.map((r) => `<tr><td style="padding:4px 12px 4px 0;color:#7a6a58;font-size:13px;white-space:nowrap">${escapeHtml(r.label)}</td><td style="padding:4px 0;color:#2b1d12;font-size:15px">${rowLink(r) ? `<a href="${escapeHtml(rowLink(r))}" style="color:#2b1d12">${escapeHtml(r.value)}</a>` : escapeHtml(r.value)}</td></tr>`).join('');
   const html = `<!doctype html><html><body style="margin:0;background:#f4efe6;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#2b1d12">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:28px 16px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#fffaf0;border-radius:16px;padding:28px">

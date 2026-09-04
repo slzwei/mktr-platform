@@ -53,6 +53,22 @@ describe('AdminRsvpDesigner', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('a details row can carry a link, and "Google Maps link" fills it from the value', async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole('button', { name: '+ Details' }));
+    const mapsBtn = screen.getByRole('button', { name: 'Google Maps link for row 1' });
+    expect(mapsBtn).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('Value'), '545 Orchard Road');
+    expect(mapsBtn).toBeEnabled();
+    await userEvent.click(mapsBtn);
+    const href = 'https://www.google.com/maps/search/?api=1&query=545%20Orchard%20Road';
+    expect(screen.getByLabelText('Link (optional)')).toHaveValue(href);
+    expect(within(screen.getByTestId('frame')).getByRole('link', { name: /545 Orchard Road/ })).toHaveAttribute('href', href);
+    await userEvent.clear(screen.getByLabelText('Link (optional)'));
+    await userEvent.type(screen.getByLabelText('Link (optional)'), 'http://not-https.example');
+    expect(within(screen.getByTestId('frame')).queryByRole('link', { name: /545 Orchard Road/ })).not.toBeInTheDocument();
+  });
+
   it('adds a text block, edits it, and the preview follows', async () => {
     renderPage();
     await userEvent.click(screen.getByRole('button', { name: '+ Text' }));

@@ -97,7 +97,7 @@ describe('clampLayout — blocks', () => {
     expect(doc.blocks[2].url).toBe('/uploads/campaigns/abc/pic.jpg');
     expect(doc.blocks[3].url).toBe('https://cdn.example.com/x.png?v=1');
     expect(doc.blocks[4].rows).toHaveLength(LIMITS.detailsRows);
-    expect(doc.blocks[4].rows[0]).toEqual({ label: 'When', value: 'Sat' });
+    expect(doc.blocks[4].rows[0]).toEqual({ label: 'When', value: 'Sat', href: '' });
     expect(doc.blocks[5].submitLabel).toBe('RSVP');
   });
 
@@ -262,5 +262,26 @@ describe('slug rules', () => {
       expect(isValidRsvpSlug(reserved)).toBe(false);
       expect(slugProblem(reserved)).toBe('reserved');
     }
+  });
+});
+
+describe('details row links', () => {
+  const doc = (rows) => clampLayout({ blocks: [{ id: 'b_dtl', type: 'details', rows }, { id: 'b_form', type: 'form' }] });
+  const row = (rows) => doc(rows).blocks.find((b) => b.type === 'details').rows[0];
+
+  test('keeps an https link, trimmed', () => {
+    expect(row([{ label: 'Where', value: 'Hall', href: '  https://maps.app.goo.gl/abc123  ' }]).href).toBe('https://maps.app.goo.gl/abc123');
+    expect(row([{ label: 'Where', value: 'Hall', href: 'https://www.google.com/maps/search/?api=1&query=545%20Orchard%20Road' }]).href).toBe('https://www.google.com/maps/search/?api=1&query=545%20Orchard%20Road');
+  });
+
+  test('drops anything that is not https, and over-long links', () => {
+    for (const bad of ['http://maps.example', 'javascript:alert(1)', 'maps.app.goo.gl/abc', 'https://x.y/a b', 'https://x.y/"onmouseover=1', 42, null]) {
+      expect(row([{ label: 'Where', value: 'Hall', href: bad }]).href).toBe('');
+    }
+    expect(row([{ label: 'Where', value: 'Hall', href: `https://x.y/${'a'.repeat(LIMITS.detailsLink)}` }]).href).toBe('');
+  });
+
+  test('a link without a value has nothing to hang off and is dropped', () => {
+    expect(row([{ label: 'Where', value: '', href: 'https://maps.app.goo.gl/abc' }])).toEqual({ label: 'Where', value: '', href: '' });
   });
 });
